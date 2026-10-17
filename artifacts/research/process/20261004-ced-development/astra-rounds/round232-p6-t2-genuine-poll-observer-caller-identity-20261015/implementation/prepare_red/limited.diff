@@ -1,0 +1,37 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py (failed R223 baseline)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py (R232 recovery baseline)
+@@ -1795,6 +1795,10 @@
+             raise TimedOut("timeout")
+ 
+ 
++_GENUINE_WORKER_POLL_CODE = SimulationWorker.poll_once.__code__
++_GENUINE_WORKER_MODULE_GLOBALS = globals()
++
++
+ def _experiment_config(
+     draft: ExperimentDraft, job: SimulationJobRecord, run_dir: Path
+ ) -> ExperimentConfig:
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py (failed R223 baseline)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py (R232 recovery baseline)
+@@ -914,11 +914,18 @@
+     from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+         SQLiteSimulationJobRepository,
+     )
+-    from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+-
++    from cloud_edge_robot_arm.simulation_runtime.worker import (
++        SimulationWorker,
++        _GENUINE_WORKER_MODULE_GLOBALS,
++        _GENUINE_WORKER_POLL_CODE,
++    )
++
++    caller = sys._getframe(1)
+     if (
+         type(worker) is not SimulationWorker
+-        or sys._getframe(1).f_code is not SimulationWorker.poll_once.__code__
++        or caller.f_code is not _GENUINE_WORKER_POLL_CODE
++        or caller.f_globals is not _GENUINE_WORKER_MODULE_GLOBALS
++        or caller.f_locals.get("self") is not worker
+     ):
+         raise OperationalLeaseError("only genuine exact worker poll opens session")
+     if (

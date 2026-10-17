@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="148.228" timestamp="2026-10-15T19:23:47.550375+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_local_public_writer_binding_race" name="test_late_binding_rejects_public_writer[memory]" time="49.676"><failure message="AssertionError: R223 late local binding was not rejected&#10;assert ({'message': 'R223 original writer release timed out\nassert False\n +  where False = wait(10)\n +    where wait = &lt;threading.Event at 0x760f5cb948c0: unset&gt;.wait', 'type': 'AssertionError'} is not None and 'AssertionError' == 'ValueError'&#10;  &#10;  - ValueError&#10;  + AssertionError)">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x760f5e03a030&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r239-capture/test_late_binding_rejects_publ0')
+request = &lt;FixtureRequest for &lt;Function test_late_binding_rejects_public_writer[memory]&gt;&gt;
+backend = 'memory'
+
+    @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
+    def test_late_binding_rejects_public_writer(monkeypatch, tmp_path, request, backend):
+        with _r223_observe(monkeypatch, request) as observed:
+            case = _r223_case(monkeypatch, tmp_path, request, backend, observed, mode='race')
+            assert case['writer_joined'] and case['writer']['attempted'] and case['bootstrap_complete']
+            error = case['writer']['exception']
+&gt;           assert error is not None and error['type'] == 'ValueError' and re.search(
+                'private|operational|scope', error['message']), 'R223 late local binding was not rejected'
+E           AssertionError: R223 late local binding was not rejected
+E           assert ({'message': 'R223 original writer release timed out\nassert False\n +  where False = wait(10)\n +    where wait = &lt;threading.Event at 0x760f5cb948c0: unset&gt;.wait', 'type': 'AssertionError'} is not None and 'AssertionError' == 'ValueError'
+E             
+E             - ValueError
+E             + AssertionError)
+
+tests/test_local_public_writer_binding_race.py:255: AssertionError</failure></testcase><testcase classname="tests.test_local_public_writer_binding_race" name="test_late_binding_rejects_public_writer[sqlite]" time="49.097"><failure message="AssertionError: R223 late local binding was not rejected&#10;assert ({'message': 'R223 original writer release timed out\nassert False\n +  where False = wait(10)\n +    where wait = &lt;threading.Event at 0x760f5d173200: unset&gt;.wait', 'type': 'AssertionError'} is not None and 'AssertionError' == 'ValueError'&#10;  &#10;  - ValueError&#10;  + AssertionError)">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x760f5e0ca390&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r239-capture/test_late_binding_rejects_publ1')
+request = &lt;FixtureRequest for &lt;Function test_late_binding_rejects_public_writer[sqlite]&gt;&gt;
+backend = 'sqlite'
+
+    @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
+    def test_late_binding_rejects_public_writer(monkeypatch, tmp_path, request, backend):
+        with _r223_observe(monkeypatch, request) as observed:
+            case = _r223_case(monkeypatch, tmp_path, request, backend, observed, mode='race')
+            assert case['writer_joined'] and case['writer']['attempted'] and case['bootstrap_complete']
+            error = case['writer']['exception']
+&gt;           assert error is not None and error['type'] == 'ValueError' and re.search(
+                'private|operational|scope', error['message']), 'R223 late local binding was not rejected'
+E           AssertionError: R223 late local binding was not rejected
+E           assert ({'message': 'R223 original writer release timed out\nassert False\n +  where False = wait(10)\n +    where wait = &lt;threading.Event at 0x760f5d173200: unset&gt;.wait', 'type': 'AssertionError'} is not None and 'AssertionError' == 'ValueError'
+E             
+E             - ValueError
+E             + AssertionError)
+
+tests/test_local_public_writer_binding_race.py:255: AssertionError</failure></testcase><testcase classname="tests.test_local_public_writer_binding_race" name="test_late_binding_rejects_public_writer_second_connection" time="49.075"><failure message="AssertionError: R223 late local binding was not rejected&#10;assert ({'message': 'R223 original writer release timed out\nassert False\n +  where False = wait(10)\n +    where wait = &lt;threading.Event at 0x760f5d152e70: unset&gt;.wait', 'type': 'AssertionError'} is not None and 'AssertionError' == 'ValueError'&#10;  &#10;  - ValueError&#10;  + AssertionError)">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x760f5d1736e0&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r239-capture/test_late_binding_rejects_publ2')
+request = &lt;FixtureRequest for &lt;Function test_late_binding_rejects_public_writer_second_connection&gt;&gt;
+
+    def test_late_binding_rejects_public_writer_second_connection(monkeypatch, tmp_path, request):
+        with _r223_observe(monkeypatch, request) as observed:
+            case = _r223_case(monkeypatch, tmp_path, request, 'sqlite', observed, mode='race', second=True)
+            assert case['writer_joined'] and case['writer']['attempted'] and case['bootstrap_complete']
+            error = case['writer']['exception']
+&gt;           assert error is not None and error['type'] == 'ValueError' and re.search(
+                'private|operational|scope', error['message']), 'R223 late local binding was not rejected'
+E           AssertionError: R223 late local binding was not rejected
+E           assert ({'message': 'R223 original writer release timed out\nassert False\n +  where False = wait(10)\n +    where wait = &lt;threading.Event at 0x760f5d152e70: unset&gt;.wait', 'type': 'AssertionError'} is not None and 'AssertionError' == 'ValueError'
+E             
+E             - ValueError
+E             + AssertionError)
+
+tests/test_local_public_writer_binding_race.py:265: AssertionError</failure></testcase></testsuite></testsuites>

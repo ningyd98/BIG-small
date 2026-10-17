@@ -1,0 +1,642 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="19" skipped="0" tests="19" time="8.585" timestamp="2026-10-14T05:27:07.722257+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[request_event]" time="0.881"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0487de5d30&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_history_binding_reje0')
+mutation = 'request_event'
+
+    @pytest.mark.parametrize("mutation", [
+        "request_event", "operation", "request_kind", "result_hash",
+        "cas_prestate", "transaction_event", "final_state",
+    ])
+    def test_r179_history_binding_rejects(monkeypatch, tmp_path, mutation):
+        fixture = _r179_fixture(monkeypatch)
+        initial, seed, _ = _r179_reserved(fixture)
+        _r179_accepted(initial)
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        event = changed["payload"]["history"][0]
+        if mutation == "request_event":
+            event["request"]["payload"]["event_key"] = "r179-unbound-request-event"
+        elif mutation == "operation":
+            event["decision"]["operation_sha256"] = "d" * 64
+            event["transaction"]["operation_sha256"] = "d" * 64
+            changed["decision"]["operation_sha256"] = "d" * 64
+            changed["transaction"]["operation_sha256"] = "d" * 64
+        elif mutation == "request_kind":
+            wrong = _r179_history_request(
+                fixture, initial, "supervision", "RESERVE_WAIT",
+                event["request"]["payload"]["event_key"])
+            event["request"] = wrong
+        elif mutation == "result_hash":
+            event["resulting_record_hash"] = "e" * 64
+            event["transaction"]["event_record_hash"] = "e" * 64
+            changed["transaction"]["event_record_hash"] = "e" * 64
+        elif mutation == "cas_prestate":
+            event["request"]["payload"]["expected_record_hash"] = "f" * 64
+            operation = _r179_hash({
+                "schema_version": "visual.local-history-operation.v1",
+                "request": _r179_projection(event["request"])})
+            for decision in (event["decision"], changed["decision"]):
+                decision["operation_sha256"] = operation
+            for transaction in (event["transaction"], changed["transaction"]):
+                transaction["operation_sha256"] = operation
+        elif mutation == "transaction_event":
+            event["transaction"]["event_key"] = "r179-foreign-transaction-event"
+            changed["transaction"]["event_key"] = "r179-foreign-transaction-event"
+        else:
+            changed["payload"]["initial_capture_claimed"] = False
+            result = _r179_state_hash(changed)
+            event["resulting_record_hash"] = result
+            event["transaction"]["event_record_hash"] = result
+            changed["transaction"]["event_record_hash"] = result
+        _r179_evidence(tmp_path, seed, changed, "I1:" + mutation)
+&gt;       with pytest.raises(ValueError, match="history|request|operation|event|state|CAS|claim|bootstrap|supervision|result"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3157: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[operation]" time="0.283"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0486ec6ba0&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_history_binding_reje1')
+mutation = 'operation'
+
+    @pytest.mark.parametrize("mutation", [
+        "request_event", "operation", "request_kind", "result_hash",
+        "cas_prestate", "transaction_event", "final_state",
+    ])
+    def test_r179_history_binding_rejects(monkeypatch, tmp_path, mutation):
+        fixture = _r179_fixture(monkeypatch)
+        initial, seed, _ = _r179_reserved(fixture)
+        _r179_accepted(initial)
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        event = changed["payload"]["history"][0]
+        if mutation == "request_event":
+            event["request"]["payload"]["event_key"] = "r179-unbound-request-event"
+        elif mutation == "operation":
+            event["decision"]["operation_sha256"] = "d" * 64
+            event["transaction"]["operation_sha256"] = "d" * 64
+            changed["decision"]["operation_sha256"] = "d" * 64
+            changed["transaction"]["operation_sha256"] = "d" * 64
+        elif mutation == "request_kind":
+            wrong = _r179_history_request(
+                fixture, initial, "supervision", "RESERVE_WAIT",
+                event["request"]["payload"]["event_key"])
+            event["request"] = wrong
+        elif mutation == "result_hash":
+            event["resulting_record_hash"] = "e" * 64
+            event["transaction"]["event_record_hash"] = "e" * 64
+            changed["transaction"]["event_record_hash"] = "e" * 64
+        elif mutation == "cas_prestate":
+            event["request"]["payload"]["expected_record_hash"] = "f" * 64
+            operation = _r179_hash({
+                "schema_version": "visual.local-history-operation.v1",
+                "request": _r179_projection(event["request"])})
+            for decision in (event["decision"], changed["decision"]):
+                decision["operation_sha256"] = operation
+            for transaction in (event["transaction"], changed["transaction"]):
+                transaction["operation_sha256"] = operation
+        elif mutation == "transaction_event":
+            event["transaction"]["event_key"] = "r179-foreign-transaction-event"
+            changed["transaction"]["event_key"] = "r179-foreign-transaction-event"
+        else:
+            changed["payload"]["initial_capture_claimed"] = False
+            result = _r179_state_hash(changed)
+            event["resulting_record_hash"] = result
+            event["transaction"]["event_record_hash"] = result
+            changed["transaction"]["event_record_hash"] = result
+        _r179_evidence(tmp_path, seed, changed, "I1:" + mutation)
+&gt;       with pytest.raises(ValueError, match="history|request|operation|event|state|CAS|claim|bootstrap|supervision|result"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3157: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[request_kind]" time="0.273"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e048775a630&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_history_binding_reje2')
+mutation = 'request_kind'
+
+    @pytest.mark.parametrize("mutation", [
+        "request_event", "operation", "request_kind", "result_hash",
+        "cas_prestate", "transaction_event", "final_state",
+    ])
+    def test_r179_history_binding_rejects(monkeypatch, tmp_path, mutation):
+        fixture = _r179_fixture(monkeypatch)
+        initial, seed, _ = _r179_reserved(fixture)
+        _r179_accepted(initial)
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        event = changed["payload"]["history"][0]
+        if mutation == "request_event":
+            event["request"]["payload"]["event_key"] = "r179-unbound-request-event"
+        elif mutation == "operation":
+            event["decision"]["operation_sha256"] = "d" * 64
+            event["transaction"]["operation_sha256"] = "d" * 64
+            changed["decision"]["operation_sha256"] = "d" * 64
+            changed["transaction"]["operation_sha256"] = "d" * 64
+        elif mutation == "request_kind":
+            wrong = _r179_history_request(
+                fixture, initial, "supervision", "RESERVE_WAIT",
+                event["request"]["payload"]["event_key"])
+            event["request"] = wrong
+        elif mutation == "result_hash":
+            event["resulting_record_hash"] = "e" * 64
+            event["transaction"]["event_record_hash"] = "e" * 64
+            changed["transaction"]["event_record_hash"] = "e" * 64
+        elif mutation == "cas_prestate":
+            event["request"]["payload"]["expected_record_hash"] = "f" * 64
+            operation = _r179_hash({
+                "schema_version": "visual.local-history-operation.v1",
+                "request": _r179_projection(event["request"])})
+            for decision in (event["decision"], changed["decision"]):
+                decision["operation_sha256"] = operation
+            for transaction in (event["transaction"], changed["transaction"]):
+                transaction["operation_sha256"] = operation
+        elif mutation == "transaction_event":
+            event["transaction"]["event_key"] = "r179-foreign-transaction-event"
+            changed["transaction"]["event_key"] = "r179-foreign-transaction-event"
+        else:
+            changed["payload"]["initial_capture_claimed"] = False
+            result = _r179_state_hash(changed)
+            event["resulting_record_hash"] = result
+            event["transaction"]["event_record_hash"] = result
+            changed["transaction"]["event_record_hash"] = result
+        _r179_evidence(tmp_path, seed, changed, "I1:" + mutation)
+&gt;       with pytest.raises(ValueError, match="history|request|operation|event|state|CAS|claim|bootstrap|supervision|result"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3157: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[result_hash]" time="0.261"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e04876fd520&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_history_binding_reje3')
+mutation = 'result_hash'
+
+    @pytest.mark.parametrize("mutation", [
+        "request_event", "operation", "request_kind", "result_hash",
+        "cas_prestate", "transaction_event", "final_state",
+    ])
+    def test_r179_history_binding_rejects(monkeypatch, tmp_path, mutation):
+        fixture = _r179_fixture(monkeypatch)
+        initial, seed, _ = _r179_reserved(fixture)
+        _r179_accepted(initial)
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        event = changed["payload"]["history"][0]
+        if mutation == "request_event":
+            event["request"]["payload"]["event_key"] = "r179-unbound-request-event"
+        elif mutation == "operation":
+            event["decision"]["operation_sha256"] = "d" * 64
+            event["transaction"]["operation_sha256"] = "d" * 64
+            changed["decision"]["operation_sha256"] = "d" * 64
+            changed["transaction"]["operation_sha256"] = "d" * 64
+        elif mutation == "request_kind":
+            wrong = _r179_history_request(
+                fixture, initial, "supervision", "RESERVE_WAIT",
+                event["request"]["payload"]["event_key"])
+            event["request"] = wrong
+        elif mutation == "result_hash":
+            event["resulting_record_hash"] = "e" * 64
+            event["transaction"]["event_record_hash"] = "e" * 64
+            changed["transaction"]["event_record_hash"] = "e" * 64
+        elif mutation == "cas_prestate":
+            event["request"]["payload"]["expected_record_hash"] = "f" * 64
+            operation = _r179_hash({
+                "schema_version": "visual.local-history-operation.v1",
+                "request": _r179_projection(event["request"])})
+            for decision in (event["decision"], changed["decision"]):
+                decision["operation_sha256"] = operation
+            for transaction in (event["transaction"], changed["transaction"]):
+                transaction["operation_sha256"] = operation
+        elif mutation == "transaction_event":
+            event["transaction"]["event_key"] = "r179-foreign-transaction-event"
+            changed["transaction"]["event_key"] = "r179-foreign-transaction-event"
+        else:
+            changed["payload"]["initial_capture_claimed"] = False
+            result = _r179_state_hash(changed)
+            event["resulting_record_hash"] = result
+            event["transaction"]["event_record_hash"] = result
+            changed["transaction"]["event_record_hash"] = result
+        _r179_evidence(tmp_path, seed, changed, "I1:" + mutation)
+&gt;       with pytest.raises(ValueError, match="history|request|operation|event|state|CAS|claim|bootstrap|supervision|result"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3157: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[cas_prestate]" time="0.275"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0487649b20&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_history_binding_reje4')
+mutation = 'cas_prestate'
+
+    @pytest.mark.parametrize("mutation", [
+        "request_event", "operation", "request_kind", "result_hash",
+        "cas_prestate", "transaction_event", "final_state",
+    ])
+    def test_r179_history_binding_rejects(monkeypatch, tmp_path, mutation):
+        fixture = _r179_fixture(monkeypatch)
+        initial, seed, _ = _r179_reserved(fixture)
+        _r179_accepted(initial)
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        event = changed["payload"]["history"][0]
+        if mutation == "request_event":
+            event["request"]["payload"]["event_key"] = "r179-unbound-request-event"
+        elif mutation == "operation":
+            event["decision"]["operation_sha256"] = "d" * 64
+            event["transaction"]["operation_sha256"] = "d" * 64
+            changed["decision"]["operation_sha256"] = "d" * 64
+            changed["transaction"]["operation_sha256"] = "d" * 64
+        elif mutation == "request_kind":
+            wrong = _r179_history_request(
+                fixture, initial, "supervision", "RESERVE_WAIT",
+                event["request"]["payload"]["event_key"])
+            event["request"] = wrong
+        elif mutation == "result_hash":
+            event["resulting_record_hash"] = "e" * 64
+            event["transaction"]["event_record_hash"] = "e" * 64
+            changed["transaction"]["event_record_hash"] = "e" * 64
+        elif mutation == "cas_prestate":
+            event["request"]["payload"]["expected_record_hash"] = "f" * 64
+            operation = _r179_hash({
+                "schema_version": "visual.local-history-operation.v1",
+                "request": _r179_projection(event["request"])})
+            for decision in (event["decision"], changed["decision"]):
+                decision["operation_sha256"] = operation
+            for transaction in (event["transaction"], changed["transaction"]):
+                transaction["operation_sha256"] = operation
+        elif mutation == "transaction_event":
+            event["transaction"]["event_key"] = "r179-foreign-transaction-event"
+            changed["transaction"]["event_key"] = "r179-foreign-transaction-event"
+        else:
+            changed["payload"]["initial_capture_claimed"] = False
+            result = _r179_state_hash(changed)
+            event["resulting_record_hash"] = result
+            event["transaction"]["event_record_hash"] = result
+            changed["transaction"]["event_record_hash"] = result
+        _r179_evidence(tmp_path, seed, changed, "I1:" + mutation)
+&gt;       with pytest.raises(ValueError, match="history|request|operation|event|state|CAS|claim|bootstrap|supervision|result"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3157: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[transaction_event]" time="0.315"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0487de5b20&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_history_binding_reje5')
+mutation = 'transaction_event'
+
+    @pytest.mark.parametrize("mutation", [
+        "request_event", "operation", "request_kind", "result_hash",
+        "cas_prestate", "transaction_event", "final_state",
+    ])
+    def test_r179_history_binding_rejects(monkeypatch, tmp_path, mutation):
+        fixture = _r179_fixture(monkeypatch)
+        initial, seed, _ = _r179_reserved(fixture)
+        _r179_accepted(initial)
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        event = changed["payload"]["history"][0]
+        if mutation == "request_event":
+            event["request"]["payload"]["event_key"] = "r179-unbound-request-event"
+        elif mutation == "operation":
+            event["decision"]["operation_sha256"] = "d" * 64
+            event["transaction"]["operation_sha256"] = "d" * 64
+            changed["decision"]["operation_sha256"] = "d" * 64
+            changed["transaction"]["operation_sha256"] = "d" * 64
+        elif mutation == "request_kind":
+            wrong = _r179_history_request(
+                fixture, initial, "supervision", "RESERVE_WAIT",
+                event["request"]["payload"]["event_key"])
+            event["request"] = wrong
+        elif mutation == "result_hash":
+            event["resulting_record_hash"] = "e" * 64
+            event["transaction"]["event_record_hash"] = "e" * 64
+            changed["transaction"]["event_record_hash"] = "e" * 64
+        elif mutation == "cas_prestate":
+            event["request"]["payload"]["expected_record_hash"] = "f" * 64
+            operation = _r179_hash({
+                "schema_version": "visual.local-history-operation.v1",
+                "request": _r179_projection(event["request"])})
+            for decision in (event["decision"], changed["decision"]):
+                decision["operation_sha256"] = operation
+            for transaction in (event["transaction"], changed["transaction"]):
+                transaction["operation_sha256"] = operation
+        elif mutation == "transaction_event":
+            event["transaction"]["event_key"] = "r179-foreign-transaction-event"
+            changed["transaction"]["event_key"] = "r179-foreign-transaction-event"
+        else:
+            changed["payload"]["initial_capture_claimed"] = False
+            result = _r179_state_hash(changed)
+            event["resulting_record_hash"] = result
+            event["transaction"]["event_record_hash"] = result
+            changed["transaction"]["event_record_hash"] = result
+        _r179_evidence(tmp_path, seed, changed, "I1:" + mutation)
+&gt;       with pytest.raises(ValueError, match="history|request|operation|event|state|CAS|claim|bootstrap|supervision|result"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3157: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[final_state]" time="0.279"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0487758c20&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_history_binding_reje6')
+mutation = 'final_state'
+
+    @pytest.mark.parametrize("mutation", [
+        "request_event", "operation", "request_kind", "result_hash",
+        "cas_prestate", "transaction_event", "final_state",
+    ])
+    def test_r179_history_binding_rejects(monkeypatch, tmp_path, mutation):
+        fixture = _r179_fixture(monkeypatch)
+        initial, seed, _ = _r179_reserved(fixture)
+        _r179_accepted(initial)
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        event = changed["payload"]["history"][0]
+        if mutation == "request_event":
+            event["request"]["payload"]["event_key"] = "r179-unbound-request-event"
+        elif mutation == "operation":
+            event["decision"]["operation_sha256"] = "d" * 64
+            event["transaction"]["operation_sha256"] = "d" * 64
+            changed["decision"]["operation_sha256"] = "d" * 64
+            changed["transaction"]["operation_sha256"] = "d" * 64
+        elif mutation == "request_kind":
+            wrong = _r179_history_request(
+                fixture, initial, "supervision", "RESERVE_WAIT",
+                event["request"]["payload"]["event_key"])
+            event["request"] = wrong
+        elif mutation == "result_hash":
+            event["resulting_record_hash"] = "e" * 64
+            event["transaction"]["event_record_hash"] = "e" * 64
+            changed["transaction"]["event_record_hash"] = "e" * 64
+        elif mutation == "cas_prestate":
+            event["request"]["payload"]["expected_record_hash"] = "f" * 64
+            operation = _r179_hash({
+                "schema_version": "visual.local-history-operation.v1",
+                "request": _r179_projection(event["request"])})
+            for decision in (event["decision"], changed["decision"]):
+                decision["operation_sha256"] = operation
+            for transaction in (event["transaction"], changed["transaction"]):
+                transaction["operation_sha256"] = operation
+        elif mutation == "transaction_event":
+            event["transaction"]["event_key"] = "r179-foreign-transaction-event"
+            changed["transaction"]["event_key"] = "r179-foreign-transaction-event"
+        else:
+            changed["payload"]["initial_capture_claimed"] = False
+            result = _r179_state_hash(changed)
+            event["resulting_record_hash"] = result
+            event["transaction"]["event_record_hash"] = result
+            changed["transaction"]["event_record_hash"] = result
+        _r179_evidence(tmp_path, seed, changed, "I1:" + mutation)
+&gt;       with pytest.raises(ValueError, match="history|request|operation|event|state|CAS|claim|bootstrap|supervision|result"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3157: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_publication_hash_rejects[without_utc]" time="0.280"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e048757f6b0&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_publication_hash_rej0')
+utc_mode = 'without_utc'
+
+    @pytest.mark.parametrize("utc_mode", ["without_utc", "with_utc", "partial_utc"])
+    def test_r179_publication_hash_rejects(monkeypatch, tmp_path, utc_mode):
+        fixture = _r179_fixture(monkeypatch)
+        seed = copy.deepcopy(fixture["publication"])
+        raw = fixture["legacy"]["data"]["publication"].to_payload()
+        if utc_mode != "without_utc":
+            seed["diagnostics"]["utc"]["published_at"] = raw["published_at"]
+        if utc_mode == "with_utc":
+            seed["diagnostics"]["utc"]["effective_deadline_at"] = raw["effective_deadline_at"]
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        changed["payload"]["operation_hash"] = "d" * 64
+        assert _r179_publication_hash(changed) != seed["payload"]["publication_hash"]
+        _r179_evidence(tmp_path, seed, changed, "I2:" + utc_mode)
+&gt;       with pytest.raises(ValueError, match="publication|content|hash"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3175: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_route_labels_recomputed[semantic_hash]" time="0.516"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e048764ae10&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_route_labels_recompu0')
+label = 'semantic_hash'
+
+    @pytest.mark.parametrize("label", ["semantic_hash", "source_key"])
+    def test_r179_route_labels_recomputed(monkeypatch, tmp_path, label):
+        seed = _r179_fixture(monkeypatch)["route"]
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        changed["payload"][label] = "d" * 64
+        assert changed["payload"][label] != seed["payload"][label]
+        _r179_evidence(tmp_path, seed, changed, "I3:" + label)
+&gt;       with pytest.raises(ValueError, match="semantic|source|hash|label"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3187: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_route_labels_recomputed[source_key]" time="0.527"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e04876be3c0&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_route_labels_recompu1')
+label = 'source_key'
+
+    @pytest.mark.parametrize("label", ["semantic_hash", "source_key"])
+    def test_r179_route_labels_recomputed(monkeypatch, tmp_path, label):
+        seed = _r179_fixture(monkeypatch)["route"]
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        changed["payload"][label] = "d" * 64
+        assert changed["payload"][label] != seed["payload"][label]
+        _r179_evidence(tmp_path, seed, changed, "I3:" + label)
+&gt;       with pytest.raises(ValueError, match="semantic|source|hash|label"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3187: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_nested_original_rejects[publication_verification]" time="0.269"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e04877574d0&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_nested_original_reje0')
+location = 'publication_verification'
+
+    @pytest.mark.parametrize("location", [
+        "publication_verification", "publication_retry", "route_before", "route_after",
+    ])
+    def test_r179_nested_original_rejects(monkeypatch, tmp_path, location):
+        fixture = _r179_fixture(monkeypatch)
+        seed = fixture["publication"] if location.startswith("publication") else fixture["route"]
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        key = {"publication_verification": "verification_budget", "publication_retry": "retry_budget",
+               "route_before": "before_verification_budget", "route_after": "after_verification_budget"}[location]
+        nested = changed["payload"][key]
+        alternate = copy.deepcopy(nested["original_time"])
+        alternate["verification_reference"]["window_id"] += "-same-task-other-original"
+        nested["original_time"] = alternate
+        nested["decision"]["original_time_hash"] = _r179_hash(alternate)
+        if key != "retry_budget":
+            nested["payload"]["state"]["original_budget_reference"] = copy.deepcopy(
+                alternate["verification_reference"])
+            body = nested["payload"]
+            body["content_hash"] = _r179_hash({
+                "schema_version": nested["schema_version"], "task_id": body["task_id"],
+                "state": body["state"], "revision": body["revision"]})
+        _r179_accepted(nested)
+        if location.startswith("publication"):
+            changed["payload"]["publication_hash"] = _r179_publication_hash(changed)
+        _r179_evidence(tmp_path, seed, changed, "I4:" + location)
+&gt;       with pytest.raises(ValueError, match="original|reference|causal|budget"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3217: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_nested_original_rejects[publication_retry]" time="0.282"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0487617680&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_nested_original_reje1')
+location = 'publication_retry'
+
+    @pytest.mark.parametrize("location", [
+        "publication_verification", "publication_retry", "route_before", "route_after",
+    ])
+    def test_r179_nested_original_rejects(monkeypatch, tmp_path, location):
+        fixture = _r179_fixture(monkeypatch)
+        seed = fixture["publication"] if location.startswith("publication") else fixture["route"]
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        key = {"publication_verification": "verification_budget", "publication_retry": "retry_budget",
+               "route_before": "before_verification_budget", "route_after": "after_verification_budget"}[location]
+        nested = changed["payload"][key]
+        alternate = copy.deepcopy(nested["original_time"])
+        alternate["verification_reference"]["window_id"] += "-same-task-other-original"
+        nested["original_time"] = alternate
+        nested["decision"]["original_time_hash"] = _r179_hash(alternate)
+        if key != "retry_budget":
+            nested["payload"]["state"]["original_budget_reference"] = copy.deepcopy(
+                alternate["verification_reference"])
+            body = nested["payload"]
+            body["content_hash"] = _r179_hash({
+                "schema_version": nested["schema_version"], "task_id": body["task_id"],
+                "state": body["state"], "revision": body["revision"]})
+        _r179_accepted(nested)
+        if location.startswith("publication"):
+            changed["payload"]["publication_hash"] = _r179_publication_hash(changed)
+        _r179_evidence(tmp_path, seed, changed, "I4:" + location)
+&gt;       with pytest.raises(ValueError, match="original|reference|causal|budget"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3217: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_nested_original_rejects[route_before]" time="0.955"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0487669b80&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_nested_original_reje2')
+location = 'route_before'
+
+    @pytest.mark.parametrize("location", [
+        "publication_verification", "publication_retry", "route_before", "route_after",
+    ])
+    def test_r179_nested_original_rejects(monkeypatch, tmp_path, location):
+        fixture = _r179_fixture(monkeypatch)
+        seed = fixture["publication"] if location.startswith("publication") else fixture["route"]
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        key = {"publication_verification": "verification_budget", "publication_retry": "retry_budget",
+               "route_before": "before_verification_budget", "route_after": "after_verification_budget"}[location]
+        nested = changed["payload"][key]
+        alternate = copy.deepcopy(nested["original_time"])
+        alternate["verification_reference"]["window_id"] += "-same-task-other-original"
+        nested["original_time"] = alternate
+        nested["decision"]["original_time_hash"] = _r179_hash(alternate)
+        if key != "retry_budget":
+            nested["payload"]["state"]["original_budget_reference"] = copy.deepcopy(
+                alternate["verification_reference"])
+            body = nested["payload"]
+            body["content_hash"] = _r179_hash({
+                "schema_version": nested["schema_version"], "task_id": body["task_id"],
+                "state": body["state"], "revision": body["revision"]})
+        _r179_accepted(nested)
+        if location.startswith("publication"):
+            changed["payload"]["publication_hash"] = _r179_publication_hash(changed)
+        _r179_evidence(tmp_path, seed, changed, "I4:" + location)
+&gt;       with pytest.raises(ValueError, match="original|reference|causal|budget"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3217: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_nested_original_rejects[route_after]" time="0.562"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0487669d90&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_nested_original_reje3')
+location = 'route_after'
+
+    @pytest.mark.parametrize("location", [
+        "publication_verification", "publication_retry", "route_before", "route_after",
+    ])
+    def test_r179_nested_original_rejects(monkeypatch, tmp_path, location):
+        fixture = _r179_fixture(monkeypatch)
+        seed = fixture["publication"] if location.startswith("publication") else fixture["route"]
+        _r179_accepted(seed)
+        changed = copy.deepcopy(seed)
+        key = {"publication_verification": "verification_budget", "publication_retry": "retry_budget",
+               "route_before": "before_verification_budget", "route_after": "after_verification_budget"}[location]
+        nested = changed["payload"][key]
+        alternate = copy.deepcopy(nested["original_time"])
+        alternate["verification_reference"]["window_id"] += "-same-task-other-original"
+        nested["original_time"] = alternate
+        nested["decision"]["original_time_hash"] = _r179_hash(alternate)
+        if key != "retry_budget":
+            nested["payload"]["state"]["original_budget_reference"] = copy.deepcopy(
+                alternate["verification_reference"])
+            body = nested["payload"]
+            body["content_hash"] = _r179_hash({
+                "schema_version": nested["schema_version"], "task_id": body["task_id"],
+                "state": body["state"], "revision": body["revision"]})
+        _r179_accepted(nested)
+        if location.startswith("publication"):
+            changed["payload"]["publication_hash"] = _r179_publication_hash(changed)
+        _r179_evidence(tmp_path, seed, changed, "I4:" + location)
+&gt;       with pytest.raises(ValueError, match="original|reference|causal|budget"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3217: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_valid_causal_lower_bound[app_hard]" time="0.234"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0486f0f3e0&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_valid_causal_lower_b0')
+case = 'app_hard'
+
+    @pytest.mark.parametrize("case", ["app_hard", "app_age", "lease_acquisition", "lease_segment"])
+    def test_r179_valid_causal_lower_bound(monkeypatch, tmp_path, case):
+        from cloud_edge_robot_arm.vision.local_temporal import LocalAuthorityDecision
+    
+        fixture = _r179_fixture(monkeypatch)
+        seed = _r179_causal_seed(fixture, case)
+        assert LocalAuthorityDecision.from_payload(seed).to_payload() == seed
+        changed = copy.deepcopy(seed)
+        bracket = changed["app_current"] if case.startswith("app") else changed["lease_observation"]["current"]
+        bracket.update(lower_ns=99, upper_ns=99)
+        _r179_evidence(tmp_path, seed, changed, "I5:" + case)
+&gt;       with pytest.raises(ValueError, match="causal|origin|lower|source|acquisition|segment"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3274: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_valid_causal_lower_bound[app_age]" time="0.242"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e04876b7110&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_valid_causal_lower_b1')
+case = 'app_age'
+
+    @pytest.mark.parametrize("case", ["app_hard", "app_age", "lease_acquisition", "lease_segment"])
+    def test_r179_valid_causal_lower_bound(monkeypatch, tmp_path, case):
+        from cloud_edge_robot_arm.vision.local_temporal import LocalAuthorityDecision
+    
+        fixture = _r179_fixture(monkeypatch)
+        seed = _r179_causal_seed(fixture, case)
+        assert LocalAuthorityDecision.from_payload(seed).to_payload() == seed
+        changed = copy.deepcopy(seed)
+        bracket = changed["app_current"] if case.startswith("app") else changed["lease_observation"]["current"]
+        bracket.update(lower_ns=99, upper_ns=99)
+        _r179_evidence(tmp_path, seed, changed, "I5:" + case)
+&gt;       with pytest.raises(ValueError, match="causal|origin|lower|source|acquisition|segment"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3274: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_valid_causal_lower_bound[lease_acquisition]" time="0.232"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0486e67e30&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_valid_causal_lower_b2')
+case = 'lease_acquisition'
+
+    @pytest.mark.parametrize("case", ["app_hard", "app_age", "lease_acquisition", "lease_segment"])
+    def test_r179_valid_causal_lower_bound(monkeypatch, tmp_path, case):
+        from cloud_edge_robot_arm.vision.local_temporal import LocalAuthorityDecision
+    
+        fixture = _r179_fixture(monkeypatch)
+        seed = _r179_causal_seed(fixture, case)
+        assert LocalAuthorityDecision.from_payload(seed).to_payload() == seed
+        changed = copy.deepcopy(seed)
+        bracket = changed["app_current"] if case.startswith("app") else changed["lease_observation"]["current"]
+        bracket.update(lower_ns=99, upper_ns=99)
+        _r179_evidence(tmp_path, seed, changed, "I5:" + case)
+&gt;       with pytest.raises(ValueError, match="causal|origin|lower|source|acquisition|segment"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3274: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_valid_causal_lower_bound[lease_segment]" time="0.241"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e048764ba70&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_valid_causal_lower_b3')
+case = 'lease_segment'
+
+    @pytest.mark.parametrize("case", ["app_hard", "app_age", "lease_acquisition", "lease_segment"])
+    def test_r179_valid_causal_lower_bound(monkeypatch, tmp_path, case):
+        from cloud_edge_robot_arm.vision.local_temporal import LocalAuthorityDecision
+    
+        fixture = _r179_fixture(monkeypatch)
+        seed = _r179_causal_seed(fixture, case)
+        assert LocalAuthorityDecision.from_payload(seed).to_payload() == seed
+        changed = copy.deepcopy(seed)
+        bracket = changed["app_current"] if case.startswith("app") else changed["lease_observation"]["current"]
+        bracket.update(lower_ns=99, upper_ns=99)
+        _r179_evidence(tmp_path, seed, changed, "I5:" + case)
+&gt;       with pytest.raises(ValueError, match="causal|origin|lower|source|acquisition|segment"):
+E       Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3274: Failed</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_scope_null_rejected" time="0.237"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0487814110&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-red/test_r179_scope_null_rejected0')
+
+    def test_r179_scope_null_rejected(monkeypatch, tmp_path):
+        fixture = _r179_fixture(monkeypatch)
+        seeds = fixture["cases"]
+        for tag, seed in seeds.items():
+            if "scope" not in _b_fields()[tag]:
+                continue
+            _r179_accepted(seed)
+            changed = copy.deepcopy(seed)
+            changed["payload"]["scope"] = None
+&gt;           with pytest.raises(ValueError, match="scope"):
+E           Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_operational_runtime_closure.py:3287: Failed</failure></testcase></testsuite></testsuites>

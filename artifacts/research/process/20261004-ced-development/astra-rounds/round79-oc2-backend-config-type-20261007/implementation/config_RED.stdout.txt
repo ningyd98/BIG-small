@@ -1,0 +1,42 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+_____ test_recorder_rejects_missing_or_changed_backend_config_cpu[missing] _____
+
+tmp_path = PosixPath('/tmp/bigsmall-oc2-round79-config-red/test_recorder_rejects_missing_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7de8b676cd10>
+config_state = 'missing'
+
+    @pytest.mark.parametrize("config_state", ["missing", "changed"])
+    def test_recorder_rejects_missing_or_changed_backend_config_cpu(
+        tmp_path, monkeypatch, config_state
+    ):
+        require_task2()
+        app = application(tmp_path)
+        backend, calls = cpu_components(monkeypatch, app)
+        original_initialize = backend.initialize
+    
+        def initialize(config):
+            original_initialize(config)
+            backend._config = (
+                None if config_state == "missing" else config.model_copy(update={"seed": 1})
+            )
+    
+        monkeypatch.setattr(backend, "initialize", initialize)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is False
+>       assert receipt["primary_error"] == {
+            "error_type": "ValueError",
+            "error": "original backend simulator configuration changed",
+        }
+E       assert {'error': "'N...tributeError'} == {'error': 'or... 'ValueError'}
+E         
+E         Differing items:
+E         {'error': "'NoneType' object has no attribute 'model_dump'"} != {'error': 'original backend simulator configuration changed'}
+E         {'error_type': 'AttributeError'} != {'error_type': 'ValueError'}
+E         Use -v to get more diff
+
+tests/test_operational_capture_v1.py:470: AssertionError
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round79-oc2-backend-config-type-20261007/implementation/config_RED.junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_operational_capture_v1.py::test_recorder_rejects_missing_or_changed_backend_config_cpu[missing]
+1 failed, 1 passed in 13.42s

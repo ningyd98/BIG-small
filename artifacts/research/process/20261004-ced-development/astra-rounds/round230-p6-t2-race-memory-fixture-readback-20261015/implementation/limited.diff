@@ -1,0 +1,35 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_local_public_writer_binding_race.py (before R230)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_local_public_writer_binding_race.py (after R230)
+@@ -67,6 +67,23 @@
+     lock = events._lock if type(events) is InMemoryEventAutonomyRepository else events._write_lock
+     with lock:
+         return local_get_unlocked(events, 'binding', task)
++
++
++def _r223_operation_rows(events, reads, operation_id):
++    from cloud_edge_robot_arm.repositories.event_autonomy import (
++        InMemoryEventAutonomyRepository, SQLiteEventAutonomyRepository,
++    )
++    from cloud_edge_robot_arm.repositories.event_autonomy.protocol import local_receipt_read_unlocked
++
++    if type(events) is SQLiteEventAutonomyRepository:
++        return _frozen._b_t2_operation_rows(reads, operation_id)
++    if type(events) is not InMemoryEventAutonomyRepository:
++        raise TypeError('R223 requires an exact Memory or SQLite event repository')
++    with events._lock:
++        receipt = local_receipt_read_unlocked(events, operation_id)
++    job_rows = [dict(row) for row in reads['job'].execute(
++        'SELECT * FROM simulation_local_publications_v1 WHERE operation_id=?', (operation_id,))]
++    return {'event': [] if receipt is None else [receipt], 'job': job_rows}
+ 
+ 
+ def _r223_run(monkeypatch, directory, backend, observed, *, mode, second=False):
+@@ -153,7 +170,7 @@
+         task = runtime.bootstrap.definition.episode_id
+         assert task == data['task']
+         raw = runtime.bootstrap.to_payload()
+-        rows = _frozen._b_t2_operation_rows(reads, 'bootstrap-init:' + runtime._bootstrap_id)
++        rows = _r223_operation_rows(events, reads, 'bootstrap-init:' + runtime._bootstrap_id)
+         assert raw['transaction']['phase'] == 'COMPLETE'
+         assert all(any(row['phase'] == 'COMPLETE' for row in group) for group in rows.values())
+         binding = _r223_bound(events, task)

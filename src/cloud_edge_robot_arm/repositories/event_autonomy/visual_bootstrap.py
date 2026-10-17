@@ -12,6 +12,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
+from types import MappingProxyType
 from typing import Any, ClassVar, Literal, cast
 
 from pydantic import BaseModel
@@ -42,6 +43,15 @@ from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
     strict_retry,
 )
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
+from cloud_edge_robot_arm.vision.local_temporal import (
+    JSONValue,
+    LocalDomainEnvelope,
+    LocalVerificationBudgetState,
+    _integer as local_integer,
+    _number as local_number,
+    _object as local_object,
+    _text as local_text,
+)
 from cloud_edge_robot_arm.vision.owner_registration import (
     OriginalActionRequirements,
     VisualOriginalPlan,
@@ -178,6 +188,7 @@ class VisualBootstrapDefinition:
     model_snapshot_hash: str
     source_hashes: Mapping[str, str]
     registered_at: datetime
+    operational_windows: tuple[Mapping[str, Any], ...] | None = None
     scope: ClassVar[str] = "BOOTSTRAP_SOURCE_ONLY"
 
     def __post_init__(self) -> None:
@@ -218,6 +229,20 @@ class VisualBootstrapDefinition:
         sha(self.role_bundle_hash)
         sha(self.model_snapshot_hash)
         object.__setattr__(self, "source_hashes", _sources(self.source_hashes))
+        if self.operational_windows is not None:
+            from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+
+            detached = _plain(self.operational_windows)
+            _validate_references(detached)
+
+            def freeze(value):
+                if isinstance(value, Mapping):
+                    return MappingProxyType({key: freeze(item) for key, item in value.items()})
+                if isinstance(value, list):
+                    return tuple(freeze(item) for item in value)
+                return value
+
+            object.__setattr__(self, "operational_windows", freeze(detached))
         _plain(self.to_payload())
 
     @property
@@ -236,7 +261,7 @@ class VisualBootstrapDefinition:
         return digest(["visual.bootstrap.job-run.v1", self.lease.job_id, self.lease.run_id])
 
     def to_payload(self) -> dict[str, Any]:
-        return cast(
+        body = cast(
             dict[str, Any],
             _plain(
                 dict(
@@ -255,24 +280,35 @@ class VisualBootstrapDefinition:
                 )
             ),
         )
+        if self.operational_windows is not None:
+            body["operational_windows"] = _plain(self.operational_windows)
+        return body
 
     def digest(self) -> str:
         return digest(self.to_payload())
 
     @classmethod
     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapDefinition:
-        body = dict(_plain(raw))
+        if raw.get("schema_version") == "visual.bootstrap.definition.local.v1":
+            return LocalVisualBootstrapDefinition.from_payload(raw)
+        normalized = _plain(raw)
+        body = dict(normalized)
         if (
             body.pop("schema_version", None) != "visual.bootstrap.definition.v1"
             or body.pop("scope", None) != cls.scope
         ):
             raise ValueError("fixed bootstrap definition schema/scope required")
+        if "operational_windows" in body:
+            from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+
+            _validate_references(body["operational_windows"])
+            body["operational_windows"] = tuple(body["operational_windows"])
         body["lease"] = _lease(body["lease"])
         body["verification_limits"] = VerificationBudget(**body["verification_limits"])
         for name in ("task_started_at", "registered_at"):
             body[name] = aware(datetime.fromisoformat(body[name]))
         result = cls(**body)
-        if canonical(result.to_payload()) != canonical(raw):
+        if canonical(result.to_payload()) != canonical(normalized):
             raise ValueError("bootstrap definition changed during decoding")
         return result
 
@@ -334,6 +370,8 @@ class VisualBootstrapRecord(_FrozenJSON):
 
     @classmethod
     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapRecord:
+        if raw.get("schema_version") == "visual.bootstrap.record.local.v1":
+            return LocalVisualBootstrapRecord.from_payload(raw)
         raw = cast(dict[str, Any], _plain(raw))
         if (
             raw.get("schema_version") != "visual.bootstrap.record.v1"
@@ -429,6 +467,7 @@ class VisualBootstrapTransitionInput(_FrozenJSON):
         claim_id: str | None = None,
         observation: RGBDObservation | None = None,
         draft: PlannerDraft | None = None,
+        operational_windows: list[dict[str, Any]] | None = None,
     ) -> None:
         if (
             type(record) is not VisualBootstrapRecord
@@ -450,13 +489,21 @@ class VisualBootstrapTransitionInput(_FrozenJSON):
             observation=_model(observation, RGBDObservation) if observation is not None else None,
             draft=_model(draft, PlannerDraft) if draft is not None else None,
         )
+        if operational_windows is not None:
+            body["operational_windows"] = operational_windows
         checked = self.from_payload(body)
         object.__setattr__(self, "_json", checked.to_json())
 
     @classmethod
     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapTransitionInput:
+        if raw.get("schema_version") == "visual.bootstrap.transition.local.v1":
+            return LocalVisualBootstrapTransitionInput.from_payload(raw)
         raw = cast(dict[str, Any], _plain(raw))
-        if set(raw) != {
+        if "operational_windows" in raw:
+            from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+
+            _validate_references(raw["operational_windows"])
+        if set(raw) - {"operational_windows"} != {
             "schema_version",
             "scope",
             "bootstrap_id",
@@ -752,7 +799,96 @@ def derive_bootstrap(
             if canonical(event["request"]) != request.to_json():
                 raise ValueError("bootstrap event key changed original source")
             return VisualBootstrapTransitionResult(record, "HISTORICAL_DUPLICATE")
+    from cloud_edge_robot_arm.vision.operational_windows import _consume_transition
+
+    _consume_transition(
+        request.to_payload(), required=record.definition.operational_windows is not None
+    )
     return VisualBootstrapTransitionResult(_derive(record, request, now=now), "NEW_COMMIT")
+
+
+def derive_local_bootstrap(record, request, decision, transaction):
+    """Pure exact replay; the actual private coordinator supplies both verdicts."""
+    from cloud_edge_robot_arm.vision.local_temporal import (
+        LocalEnvelope, _copy, _hash, _history_state_hash, _initial_history_state,
+        _replay_bootstrap, semantic_projection,
+    )
+
+    raw = LocalEnvelope.from_payload(record.to_payload()).to_payload()
+    source = LocalEnvelope.from_payload(request.to_payload()).to_payload()
+    body, original = raw["payload"], raw["original_time"]
+    if source["original_time"] != original:
+        raise ValueError("bootstrap original source changed")
+    target = source["payload"]
+    if (target["definition_hash"] != _hash(body["definition"])
+            or target["expected_record_hash"] != _history_state_hash(raw["schema_version"], body, original)):
+        raise ValueError("bootstrap source/CAS changed")
+    operation = _hash({"schema_version": "visual.local-history-operation.v1",
+                       "request": semantic_projection(source)})
+    if decision["operation_sha256"] != operation or transaction["operation_sha256"] != operation:
+        raise ValueError("bootstrap decision operation source differs")
+    state = _initial_history_state(body["definition"], original, bootstrap=True)
+    phases = {}
+    for event in body["history"]:
+        _replay_bootstrap(state, event["request"], original, event["decision"], phases)
+        state["revision"] += 1
+        state["history"].append(_copy(event))
+    _replay_bootstrap(state, source, original, decision, phases)
+    state["revision"] += 1
+    result_hash = _history_state_hash(raw["schema_version"], state, original)
+    transaction["event_record_hash"] = result_hash
+    state["history"].append({"request": source, "decision": _copy(decision),
+                             "transaction": _copy(transaction), "resulting_record_hash": result_hash})
+    result = {**raw, "payload": state, "decision": decision, "transaction": transaction,
+              "diagnostics": {"utc": {}, "monotonic": None}}
+    return VisualBootstrapRecord.from_payload(result)
+
+
+def compile_local_bootstrap_original(record, *, plan_id, robot_id):
+    """Compile actual saved planner bytes; original D and UTC model bytes survive."""
+    from cloud_edge_robot_arm.vision.local_temporal import _hash, _copy, _proposal_projection
+    from cloud_edge_robot_arm.vision.owner_registration import LocalVisualOriginalPlan
+    from cloud_edge_robot_arm.vision.worker_owner import _local_worker_policy
+
+    record = VisualBootstrapRecord.from_payload(record.to_payload())
+    if type(record) is not LocalVisualBootstrapRecord or record.local_time.to_payload()["contract_provenance"]["kind"] != "LOCAL_BOOTSTRAP_SOURCE_V1":
+        raise ValueError("exact staged local bootstrap required")
+    if record.pending_claim_id is not None or record.terminal_reason is not None or not record.planning_source_usable:
+        raise ValueError("complete nonterminal planning source required")
+    pre = record.to_payload(); body = pre["payload"]; definition = body["definition"]["payload"]
+    if _proposal_projection(body["draft"], definition) is None:
+        raise ValueError("saved full planner proposal unusable")
+    payload = _copy(body["draft"]["parsed_json"])
+    payload.update(task_id=definition["episode_id"], plan_version=1, command_seq=1)
+    aliases = {"visual_target": "object", "visual_destination": "target_region"}
+    for key in ("object_id", "target_region_id"):
+        value = payload["task_target"].get(key)
+        if isinstance(value, str) and value in aliases:
+            payload["task_target"][key] = aliases[value]
+    for step in payload["steps"]:
+        for key in ("object_id", "region_id"):
+            value = step.get("parameters", {}).get(key)
+            if isinstance(value, str) and value in aliases:
+                step["parameters"][key] = aliases[value]
+    contract = TaskContract.model_validate(payload)
+    requirements, graph = _local_worker_policy(contract, record.observation, definition["source_hashes"])
+    lease = pre["original_time"]["lease_identity"]
+    identity = {key: lease[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")}
+    identity.update(owner_epoch=lease["epoch"], episode_id=definition["episode_id"],
+                    task_id=contract.task_id, plan_id=plan_id, robot_id=robot_id)
+    original = {
+        "binding_scope": "SOURCE_BINDING_ONLY", "identity": identity,
+        "contract": contract.model_dump(mode="json"),
+        "contract_provenance": {"kind": "LOCAL_BOOTSTRAP_ADOPTED_V1",
+                                "content_sha256": _hash(contract.model_dump(mode="json")), "bootstrap_record": pre},
+        "proposal_hash": body["proposal_hash"], "role_bundle_hash": definition["role_bundle_hash"],
+        "compiler_source_hashes": definition["source_hashes"], "source_hashes": definition["source_hashes"],
+        "requirements": {key: value.to_payload() for key, value in requirements.items()}, "dependencies": graph,
+    }
+    return LocalVisualOriginalPlan.from_payload({
+        "schema_version": "visual.owner.original.local.v1", "payload": original,
+        "original_time": pre["original_time"], "decision": None, "transaction": None,
+        "diagnostics": {"utc": {}, "monotonic": None}})
 
 
 def bootstrap_proposal_hash(proposal: Mapping[str, Any]) -> str:
@@ -918,6 +1054,8 @@ class VisualBootstrapPromotionInput(_FrozenJSON):
 
     @classmethod
     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapPromotionInput:
+        if raw.get("schema_version") == "visual.bootstrap.promotion.local.v1":
+            return LocalVisualBootstrapPromotionInput.from_payload(raw)
         raw = cast(dict[str, Any], _plain(raw))
         if (
             set(raw)
@@ -945,6 +1083,135 @@ class VisualBootstrapPromotionInput(_FrozenJSON):
         result = object.__new__(cls)
         object.__setattr__(result, "_json", canonical(raw))
         return result
+
+
+class LocalVisualBootstrapDefinition(LocalDomainEnvelope, VisualBootstrapDefinition):
+    """Detached original instruction and policy; UTC fields grant no authority."""
+
+    _tag = "visual.bootstrap.definition.local.v1"
+
+    @property
+    def lease(self) -> WorkerLeaseObservation:
+        raise ValueError("local original carries a broker identity, not a UTC worker lease")
+
+    @property
+    def episode_id(self) -> str:
+        return self.string("episode_id")
+
+    @property
+    def user_instruction(self) -> str:
+        return self.string("user_instruction")
+
+    @property
+    def task_timeout_s(self) -> float:
+        return self.number("task_timeout_s", positive=True)
+
+    @property
+    def verification_limits(self) -> VerificationBudget:
+        values = self.object("verification_limits")
+        return VerificationBudget(
+            local_integer(values["max_reobservations"]),
+            local_integer(values["max_retries"]),
+            local_integer(values["max_no_progress"]),
+            local_number(values["deadline_s"], positive=True),
+        )
+
+    @property
+    def role_bundle_hash(self) -> str:
+        return self.string("role_bundle_hash")
+
+    @property
+    def model_snapshot_hash(self) -> str:
+        return self.string("model_snapshot_hash")
+
+    @property
+    def source_hashes(self) -> Mapping[str, str]:
+        return self.hashes("source_hashes")
+
+    @property
+    def task_started_at(self) -> datetime:
+        return self.legacy_deadline()
+
+    @property
+    def registered_at(self) -> datetime:
+        return self.legacy_deadline()
+
+    @property
+    def task_deadline_at(self) -> datetime:
+        return self.legacy_deadline()
+
+    @property
+    def verification_deadline_at(self) -> datetime:
+        return self.legacy_deadline()
+
+    @property
+    def operational_windows(self) -> tuple[Mapping[str, JSONValue], ...]:
+        original = self.local_time.to_payload()
+        return tuple(local_object(original[name]) for name in (
+            "task_reference", "verification_reference", "recovery_reference"
+        ))
+
+    @property
+    def bootstrap_id(self) -> str:
+        identity = local_object(self.local_time.to_payload()["lease_identity"])
+        return digest(["visual.bootstrap.job-run.v1", identity["job_id"], identity["run_id"]])
+
+
+class LocalVisualBootstrapRecord(LocalDomainEnvelope, VisualBootstrapRecord):
+    _tag = "visual.bootstrap.record.local.v1"
+
+    @property
+    def definition(self) -> VisualBootstrapDefinition:
+        return VisualBootstrapDefinition.from_payload(self.object("definition"))
+
+    @property
+    def revision(self) -> int:
+        return self.counter("revision")
+
+    @property
+    def local_state(self) -> LocalVerificationBudgetState:
+        return LocalVerificationBudgetState.from_payload(self.object("state"))
+
+    @property
+    def verification_state(self) -> VerificationBudgetState:
+        raise ValueError("local budget state must retain its original local reference")
+
+    @property
+    def task_deadline_at(self) -> datetime:
+        return self.legacy_deadline()
+
+    @property
+    def pending_claim_id(self) -> str | None:
+        pending = self.semantic["pending"]
+        return None if pending is None else local_text(local_object(pending)["claim_id"])
+
+    @property
+    def terminal_reason(self) -> str | None:
+        return self.optional_string("terminal_reason")
+
+    @property
+    def observation(self) -> RGBDObservation | None:
+        return self.optional_model("observation", RGBDObservation)
+
+    @property
+    def draft(self) -> PlannerDraft | None:
+        return self.optional_model("draft", PlannerDraft)
+
+    @property
+    def planning_source_usable(self) -> bool:
+        return self.boolean("planning_source_usable")
+
+    @property
+    def proposal_hash(self) -> str | None:
+        return self.optional_string("proposal_hash")
+
+
+class LocalVisualBootstrapTransitionInput(LocalDomainEnvelope, VisualBootstrapTransitionInput):
+    _tag = "visual.bootstrap.transition.local.v1"
+
+
+class LocalVisualBootstrapPromotionInput(LocalDomainEnvelope, VisualBootstrapPromotionInput):
+    _tag = "visual.bootstrap.promotion.local.v1"
 
 
 def _promote(

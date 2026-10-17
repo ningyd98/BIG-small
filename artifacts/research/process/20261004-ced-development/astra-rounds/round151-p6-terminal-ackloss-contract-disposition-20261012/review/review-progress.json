@@ -1,0 +1,49 @@
+{
+  "status": "STOP_UNPLANNED_METADATA_READER_FAILURE",
+  "batch_used": 18,
+  "batch_total": 24,
+  "batch_remaining": 6,
+  "failure": {
+    "batch": 18,
+    "command": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python - <<'PY'\nfrom pathlib import Path\nimport json,hashlib,xml.etree.ElementTree as ET\nroot=Path('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds')\np=root/'round134-p6-red-interface-connection-recovery-20261011/implementation/recovery3-freeze/source-index.json'; x=json.loads(p.read_bytes()); print('RECOVERY_RECORD_SCHEMA',json.dumps(x['files'][:1],ensure_ascii=False)); print('RECOVERY_CASE_SCHEMA',json.dumps(x['actual_case_regular_files'][:1],ensure_ascii=False)); checks=[]\nfor r in x['files']:\n q=Path(r.get('snapshot') or r.get('path')); b=q.read_bytes(); sha=hashlib.sha256(b).hexdigest(); checks.append({'path':str(q),'bytes':len(b),'sha256':sha,'match':len(b)==r['bytes'] and sha==r['sha256']})\nprint('RECOVERY_ALL_FILE_HASHES',len(checks),all(r['match'] for r in checks)); print('RECOVERY_RAW_CANDIDATES',[(r.get('source'),r.get('path'),r.get('snapshot')) for r in x['files'] if Path(r.get('snapshot') or r.get('path')).name in ('result.json','invocation.json','stdout.txt','stderr.txt','junit.xml','actual-failure-cleanup.json','restart.json')])\nfor r in x['files']:\n q=Path(r.get('snapshot') or r.get('path'))\n if q.name in ('result.json','invocation.json','stdout.txt','stderr.txt','junit.xml','actual-failure-cleanup.json','restart.json'):\n  b=q.read_bytes(); print('RECOVERY_RAW',str(q),len(b),hashlib.sha256(b).hexdigest())\n  if q.name=='junit.xml':\n   e=ET.fromstring(b); print('SUITES',[(s.tag,s.attrib) for s in e.iter() if s.tag in ('testsuites','testsuite')]); print('CASES',[(s.attrib.get('name'),[c.tag for c in s]) for s in e.iter('testcase')])\n  else: print(b.decode())\nx=json.loads((root/'round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/source-index.json').read_bytes()); print('MAIN_REFERENCES',json.dumps(x['references'],ensure_ascii=False)); print('MAIN_PROTECTED_PLAN_CANDIDATES',[(r['path'],r['sha256']) for r in x['protected'] if Path(r['path']).name in ('design.md','plan.md','plan.json')]); print('MAIN_STATIC_FILE_CANDIDATES',[(r.get('source'),r.get('path'),r.get('snapshot')) for r in x['files'] if 'static' in str(r) and Path(r.get('snapshot') or r.get('path') or '').name=='source-index.json'])\nfor r in x['protected']:\n if 'round113-p6-operational-runtime-closure-20261008' in r['path'] and Path(r['path']).name=='design.md':\n  b=Path(r['path']).read_bytes(); assert hashlib.sha256(b).hexdigest()==r['sha256']; lines=b.decode().splitlines(); print('DESIGN_PIN',r)\n  for n in range(66,min(113,len(lines))+1): print(f'{n}: {lines[n-1]}')\nPY",
+    "max_output_tokens": 11500,
+    "returned_tool_result": {
+      "chunk_id": "17b8d1",
+      "wall_time_seconds": 0.00000907,
+      "exit_code": 1,
+      "original_token_count": 158,
+      "output": "RECOVERY_RECORD_SCHEMA [{\"source\": \"/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py\", \"snapshot\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/recovery3-freeze/sources/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py\", \"bytes\": 40335, \"sha256\": \"e3f7d123551e56881db0d2cd02ba71b8fafb566439bbbc0a26b35f5137c74ae8\"}]\nTraceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\nTypeError: 'int' object is not subscriptable\n"
+    },
+    "full_returned_combined": "RECOVERY_RECORD_SCHEMA [{\"source\": \"/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py\", \"snapshot\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/recovery3-freeze/sources/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py\", \"bytes\": 40335, \"sha256\": \"e3f7d123551e56881db0d2cd02ba71b8fafb566439bbbc0a26b35f5137c74ae8\"}]\nTraceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\nTypeError: 'int' object is not subscriptable\n",
+    "stdout_separate_capture": "not available from exec_command",
+    "stderr_separate_capture": "not available from exec_command",
+    "failure_scope": "reader metadata schema only; no product/test execution",
+    "root_cause_observed": "actual_case_regular_files is integer; slicing as list raised TypeError",
+    "post_failure_replacement_commands": 0
+  },
+  "completed_prior_to_failure": [
+    "six frozen source and complete test source read under hash provenance",
+    "four actual run raw/JUnit read: historical old20 19PASS1FAIL, corrected foreign1 PASS, new19 PASS, positive1 PASS",
+    "main 1208 and additional 1249 frozen file byte hashes matched; no DB opened",
+    "positive sidecar and natural publication files independently read; 22 actual frozen hashes equal index, declared metadata and natural consistency hashes",
+    "actual main and maintenance-thread heartbeat producer JSON and worker delay loop; special two-worker shared-backend lifecycle traced",
+    "R145 type-only and R147 foreign-fixture-only independent text diffs read; receipt proofs not substituted for behavior",
+    "R151 full contract disposition read; B1 authority-revival inference not established; Open B9 public confirmation distinction retained"
+  ],
+  "not_completed": [
+    "R134 recovery3 actual raw/JUnit/fixture independently read: batch18 failed before these operations",
+    "final static receipts actual originals independently read: root metadata reviewed, originals pending",
+    "final full review synthesis and final acceptance conclusion"
+  ],
+  "historical_protocol_evidence": {
+    "directory": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/independent-final-review/stopped-reader-protocol/",
+    "sha256": "c5c7d68735a3055efb36dc5fff25910d86fb5aeb8cd135d3437ef7f3ff9af94c",
+    "note": "Original 2 failures and 3 unplanned replacement reads remain preserved; neither erased nor retroactively authorized. Authority SHA is a previously obtained full SHA; exact filename is not asserted from current retained context and no historical file was reread during STOP."
+  },
+  "prohibited_runs": 0,
+  "product_edits": 0,
+  "git_operations": 0,
+  "post_failure_source_reads": 0,
+  "assessment": "INDEPENDENT_FINAL_REVIEW_INCOMPLETE_NO_ACCEPTANCE",
+  "ceiling": "LEASE_FOUNDATION_WITH_LEGACY_UTC_VETO"
+}

@@ -1,0 +1,1 @@
+R147 test_formatter/delta_proof/testRuff各一次actualexit0；最终六源、完整diff/proof/raw/ledger已冻结。foreign_repo补验与原new19各0/1 HELD，STOP等ROOT独立门禁。原GREEN20保持19PASS1FAIL，软件未完成验收，CPU控制不是物理证据。

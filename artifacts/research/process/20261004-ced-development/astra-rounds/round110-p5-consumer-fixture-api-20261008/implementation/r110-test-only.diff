@@ -1,0 +1,54 @@
+--- R110-before/tests/test_operational_windows.py
++++ current/tests/test_operational_windows.py
+@@ -11,7 +11,7 @@
+ import threading
+ from contextlib import contextmanager
+ from contextvars import copy_context
+-from dataclasses import replace
++from dataclasses import fields, replace
+ from datetime import UTC, datetime, timedelta
+ from pathlib import Path
+ from types import MappingProxyType
+@@ -692,14 +692,17 @@
+             assert isinstance(frozen, MappingProxyType)
+             assert isinstance(frozen["domain"], MappingProxyType)
+             assert type(frozen["hard_deadlines"]) is tuple
+-            positive = associate_marker_target(fresh, registration, context)
++            positive = associate_marker_target(fresh, registration, context, now=datetime.now(UTC))
+             assert positive.status == "OBSERVED_CANDIDATE"
+             assert positive.admission_status == "NOT_ADMITTED"
+             changed = module._descriptor_plain(frozen)
+             changed["source_identity"] = "0" * 64
+             assert (
+                 associate_marker_target(
+-                    fresh, registration, replace(context, operational_reference=changed)
++                    fresh,
++                    registration,
++                    replace(context, operational_reference=changed),
++                    now=datetime.now(UTC),
+                 ).status
+                 != "OBSERVED_CANDIDATE"
+             )
+@@ -716,7 +719,8 @@
+         assert module._check_reference(reference).status == "INVALID"
+         if category == "marker":
+             assert (
+-                associate_marker_target(fresh, registration, context).status != "OBSERVED_CANDIDATE"
++                associate_marker_target(fresh, registration, context, now=datetime.now(UTC)).status
++                != "OBSERVED_CANDIDATE"
+             )
+         rebound = {**reference, "job_id": "foreign-job"}
+         assert module._check_reference(rebound).status == "UNKNOWN"
+@@ -768,9 +772,9 @@
+ 
+         # Compare legacy no-new-field output to independently frozen pre-P5 codec.
+         legacy_arguments = {
+-            name: getattr(original.definition, name)
+-            for name in original.definition.__dataclass_fields__
+-            if name != "operational_windows"
++            field.name: getattr(original.definition, field.name)
++            for field in fields(original.definition)
++            if field.init and field.name != "operational_windows"
+         }
+         legacy = VisualBootstrapDefinition(**legacy_arguments)
+         old_bootstrap = legacy_codec("visual_bootstrap")

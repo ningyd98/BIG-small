@@ -1,0 +1,64 @@
+{
+  "schema_version": "bigsmall.r214.original-author-read-failure.v1",
+  "round": "R214",
+  "actual_author": {
+    "agent": "/root/p6_stage_b_sol",
+    "model": "gpt-6.1-sol"
+  },
+  "actual_tool_return": {
+    "chunk_id": "bfa96d",
+    "wall_time_seconds": 0.00000852,
+    "exit_code": 2,
+    "original_token_count": 960,
+    "output": "            return True\n\n    # ── Replan apply and ACK ────────────────────────────────────────────\n\n    def _replan_cancelled_locked(self, task_id: str) -> bool:\n        return self._states.get(task_id) in {\n            \"CANCELLED\",\n            \"ABORTED\",\n            \"STOPPED\",\n            \"SAFETY_STOPPED\",\n            \"COMPLETED\",\n        } or any(\n            self._events[key].severity == \"CRITICAL\"\n            or self._events[key].event_type.value == \"MANUAL_INTERRUPT\"\n            for key in self._events_by_task.get(task_id, [])\n        )\n\n    def _store_apply_locked(self, record: ReplanApplyRecord) -> ReplanApplyRecord:\nclass TaskContract(TraceableMessage):\n    \"\"\"云端下发给边缘的任务契约，封装步骤、安全约束和完成条件。\"\"\"\n\n    control_mode: ControlMode\n    issued_at: datetime\n    valid_until: datetime\n    user_instruction: str = Field(min_length=1)\n    scene_version: int = Field(ge=0)\n    expected_scene_version: int = Field(ge=0)\n    task_target: TaskTarget\n    current_step_id: str | None = None\n    steps: list[TaskStep] = Field(min_length=1)\n    safety_constraints: SafetyConstraints\n    failure_policy: FailurePolicy\n    completion_criteria: list[str] = Field(min_length=1)\n    supervision_period_ms: int | None = Field(default=None, gt=0)\n    command_ttl_ms: int | None = Field(default=None, gt=0)\n    previous_command_seq: int | None = Field(default=None, ge=0)\n\n    @field_validator(\"issued_at\", \"valid_until\")\n    @classmethod\n    def datetimes_must_be_timezone_aware(cls, value: datetime) -> datetime:\n        \"\"\"强制契约有效期时间带时区，保证 TTL 判断一致。\"\"\"\n        if value.tzinfo is None:\n            raise ValueError(\"contract datetimes must include timezone information\")\n        return value\n\n    @model_validator(mode=\"after\")\n    def validate_contract_consistency(self) -> TaskContract:\n        \"\"\"校验契约内部一致性：有效期、步骤 ID 唯一性和当前步骤引用。\"\"\"\n        if self.valid_until <= self.issued_at:\n            raise ValueError(\"valid_until must be later than issued_at\")\n        step_ids = [step.step_id for step in self.steps]\n        if len(step_ids) != len(set(step_ids)):\n            raise ValueError(\"step_id values must be unique\")\n        if self.current_step_id is not None and self.current_step_id not in set(step_ids):\n            raise ValueError(\"current_step_id must reference a declared step\")\n        return self\n\n\nclass Telemetry(TraceableMessage):\n    \"\"\"边缘遥测消息，报告任务状态、场景版本、机器人和网络诊断。\"\"\"\n\n    control_mode: ControlMode\n    task_state: TaskState\n    scene_version: int = Field(ge=0)\n    current_step_id: str | None\n    completed_step_ids: list[str] = Field(default_factory=list)\n    robot_state: dict[str, Any] = Field(default_factory=dict)\n    network_state: dict[str, Any] = Field(default_factory=dict)\n    diagnostics: dict[str, Any] = Field(default_factory=dict)\n\n\nclass CloudCommand(TraceableMessage):\n    \"\"\"云端监督命令，可能携带任务契约更新和命令有效期。\"\"\"\n\n    decision: CloudDecision\n    command_ttl_ms: int = Field(gt=0)\n    valid_until: datetime\n    reason: str = Field(min_length=1)\n    contract_update: TaskContract | None = None\n\n    @field_validator(\"valid_until\")\n    @classmethod\n    def valid_until_must_be_timezone_aware(cls, value: datetime) -> datetime:\n        \"\"\"强制云端命令有效期带时区，避免过期判断错误。\"\"\"\n        if value.tzinfo is None:\n            raise ValueError(\"valid_until must include timezone information\")\n        return value\n\n\nrg: tests/test_recovery_lifecycle.py: IO error for operation on tests/test_recovery_lifecycle.py: No such file or directory (os error 2)\n"
+  },
+  "capture_gap": null,
+  "invocation": {
+    "cmd": "sed -n '1610,1627p' 'src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py'\nsed -n '268,338p' 'src/cloud_edge_robot_arm/contracts/models.py'\nrg -n 'DecisionEnvelope|CommitContext|ActionEvidenceContract|def authorization|RecoveryAuthorizationEvidence\\(' 'tests/test_recovery_lifecycle.py'",
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "max_output_tokens": 7000
+  },
+  "independent_stdout": null,
+  "independent_stderr": null,
+  "coverage": {
+    "returned": [
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py requested1610–1627",
+      "src/cloud_edge_robot_arm/contracts/models.py requested268–338"
+    ],
+    "failed_target": "tests/test_recovery_lifecycle.py",
+    "failed_target_body": null,
+    "alternative_path": null
+  },
+  "prior_actual_preservation": {
+    "chunk": "de98ed",
+    "actual_tool_return": {
+      "chunk_id": "de98ed",
+      "wall_time_seconds": 0.00001021,
+      "exit_code": 0,
+      "original_token_count": 174,
+      "output": "[{\"path\": \"/home/ningyd/\\u6587\\u6863/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/before/metadata/writer-completion-20261015/test_operational_runtime_closure.py\", \"bytes\": 227116, \"sha256\": \"1622e828431bec7cb85ad4eeccb36f1d87f624f105ca5662e162823da7c6766a\"}, {\"path\": \"/home/ningyd/\\u6587\\u6863/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/before/metadata/writer-completion-20261015/partial-change-report.json\", \"bytes\": 27093, \"sha256\": \"803d6e5368b3e4ecf713379c76044890ca06900cdd7647f886cb9597fec565a7\"}]\n"
+    },
+    "archives": [
+      {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/before/metadata/writer-completion-20261015/test_operational_runtime_closure.py",
+        "bytes": 227116,
+        "sha256": "1622e828431bec7cb85ad4eeccb36f1d87f624f105ca5662e162823da7c6766a"
+      },
+      {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/before/metadata/writer-completion-20261015/partial-change-report.json",
+        "bytes": 27093,
+        "sha256": "803d6e5368b3e4ecf713379c76044890ca06900cdd7647f886cb9597fec565a7"
+      }
+    ],
+    "rewritten": false
+  },
+  "observation": {
+    "classification": "metadata/source-reader unverified basename; not a product/test failure",
+    "source_modified": false,
+    "product_execution": false,
+    "test_execution": false,
+    "retries": 0,
+    "T2_commands_consumed": 0,
+    "future_path_rule": "Only exact paths already observed in a manifest or actual rg --files result; no guessed basename."
+  }
+}

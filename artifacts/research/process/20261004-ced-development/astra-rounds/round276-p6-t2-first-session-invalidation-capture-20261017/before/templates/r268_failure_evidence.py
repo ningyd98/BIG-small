@@ -1,0 +1,410 @@
+"""R268 bounded post-unwind evidence; never product authority or a sampler."""
+from pathlib import Path
+import hashlib
+import json
+import math
+import os
+import sys
+import threading
+import time
+import types
+
+import pytest
+
+ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+ROUNDS = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds"
+D = ROUNDS / "round268-p6-t2-targeted-failure-evidence-20261017"
+SUPPLEMENT = ROUNDS / "round269-p6-t2-passive-whitelist-function-name-20261017/plan.json"
+TEST = str(ROOT / "tests/test_operational_runtime_closure.py")
+TEST_SHA = "ed602dc9ba5c0b15af20fbe8ca4d9b58d2e4e45fac621dc6f5e5e2cd4a94e7d3"
+PLAN_SHA = "ea92b785c2058e7f373ef444dc22655a043b9235f963e80098b4c015b4448c52"
+SUPPLEMENT_SHA = "0f3e63dd856323b8938eac4ff379ac4c7be67e20298dd47c7a3178c1ce10e555"
+PRIMARY = {
+    "test_memory_sqlite_publication_wait_requires_current_d": (4287, 4353),
+    "test_dual_database_order_and_partial_commit": (4354, 4491),
+    "_b_t2_exercise": (4038, 4099),
+    "_b_t2_wait_for_event_lock": (4100, 4190),
+}
+LOCAL_NAMES = ("backend", "domain", "directory", "phase", "index", "operation_id",
+               "history", "errors", "holder_errors", "state", "calls", "job_rows")
+BOUNDS = {"events_max": 24, "exceptions_max": 4, "traceback_entries_per_exception": 64,
+          "locals_frames_max": 8, "container_depth": 4, "dict_keys_max": 32,
+          "list_items_max": 64, "string_utf8_max": 2048,
+          "plugin_total_utf8_bytes_max": 262144}
+NODES = {
+    "wait_memory_failure": "tests/test_operational_runtime_closure.py::"
+                           "test_memory_sqlite_publication_wait_requires_current_d[memory]",
+    "dual_progress": "tests/test_operational_runtime_closure.py::test_dual_database_order_and_partial_commit",
+}
+_STATE = None
+
+
+def type_record(value):
+    kind = type(value)
+    result = {}
+    for field, attribute in (("module", "__module__"), ("name", "__name__")):
+        text = type.__getattribute__(kind, attribute)
+        if type(text) is not str:
+            result[field] = None
+            continue
+        raw = text.encode("utf-8", errors="replace")
+        result[field] = raw[:2048].decode("utf-8", errors="ignore")
+        result[field + "_omitted_utf8_bytes_at_least"] = max(0, len(raw) - 2048)
+    return result
+
+
+def hooks():
+    return (sys.getprofile(), threading.getprofile(), sys.gettrace(), threading.gettrace())
+
+
+def hook_records(values):
+    return [None if value is None else {"id": id(value), "type": type_record(value)} for value in values]
+
+
+class Projection:
+    def __init__(self):
+        self.nodes = 0
+        self.cap_hits = []
+        self.omitted_cap_records = 0
+        self.active = set()
+
+    def omitted(self, reason, value=None, count=None):
+        if len(self.cap_hits) < 64:
+            self.cap_hits.append(reason)
+        else:
+            self.omitted_cap_records += 1
+        return {"unavailable": reason, "type": None if value is None else type_record(value),
+                "omitted_count": count}
+
+    def value(self, value, depth=0):
+        self.nodes += 1
+        if self.nodes > 2048:
+            return self.omitted("projection_node_bound", value)
+        kind = type(value)
+        if value is None or kind is bool:
+            return value
+        if kind is int:
+            if value.bit_length() > 4096:
+                return self.omitted("integer_text_bound", value)
+            return value
+        if kind is float:
+            return value if math.isfinite(value) else self.omitted("nonfinite_float", value)
+        if kind is str:
+            try:
+                raw = value.encode("utf-8")
+            except UnicodeEncodeError:
+                return self.omitted("non_utf8_string", value)
+            if len(raw) > 2048:
+                return {"string_prefix": raw[:2048].decode("utf-8", errors="ignore"),
+                        "cap_hit": True, "original_utf8_bytes": len(raw),
+                        "omitted_utf8_bytes_at_least": len(raw) - 2048}
+            return value
+        if kind not in (dict, list, tuple):
+            return {"unavailable": "non_builtin_object", "type": type_record(value)}
+        if depth >= 4:
+            return self.omitted("container_depth", value, len(value))
+        if id(value) in self.active:
+            return self.omitted("container_cycle", value)
+        self.active.add(id(value))
+        try:
+            if kind is dict:
+                projected, omitted, nonstring = {}, max(0, len(value) - 32), 0
+                for ordinal, (key, child) in enumerate(dict.items(value)):
+                    if ordinal >= 32:
+                        break
+                    if type(key) is not str:
+                        nonstring += 1
+                        continue
+                    projected_key = self.value(key, depth + 1)
+                    if type(projected_key) is not str:
+                        nonstring += 1
+                        continue
+                    projected[projected_key] = self.value(child, depth + 1)
+                return {"container": "dict", "items": projected, "omitted_keys": omitted,
+                        "unavailable_nonstring_or_long_keys": nonstring,
+                        "cap_hit": bool(omitted or nonstring)}
+            size = len(value)
+            projected = [self.value(value[i], depth + 1) for i in range(min(size, 64))]
+            return {"container": "list" if kind is list else "tuple", "items": projected,
+                    "omitted_items": max(0, size - 64), "cap_hit": size > 64}
+        finally:
+            self.active.remove(id(value))
+
+
+def exception_slot(error, name):
+    return BaseException.__dict__[name].__get__(error, type(error))
+
+
+def observer_error(stage, error):
+    if _STATE is None:
+        return
+    projection = Projection()
+    record = {"stage": stage, "type": type_record(error),
+              "args": projection.value(exception_slot(error, "args"))}
+    if len(_STATE.observer_errors) < 24:
+        _STATE.observer_errors.append(record)
+    else:
+        _STATE.omitted_errors += 1
+
+
+def emit(kind, payload, nodeid=None, summary=False):
+    state = _STATE
+    if state is None:
+        return
+    if not summary and state.events >= 24:
+        state.omitted_events += 1
+        return
+    ordinal = state.events
+    value = {"schema_version": "bigsmall.r268.passive-event.v1", "round": "R268",
+             "command_id": state.command, "pid": os.getpid(), "kind": kind, "nodeid": nodeid,
+             "host_perf_counter_ns_diagnostic_only": time.perf_counter_ns(), **payload}
+    try:
+        raw = (json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode()
+        allowance = 262144 - state.bytes - (0 if summary else 8192)
+        if len(raw) > allowance:
+            state.byte_cap_hit = True
+            compact = {}
+            if kind.startswith("exception_"):
+                compact["exceptions"] = []
+                for row in payload.get("exceptions", [])[:4]:
+                    entries = row["traceback"]
+                    # Keep selected evidence sites and the real traceback tail;
+                    # omission is explicit and never substitutes frame.f_lineno.
+                    retained = [entry for i, entry in enumerate(entries)
+                                if i >= len(entries) - 8 or "locals" in entry or "counters" in entry]
+                    compact["exceptions"].append({
+                        "ordinal": row["ordinal"], "relation": row["relation"], "parent": row["parent"],
+                        "type": row["type"], "args_unavailable": "plugin_total_byte_bound",
+                        "traceback": [{k: v for k, v in entry.items()
+                                       if k not in {"locals", "counters"}} for entry in retained],
+                        "locals_unavailable": "plugin_total_byte_bound",
+                        "traceback_omitted_count": len(entries) - len(retained),
+                        "original_traceback_cap_hit": row["traceback_omitted"]})
+            value = {"schema_version": "bigsmall.r268.passive-event.v1", "round": "R268",
+                     "command_id": state.command, "pid": os.getpid(), "kind": kind, "nodeid": nodeid,
+                     "payload_omitted": True, "omitted_utf8_bytes": len(raw), "cap_hit": True,
+                     "observer_errors": ([] if not state.observer_errors else [{
+                         "type": "ObserverErrorsPresent", "count": len(state.observer_errors),
+                         "detail_unavailable": "plugin_total_byte_bound"}]),
+                     "hooks_equal": payload.get("hooks_equal") if summary else None, **compact}
+            raw = (json.dumps(value, ensure_ascii=False, allow_nan=False) + "\n").encode()
+        if len(raw) > allowance:
+            state.omitted_events += 1
+            return
+        path = state.directory / ("summary.json" if summary else str(ordinal).zfill(2) + "-" + kind + ".json")
+        with path.open("xb") as handle:
+            if handle.write(raw) != len(raw):
+                raise OSError("partial R268 passive evidence write")
+        state.bytes += len(raw)
+        if not summary:
+            state.events += 1
+    except BaseException as error:
+        observer_error("exclusive event persistence", error)
+
+
+def selected(frame):
+    code = frame.f_code
+    if code.co_filename != TEST:
+        return False
+    if code.co_name in PRIMARY:
+        return code.co_qualname == code.co_name
+    if code.co_name not in {"during_episode", "holder"}:
+        return False
+    for owner, (lo, hi) in PRIMARY.items():
+        if (code.co_qualname.startswith(owner + ".<locals>.")
+                and lo <= code.co_firstlineno <= hi):
+            return True
+    return False
+
+
+def counter_observations(frame, projection):
+    observed = frame.f_locals.get("observed")
+    if type(observed) is not types.SimpleNamespace:
+        return {"unavailable": "observed_not_exact_SimpleNamespace", "type": type_record(observed)}
+    namespace = object.__getattribute__(observed, "__dict__")
+    if type(namespace) is not dict:
+        return {"unavailable": "namespace_dict_unavailable"}
+    clocks = namespace.get("clocks")
+    expected = frame.f_globals.get("_Counter")
+    if type(clocks) not in (list, tuple) or type(expected) is not type:
+        return {"unavailable": "exact_existing_clock_tuples_or_Counter_class_unavailable"}
+    rows = []
+    for ordinal in range(min(len(clocks), 64)):
+        entry = clocks[ordinal]
+        if type(entry) is not tuple or len(entry) != 3:
+            rows.append({"ordinal": ordinal, "unavailable": "not_exact_clock_raw_label_tuple"})
+            continue
+        raw, label = entry[1], entry[2]
+        if type(raw) is not expected or type(label) is not str:
+            rows.append({"ordinal": ordinal, "unavailable": "raw_class_or_label_differs"})
+            continue
+        values = object.__getattribute__(raw, "__dict__")
+        now = values.get("now") if type(values) is dict else None
+        rows.append({"ordinal": ordinal, "label": projection.value(label),
+                     "raw_id_diagnostic_only": id(raw),
+                     "now": now if type(now) is int else None,
+                     "unavailable": None if type(now) is int else "raw_plain_integer_now_unavailable"})
+    return {"post_unwind_non_atomic": True, "records": rows, "omitted": max(0, len(clocks) - 64),
+            "clock_object_not_read": True, "operational_identity_or_read_ns_called": False}
+
+
+def exception_evidence(first):
+    queue, seen, exceptions = [(first, None, None)], set(), []
+    locals_frames, seen_frames = 0, set()
+    projection = Projection()
+    try:
+        while queue and len(exceptions) < 4:
+            error, relation, parent = queue.pop(0)
+            if id(error) in seen:
+                continue
+            seen.add(id(error))
+            number = len(exceptions)
+            row = {"ordinal": number, "relation": relation, "parent": parent,
+                   "type": type_record(error), "args": projection.value(exception_slot(error, "args")),
+                   "traceback": [], "traceback_omitted": False}
+            tb = exception_slot(error, "__traceback__")
+            try:
+                ordinal = 0
+                while tb is not None and ordinal < 64:
+                    frame = tb.tb_frame
+                    try:
+                        code = frame.f_code
+                        entry = {"tb_lineno": tb.tb_lineno, "tb_lasti": tb.tb_lasti,
+                                 "code_filename": code.co_filename, "code_name": code.co_name,
+                                 "code_firstlineno": code.co_firstlineno,
+                                 "frame_lineno_post_unwind": frame.f_lineno,
+                                 "post_unwind_non_atomic": True}
+                        if selected(frame):
+                            if locals_frames < 8 and id(frame) not in seen_frames:
+                                seen_frames.add(id(frame))
+                                locals_frames += 1
+                                local = frame.f_locals
+                                entry["locals"] = {name: projection.value(local[name])
+                                                   for name in LOCAL_NAMES if name in local}
+                                entry["counters"] = counter_observations(frame, projection)
+                            else:
+                                entry["locals_unavailable"] = "locals_frame_bound_or_duplicate"
+                        row["traceback"].append(entry)
+                    finally:
+                        frame = None
+                        code = None
+                    tb = tb.tb_next
+                    ordinal += 1
+                row["traceback_omitted"] = tb is not None
+            finally:
+                tb = None
+            exceptions.append(row)
+            for name in ("__cause__", "__context__"):
+                linked = exception_slot(error, name)
+                if linked is not None and id(linked) not in seen:
+                    queue.append((linked, name, number))
+                linked = None
+            error = None
+        return {"exceptions": exceptions, "remaining_queued": len(queue),
+                "exception_cap_hit": bool(queue), "locals_frames": locals_frames,
+                "projection_nodes": projection.nodes, "projection_node_bound": 2048,
+                "projection_cap_hits": projection.cap_hits,
+                "omitted_projection_cap_records": projection.omitted_cap_records,
+                "observation_boundary": "Real traceback positions; all locals/counters read after unwind, "
+                "possibly closed/revoked/mutated, never atomic failure-time/live authority."}
+    finally:
+        first = None
+        queue.clear()
+
+
+def pytest_configure(config):
+    global _STATE
+    if _STATE is not None:
+        raise RuntimeError("R268 passive plugin configured more than once")
+    command = os.environ["BIGSMALL_R268_COMMAND"]
+    directory = Path(os.environ["BIGSMALL_R268_DIAGNOSTIC_DIR"])
+    if (command not in NODES or directory != D / "implementation" / command / "passive"
+            or not directory.is_dir() or directory.is_symlink()):
+        raise RuntimeError("exact existing R268 passive sink required")
+    _STATE = types.SimpleNamespace(
+        command=command, directory=directory, events=0, bytes=0, omitted_events=0,
+        omitted_errors=0, observer_errors=[], byte_cap_hit=False, hooks_before=hooks(),
+        configured=False, logfinish_seen=False, node=NODES[command])
+    try:
+        test_raw = Path(TEST).read_bytes()
+        plan_raw, supplement_raw = (D / "plan.json").read_bytes(), SUPPLEMENT.read_bytes()
+        if (hashlib.sha256(test_raw).hexdigest() != TEST_SHA
+                or hashlib.sha256(plan_raw).hexdigest() != PLAN_SHA
+                or hashlib.sha256(supplement_raw).hexdigest() != SUPPLEMENT_SHA):
+            raise ValueError("frozen passive source/authority changed")
+        plan, supplement = json.loads(plan_raw), json.loads(supplement_raw)
+        effective = list(plan["passive_plugin"]["whitelist_frames"])
+        if (supplement["supplement"]["json_pointer"] != "/passive_plugin/whitelist_frames/3"
+                or effective[3] != supplement["supplement"]["expected_old"]
+                or supplement["supplement"]["effective_new"] !=
+                "exact frozen test path: _b_t2_wait_for_event_lock"
+                or plan["passive_plugin"]["bounds"] != BOUNDS):
+            raise ValueError("exact R268+R269 effective whitelist/bounds required")
+        effective[3] = supplement["supplement"]["effective_new"]
+        if effective[:4] != ["exact frozen test path: " + name for name in PRIMARY]:
+            raise ValueError("effective four-frame binding differs")
+        configured_timeout = float(config.getini("faulthandler_timeout") or 0.0)
+        if configured_timeout != 540:
+            raise ValueError("exact native one-shot540 configuration required")
+        _STATE.configured = True
+        emit("configure", {"effective_whitelist": effective, "bounds": BOUNDS,
+                          "hooks_before": hook_records(_STATE.hooks_before),
+                          "faulthandler_configured_seconds": configured_timeout,
+                          "native_watchdog_identity": None, "native_cancellation_observed": None,
+                          "new_Python_threads": 0, "profile_trace_modified_by_plugin": False})
+    except BaseException as error:
+        observer_error("configure", error)
+        emit("configure_error", {"observer_errors": _STATE.observer_errors})
+        raise
+
+
+def pytest_runtest_logstart(nodeid, location):
+    if _STATE is None:
+        return
+    if nodeid != _STATE.node:
+        observer_error("selected node", ValueError("unexpected passive node"))
+    emit("logstart", {"location": Projection().value(location)}, nodeid)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_makereport(item, call):
+    # firstresult hook: never return a report or alter the underlying outcome.
+    try:
+        if call.excinfo is not None:
+            value = exception_evidence(call.excinfo.value)
+            emit("exception_" + call.when, value, item.nodeid)
+    except BaseException as error:
+        observer_error("real traceback projection", error)
+        emit("observer_error", {"observer_errors": _STATE.observer_errors}, item.nodeid)
+    return None
+
+
+def pytest_runtest_logreport(report):
+    emit("report_" + report.when, {"phase": report.when, "outcome": report.outcome}, report.nodeid)
+
+
+def pytest_runtest_logfinish(nodeid, location):
+    if _STATE is not None:
+        _STATE.logfinish_seen = True
+    emit("logfinish", {"location": Projection().value(location)}, nodeid)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if _STATE is None:
+        return
+    after = hooks()
+    emit("summary", {
+        "normal_sessionfinish_observed": True,
+        "exitstatus": exitstatus if type(exitstatus) is int else None,
+        "hooks_before": hook_records(_STATE.hooks_before), "hooks_after": hook_records(after),
+        "hooks_equal": all(a is b for a, b in zip(_STATE.hooks_before, after)),
+        "logfinish_seen": _STATE.logfinish_seen,
+        "events_written": _STATE.events, "bytes_before_summary": _STATE.bytes,
+        "omitted_events": _STATE.omitted_events, "byte_cap_hit": _STATE.byte_cap_hit,
+        "observer_errors": _STATE.observer_errors, "omitted_observer_errors": _STATE.omitted_errors,
+        "faulthandler_configured_seconds": 540, "native_watchdog_identity": None,
+        "native_cancellation_observed": None,
+        "watchdog_note": "Installed pytest owns one-shot timer and normal finally cancellation; "
+        "this plugin observes configure/normal-return facts without intercepting native timer calls.",
+        "no_atomic_failure_time_snapshot": True, "legal_RED": False, "GREEN": False,
+    }, _STATE.node, summary=True)

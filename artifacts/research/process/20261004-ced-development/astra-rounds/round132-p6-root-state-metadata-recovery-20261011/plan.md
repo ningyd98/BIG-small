@@ -1,0 +1,38 @@
+# R132 ROOT state-key metadata recovery
+
+Actual planner: gpt-6-astra /root/astra_status_plan. Status: pending ROOT activation. This plan is independent of R131 author report recovery; it does not pause or authorize that work.
+
+## Verified evidence and root cause
+
+Tool51ef36 exited1 with KeyError: latest_process_rounds. Exact command/full returned combined text/finding are preserved at `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round129-p6-root-read-and-test-draft-review-20261011/implementation/stopped-root-state-key/`. Original separate stdout/stderr are unavailable. The script first successfully wrote `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round129-p6-root-read-and-test-draft-review-20261011/implementation/root-corrected-draft-text-review.json` (SHA09a6de4e9ca57411a5f0afa029a4d9072ff294b224ee4c2a2d066715f819e070,3815 bytes), then changed only an in-memory state object and failed when indexing the missing container on the assignment LHS. Its conditional RHS evaluates to None when the key is absent; that does not protect the target subscript. The exact script contains no final state-file write. Do not rerun the whole script, which would rewrite the already-saved review.
+
+Independent bounded inspection confirms `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/active-t12-state.json` is42666 bytes, SHA9f89b7ec2d62f2b140078097eab2b330834f0f5a203976ca6ac4e84c88618b7b; `planning` is a dictionary with existing R119–R130 entries and other history. `latest_process_rounds` is absent. The report records seven source-hash matches and five counters0/1; these are source-only observations, not product acceptance. No state, product, test or budget change resulted from51ef36. All original evidence remains immutable.
+
+## Exact state change
+
+Only ROOT performs the state update after activation. Author continues independently under R131 and has no write permission to this state file. Do not create latest_process_rounds, rename planning, migrate the schema, or reconstruct state from a stale template.
+
+Read a complete fresh JSON object, require an object with object-valued planning, then apply only these additive entries:
+
+- If planning.R131 is absent, add the neutral historical fact `ACTUAL_ASTRA_R131_PLAN_FROZEN; metadata report recovery is independent; current execution evidence remains in R131 receipts; no product acceptance implied`. If it already exists, preserve its exact current value; never regress a concurrently recorded result to pending/frozen.
+- If planning.R132 is absent, add `ROOT_STATE_METADATA_KEY_RECOVERY_APPLIED; existing planning container used; original51ef36 failure and written source-review preserved; no product execution or budget change`. If that exact value already exists, treat it as an idempotent already-applied observation and do not rewrite. A different existing R132 requires ROOT review; no overwrite.
+
+Every existing key/value outside a newly added R131/R132 remains semantically identical, including all planning history, objective/tasks/status/body, current_writer/time_utc, counters, current_P6_stage_A, actual/formal flags, delivery and review state. This minimal recovery deliberately does not rewrite current_writer or a timestamp from the failed script; those would need fresh independently authorized status evidence. Existing JSON formatting should be retained where practical; formatting is not semantic change, and the before file is preserved exactly.
+
+## Version and concurrency safeguards
+
+Before mutation, ROOT verifies pinned originals and the source-review SHA, records state-before.json exact bytes and SHA under R132/implementation, reads current planning type/target keys and confirms the intended additive patch. Require a short coordinated window in which ROOT is the sole writer of this exact state file; R131's separate report file may continue. Do not inspect/kill other tasks or assume an advisory file lock stops uncooperative writers. If a sole-writer window cannot be established, leave the state unchanged and report the metadata hold.
+
+Initial expected state hash is 9f89b7ec2d62f2b140078097eab2b330834f0f5a203976ca6ac4e84c88618b7b. If state already changed due legitimate concurrent metadata progress, do not overwrite it with this frozen version: save a fresh before snapshot and semantic difference in a new R132 input-check receipt, preserve all existing information, and require ROOT to explicitly pin that fresh SHA in activation. This is planned concurrency handling, not permission to invent current status or reset budgets. Unexpected structure or conflicting R132 stops this update for further actual Astra planning. The frozen plan and original pins remain unchanged.
+
+Within the coordinated window prepare candidate JSON in memory and validate that removing only the newly added target keys yields exactly the parsed before object. Write a new candidate file under R132/implementation, parse it back, and re-read target bytes immediately before replacement: SHA must equal the exact activation/before SHA. On mismatch do not replace or auto retry; preserve candidate/observed version and return to ROOT. Use a same-filesystem atomic replacement for the single final update and preserve original file mode. An atomic rename alone is not compare-and-swap; the coordinated window plus immediate version check are required. Verify after bytes parse to the candidate and all protected existing keys/values are unchanged. Preserve before/candidate/after hashes and the applied key list.
+
+## Execution and output scope
+
+ROOT may create `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round132-p6-root-state-metadata-recovery-20261011/input-check.json`, root-activation.json, state-update-script.py, ledger.md/json, validation.json, step-report.md/json, phase-summary.md and implementation/before/candidate/after/read or execution receipts. The only existing file writable is the exact state path above. The existing successful root-corrected-draft-text-review.json, all failures, all old plans/activations and author report are read-only. ROOT may append this recovery result to the established phase summary under its existing workflow.
+
+One metadata state-update invocation is allowed, using the existing absolute `.venv/bin/python` and stdlib only after ROOT reads the new script. Capture actual argv/cwd/env/exit/stdout/stderr independently for this new invocation; never fabricate old separate streams. No product/test/source/config write, product import, AST/compile/collect/static/pytest, DB probe, Git, GPU/model/native/actual action or new product-validation allowance. No rerun of51ef36. If any new failure occurs, preserve it and stop affected state work; independent R131 report recovery can continue.
+
+## Acceptance
+
+R132 completes only when the correct existing planning container contains the bounded records (or an identical prior R132 record is verified), exact before/after evidence exists, existing state content/budgets/tasks are preserved, concurrent newer information has not been overwritten, and the original failed read/write attempt and already-saved review remain unchanged. This does not complete R129, release RED23, release original format_check/mypy/GREEN or newGREEN19, or claim software/actual/formal acceptance. Those gates remain governed by R127/R129/R131 and fresh ROOT evidence. All subsequent handoffs use full absolute file paths plus SHA256.

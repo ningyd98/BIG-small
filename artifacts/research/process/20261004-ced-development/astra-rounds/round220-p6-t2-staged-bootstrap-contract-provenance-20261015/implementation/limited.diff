@@ -1,0 +1,1816 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py (S2 candidate)
+@@ -10,6 +10,7 @@
+ import hashlib
+ import json
+ import math
++import sys
+ import threading
+ from collections.abc import Iterator, Mapping
+ from contextlib import contextmanager
+@@ -45,6 +46,7 @@
+ _HANDOFFS: dict[object, OperationalWindowOwner] = {}
+ _SCOPES: dict[int, list[OperationalWindowOwner]] = {}
+ _TRANSITIONS: dict[int, tuple[OperationalWindowOwner, str, tuple[str, ...]]] = {}
++_LOCAL_ORIGINALS: dict[OperationalWindowOwner, str] = {}
+ _CONSTRUCTION = object()
+ 
+ 
+@@ -134,6 +136,7 @@
+     binding: object
+     binding_hash: str
+     thread_id: int
++    mode: str
+ 
+ 
+ @dataclass(frozen=True)
+@@ -196,13 +199,21 @@
+     if worker in _PENDING or worker in _OWNERS:
+         raise OperationalTimeError("startup cannot be issued twice")
+     current = worker.repository.get_job(job.job_id)
+-    lease = read_visual_worker_lease(
+-        worker.repository,
+-        job_id=current.job_id,
+-        run_id=current.run_id,
+-        worker_id=worker.worker_id,
+-        lease_id=current.lease_id,
+-    )
++    mode = worker._frozen_operational_time_mode
++    if mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++        session = worker._operational_lease_session
++        with worker.repository._local_read_scope(
++            session, job_id=current.job_id, purpose="startup", operation_sha256=_hash(["startup", current.job_id])
++        ) as view:
++            observed = session.evaluate_locked(view)
++            attempt = observed.attempt
++            acquired = observed.original_acquisition["event_id"]
++    else:
++        lease = read_visual_worker_lease(
++            worker.repository, job_id=current.job_id, run_id=current.run_id,
++            worker_id=worker.worker_id, lease_id=current.lease_id,
++        )
++        attempt, acquired = lease.attempt, lease.acquired_at
+     binding = worker.visual_role_binding
+     binding_hash = _hash(binding.evidence())
+     policy = binding.evidence()["edge_policy"]["verification_budget"]
+@@ -212,14 +223,15 @@
+         current.job_id,
+         current.run_id,
+         current.lease_id,
+-        lease.attempt,
+-        lease.acquired_at,
++        attempt,
++        acquired,
+         _job_source(current),
+         _seconds_ns(current.timeout_seconds),
+         _seconds_ns(policy["deadline_s"]),
+         binding,
+         binding_hash,
+         threading.get_ident(),
++        mode,
+     )
+     return True
+ 
+@@ -284,6 +296,9 @@
+         return self._clock
+ 
+     def _check_live(self) -> None:
++        if self._startup.mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            self._check_app_live(require_origin=False)
++            return
+         s = self._startup
+         worker = s.worker
+         if self._closed or _OWNERS.get(worker) is not self or threading.get_ident() != s.thread_id:
+@@ -383,7 +398,80 @@
+                 "plan": source.plan_id,
+             }
+         )
++        if s.mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            session = s.worker._operational_lease_session
++            with s.repository._local_read_scope(
++                session, job_id=s.job_id, purpose="bind", operation_sha256=_hash(["bind", hashes])
++            ) as view:
++                self._source_identity = str(view.snapshot["original_policy_digest"])
+         self._check_live()
++
++    def _check_app_live(self, *, require_origin: bool = True) -> None:
++        """Check the original issuer and D_app only; never compare broker numbers."""
++        s = self._startup
++        worker = s.worker
++        if (self._closed or _OWNERS.get(worker) is not self
++                or threading.get_ident() != s.thread_id or worker.repository is not s.repository
++                or worker.active_job_id != s.job_id or worker.visual_role_binding is not s.binding
++                or worker._frozen_operational_time_mode != s.mode):
++            raise OperationalTimeError("current exact app owner/startup source unavailable")
++        if _hash(s.binding.evidence()) != s.binding_hash or _job_source(s.repository.get_job(s.job_id)) != s.job_source:
++            raise OperationalTimeError("original app source/policy changed")
++        if self._origin_tuple is not None and worker._active_task_origin != self._origin_tuple:
++            raise OperationalTimeError("original task origin changed")
++        _ = self._clock.domain
++        if self._source_hashes is not None:
++            pin_worker_source_inventory(self._source_root, self._source_hashes,
++                                        required_paths=frozenset(self._source_hashes))
++        if require_origin:
++            if self.task_origin is None or self.task_origin_token is None or not self._hard:
++                raise OperationalTimeError("original app origin unavailable")
++            for hard in self._hard:
++                current = self._clock.read_current(after=_event_token(self, hard.deadline.origin))
++                if not self._clock.before_deadline(hard.deadline, current):
++                    raise OperationalTimeError("original app deadline expired")
++
++    def _check_local_locked(self, view, *, purpose: str, operation_sha256: str):
++        from cloud_edge_robot_arm.simulation_runtime.operational_lease import LockedLeaseView, _view_record
++        from cloud_edge_robot_arm.vision.local_temporal import LocalAuthorityDecision
++
++        self._check_app_live()
++        s = self._startup
++        if type(view) is not LockedLeaseView:
++            raise OperationalTimeError("private genuine locked view required")
++        issued = _view_record(view)
++        session = s.worker._operational_lease_session
++        if (issued.session is not session or issued.repository is not s.repository
++                or view.purpose != purpose or view.operation_sha256 != operation_sha256):
++            raise OperationalTimeError("private local view/source operation mismatch")
++        observed = session.evaluate_locked(view)
++        if observed.status != "VALID" or observed.attempt != s.attempt:
++            raise OperationalTimeError("current broker lease authority invalid")
++        frozen = _LOCAL_ORIGINALS.get(self)
++        if frozen is None or _json(self._local_original) != frozen:
++            raise OperationalTimeError("registered immutable local original source changed")
++        original = json.loads(frozen)
++        if (dict(observed.original_acquisition) != original["lease_identity"]["original_acquisition"]
++                or observed.source_identity != self._source_identity):
++            raise OperationalTimeError("original broker acquisition/source changed")
++        self._check_app_live()
++        current = self._clock.read_current(after=self.task_origin_token)
++        row = dict(view.snapshot)
++        return LocalAuthorityDecision.from_payload({
++            "schema_version": "visual.local-two-authority-decision.v1",
++            "operation_id": purpose, "operation_sha256": operation_sha256,
++            "original_time_hash": _hash(original), "app_domain": asdict(self._clock.domain),
++            "app_current": {"domain": asdict(current.domain), "lower_ns": current.lower_ns,
++                            "upper_ns": current.upper_ns, "event_identity": self.task_origin_token.event_identity},
++            "app_verdict": {"status": "VALID", "reasons": []},
++            "app_references": [self.export_record(self.task_window)],
++            "lease_observation": _descriptor_plain({**observed.__dict__, "domain": asdict(observed.domain)}),
++            "lease_epoch": session.epoch, "lease_generation": row["generation"],
++            "lease_row_revision": row["row_revision"], "lease_row_digest": row["proposed_row_digest"],
++            "source_identity": observed.source_identity, "job_id": s.job_id, "run_id": s.run_id,
++            "worker_id": s.worker.worker_id, "lease_id": s.lease_id, "attempt": s.attempt,
++            "disposition": "VALID", "reasons": [],
++        })
+ 
+     def issue(
+         self, kind: str, event: OperationalBracket, *, budget_ns: int, parent_ids: tuple[str, ...]
+@@ -410,7 +498,7 @@
+             else [_Age(event, budget_ns, self._source_identity + ":" + kind)]
+         )
+         hard = list(self._hard)
+-        if kind == "bootstrap":
++        if kind == "bootstrap" and self._startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1":
+             hard.append(
+                 _Hard(
+                     self._clock.start_deadline(
+@@ -486,7 +574,8 @@
+         upper = min([deadline, *(age["expiry_upper_ns"] for age in ages)])
+         s = self._startup
+         return {
+-            "schema_version": _SCHEMA,
++            "schema_version": ("simulation.operational-window.local.v1"
++                               if s.mode == "LOCAL_TEMPORAL_PUBLICATION_V1" else _SCHEMA),
+             "window_id": window_id,
+             "kind": window.kind,
+             "kind_policy": (
+@@ -513,7 +602,8 @@
+             "deadline_ns": deadline,
+             "deadline_semantics": "HARD_OPEN",
+             "effective_upper": {"value_ns": upper, "inclusive": upper < deadline},
+-            "lease_deadline_domain": "UTC_LEGACY_VETO",
++            "lease_deadline_domain": ("SEPARATE_D_LEASE_DECISION"
++                                      if s.mode == "LOCAL_TEMPORAL_PUBLICATION_V1" else "UTC_LEGACY_VETO"),
+             "live_authority": "NOT_EXPORTED",
+         }
+ 
+@@ -536,11 +626,27 @@
+     return owner
+ 
+ 
++def _register_local_original(owner: OperationalWindowOwner, original: object) -> None:
++    """Seal one validated description to the existing live startup, never issue D."""
++    from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++
++    if sys._getframe(1).f_code is not VisualWorkerRuntime._initialize_local.__code__:
++        raise OperationalTimeError("only the original private local bootstrap may bind its source")
++    owner._check_app_live()
++    if owner._startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1" or owner in _LOCAL_ORIGINALS:
++        raise OperationalTimeError("original local source cannot be initialized or refreshed twice")
++    frozen = _json(original)
++    if _json(owner._local_original) != frozen:
++        raise OperationalTimeError("bootstrap validated original differs from issuer source")
++    _LOCAL_ORIGINALS[owner] = frozen
++
++
+ def _revoke_worker(worker: object) -> None:
+     _PENDING.pop(worker, None)
+     owner = _OWNERS.pop(worker, None)
+     if owner is None:
+         return
++    _LOCAL_ORIGINALS.pop(owner, None)
+     owner._closed = True
+     for token, candidate in list(_HANDOFFS.items()):
+         if candidate is owner:
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py (S2 candidate)
+@@ -478,6 +478,50 @@
+     )
+ 
+ 
++def _local_worker_policy(contract, observation, source_hashes):
++    """Pure compiler values shared by staged production and detached audit."""
++    from cloud_edge_robot_arm.vision.local_temporal import _camera_descriptor
++
++    sources = _plain_worker_sources(source_hashes)
++    if (not REQUIRED_COMPILER_SOURCES <= sources.keys()
++            or "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py" not in sources):
++        raise ValueError("complete local compiler source inventory required")
++    descriptor = _camera_descriptor(observation.model_dump(mode="json"))
++    requirements, graph = {}, []
++    for index, step in enumerate(contract.steps):
++        if step.skill not in _PRE:
++            raise ValueError("unsupported original local skill policy")
++
++        def condition(name):
++            if name not in WORKER_CONDITION_REGISTRY:
++                raise ValueError("original local condition has no versioned mapping")
++            tolerances = {
++                "max_age_s": 5.0, "calibration_version": observation.calibration_version,
++                "minimum_safe_height": contract.safety_constraints.minimum_safe_height,
++                "condition_registry_version": WORKER_CONDITION_REGISTRY_VERSION,
++                "camera_source_descriptor_sha256": descriptor,
++            }
++            if name == "object_held":
++                tolerances["holding_feedback_required"] = True
++            if name == "tcp_at_resolved_target":
++                tolerances.update(target_reference="grounded_step.parameters.target_pose", max_distance_m=0.02)
++            target = (contract.task_target.target_region_id if WORKER_CONDITION_REGISTRY[name] == "region"
++                      else contract.task_target.object_id)
++            return ConditionSpec(name, target, tolerances, ("rgbd",))
++
++        requirements[step.step_id] = OriginalActionRequirements(
++            step, tuple(condition(name) for name in dict.fromkeys((*step.preconditions, *_PRE[step.skill]))),
++            tuple(condition(name) for name in dict.fromkeys((*step.success_conditions, *_POST[step.skill],
++                  *(contract.completion_criteria if index == len(contract.steps) - 1 else ())))),
++            0.01, ("rgbd",), 5.0, max(step.timeout_ms, step.expected_duration_ms) / 1000, sources,
++        )
++        graph.append({"step_id": step.step_id,
++                      "depends_on": [] if index == 0 else [contract.steps[index - 1].step_id],
++                      "evidence_ids": [observation.observation_id],
++                      "physical_effect_id": f"{step.step_id}:effect", "completed": False})
++    return requirements, graph
++
++
+ def grounded_worker_effect_conditions(
+     original: VisualOriginalPlan, grounding: StepGroundingBinding
+ ) -> tuple[ConditionSpec, ...]:
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py (S2 candidate)
+@@ -8,7 +8,13 @@
+ from __future__ import annotations
+ 
+ import json
++import hashlib
+ import math
++import os
++import threading
++import sqlite3
++import sys
++from contextlib import contextmanager
+ from collections.abc import Mapping
+ from dataclasses import asdict, dataclass
+ from datetime import UTC, datetime
+@@ -103,6 +109,73 @@
+ )
+ 
+ 
++_LOCAL_SCOPES = {}
++
++
++@dataclass
++class _LocalPublicationScope:
++    runtime: VisualWorkerRuntime
++    view: object
++    operation_id: str
++    operation_sha256: str
++    decision: object
++    active: bool = True
++
++
++def _local_scope_for(repository, *, required=False):
++    from cloud_edge_robot_arm.simulation_runtime.operational_lease import _view_record
++
++    key = (os.getpid(), threading.get_ident(), threading.get_native_id())
++    scope = _LOCAL_SCOPES.get(key)
++    if scope is None:
++        if required:
++            raise RuntimeError("registered private operational scope required")
++        return None
++    if (not scope.active or scope.runtime.source.event_repository is not repository
++            or _view_record(scope.view).session is not scope.runtime._local_session
++            or scope.runtime._local_session.worker is not scope.runtime._operational_owner._startup.worker):
++        raise RuntimeError("private publication scope identity changed")
++    return scope
++
++
++def _local_read_record(repository, name, args, kwargs):
++    from cloud_edge_robot_arm.repositories.event_autonomy.protocol import _LOCAL_MISSING, local_get_unlocked
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import LocalRetryBudgetRecord, LocalVerificationBudgetRecord, RecoveryRecord
++    from cloud_edge_robot_arm.contracts.models import EdgeEvent, LocalReplanningRequest, ReplanApplyRecord
++
++    mapping = {
++        "get_visual_bootstrap": ("bootstrap", VisualBootstrapRecord.from_payload),
++        "get_visual_original_plan": ("original", original_from_payload),
++        "get_visual_owner_publication": ("publication", VisualOwnerPublicationRecord.from_payload),
++        "get_visual_supervision_source_publication": ("publication", VisualOwnerPublicationRecord.from_payload),
++        "get_visual_supervision": ("supervision", VisualSupervisionRecord.from_payload),
++        "get_verification_budget": ("pool", LocalVerificationBudgetRecord.from_payload),
++        "get_retry_budget": ("retry", LocalRetryBudgetRecord.from_payload),
++        "get_recovery": ("recovery", RecoveryRecord.from_payload),
++        "get_event": ("event", EdgeEvent.model_validate),
++        "get_replan_request": ("replan", LocalReplanningRequest.model_validate),
++        "get_replan_apply_record": ("apply", ReplanApplyRecord.model_validate),
++        "get_state": ("state", lambda value: value),
++    }
++    if name not in mapping:
++        return _LOCAL_MISSING
++    category, decoder = mapping[name]
++    key = args[0] if args else next(iter(kwargs.values()), None)
++    raw = local_get_unlocked(repository, category, key)
++    if raw is None:
++        return _LOCAL_MISSING
++    if name == "get_visual_original_plan" and len(args) > 1:
++        if raw["payload"]["contract"]["plan_version"] != args[1]:
++            return None
++    return decoder(raw)
++
++
++def _local_digest(value):
++    from cloud_edge_robot_arm.repositories.event_autonomy.protocol import local_value
++    return hashlib.sha256(json.dumps(local_value(value), sort_keys=True,
++                                     separators=(",", ":"), allow_nan=False).encode()).hexdigest()
++
++
+ class VisualWorkerRouteResult(Protocol):
+     """Typed read view of the repository's immutable route write result."""
+ 
+@@ -290,6 +363,11 @@
+         self._can_capture_effects = False
+         self._role_hash = role_binding.bundle.digest()
+         self._validate_role_sources(verification_limits)
++        self._local_mode = (self._operational_owner is not None and
++                            self._operational_owner._startup.mode == "LOCAL_TEMPORAL_PUBLICATION_V1")
++        if self._local_mode:
++            self._initialize_local(episode_id, instruction, model_snapshot_hash, verification_limits)
++            return
+         lease = self._read_lease()
+         self._frozen_job_configuration_hash = digest(self._job_configuration())
+         bootstrap_id = digest(["visual.bootstrap.job-run.v1", source.job_id, source.run_id])
+@@ -333,6 +411,540 @@
+         self._last_observation = self.bootstrap.observation
+         self._read_lease()
+ 
++    def _local_envelope(self, tag, payload, decision=None, transaction=None):
++        from cloud_edge_robot_arm.vision.local_temporal import _copy
++        return {"schema_version": tag, "payload": _copy(payload),
++                "original_time": _copy(self._local_original), "decision": decision,
++                "transaction": transaction, "diagnostics": {"utc": {}, "monotonic": None}}
++
++    def _initialize_local(self, episode_id, instruction, model_hash, limits):
++        from cloud_edge_robot_arm.vision.local_temporal import bootstrap_source_commitment
++        from cloud_edge_robot_arm.vision.operational_windows import _descriptor_plain, _register_local_original
++
++        owner = self._operational_owner
++        self._local_task_id = episode_id
++        self._local_session = owner._startup.worker._operational_lease_session
++        lease = self._read_lease()
++        self._frozen_job_configuration_hash = digest(self._job_configuration())
++        self._bootstrap_id = digest(["visual.bootstrap.job-run.v1", self.source.job_id, self.source.run_id])
++        definition_body = {"scope": "BOOTSTRAP_SOURCE_ONLY", "episode_id": episode_id,
++                           "user_instruction": instruction, "task_timeout_s": self.source.task_timeout_s,
++                           "verification_limits": asdict(limits), "role_bundle_hash": self._role_hash,
++                           "model_snapshot_hash": model_hash, "source_hashes": dict(self.source.source_hashes)}
++        reference = owner.export_record(owner.task_window)
++        self._local_original = {
++            "schema_version": "visual.local-original-time.v1", "app_domain": asdict(owner._clock.domain),
++            "task_origin_event_id": owner.task_origin_token.event_identity,
++            "task_reference": reference, "verification_reference": reference, "recovery_reference": reference,
++            "lease_identity": {"job_id": self.source.job_id, "run_id": self.source.run_id,
++                               "worker_id": self.source.worker_id, "lease_id": self.source.lease_id,
++                               "attempt": lease.attempt, "epoch": self._local_session.epoch,
++                               "source_identity": lease.source_identity,
++                               "original_acquisition": _descriptor_plain(lease.original_acquisition)},
++            "source_hashes": dict(self.source.source_hashes),
++            "contract_provenance": {"kind": "LOCAL_BOOTSTRAP_SOURCE_V1",
++                                    "content_sha256": bootstrap_source_commitment(definition_body)},
++        }
++        owner._local_original = self._local_original
++        definition = VisualBootstrapDefinition.from_payload(self._local_envelope(
++            "visual.bootstrap.definition.local.v1", definition_body))
++        _register_local_original(owner, definition.local_time.to_payload())
++        with self._local_publication_scope(operation_id="bootstrap-init:" + self._bootstrap_id,
++                                           operation_sha256=_local_digest(definition)):
++            self.source.event_repository.initialize_visual_bootstrap_if_absent(definition)
++        self._last_observation = self.bootstrap.observation
++
++    @contextmanager
++    def _local_publication_scope(self, *, operation_id: str, operation_sha256: str):
++        """The sole job -> event acquisition site; all decisions follow BOTH locks."""
++        if not self._local_mode:
++            raise RuntimeError("private local publication requires the registered local runtime")
++        key = (os.getpid(), threading.get_ident(), threading.get_native_id())
++        if key in _LOCAL_SCOPES:
++            raise RuntimeError("private publication scopes cannot recursively acquire event locks")
++        events = self.source.event_repository
++        event_lock = events._write_lock if type(events) is SQLiteEventAutonomyRepository else events._lock
++        with self.source.job_repository._local_read_scope(
++            self._local_session, job_id=self.source.job_id, purpose=operation_id,
++            operation_sha256=operation_sha256,
++        ) as view:
++            acquired = False
++            scope = None
++            try:
++                event_lock.acquire()
++                acquired = True
++                if type(events) is SQLiteEventAutonomyRepository:
++                    if events._conn.in_transaction:
++                        raise RuntimeError("event repository already has an unowned transaction")
++                    events._conn.execute("BEGIN IMMEDIATE")
++                decision = self._operational_owner._check_local_locked(
++                    view, purpose=operation_id, operation_sha256=operation_sha256)
++                scope = _LocalPublicationScope(self, view, operation_id, operation_sha256, decision)
++                _LOCAL_SCOPES[key] = scope
++                yield scope
++            finally:
++                original_error = sys.exception()
++                try:
++                    if acquired and type(events) is SQLiteEventAutonomyRepository:
++                        try:
++                            if events._conn.in_transaction:
++                                events._conn.execute("ROLLBACK")
++                        except sqlite3.Error:
++                            if original_error is None:
++                                raise
++                finally:
++                    if scope is not None:
++                        scope.active = False
++                    _LOCAL_SCOPES.pop(key, None)
++                    if acquired:
++                        event_lock.release()
++
++    def _local_transaction(self, scope, tag, revision, operation_hash):
++        from cloud_edge_robot_arm.vision.local_temporal import _copy
++        decision = scope.decision.to_payload()
++        decision["operation_sha256"] = operation_hash
++        row = scope.view.snapshot
++        transaction = {
++            "schema_version": "visual.local-publication-transaction.v1",
++            "operation_id": scope.operation_id, "operation_sha256": operation_hash,
++            "job_id": self.source.job_id, "attempt": row["attempt"], "lease_id": row["lease_id"],
++            "epoch": row["epoch"], "generation": row["generation"], "row_revision": row["row_revision"],
++            "job_database_id": str(self.source.job_repository.database_path.resolve()),
++            "event_repository_id": (str(self.source.event_repository.path.resolve())
++                                    if type(self.source.event_repository) is SQLiteEventAutonomyRepository
++                                    else "memory:" + str(id(self.source.event_repository))),
++            "event_kind": tag, "event_key": scope.operation_id,
++            "expected_event_revision": revision, "event_revision": revision + 1,
++            "event_record_hash": "0" * 64, "job_receipt_hash": None, "event_receipt_hash": None,
++            "phase": "PENDING", "failure_reason": None,
++        }
++        return _copy(decision), transaction
++
++    def _local_commit(self, scope, updates, transaction, *, _resume=None):
++        """Four actual commits; every durable stage remains nonauthorizing alone."""
++        from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
++            local_put_unlocked, local_receipt_unlocked, local_receipt_read_unlocked,
++        )
++        from cloud_edge_robot_arm.vision.local_temporal import _canonical, _copy, _hash, LocalEnvelope
++
++        events, repo, conn = self.source.event_repository, self.source.job_repository, scope.view._connection
++        if _local_scope_for(events, required=True) is not scope:
++            raise RuntimeError("original private coordinator unavailable")
++        self._operational_owner._check_local_locked(scope.view, purpose=scope.operation_id,
++                                                    operation_sha256=scope.operation_sha256)
++        base = {"operation_id": scope.operation_id, "operation_sha256": scope.operation_sha256,
++                "job_id": self.source.job_id, "attempt": transaction["attempt"],
++                "lease_id": transaction["lease_id"], "epoch": transaction["epoch"],
++                "generation": transaction["generation"], "row_revision": transaction["row_revision"],
++                "event_record_hash": transaction["event_record_hash"]}
++        pending_hash = _hash({**base, "phase": "PENDING"})
++        job_hash = _hash({**base, "phase": "EVENT_COMMITTED", "event_receipt_hash": pending_hash})
++        complete_hash = _hash({**base, "phase": "COMPLETE", "job_receipt_hash": job_hash,
++                               "pending_receipt_hash": pending_hash})
++
++        def complete(value):
++            if isinstance(value, list):
++                return [complete(item) for item in value]
++            if not isinstance(value, dict):
++                return value
++            result = {key: complete(item) for key, item in value.items()}
++            if (result.get("schema_version") == "visual.local-publication-transaction.v1"
++                    and result.get("operation_id") == scope.operation_id):
++                result.update(phase="COMPLETE", job_receipt_hash=job_hash, event_receipt_hash=complete_hash)
++            return result
++
++        final_updates = complete(_copy(updates))
++        for entry in final_updates.values():
++            value = entry["value"]
++            if isinstance(value, dict) and str(value.get("schema_version", "")).endswith(".local.v1"):
++                LocalEnvelope.from_payload(value)
++        payload = _canonical({"pending_updates": _copy(updates), "complete_updates": final_updates})
++        receipt = {**base, "phase": "PENDING", "event_receipt_hash": pending_hash,
++                   "job_receipt_hash": "", "payload_json": payload}
++        if _resume is None:
++            for category, entry in updates.items():
++                local_put_unlocked(events, category, entry["key"], entry["value"], self._local_task_id)
++            local_receipt_unlocked(events, receipt)  # event semantic/debit and PENDING really commit first
++        else:
++            if (local_receipt_read_unlocked(events, scope.operation_id) != _resume
++                    or any(_resume[field] != value for field, value in base.items())
++                    or _resume["payload_json"] != payload
++                    or _resume["phase"] not in {"PENDING", "EVENT_COMMITTED", "COMPLETE"}):
++                raise RuntimeError("exact pending source changed under private reconciliation")
++            # The prior semantic writes/debit are already durable. End only the
++            # fresh read transaction; do not repeat, refund or replay any effect.
++            if type(events) is SQLiteEventAutonomyRepository:
++                events._conn.execute("ROLLBACK")
++        receipt.update(phase="EVENT_COMMITTED", job_receipt_hash=job_hash)
++        repo._local_publication_receipt(scope.view, receipt)  # actual first job commit
++        conn.execute("BEGIN IMMEDIATE")
++        actual = repo._operational_row(conn, self.source.job_id)
++        if actual != dict(scope.view.snapshot):
++            raise RuntimeError("current private job generation changed after receipt commit")
++        self._operational_owner._check_local_locked(scope.view, purpose=scope.operation_id,
++                                                    operation_sha256=scope.operation_sha256)
++        if type(events) is SQLiteEventAutonomyRepository:
++            events._conn.execute("BEGIN IMMEDIATE")
++        for category, entry in final_updates.items():
++            local_put_unlocked(events, category, entry["key"], entry["value"], self._local_task_id)
++        receipt.update(phase="COMPLETE", event_receipt_hash=complete_hash)
++        local_receipt_unlocked(events, receipt)  # actual event completion commit
++        repo._local_publication_receipt(scope.view, receipt)  # actual job completion commit
++        conn.execute("BEGIN IMMEDIATE")
++        return final_updates
++
++    def _local_resume(self, scope, receipt):
++        """Finish only exact durable writes for the same still-live original owner."""
++        from cloud_edge_robot_arm.vision.local_temporal import _canonical, _copy, _hash
++
++        row = scope.view.snapshot
++        if (receipt["operation_id"] != scope.operation_id
++                or receipt["operation_sha256"] != scope.operation_sha256
++                or any(receipt[field] != row[field] for field in ("job_id", "attempt", "lease_id", "epoch"))
++                or receipt["epoch"] != self._local_session.epoch):
++            raise RuntimeError("pending operation has no exact current private owner/source")
++        payload = json.loads(receipt["payload_json"])
++        if (type(payload) is not dict or set(payload) != {"pending_updates", "complete_updates"}
++                or _canonical(payload) != receipt["payload_json"]):
++            raise ValueError("pending operation payload changed canonical source")
++        base = {field: receipt[field] for field in (
++            "operation_id", "operation_sha256", "job_id", "attempt", "lease_id", "epoch",
++            "generation", "row_revision", "event_record_hash")}
++        pending_hash = _hash({**base, "phase": "PENDING"})
++        job_hash = _hash({**base, "phase": "EVENT_COMMITTED", "event_receipt_hash": pending_hash})
++        complete_hash = _hash({**base, "phase": "COMPLETE", "job_receipt_hash": job_hash,
++                               "pending_receipt_hash": pending_hash})
++        phase = receipt["phase"]
++        if ((phase == "PENDING" and (receipt["event_receipt_hash"] != pending_hash or receipt["job_receipt_hash"] != ""))
++                or (phase == "EVENT_COMMITTED" and (receipt["event_receipt_hash"] != pending_hash or receipt["job_receipt_hash"] != job_hash))
++                or (phase == "COMPLETE" and (receipt["event_receipt_hash"] != complete_hash or receipt["job_receipt_hash"] != job_hash))
++                or phase not in {"PENDING", "EVENT_COMMITTED", "COMPLETE"}):
++            raise ValueError("pending operation receipt phase/hash chain changed")
++        job_receipt = scope.view._connection.execute(
++            "SELECT * FROM simulation_local_publications_v1 WHERE operation_id=?", (scope.operation_id,)
++        ).fetchone()
++        if job_receipt is not None:
++            actual = dict(job_receipt)
++            if (any(actual[field] != value for field, value in base.items())
++                    or actual["payload_json"] != receipt["payload_json"]
++                    or actual["job_receipt_hash"] != job_hash
++                    or actual["phase"] not in {"EVENT_COMMITTED", "COMPLETE"}
++                    or (actual["phase"] == "COMPLETE" and phase != "COMPLETE")):
++                raise RuntimeError("pending job receipt changed original operation source")
++            if phase == "COMPLETE" and actual["phase"] == "COMPLETE":
++                if actual["event_receipt_hash"] != complete_hash:
++                    raise RuntimeError("completed receipt pair differs")
++                return _copy(payload["complete_updates"])
++        return self._local_commit(scope, _copy(payload["pending_updates"]), receipt, _resume=receipt)
++
++    def _local_events(self):
++        """Read real task events, joining the existing lock rather than recursing."""
++        from cloud_edge_robot_arm.contracts.models import EdgeEvent
++
++        events, task = self.source.event_repository, self._local_task_id
++
++        def read():
++            if type(events) is SQLiteEventAutonomyRepository:
++                values = [json.loads(row["value_json"]) for row in events._conn.execute(
++                    "SELECT value_json FROM visual_local_tasks_v1 WHERE category='event' AND task_id=?",
++                    (task,))]
++            else:
++                values = [json.loads(value) for (category, _), value in events._local_tasks.items()
++                          if category == "event" and json.loads(value)["task_id"] == task]
++            return [EdgeEvent.model_validate(value) for value in values]
++
++        if _local_scope_for(events) is not None:
++            return read()
++        lock = events._write_lock if type(events) is SQLiteEventAutonomyRepository else events._lock
++        with lock:
++            return read()
++
++    def _local_mutate(self, name, args, kwargs):
++        from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
++            local_get_unlocked, local_receipt_read_unlocked, local_value,
++        )
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
++            VisualBootstrapTransitionResult, derive_local_bootstrap,
++        )
++        from cloud_edge_robot_arm.vision.local_temporal import (
++            _hash, _initial_history_state, _history_state_hash, semantic_projection,
++        )
++
++        events = self.source.event_repository
++        scope = _local_scope_for(events, required=True)
++        task = self._local_task_id
++        if local_get_unlocked(events, "state", task) in {"CANCELLED", "ABORTED", "STOPPED", "SAFETY_STOPPED", "COMPLETED"}:
++            raise RuntimeError("cancelled operational task cannot regain private positive authority")
++        if any(event.severity == "CRITICAL" or event.event_type.value == "MANUAL_INTERRUPT"
++               for event in self._local_events()):
++            raise RuntimeError("current operational event source forbids positive publication")
++        old = local_receipt_read_unlocked(events, scope.operation_id)
++        if old is not None:
++            if old["operation_sha256"] != scope.operation_sha256:
++                raise ValueError("operation identity changed hash/source conflict")
++            if old["epoch"] != self._local_session.epoch:
++                raise RuntimeError("historical orphan has no current private owner")
++            # Both locks and current D were reacquired for this exact same owner.
++            # Finishing markers repeats no debit or effect and grants no handle.
++            self._local_resume(scope, old)
++            current = local_get_unlocked(events, "bootstrap", self._bootstrap_id)
++            if name == "transition_visual_bootstrap_if_current":
++                return VisualBootstrapTransitionResult(VisualBootstrapRecord.from_payload(current), "HISTORICAL_DUPLICATE")
++            raise RuntimeError("historical private operation cannot issue new mutation authority")
++        updates = {}
++
++        def store(category, key, value):
++            updates[category] = {"key": key, "value": local_value(value)}
++
++        if name == "initialize_visual_bootstrap_if_absent":
++            definition = args[0]
++            if definition.local_time.to_payload() != self._local_original or _local_digest(definition) != scope.operation_sha256:
++                raise RuntimeError("private bootstrap definition/source differs")
++            if local_get_unlocked(events, "bootstrap", self._bootstrap_id) is not None:
++                raise ValueError("private original bootstrap cannot be reinitialized")
++            decision, transaction = self._local_transaction(scope, definition._tag, 0, scope.operation_sha256)
++            body = _initial_history_state(definition.to_payload(), self._local_original, bootstrap=True)
++            transaction["event_record_hash"] = _history_state_hash("visual.bootstrap.record.local.v1", body, self._local_original)
++            transaction["event_revision"] = 0
++            record = self._local_envelope("visual.bootstrap.record.local.v1", body, decision, transaction)
++            store("bootstrap", self._bootstrap_id, record)
++            store("binding", task, self._local_original)
++            result_category = "bootstrap"
++        elif name == "transition_visual_bootstrap_if_current":
++            request = kwargs["request"]
++            source = request.to_payload()
++            if source["payload"]["event_key"] != scope.operation_id or _local_digest(request) != scope.operation_sha256:
++                raise ValueError("private request operation identity/hash changed")
++            current = VisualBootstrapRecord.from_payload(local_get_unlocked(events, "bootstrap", self._bootstrap_id))
++            if current.transaction.to_payload()["phase"] != "COMPLETE":
++                raise RuntimeError("pending original publication cannot issue a subsequent effect")
++            kind, claim = source["payload"]["kind"], source["payload"]["claim_id"]
++            if kind in {"COMPLETE_CAPTURE", "COMPLETE_PLAN"}:
++                from cloud_edge_robot_arm.vision.operational_windows import _event_token
++
++                expected_claim = "CAPTURE" if kind == "COMPLETE_CAPTURE" else "PLAN"
++                identifier = self._operational_completed.get(claim)
++                window = self._operational_owner._windows.get(identifier)
++                if (self._claims.get(claim) != expected_claim or window is None
++                        or window.kind != ("capture" if kind == "COMPLETE_CAPTURE" else "plan")
++                        or self._operational_owner.check(
++                            identifier, after=_event_token(self._operational_owner, window.event)
++                        ).status != "VALID"):
++                    raise RuntimeError("complete source requires actual owned original effect receipt")
++            operation = _hash({"schema_version": "visual.local-history-operation.v1", "request": semantic_projection(source)})
++            decision, transaction = self._local_transaction(scope, source["schema_version"], current.revision, operation)
++            record = derive_local_bootstrap(current, request, decision, transaction)
++            store("bootstrap", self._bootstrap_id, record)
++            result_category = "bootstrap"
++        elif name == "initialize_visual_owner_if_absent":
++            original, checkpoint, budget, retry = args
++            promotion = kwargs["bootstrap_promotion"]
++            pre = VisualBootstrapRecord.from_payload(local_get_unlocked(events, "bootstrap", self._bootstrap_id))
++            if (original.local_time.to_payload() != self._local_original
++                    or original.object("contract_provenance")["bootstrap_record"] != pre.to_payload()
++                    or local_value(budget) != pre.local_state.to_payload()
++                    or checkpoint.task_id != task or checkpoint.plan_version != original.contract.plan_version
++                    or checkpoint.command_seq != original.contract.command_seq
++                    or checkpoint.checkpoint_hash != checkpoint_digest(checkpoint)
++                    or checkpoint.pending_step_ids != [step.step_id for step in original.contract.steps]):
++                raise ValueError("private adoption actual original/prestate/checkpoint/pool source differs")
++            operation = _hash({"schema_version": "visual.local-history-operation.v1",
++                               "request": semantic_projection(promotion.to_payload())})
++            decision, transaction = self._local_transaction(scope, promotion._tag, pre.revision, operation)
++            promoted = derive_local_bootstrap(pre, promotion, decision, transaction)
++            pool_body = {"task_id": task, "state": pre.local_state.to_payload(), "revision": 0}
++            pool_body["content_hash"] = _hash({"schema_version": "recovery.verification-budget.local.v1", **pool_body})
++            pool = self._local_envelope("recovery.verification-budget.local.v1", pool_body, decision, transaction)
++            retry_raw = retry.to_payload()
++            retry_raw.update(decision=decision, transaction=transaction)
++            publication = {
++                "binding_scope": "DURABLE_BINDING_ONLY", "mode_scope": "NOT_INCLUDED",
++                "identity": original.identity.to_payload(), "original_plan_hash": original.digest(),
++                "contract_hash": _hash(original.contract.model_dump(mode="json")), "owner_revision": 1,
++                "state_generation": 0, "checkpoint": checkpoint.model_dump(mode="json"),
++                "verification_budget": pool, "retry_budget": retry_raw, "grounding": None,
++                "operation_hash": operation, "source_owner_revision": None, "publication_hash": "0" * 64,
++            }
++            from cloud_edge_robot_arm.vision.local_temporal import _local_publication_hash
++            publication["publication_hash"] = _local_publication_hash(publication, self._local_original)
++            store("bootstrap", self._bootstrap_id, promoted)
++            store("original", task, original)
++            store("pool", task, pool)
++            store("retry", task, retry_raw)
++            store("publication", task, self._local_envelope("visual.owner.publication.local.v1", publication, decision, transaction))
++            store("checkpoint", checkpoint.checkpoint_id, checkpoint)
++            result_category = "publication"
++        else:
++            return self._local_generic_mutate(scope, name, args, kwargs)
++        final = self._local_commit(scope, updates, transaction)
++        value = final[result_category]["value"]
++        if name == "transition_visual_bootstrap_if_current":
++            return VisualBootstrapTransitionResult(VisualBootstrapRecord.from_payload(value), "NEW_COMMIT")
++        if result_category == "publication":
++            return VisualOwnerPublicationRecord.from_payload(value)
++        return VisualBootstrapRecord.from_payload(value)
++
++    def _local_adopt(self, robot_state):
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import compile_local_bootstrap_original
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import LocalRetryBudgetRecord
++        from cloud_edge_robot_arm.vision.local_temporal import _hash, _history_state_hash, semantic_projection
++
++        self.check_active(robot_state)
++        if self.is_adopted:
++            return self.original.contract, self.publication
++        pre = self.bootstrap
++        original = compile_local_bootstrap_original(pre, plan_id=self.source.plan_id, robot_id=self.source.robot_id)
++        contract, state = original.contract, pre.local_state
++        limits = state.limits
++        retry_body = {"budget_id": "bootstrap-retry-" + self._bootstrap_id[:32], "task_id": contract.task_id,
++                      "per_step_retry_limit": max(step.retry_limit for step in contract.steps),
++                      "per_skill_retry_limit": contract.failure_policy.local_retry_limit,
++                      "task_total_retry_limit": limits.max_retries, "retry_count_used": 0,
++                      "task_retry_count": 0, "step_retry_counts": {}, "skill_retry_counts": {},
++                      "event_retry_counts": {}, "retry_cooldown_ms": 0, "retry_backoff_policy": "NONE",
++                      "effective_retry_limit": limits.max_retries, "remaining_retries": state.remaining_retries,
++                      "scene_version": contract.scene_version}
++        # A pool is a result/evidence envelope; its live commit evidence is added
++        # by the real coordinator, before decoding or persistence.
++        now = datetime.now(UTC)
++        checkpoint = ExecutionCheckpoint(
++            checkpoint_id="visual-initial-" + self._bootstrap_id[:32], task_id=contract.task_id,
++            plan_id=original.identity.plan_id, robot_id=original.identity.robot_id,
++            plan_version=contract.plan_version, command_seq=contract.command_seq, scene_version=contract.scene_version,
++            current_step_id=contract.steps[0].step_id, pending_step_ids=[step.step_id for step in contract.steps],
++            robot_state=robot_state.model_dump(mode="json"), created_at=now, updated_at=now)
++        checkpoint = checkpoint.model_copy(update={"checkpoint_hash": checkpoint_digest(checkpoint)})
++        body = {"scope": "BOOTSTRAP_SOURCE_ONLY", "bootstrap_id": self._bootstrap_id,
++                "definition_hash": _hash(pre.to_payload()["payload"]["definition"]),
++                "expected_record_hash": _history_state_hash(pre._tag, pre.semantic, self._local_original),
++                "event_key": "worker-adopt-" + str(pre.revision), "original": original.to_payload(),
++                "robot_state": robot_state.model_dump(mode="json")}
++        promotion = VisualBootstrapPromotionInput.from_payload(self._local_envelope(
++            "visual.bootstrap.promotion.local.v1", body))
++        operation_hash = _local_digest(promotion)
++        with self._local_publication_scope(operation_id=body["event_key"], operation_sha256=operation_hash) as scope:
++            decision, transaction = self._local_transaction(scope, promotion._tag, pre.revision,
++                _hash({"schema_version": "visual.local-history-operation.v1", "request": semantic_projection(promotion.to_payload())}))
++            retry = LocalRetryBudgetRecord.from_payload(self._local_envelope(
++                "recovery.retry-budget.local.v1", retry_body, decision, transaction))
++            publication = self.source.event_repository.initialize_visual_owner_if_absent(
++                original, checkpoint, state, retry, bootstrap_promotion=promotion)
++        self._can_capture_effects = True
++        return contract, publication
++
++    def _local_generic_mutate(self, scope, name, args, kwargs):
++        from cloud_edge_robot_arm.contracts.models import (
++            EdgeEvent, LocalReplanningRequest, ReplanApplyRecord, PendingMessage, MessageStatus,
++        )
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
++        from cloud_edge_robot_arm.repositories.event_autonomy.protocol import local_get_unlocked, local_value
++        from cloud_edge_robot_arm.vision.local_temporal import _hash, _initial_history_state, _history_state_hash
++
++        task, events = self._local_task_id, self.source.event_repository
++        if name == "initialize_visual_supervision_if_absent":
++            definition = args[0]
++            if (_local_digest(definition) != scope.operation_sha256
++                    or definition.local_time.to_payload() != self._local_original
++                    or definition.original.to_payload() != local_get_unlocked(events, "original", task)
++                    or definition.to_payload()["payload"]["publication"] != local_get_unlocked(events, "publication", task)):
++                raise ValueError("private supervision definition/current publication source differs")
++            decision, transaction = self._local_transaction(scope, definition._tag, 0, scope.operation_sha256)
++            body = _initial_history_state(definition.to_payload(), self._local_original, bootstrap=False)
++            transaction["event_revision"] = 0
++            transaction["event_record_hash"] = _history_state_hash("visual.supervision.record.local.v1", body, self._local_original)
++            value = self._local_envelope("visual.supervision.record.local.v1", body, decision, transaction)
++            updates = {"supervision": {"key": task, "value": value}}
++            final = self._local_commit(scope, updates, transaction)
++            return VisualSupervisionRecord.from_payload(final["supervision"]["value"])
++        source = {"method": name, "args": local_value(args), "kwargs": local_value(kwargs)}
++        if _local_digest(source) != scope.operation_sha256:
++            raise ValueError("private writer operation digest/source differs")
++        permitted = {
++            "save_event": ("event", EdgeEvent, "event_id"),
++            "initialize_recovery_if_absent": ("recovery", RecoveryRecord, "recovery_id"),
++            "save_replan_request": ("replan", LocalReplanningRequest, "request_id"),
++            "save_replan_apply_record": ("apply", ReplanApplyRecord, "apply_id"),
++            "enqueue_outbox": ("outbox", PendingMessage, "message_id"),
++        }
++        if name in permitted:
++            category, model, key_field = permitted[name]
++            item = args[0]
++            if type(item) is not model or item.task_id != task:
++                raise ValueError("private operational writer requires the exact current task model")
++            publication = VisualOwnerPublicationRecord.from_payload(local_get_unlocked(events, "publication", task))
++            contract = self.original.contract
++            if name == "initialize_recovery_if_absent":
++                if (item.state != "DETECTED" or item.revision != 0
++                        or item.task_budget_revision != publication.verification_budget_history.revision
++                        or local_value(item.budget_state) != publication.verification_budget_history.state.to_payload()
++                        or item.checkpoint_hash != publication.checkpoint.checkpoint_hash
++                        or item.payload_hash != publication.contract_hash
++                        or local_get_unlocked(events, "event", item.event_id) is None):
++                    raise ValueError("private detected recovery cannot replace/refill original sources")
++                value = RecoveryRecord.from_payload(item.to_payload())
++            else:
++                value = model.model_validate(item.model_dump(mode="json"))
++            if name == "save_event" and (value.plan_version, value.command_seq) != (contract.plan_version, contract.command_seq):
++                raise ValueError("private event current task version differs")
++            if name == "save_replan_request" and (value.current_plan_version, value.current_command_seq) != (contract.plan_version, contract.command_seq):
++                raise ValueError("private replan source version differs")
++            if name == "save_replan_apply_record" and (value.previous_plan_version, value.previous_command_seq,
++                                                       value.checkpoint_hash) != (contract.plan_version, contract.command_seq,
++                                                                                 publication.checkpoint.checkpoint_hash):
++                raise ValueError("private replan audit current checkpoint source differs")
++            if name == "enqueue_outbox" and local_get_unlocked(events, "replan", value.request_id) is None:
++                raise ValueError("private outbox source request absent")
++            key = getattr(value, key_field)
++            raw = local_value(value)
++            old = local_get_unlocked(events, category, key)
++            if old is not None and old != raw:
++                raise ValueError("private writer identity changed content hash")
++        elif name == "claim_outbox_message":
++            category, model = "outbox", PendingMessage
++            if type(events) is SQLiteEventAutonomyRepository:
++                rows = events._conn.execute("SELECT record_key,value_json FROM visual_local_tasks_v1 "
++                                            "WHERE category='outbox' AND task_id=? ORDER BY record_key", (task,)).fetchall()
++                candidates = [(row["record_key"], json.loads(row["value_json"])) for row in rows]
++            else:
++                candidates = [(key, json.loads(raw)) for (kind, key), raw in events._local_tasks.items()
++                              if kind == "outbox" and json.loads(raw)["task_id"] == task]
++            selected = [(key, raw) for key, raw in candidates
++                        if raw["status"] == MessageStatus.PENDING.value and raw.get("next_retry_at") is None]
++            if not selected:
++                return None
++            key, raw = selected[0]
++            value = PendingMessage.model_validate(raw).model_copy(update={"status": MessageStatus.SENDING}, deep=True)
++            raw = value.model_dump(mode="json")
++        else:
++            raise RuntimeError("this operational writer requires a separately supported private transition; public/legacy authority rejected")
++        decision, transaction = self._local_transaction(scope, name, 0, scope.operation_sha256)
++        transaction["event_record_hash"] = _hash(raw)
++        final = self._local_commit(scope, {category: {"key": key, "value": raw}}, transaction)
++        if model is RecoveryRecord:
++            return RecoveryRecord.from_payload(final[category]["value"])
++        return model.model_validate(final[category]["value"])
++
++    def _local_initialize_supervision(self, period_s, robot_state):
++        self.check_active(robot_state)
++        self._check_optional_sources()
++        expected_period, _ = self._runtime_option_sources()
++        if period_s != expected_period:
++            raise ValueError("supervision cadence differs from original job policy")
++        existing = self.source.event_repository.get_visual_supervision(self._local_task_id)
++        if existing is not None:
++            return existing
++        body = {"scope": "SUPERVISION_SOURCE_ONLY", "original": self.original.to_payload(),
++                "publication": self.supervision_source_publication.to_payload(),
++                "task_timeout_s": self.source.task_timeout_s, "supervision_period_s": period_s,
++                "model_snapshot_hash": self.bootstrap.definition.model_snapshot_hash,
++                "role_bundle": self.role_binding.bundle.evidence(),
++                "job_configuration_hash": self._frozen_job_configuration_hash}
++        definition = VisualSupervisionDefinition.from_payload(self._local_envelope(
++            "visual.supervision.definition.local.v1", body))
++        with self._local_publication_scope(operation_id="supervision-init:" + self._local_task_id,
++                                           operation_sha256=_local_digest(definition)):
++            return self.source.event_repository.initialize_visual_supervision_if_absent(definition)
++
+     def _operational_begin(self, claim: str, kind: str, observation=None) -> None:
+         owner = self._operational_owner
+         if owner is None:
+@@ -373,6 +985,18 @@
+         return lease.job_id, lease.run_id, lease.worker_id, lease.lease_id, lease.attempt
+ 
+     def _read_lease(self) -> WorkerLeaseObservation:
++        if getattr(self, "_local_mode", False):
++            owner = self._operational_owner
++            owner._check_app_live()
++            session = owner._startup.worker._operational_lease_session
++            with self.source.job_repository._local_read_scope(
++                session, job_id=self.source.job_id, purpose="runtime-read",
++                operation_sha256=digest(["runtime-read", self.source.job_id]),
++            ) as view:
++                observed = session.evaluate_locked(view)
++                if observed.status != "VALID":
++                    raise RuntimeError("current local lease authority invalid")
++                return observed
+         try:
+             lease = read_visual_worker_lease(
+                 self.source.job_repository,
+@@ -461,6 +1085,9 @@
+ 
+     @property
+     def verification_state(self) -> VerificationBudgetState:
++        if self._local_mode:
++            return (self.supervision_source_publication.verification_budget_history.state
++                    if self.is_adopted else self.bootstrap.local_state)
+         return (
+             self.supervision_source_publication.verification_budget.state
+             if self.is_adopted
+@@ -483,7 +1110,7 @@
+         state = self.verification_state
+         if record.terminal_reason not in (None, "original_adopted") or state.exhausted_reason:
+             raise RuntimeError("durable visual worker already stopped")
+-        if datetime.now(UTC) >= min(record.task_deadline_at, state.deadline_at):
++        if not self._local_mode and datetime.now(UTC) >= min(record.task_deadline_at, state.deadline_at):
+             raise RuntimeError("original worker deadline exhausted")
+         return lease
+ 
+@@ -558,17 +1185,23 @@
+             "COMPLETED",
+         } or any(
+             event.severity == "CRITICAL" or event.event_type.value == "MANUAL_INTERRUPT"
+-            for event in self.source.event_repository.list_events(self.episode_id)
++            for event in (
++                self._local_events() if self._local_mode
++                else self.source.event_repository.list_events(self.episode_id)
++            )
+         ):
+             raise RuntimeError("current event repository cancelled the optional worker source")
+         if bootstrap.terminal_reason not in {None, "original_adopted"}:
+             raise RuntimeError("original worker source is already stopped")
+-        if datetime.now(UTC) >= min(
++        if not self._local_mode and datetime.now(UTC) >= min(
+             bootstrap.task_deadline_at, bootstrap.verification_state.deadline_at
+         ):
+             raise RuntimeError("original worker deadline exhausted")
+         stored = self.source.event_repository.get_visual_supervision(self.episode_id)
+-        if stored is not None and stored.definition.to_payload()["job_configuration_hash"] != (
++        stored_definition = None if stored is None else stored.definition.to_payload()
++        if stored_definition is not None and self._local_mode:
++            stored_definition = stored_definition["payload"]
++        if stored_definition is not None and stored_definition["job_configuration_hash"] != (
+             self._frozen_job_configuration_hash
+         ):
+             raise RuntimeError("persisted supervision job configuration source changed")
+@@ -618,6 +1251,8 @@
+         self, period_s: float | None, robot_state: RobotState
+     ) -> VisualSupervisionRecord:
+         with self._lock:
++            if self._local_mode:
++                return self._local_initialize_supervision(period_s, robot_state)
+             lease = self.check_active(robot_state)
+             self._check_optional_sources()
+             expected_period, _ = self._runtime_option_sources()
+@@ -981,6 +1616,25 @@
+         observation: RGBDObservation | None = None,
+         draft: PlannerDraft | None = None,
+     ) -> VisualBootstrapRecord:
++        if self._local_mode:
++            self.check_active(robot_state)
++            current = self.bootstrap
++            from cloud_edge_robot_arm.vision.local_temporal import _history_state_hash
++
++            body = {"scope": "BOOTSTRAP_SOURCE_ONLY", "bootstrap_id": self._bootstrap_id,
++                    "definition_hash": digest(current.to_payload()["payload"]["definition"]),
++                    "expected_record_hash": _history_state_hash(current._tag, current.semantic, self._local_original),
++                    "kind": kind, "event_key": f"worker-{kind.lower()}-{current.revision}",
++                    "robot_state": robot_state.model_dump(mode="json"), "claim_id": claim_id,
++                    "observation": None if observation is None else observation.model_dump(mode="json"),
++                    "draft": None if draft is None else asdict(draft)}
++            request = VisualBootstrapTransitionInput.from_payload(self._local_envelope(
++                "visual.bootstrap.transition.local.v1", body))
++            with self._local_publication_scope(operation_id=body["event_key"], operation_sha256=_local_digest(request)):
++                result = self.source.event_repository.transition_visual_bootstrap_if_current(request=request)
++            if result.write_disposition != "NEW_COMMIT":
++                raise RuntimeError("historical source claim cannot replay an effect")
++            return result.record
+         lease = self.check_active(robot_state)
+         record = self.bootstrap
+         if record.terminal_reason == "original_adopted":
+@@ -1093,6 +1747,8 @@
+         self, robot_state: RobotState
+     ) -> tuple[TaskContract, VisualOwnerPublicationRecord]:
+         with self._lock:
++            if self._local_mode:
++                return self._local_adopt(robot_state)
+             lease = self.check_active(robot_state)
+             if self.is_adopted:
+                 return self.original.contract, self.publication
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py (S2 candidate)
+@@ -807,6 +807,90 @@
+     return VisualBootstrapTransitionResult(_derive(record, request, now=now), "NEW_COMMIT")
+ 
+ 
++def derive_local_bootstrap(record, request, decision, transaction):
++    """Pure exact replay; the actual private coordinator supplies both verdicts."""
++    from cloud_edge_robot_arm.vision.local_temporal import (
++        LocalEnvelope, _copy, _hash, _history_state_hash, _initial_history_state,
++        _replay_bootstrap, semantic_projection,
++    )
++
++    raw = LocalEnvelope.from_payload(record.to_payload()).to_payload()
++    source = LocalEnvelope.from_payload(request.to_payload()).to_payload()
++    body, original = raw["payload"], raw["original_time"]
++    if source["original_time"] != original:
++        raise ValueError("bootstrap original source changed")
++    target = source["payload"]
++    if (target["definition_hash"] != _hash(body["definition"])
++            or target["expected_record_hash"] != _history_state_hash(raw["schema_version"], body, original)):
++        raise ValueError("bootstrap source/CAS changed")
++    operation = _hash({"schema_version": "visual.local-history-operation.v1",
++                       "request": semantic_projection(source)})
++    if decision["operation_sha256"] != operation or transaction["operation_sha256"] != operation:
++        raise ValueError("bootstrap decision operation source differs")
++    state = _initial_history_state(body["definition"], original, bootstrap=True)
++    phases = {}
++    for event in body["history"]:
++        _replay_bootstrap(state, event["request"], original, event["decision"], phases)
++        state["revision"] += 1
++        state["history"].append(_copy(event))
++    _replay_bootstrap(state, source, original, decision, phases)
++    state["revision"] += 1
++    result_hash = _history_state_hash(raw["schema_version"], state, original)
++    transaction["event_record_hash"] = result_hash
++    state["history"].append({"request": source, "decision": _copy(decision),
++                             "transaction": _copy(transaction), "resulting_record_hash": result_hash})
++    result = {**raw, "payload": state, "decision": decision, "transaction": transaction,
++              "diagnostics": {"utc": {}, "monotonic": None}}
++    return VisualBootstrapRecord.from_payload(result)
++
++
++def compile_local_bootstrap_original(record, *, plan_id, robot_id):
++    """Compile actual saved planner bytes; original D and UTC model bytes survive."""
++    from cloud_edge_robot_arm.vision.local_temporal import _hash, _copy, _proposal_projection
++    from cloud_edge_robot_arm.vision.owner_registration import LocalVisualOriginalPlan
++    from cloud_edge_robot_arm.vision.worker_owner import _local_worker_policy
++
++    record = VisualBootstrapRecord.from_payload(record.to_payload())
++    if type(record) is not LocalVisualBootstrapRecord or record.local_time.to_payload()["contract_provenance"]["kind"] != "LOCAL_BOOTSTRAP_SOURCE_V1":
++        raise ValueError("exact staged local bootstrap required")
++    if record.pending_claim_id is not None or record.terminal_reason is not None or not record.planning_source_usable:
++        raise ValueError("complete nonterminal planning source required")
++    pre = record.to_payload(); body = pre["payload"]; definition = body["definition"]["payload"]
++    if _proposal_projection(body["draft"], definition) is None:
++        raise ValueError("saved full planner proposal unusable")
++    payload = _copy(body["draft"]["parsed_json"])
++    payload.update(task_id=definition["episode_id"], plan_version=1, command_seq=1)
++    aliases = {"visual_target": "object", "visual_destination": "target_region"}
++    for key in ("object_id", "target_region_id"):
++        value = payload["task_target"].get(key)
++        if isinstance(value, str) and value in aliases:
++            payload["task_target"][key] = aliases[value]
++    for step in payload["steps"]:
++        for key in ("object_id", "region_id"):
++            value = step.get("parameters", {}).get(key)
++            if isinstance(value, str) and value in aliases:
++                step["parameters"][key] = aliases[value]
++    contract = TaskContract.model_validate(payload)
++    requirements, graph = _local_worker_policy(contract, record.observation, definition["source_hashes"])
++    lease = pre["original_time"]["lease_identity"]
++    identity = {key: lease[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")}
++    identity.update(owner_epoch=lease["epoch"], episode_id=definition["episode_id"],
++                    task_id=contract.task_id, plan_id=plan_id, robot_id=robot_id)
++    original = {
++        "binding_scope": "SOURCE_BINDING_ONLY", "identity": identity,
++        "contract": contract.model_dump(mode="json"),
++        "contract_provenance": {"kind": "LOCAL_BOOTSTRAP_ADOPTED_V1",
++                                "content_sha256": _hash(contract.model_dump(mode="json")), "bootstrap_record": pre},
++        "proposal_hash": body["proposal_hash"], "role_bundle_hash": definition["role_bundle_hash"],
++        "compiler_source_hashes": definition["source_hashes"], "source_hashes": definition["source_hashes"],
++        "requirements": {key: value.to_payload() for key, value in requirements.items()}, "dependencies": graph,
++    }
++    return LocalVisualOriginalPlan.from_payload({
++        "schema_version": "visual.owner.original.local.v1", "payload": original,
++        "original_time": pre["original_time"], "decision": None, "transaction": None,
++        "diagnostics": {"utc": {}, "monotonic": None}})
++
++
+ def bootstrap_proposal_hash(proposal: Mapping[str, Any]) -> str:
+     """Hash the complete adapter semantic proposal before identity filling."""
+     if not isinstance(proposal, Mapping):
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py (S2 candidate)
+@@ -11,7 +11,12 @@
+ from __future__ import annotations
+ 
+ from collections.abc import Callable
++from contextlib import contextmanager
++from dataclasses import fields, is_dataclass
+ from datetime import datetime
++from enum import Enum
++from functools import wraps
++import json
+ from typing import TYPE_CHECKING, Protocol, runtime_checkable
+ 
+ from cloud_edge_robot_arm.contracts.models import (
+@@ -71,6 +76,165 @@
+     """Base class for repository conflicts that must surface to callers."""
+ 
+ 
++_LOCAL_WRITERS = frozenset("initialize_visual_bootstrap_if_absent transition_visual_bootstrap_if_current initialize_visual_owner_if_absent publish_visual_boundary_if_current route_visual_verification_if_current initialize_visual_supervision_if_absent transition_visual_supervision_if_current save_event mark_event_handled save_retry_budget initialize_retry_budget_if_absent consume_retry_if_available initialize_verification_budget_if_absent initialize_recovery_if_absent advance_recovery_if_current reserve_reobservation_if_current consume_retry_and_authorize_recovery_if_current save_state save_state_transition save_failure_summary save_completion_summary save_replan_request save_replan_result save_active_contract advance_active_contract_if_current save_execution_checkpoint compare_and_set_checkpoint save_replan_apply_record update_replan_apply_record_if_current save_command_ack enqueue_outbox claim_outbox_message mark_outbox_sent mark_outbox_failed advance_plan_version_if_current record_audit_event".split())
++_LOCAL_READERS = frozenset("get_visual_bootstrap get_visual_original_plan get_visual_owner_publication get_visual_supervision_source_publication get_visual_supervision get_verification_budget get_retry_budget get_recovery get_event get_replan_request get_replan_apply_record get_state".split())
++_LOCAL_MISSING = object()
++
++
++def local_value(value):
++    """Exact data serialization for operation binding, with no default=str."""
++    from collections.abc import Mapping
++    from cloud_edge_robot_arm.vision.local_temporal import _copy
++
++    if callable(getattr(value, "to_payload", None)):
++        return _copy(local_value(value.to_payload()))
++    if callable(getattr(value, "model_dump", None)):
++        return _copy(value.model_dump(mode="json"))
++    if is_dataclass(value) and not isinstance(value, type):
++        return {field.name: local_value(getattr(value, field.name)) for field in fields(value)}
++    if isinstance(value, Mapping):
++        return {key: local_value(item) for key, item in value.items()}
++    if isinstance(value, (tuple, list)):
++        return [local_value(item) for item in value]
++    if isinstance(value, datetime):
++        return value.isoformat()
++    if isinstance(value, Enum):
++        return value.value
++    return _copy(value)
++
++
++def local_get_unlocked(repository, category, key):
++    """Caller owns the actual event lock. Returned JSON is always detached."""
++    if hasattr(repository, "_conn"):
++        row = repository._conn.execute(
++            "SELECT value_json FROM visual_local_tasks_v1 WHERE category=? AND record_key=?",
++            (category, key),
++        ).fetchone()
++        return None if row is None else json.loads(row["value_json"])
++    stored = repository._local_tasks.get((category, key))
++    return None if stored is None else json.loads(stored)
++
++
++def local_put_unlocked(repository, category, key, value, task_id):
++    from cloud_edge_robot_arm.vision.local_temporal import _canonical, _copy
++    from cloud_edge_robot_arm.vision.worker_runtime import _local_scope_for
++
++    _local_scope_for(repository, required=True)
++    raw = _canonical(_copy(value))
++    if hasattr(repository, "_conn"):
++        repository._conn.execute(
++            "INSERT INTO visual_local_tasks_v1 (category,record_key,task_id,value_json) VALUES (?,?,?,?) "
++            "ON CONFLICT(category,record_key) DO UPDATE SET value_json=excluded.value_json",
++            (category, key, task_id, raw),
++        )
++    else:
++        repository._local_tasks[(category, key)] = raw
++
++
++def local_receipt_unlocked(repository, receipt):
++    from cloud_edge_robot_arm.vision.worker_runtime import _local_scope_for
++    from cloud_edge_robot_arm.vision.local_temporal import _canonical, _copy
++
++    _local_scope_for(repository, required=True)
++    if hasattr(repository, "_conn"):
++        keys = list(receipt)
++        repository._conn.execute(
++            "INSERT INTO visual_local_publications_v1 (" + ",".join(keys) + ") VALUES ("
++            + ",".join("?" for _ in keys) + ") ON CONFLICT(operation_id) DO UPDATE SET "
++            + ",".join(key + "=excluded." + key for key in keys if key != "operation_id"),
++            tuple(receipt[key] for key in keys),
++        )
++        repository._conn.execute("COMMIT")
++        repository._conn.execute("SELECT 1").fetchone()
++    else:
++        repository._local_publications[receipt["operation_id"]] = _canonical(_copy(receipt))
++
++
++def local_receipt_read_unlocked(repository, operation_id):
++    if hasattr(repository, "_conn"):
++        row = repository._conn.execute("SELECT * FROM visual_local_publications_v1 WHERE operation_id=?",
++                                       (operation_id,)).fetchone()
++        return None if row is None else dict(row)
++    raw = repository._local_publications.get(operation_id)
++    return None if raw is None else json.loads(raw)
++
++
++def _local_target(repository, name, args, kwargs):
++    """Resolve the actual addressed record, including key-only mutation APIs."""
++    values = list(args) + list(kwargs.values())
++    for value in values:
++        payload = value.to_payload() if callable(getattr(value, "to_payload", None)) else None
++        if isinstance(payload, dict) and str(payload.get("schema_version", "")).endswith(".local.v1"):
++            return True
++        task = getattr(value, "task_id", None)
++        if task and local_get_unlocked(repository, "binding", task) is not None:
++            return True
++        if isinstance(value, str) and local_get_unlocked(repository, "binding", value) is not None:
++            return True
++    key_sources = {
++        "mark_event_handled": "event", "advance_recovery_if_current": "recovery",
++        "reserve_reobservation_if_current": "recovery", "consume_retry_and_authorize_recovery_if_current": "recovery",
++        "save_replan_result": "replan", "compare_and_set_checkpoint": "checkpoint",
++        "update_replan_apply_record_if_current": "apply", "mark_outbox_sent": "outbox", "mark_outbox_failed": "outbox",
++    }
++    category = key_sources.get(name)
++    if category is not None:
++        for value in values:
++            key = value if isinstance(value, str) else getattr(value, "request_id", None)
++            if key and local_get_unlocked(repository, category, key) is not None:
++                return True
++    if name == "claim_outbox_message":
++        if hasattr(repository, "_conn"):
++            return repository._conn.execute("SELECT 1 FROM visual_local_tasks_v1 WHERE category='outbox' LIMIT 1").fetchone() is not None
++        return any(category == "outbox" for category, _ in repository._local_tasks)
++    return False
++
++
++def local_event_repository(cls):
++    """Close the complete public writer surface without replacing its real lock."""
++    def wrap(name, original):
++        @wraps(original)
++        def dispatch(self, *args, **kwargs):
++            from cloud_edge_robot_arm.vision.worker_runtime import _local_scope_for, _local_read_record
++
++            scope = _local_scope_for(self)
++            if scope is not None:
++                if name in _LOCAL_WRITERS:
++                    return scope.runtime._local_mutate(name, args, kwargs)
++                result = _local_read_record(self, name, args, kwargs)
++                if result is not _LOCAL_MISSING:
++                    return result
++                raise ValueError("private operational reader has no matching local source")
++            lock = self._write_lock if hasattr(self, "_write_lock") else self._lock
++            with lock:
++                if name in _LOCAL_READERS:
++                    result = _local_read_record(self, name, args, kwargs)
++                    if result is not _LOCAL_MISSING:
++                        return result
++                elif _local_target(self, name, args, kwargs):
++                    negative = (name == "save_state" and len(args) >= 2 and type(args[1]) is str
++                                and args[1] == "CANCELLED" and not kwargs)
++                    if not negative:
++                        raise ValueError("operational task mutation requires the registered private publication scope")
++                    if hasattr(self, "_conn"):
++                        with self._conn:
++                            self._conn.execute("BEGIN IMMEDIATE")
++                            self._conn.execute("INSERT INTO visual_local_tasks_v1 VALUES ('state',?,?,?) "
++                                               "ON CONFLICT(category,record_key) DO UPDATE SET value_json=excluded.value_json",
++                                               (args[0], args[0], json.dumps("CANCELLED")))
++                    else:
++                        self._local_tasks[("state", args[0])] = json.dumps("CANCELLED")
++                    return None
++            return original(self, *args, **kwargs)
++        return dispatch
++
++    for name in sorted(_LOCAL_WRITERS | _LOCAL_READERS):
++        original = getattr(cls, name, None)
++        if original is not None:
++            setattr(cls, name, wrap(name, original))
++    return cls
++
++
+ class IdempotencyConflictError(RepositoryConflictError):
+     """Raised when the same unique key is reused with different content."""
+ 
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py (S2 candidate)
+@@ -33,6 +33,7 @@
+ )
+ from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
+     IdempotencyConflictError,
++    local_event_repository,
+ )
+ 
+ 
+@@ -103,11 +104,14 @@
+     )
+ 
+ 
++@local_event_repository
+ class InMemoryEventAutonomyRepository:
+     """Thread-safe in-memory implementation for testing and CI."""
+ 
+     def __init__(self) -> None:
+         self._lock = threading.Lock()
++        self._local_tasks = {}
++        self._local_publications = {}
+         self._events: dict[str, EdgeEvent] = {}
+         self._event_hashes: dict[str, str] = {}
+         self._events_by_task: dict[str, list[str]] = {}
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py (S2 candidate)
+@@ -34,6 +34,7 @@
+ )
+ from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
+     IdempotencyConflictError,
++    local_event_repository,
+ )
+ 
+ 
+@@ -105,6 +106,7 @@
+     )
+ 
+ 
++@local_event_repository
+ class SQLiteEventAutonomyRepository:
+     """SQLite-backed persistent repository with CAS and conflict semantics."""
+ 
+@@ -119,6 +121,16 @@
+         self._visual_supervision_verified_bytes: dict[str, tuple[Any, ...]] = {}
+         self._create_schema()
+         self._migrate_schema()
++        with self._conn:
++            self._conn.execute("CREATE TABLE IF NOT EXISTS visual_local_tasks_v1 (category TEXT NOT NULL, "
++                               "record_key TEXT NOT NULL, task_id TEXT NOT NULL, value_json TEXT NOT NULL, "
++                               "PRIMARY KEY(category,record_key))")
++            self._conn.execute("CREATE TABLE IF NOT EXISTS visual_local_publications_v1 ("
++                               "operation_id TEXT PRIMARY KEY, operation_sha256 TEXT NOT NULL, job_id TEXT NOT NULL, "
++                               "attempt INTEGER NOT NULL, lease_id TEXT NOT NULL, epoch TEXT NOT NULL, "
++                               "generation INTEGER NOT NULL, row_revision INTEGER NOT NULL, phase TEXT NOT NULL, "
++                               "event_record_hash TEXT NOT NULL, event_receipt_hash TEXT NOT NULL, "
++                               "job_receipt_hash TEXT NOT NULL, payload_json TEXT NOT NULL)")
+ 
+     def _visual_supervision_locked(self, task_id: str) -> VisualSupervisionRecord | None:
+         from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import (
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py (S2 candidate)
+@@ -105,7 +105,7 @@
+         visual_event_repository: EventAutonomyRepository | None = None,
+         visual_robot_id: str | None = None,
+         operational_time_mode: Literal[
+-            "UTC_LEGACY_VETO", "OPERATIONAL_LEASE_FOUNDATION_V1"
++            "UTC_LEGACY_VETO", "OPERATIONAL_LEASE_FOUNDATION_V1", "LOCAL_TEMPORAL_PUBLICATION_V1"
+         ] = "UTC_LEGACY_VETO",
+     ) -> None:
+         visual_configuration = (
+@@ -123,7 +123,7 @@
+             from cloud_edge_robot_arm.vision.worker_owner import _identity_string
+ 
+             _identity_string(visual_robot_id)
+-        if operational_time_mode not in {"UTC_LEGACY_VETO", "OPERATIONAL_LEASE_FOUNDATION_V1"}:
++        if operational_time_mode not in {"UTC_LEGACY_VETO", "OPERATIONAL_LEASE_FOUNDATION_V1", "LOCAL_TEMPORAL_PUBLICATION_V1"}:
+             raise ValueError("unsupported operational time mode")
+         self.operational_time_mode = operational_time_mode
+         self._frozen_operational_time_mode = operational_time_mode
+@@ -162,7 +162,7 @@
+         stop_heartbeat = threading.Event()
+         first_heartbeat = threading.Event()
+         with ExitStack() as stack:
+-            if self._frozen_operational_time_mode == "OPERATIONAL_LEASE_FOUNDATION_V1":
++            if self._frozen_operational_time_mode in {"OPERATIONAL_LEASE_FOUNDATION_V1", "LOCAL_TEMPORAL_PUBLICATION_V1"}:
+                 session = _open_worker_lease_session(self)
+                 self._operational_lease_session = session
+                 stack.enter_context(_worker_lease_scope(session))
+@@ -1577,6 +1577,22 @@
+ 
+         if job.lease_id != lease_id or job.worker_id != self.worker_id:
+             return False
++        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            from cloud_edge_robot_arm.vision.operational_windows import _OWNERS
++            from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseError
++            from cloud_edge_robot_arm.research.operational_time_v1 import OperationalTimeError
++
++            try:
++                owner = _OWNERS.get(self)
++                if owner is not None:
++                    owner._check_app_live(require_origin=owner.task_origin is not None)
++                with self.repository._local_read_scope(
++                    self._operational_lease_session, job_id=job.job_id, purpose="worker-read",
++                    operation_sha256=hashlib.sha256((job.job_id + ":worker-read").encode()).hexdigest(),
++                ) as view:
++                    return self._operational_lease_session.evaluate_locked(view).status == "VALID"
++            except (OperationalLeaseError, OperationalTimeError, ValueError):
++                return False
+         lease = next(
+             (
+                 item
+@@ -1710,6 +1726,11 @@
+         """Recheck persisted ownership at each model return and physical boundary."""
+         from datetime import UTC, datetime
+ 
++        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            current = self.repository.get_job(original.job_id)
++            return (current.cancel_requested or current.status != RuntimeJobStatus.RUNNING
++                    or self._heartbeat_failed.is_set()
++                    or not self._owns_artifact_publication(current, original.lease_id))
+         try:
+             current = self.repository.get_job(original.job_id)
+             if current.cancel_requested or current.status in {
+@@ -1766,6 +1787,10 @@
+             raise RuntimeError("lease heartbeat failed; dispatch stopped")
+         if current.lease_id != original.lease_id or current.status != RuntimeJobStatus.RUNNING:
+             raise RuntimeError("job no longer owns an active running lease")
++        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            if not self._owns_artifact_publication(current, original.lease_id):
++                raise RuntimeError("current local task/lease authority unavailable")
++            return
+         if (time.monotonic() - start_monotonic) >= original.timeout_seconds:
+             raise TimedOut("timeout")
+ 
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py (S2 candidate)
+@@ -421,6 +421,7 @@
+         if type(ttl) is not int or not math.isfinite(ttl) or ttl <= 0:
+             raise OperationalLeaseError("frozen TTL must be positive finite integer seconds")
+         self.worker = worker
++        self._mode = worker._frozen_operational_time_mode
+         self.repository = cast("SQLiteSimulationJobRepository", worker.repository)
+         self.worker_id = worker.worker_id
+         self._binding = worker.visual_role_binding
+@@ -493,7 +494,9 @@
+         ):
+             self.invalidate("worker original policy changed")
+             raise OperationalLeaseError("worker frozen source/TTL policy changed")
+-        if self.worker.operational_time_mode != self.worker._frozen_operational_time_mode:
++        if (self.worker._frozen_operational_time_mode != self._mode
++                or (self._mode != "LOCAL_TEMPORAL_PUBLICATION_V1"
++                    and self.worker.operational_time_mode != self._mode)):
+             self.invalidate("worker mode changed while active")
+             raise OperationalLeaseError("worker frozen mode changed")
+         return str(role)
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py (S2 candidate)
+@@ -518,6 +518,23 @@
+             # Measure after lock acquisition: lock waits cannot revive expiry.
+             now = _now()
+             expires_at = now + timedelta(seconds=lease_ttl_seconds)
++            session = _current_session(self)
++            if session is not None and session._mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++                # The dispatcher already evaluated the genuine current broker
++                # segment in this transaction. UTC columns remain diagnostics.
++                cursor = conn.execute(
++                    "UPDATE simulation_job_leases SET heartbeat_at=?,expires_at=? WHERE lease_id=? "
++                    "AND released_at='' AND EXISTS (SELECT 1 FROM simulation_jobs j "
++                    "WHERE j.job_id=simulation_job_leases.job_id AND j.lease_id=simulation_job_leases.lease_id "
++                    "AND j.worker_id=simulation_job_leases.worker_id AND j.cancel_requested=0 "
++                    "AND j.status IN (?,?,?))",
++                    (_dt(now), _dt(expires_at), lease_id, RuntimeJobStatus.LEASED.value,
++                     RuntimeJobStatus.STARTING.value, RuntimeJobStatus.RUNNING.value))
++                if cursor.rowcount != 1:
++                    raise OperationalLeaseError("current local heartbeat ownership/CAS invalid")
++                conn.execute("UPDATE simulation_jobs SET lease_expires_at=?,updated_at=? WHERE lease_id=?",
++                             (_dt(expires_at), _dt(now), lease_id))
++                return
+             # Keep lease and job expiry in one transaction. Expiry, release,
+             # cancellation and ownership changes are irreversible to a heartbeat.
+             cursor = conn.execute(
+@@ -1288,6 +1305,84 @@
+                 raise OperationalLeaseError("exact unique actual open attempt required")
+         else:
+             raise OperationalLeaseError("terminal operational lifecycle")
++
++    @contextmanager
++    def _local_read_scope(self, session, *, job_id: str, purpose: str, operation_sha256: str):
++        """Issue or join a genuine private read view; descriptors cannot enter."""
++        from cloud_edge_robot_arm.vision.operational_windows import OperationalWindowOwner, _prepare_startup
++        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
++
++        caller = sys._getframe(2).f_code
++        allowed = {
++            _prepare_startup.__code__, OperationalWindowOwner._bind_inputs.__code__,
++            VisualWorkerRuntime._read_lease.__code__,
++            VisualWorkerRuntime._local_publication_scope.__wrapped__.__code__,
++            SimulationWorker._owns_artifact_publication.__code__,
++        }
++        if (type(session) is not OperationalLeaseSession or _current_session(self) is not session
++                or session.repository is not self or caller not in allowed
++                or session.worker._frozen_operational_time_mode != "LOCAL_TEMPORAL_PUBLICATION_V1"):
++            raise OperationalLeaseError("registered private local session/caller required")
++        session._check_ingress(purpose)
++        active = (getattr(self._transactions, "local_view", None)
++                  or getattr(self._transactions, "publication_view", None))
++        if active is not None:
++            session._view(active)
++            if active.snapshot["job_id"] != job_id:
++                raise OperationalLeaseError("foreign local read job")
++            yield active
++            return
++        with self._operational_transaction(session, job_id=job_id, purpose=purpose,
++                                           operation_sha256=operation_sha256) as view:
++            self._transactions.local_view = view
++            try:
++                yield view
++            finally:
++                self._transactions.local_view = None
++
++    def _local_publication_receipt(self, view, receipt: dict[str, Any]) -> None:
++        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++
++        if sys._getframe(1).f_code is not VisualWorkerRuntime._local_commit.__code__:
++            raise OperationalLeaseError("private publication receipt coordinator required")
++        session = _view_record(view).session
++        session._view(view)
++        if receipt["job_id"] != session.job_id or receipt["epoch"] != session.epoch:
++            raise OperationalLeaseError("publication receipt original job/fence differs")
++        conn = view._connection
++        old = conn.execute("SELECT * FROM simulation_local_publications_v1 WHERE operation_id=?",
++                           (receipt["operation_id"],)).fetchone()
++        if old is not None and (old["operation_sha256"] != receipt["operation_sha256"]
++                               or old["event_record_hash"] != receipt["event_record_hash"]):
++            raise OperationalLeaseError("publication operation changed hash/source")
++        keys = list(receipt)
++        conn.execute("INSERT INTO simulation_local_publications_v1 (" + ",".join(keys)
++                     + ") VALUES (" + ",".join("?" for _ in keys) + ") ON CONFLICT(operation_id) DO UPDATE SET "
++                     + ",".join(k + "=excluded." + k for k in keys if k != "operation_id"),
++                     tuple(receipt[k] for k in keys))
++        conn.execute("COMMIT")
++        # Deliberately access the real connection after COMMIT. A lost acknowledgement
++        # is not converted into success, nor rolled back into a refunded debit.
++        conn.execute("SELECT 1").fetchone()
++
++    def read_local_publication(self, run_id: str) -> list[dict[str, Any]]:
++        self._initialize()
++        with self.publication_guard(), self._connect() as conn:
++            rows = conn.execute("SELECT p.* FROM simulation_local_publications_v1 p "
++                                "JOIN simulation_jobs j ON p.job_id=j.job_id WHERE j.run_id=? "
++                                "ORDER BY p.operation_id", (run_id,)).fetchall()
++            return [{**dict(row), "live_authority": False, "accepted": False,
++                     "confirmation_state": "UNKNOWN", "write_disposition": "HISTORICAL_ONLY"}
++                    for row in rows]
++
++    def reconcile_local_publications(self) -> list[dict[str, Any]]:
++        """Detached orphan census. Never activate, complete, refund or dispatch."""
++        self._initialize()
++        with self.publication_guard(), self._connect() as conn:
++            return [{**dict(row), "confirmation_state": "UNKNOWN", "accepted": False,
++                     "live_authority": False, "reason": "fresh private owner and both receipts required"}
++                    for row in conn.execute("SELECT * FROM simulation_local_publications_v1 ORDER BY operation_id")]
+ 
+     def _commit_operational_proposal(
+         self, view: LockedLeaseView, proposal: LeaseProposal
+@@ -2145,6 +2240,12 @@
+         if getattr(self._transactions, "connection", None) is not None:
+             return
+         with self.publication_guard(), self._connect() as conn:
++            conn.execute("CREATE TABLE IF NOT EXISTS simulation_local_publications_v1 ("
++                         "operation_id TEXT PRIMARY KEY, operation_sha256 TEXT NOT NULL, job_id TEXT NOT NULL, "
++                         "attempt INTEGER NOT NULL, lease_id TEXT NOT NULL, epoch TEXT NOT NULL, "
++                         "generation INTEGER NOT NULL, row_revision INTEGER NOT NULL, phase TEXT NOT NULL, "
++                         "event_record_hash TEXT NOT NULL, event_receipt_hash TEXT NOT NULL, "
++                         "job_receipt_hash TEXT NOT NULL, payload_json TEXT NOT NULL)")
+             conn.executescript(
+                 "\n"
+                 "                CREATE TABLE IF NOT EXISTS schema_migrations (\n"
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py (S2 candidate)
+@@ -86,6 +86,14 @@
+ 
+     def terminate_orphaned_operational_attempts(self) -> list[str]: ...
+ 
++    def read_local_publication(self, run_id: str) -> list[dict[str, object]]:
++        """Detached operation history; never a live owner or dispatch capability."""
++        ...
++
++    def reconcile_local_publications(self) -> list[dict[str, object]]:
++        """Read conservative orphan evidence without activation, refund or replay."""
++        ...
++
+     def cleanup_operational_session(
+         self, job_id: str, *, session: OperationalLeaseSession
+     ) -> None: ...
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py (S2 candidate)
+@@ -25,8 +25,15 @@
+         self.repository = repository
+         self.artifact_root = artifact_root
+         self.requeue_recoverable = requeue_recoverable
++        self.local_publication_history: tuple[dict[str, object], ...] = ()
+ 
+     def recover_interrupted_jobs(self) -> RecoveryResponse:
++        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
++
++        # Only the real SQLite job store owns this additive detached history.
++        # Reconciliation neither completes markers nor supplies execution authority.
++        if type(self.repository) is SQLiteSimulationJobRepository:
++            self.local_publication_history = tuple(self.repository.reconcile_local_publications())
+         # 先让 repository 标记过期租约，再基于 artifact 完整性决定是否进入
+         # RECOVERY_PENDING；只有显式允许时才重新入队，避免启动恢复无意中
+         # 重复执行已经需要人工复核的任务。
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py (S2 candidate)
+@@ -74,7 +74,9 @@
+         raise ValueError("aware source clock required")
+ 
+ 
+-def _state_payload(state: VerificationBudgetState) -> dict[str, Any]:
++def _state_payload(state: VerificationBudgetState | LocalVerificationBudgetState) -> dict[str, Any]:
++    if type(state) is LocalVerificationBudgetState:
++        return state.to_payload()
+     state.__post_init__()
+     if any(
+         not isinstance(name, str) or status not in {"UNKNOWN", "FAIL", "PASS"}
+@@ -276,7 +278,7 @@
+     task_id: str
+     attempt_id: str
+     state: str
+-    budget_state: VerificationBudgetState
++    budget_state: VerificationBudgetState | LocalVerificationBudgetState
+     progress_signature: str
+     last_verified_at: datetime | None
+     resolution_observation_id: str
+@@ -372,7 +374,12 @@
+         values = dict(payload)
+         if values.pop("schema_version") != "recovery.record.v1":
+             raise ValueError("unknown recovery record schema")
+-        values["budget_state"] = _state_from_payload(values["budget_state"])
++        budget_payload = values["budget_state"]
++        values["budget_state"] = (
++            LocalVerificationBudgetState.from_payload(budget_payload)
++            if "original_budget_reference" in budget_payload
++            else _state_from_payload(budget_payload)
++        )
+         values["conditions"] = tuple(ConditionSpec(**item) for item in values["conditions"])
+         if values["execution_completion"] is not None:
+             values["execution_completion"] = SkillExecutionResult.model_validate_json(
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py (accepted T1 before R204)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py (S2 candidate)
+@@ -258,7 +258,7 @@
+         if ref["fencing"] != task["fencing"]:
+             raise ValueError("immutable original references must retain the same fence")
+     provenance = _object(original["contract_provenance"], frozenset(("kind", "content_sha256")))
+-    if provenance["kind"] not in {"LOCAL_APP_PRODUCED", "EXTERNAL_UTC"}:
++    if provenance["kind"] not in {"LOCAL_APP_PRODUCED", "EXTERNAL_UTC", "LOCAL_BOOTSTRAP_SOURCE_V1"}:
+         raise ValueError("explicit immutable contract provenance required")
+     _sha(provenance["content_sha256"])
+     return original
+@@ -623,10 +623,95 @@
+             != (lease["job_id"], lease["run_id"], lease["worker_id"], lease["lease_id"],
+                 lease["attempt"], lease["epoch"])):
+         raise ValueError("audit original task lease/fence/epoch binding differs")
+-    if (_copy(dict(prior.source_hashes)) != original["source_hashes"]
+-            or _object(original["contract_provenance"])["content_sha256"]
+-            != _hash(_copy(prior.contract.model_dump(mode="json")))):
++    if _copy(dict(prior.source_hashes)) != original["source_hashes"]:
+         raise ValueError("audit original source/contract binding differs")
++    if _object(original["contract_provenance"])["kind"] == "LOCAL_BOOTSTRAP_SOURCE_V1":
++        if type(prior) is not LocalVisualOriginalPlan:
++            raise ValueError("staged source requires exact staged local original")
++        _staged_original_body(prior.semantic, original)
++    elif _object(original["contract_provenance"])["content_sha256"] != _hash(_copy(prior.contract.model_dump(mode="json"))):
++        raise ValueError("audit original source/contract binding differs")
++
++
++def bootstrap_source_commitment(definition: dict[str, JSONValue]) -> str:
++    definition = _object(definition, FIELDS["visual.bootstrap.definition.local.v1"])
++    return _hash({"schema_version": "visual.local-bootstrap-source.v1", "definition": definition})
++
++
++def _staged_original_body(body: dict[str, JSONValue], original: dict[str, JSONValue]) -> dict[str, JSONValue]:
++    """Validate a finite, complete pre-adoption source; no issuer or current clock."""
++    from cloud_edge_robot_arm.contracts.models import TaskContract
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from cloud_edge_robot_arm.vision.worker_owner import _local_worker_policy
++
++    source_provenance = _object(original["contract_provenance"])
++    if source_provenance["kind"] != "LOCAL_BOOTSTRAP_SOURCE_V1":
++        raise ValueError("staged adoption requires explicit bootstrap source provenance")
++    provenance = _object(body["contract_provenance"], frozenset("kind content_sha256 bootstrap_record".split()))
++    if provenance["kind"] != "LOCAL_BOOTSTRAP_ADOPTED_V1" or _sha(provenance["content_sha256"]) != _hash(body["contract"]):
++        raise ValueError("staged adopted complete contract commitment differs")
++    raw = _object(provenance["bootstrap_record"], OUTER_FIELDS)
++    if raw["schema_version"] != "visual.bootstrap.record.local.v1" or raw["original_time"] != original:
++        raise ValueError("staged adoption bootstrap root/original differs")
++    pre = _object(raw["payload"], FIELDS["visual.bootstrap.record.local.v1"])
++    if (pre["terminal_reason"] is not None or pre["adopted_original_hash"] is not None
++            or pre["pending"] is not None or pre["planning_source_usable"] is not True
++            or pre["observation"] is None or pre["draft"] is None
++            or _object(pre["state"])["exhausted_reason"] is not None):
++        raise ValueError("complete nonterminal promotion-free bootstrap prestate required")
++    for event in _array(pre["history"]):
++        if _object(_object(event)["request"])["schema_version"] != "visual.bootstrap.transition.local.v1":
++            raise ValueError("staged bootstrap history cannot embed a promotion")
++    decoded = LocalEnvelope.from_payload(raw)
++    pre = decoded.semantic
++    definition = _object(_object(pre["definition"])["payload"])
++    if bootstrap_source_commitment(definition) != source_provenance["content_sha256"]:
++        raise ValueError("staged bootstrap definition commitment differs")
++    contract = _model(body["contract"], TaskContract)
++    draft_contract = _object(_object(pre["draft"])["parsed_json"])
++    for name in ("timestamp", "issued_at", "valid_until"):
++        if _object(body["contract"])[name] != draft_contract.get(name):
++            raise ValueError("staged adopted UTC model bytes differ from the actual saved proposal")
++    proposal = _proposal_projection(_object(pre["draft"]), definition)
++    if proposal is None:
++        raise ValueError("staged bootstrap saved proposal is unusable")
++    expected = _object(_copy(contract.model_dump(mode="json")))
++    for name in ("task_id", "plan_version", "command_seq", "timestamp", "issued_at", "valid_until"):
++        expected.pop(name)
++    aliases = {"visual_target": "object", "visual_destination": "target_region"}
++    target = _object(proposal["task_target"])
++    for name in ("object_id", "target_region_id"):
++        if isinstance(target.get(name), str) and target[name] in aliases:
++            target[name] = aliases[target[name]]
++    proposal["task_target"] = target
++    for raw_step in _array(proposal["steps"]):
++        step = _object(raw_step); parameters = _object(step["parameters"])
++        for name in ("object_id", "region_id"):
++            if isinstance(parameters.get(name), str) and parameters[name] in aliases:
++                parameters[name] = aliases[parameters[name]]
++        step["parameters"] = parameters
++        if not isinstance(raw_step, dict):
++            raise ValueError("complete staged proposal step required")
++        raw_step.update(step)
++    identity = _object(body["identity"])
++    if (_canonical(expected) != _canonical(proposal) or contract.task_id != definition["episode_id"]
++            or identity["episode_id"] != definition["episode_id"] or identity["task_id"] != contract.task_id
++            or contract.plan_version != 1 or contract.command_seq != 1
++            or body["proposal_hash"] != pre["proposal_hash"]
++            or body["proposal_hash"] != _hash(_object(pre["draft"])["parsed_json"])
++            or body["role_bundle_hash"] != definition["role_bundle_hash"]
++            or body["compiler_source_hashes"] != definition["source_hashes"]
++            or body["source_hashes"] != definition["source_hashes"]):
++        raise ValueError("staged full contract/proposal/compiler source differs")
++    frame = _model(pre["observation"], RGBDObservation)
++    requirements, graph = _local_worker_policy(contract, frame, _hashes(definition["source_hashes"]))
++    if (body["requirements"] != _copy({key: value.to_payload() for key, value in requirements.items()})
++            or body["dependencies"] != _copy(graph)):
++        raise ValueError("staged requirements/camera/dependency policy differs")
++    state = _state(pre["state"]); limits = _object(state["limits"])
++    if state["remaining_retries"] != limits["max_retries"] or _integer(limits["max_retries"]) > contract.failure_policy.local_retry_limit:
++        raise ValueError("staged original retry allocation differs")
++    return raw
+ 
+ 
+ def _route_parts(value: JSONValue) -> tuple[str, dict[str, JSONValue], dict[str, JSONValue] | None]:
+@@ -957,6 +1042,10 @@
+     if promotion:
+         prior = _audit_original(body["original"])
+         _join_audit_original(prior, original)
++        if _object(original["contract_provenance"])["kind"] == "LOCAL_BOOTSTRAP_SOURCE_V1":
++            pre = _staged_original_body(_object(_object(body["original"])["payload"]), original)
++            if _canonical(_object(pre["payload"])) != _canonical(state):
++                raise ValueError("staged promotion must use the actual complete live prestate")
+         if (pending is not None or state["planning_source_usable"] is not True
+                 or state["draft"] is None or state["observation"] is None
+                 or budget["exhausted_reason"] is not None):
+@@ -1404,6 +1493,9 @@
+         _hashes(body["source_hashes"])
+         if body["source_hashes"] != original["source_hashes"]:
+             raise ValueError("bootstrap source inventory changed")
++        provenance = _object(original["contract_provenance"])
++        if provenance["kind"] == "LOCAL_BOOTSTRAP_SOURCE_V1" and provenance["content_sha256"] != bootstrap_source_commitment(body):
++            raise ValueError("bootstrap source definition commitment differs")
+     if tag == "visual.bootstrap.record.local.v1":
+         definition = VisualBootstrapDefinition.from_payload(_object(body["definition"]))
+         state = _state(body["state"])
+@@ -1436,7 +1528,13 @@
+             _sha(body["claim_id"])
+     if tag == "visual.bootstrap.promotion.local.v1":
+         promoted = _audit_original(body["original"])
+-        if _object(original["contract_provenance"])["content_sha256"] != _hash(_copy(promoted.contract.model_dump(mode="json"))):
++        if _object(original["contract_provenance"])["kind"] == "LOCAL_BOOTSTRAP_SOURCE_V1":
++            pre = _staged_original_body(_object(_object(body["original"])["payload"]), original)
++            source = _object(pre["payload"])
++            if (body["definition_hash"] != _hash(source["definition"])
++                    or body["expected_record_hash"] != _history_state_hash("visual.bootstrap.record.local.v1", source, original)):
++                raise ValueError("staged promotion prestate definition/CAS differs")
++        elif _object(original["contract_provenance"])["content_sha256"] != _hash(_copy(promoted.contract.model_dump(mode="json"))):
+             raise ValueError("promotion must preserve the original contract source")
+     if tag.startswith("visual.supervision."):
+         if tag.endswith(".definition.local.v1") or tag.endswith(".transition.local.v1"):
+@@ -1492,7 +1590,8 @@
+     if tag == "visual.owner.original.local.v1":
+         contract = _model(body["contract"], TaskContract)
+         identity = local_owner_identity(_object(body["identity"]))
+-        if body["contract_provenance"] != original["contract_provenance"] or _object(body["contract_provenance"])["content_sha256"] != _hash(body["contract"]):
++        staged = _object(original["contract_provenance"])["kind"] == "LOCAL_BOOTSTRAP_SOURCE_V1"
++        if not staged and (body["contract_provenance"] != original["contract_provenance"] or _object(body["contract_provenance"])["content_sha256"] != _hash(body["contract"])):
+             raise ValueError("original contract provenance/content changed")
+         if identity.task_id != contract.task_id:
+             raise ValueError("semantic task identity changed")
+@@ -1525,6 +1624,8 @@
+         lease = _object(original["lease_identity"])
+         if (identity.job_id, identity.run_id, identity.worker_id, identity.lease_id, identity.attempt, identity.owner_epoch) != (lease["job_id"], lease["run_id"], lease["worker_id"], lease["lease_id"], lease["attempt"], lease["epoch"]):
+             raise ValueError("original job/fence/epoch changed")
++        if staged:
++            _staged_original_body(body, original)
+     if tag == "visual.owner.grounding.local.v1":
+         identity = local_owner_identity(_object(body["current_identity"]))
+         lease = _object(original["lease_identity"])

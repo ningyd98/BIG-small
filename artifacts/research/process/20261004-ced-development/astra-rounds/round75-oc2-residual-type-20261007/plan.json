@@ -1,0 +1,668 @@
+{
+  "schema": "astra.recovery-plan.v1",
+  "round": "round75-oc2-residual-type-20261007",
+  "created_at_utc": "2026-10-07T13:02:19.461311+00:00",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "planner": {
+    "requested_model": "gpt-6-astra",
+    "agent": "/root/astra_oc2_residual",
+    "role_source": "new actual Astra delegation under AGENTS.md; not restoration of old agent",
+    "runtime_model_independently_verified": false
+  },
+  "executor": {
+    "requested_model": "gpt-6.1-sol",
+    "selection": "ROOT to assign available implementer; no subdelegation by planner"
+  },
+  "problem": "round74单次mypy剩余prefix:459 no-any-return；前轮_application具体注解未覆盖更早的registry recorder Any来源。",
+  "failure_evidence": {
+    "directory": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation",
+    "stdout_verbatim": "src/cloud_edge_robot_arm/research/operational_prefix_v1.py:459: error: Returning Any from function declared to return \"dict[str, Any]\"  [no-any-return]\npyproject.toml: note: unused section(s): module = ['ament_index_python.*', 'rclpy.*']\nFound 1 error in 1 file (checked 4 source files)\n",
+    "exit_code": 1,
+    "error_count": 1,
+    "checked_files": 4,
+    "round74_ruff_check_exit": 0,
+    "round74_ruff_format_exit": 0,
+    "round74_targeted_CPU_runs": 0,
+    "round74_R03_runs": 0,
+    "raw_receipts_preserved": true
+  },
+  "root_cause": {
+    "status": "source-and-installed-checker-supported causal diagnosis; planned fix not executed",
+    "trace": [
+      "src/cloud_edge_robot_arm/research/operational_prefix_v1.py:170: _LiveApplicationV1.recorder: Any = None is the earliest remaining untyped identity operand.",
+      "check_recorder first proves type(recorder) is OperationalPrefixRecorderV1, then evaluates recorder is not record.recorder. On the continuing false arm this is recorder is record.recorder; target type Any broadens recorder to Any.",
+      "Subsequent recorder._application is not self therefore has an Any attribute operand despite constructor application having a concrete annotation; the continuing identity arm broadens self to Any.",
+      "return self.check_active() consequently has Any, although the declared check_active return is dict[str, Any].",
+      "Installed mypy 1.20.2 checker.py:6686+ narrow_type_by_identity_equality calls conditional_types for both operand directions; :6671 swaps is-not maps; :8447 proposed Any explicitly broadens to Any. This establishes a concrete propagation route without product/test execution.",
+      "Only runtime assignment to record.recorder is _issue_recorder_v1:647, from OperationalPrefixRecorderV1 construction at :635; initial None is explicitly checked at :626. Recorder __init__.application and self._application are already concrete after round74. Thus changing the actual registry slot contract closes this source; no second speculative type edit is authorized."
+    ],
+    "repair": "_LiveApplicationV1.recorder: OperationalPrefixRecorderV1 | None = None",
+    "uncertainty": "Final static success remains unverified until the one authorized mypy run; any remaining error requires next Astra round, not trial variants.",
+    "forbidden_workarounds": [
+      "cast(self) or cast return",
+      "Any expansion",
+      "type: ignore/noqa/mypy suppression",
+      "moving return or bypassing guard",
+      "unbound-class-method call to evade self narrowing",
+      "new runtime validation/authority entry",
+      "typing away dynamic behavior with a Protocol instead of concrete issuance type"
+    ]
+  },
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649",
+      "bytes": 1774,
+      "baseline_expected_sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round67-oc2-green-partials/plan.json",
+      "sha256": "3b9af379e4d64dded875f976b47b6e7e6476976d67977ccfdcbce5e34389aea2",
+      "bytes": 54412,
+      "baseline_expected_sha256": "3b9af379e4d64dded875f976b47b6e7e6476976d67977ccfdcbce5e34389aea2",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round69-oc2-preflight-metadata/plan.json",
+      "sha256": "c146aefd884504c7be0e07128406b24bd18ff308c46466f5201c6d7dcdc55fba",
+      "bytes": 17471,
+      "baseline_expected_sha256": "c146aefd884504c7be0e07128406b24bd18ff308c46466f5201c6d7dcdc55fba",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+      "sha256": "5ab9ec9c9e4d9526ed8ea9e7cdea721ad05a36fa39a103e7daa6f6d425f94283",
+      "bytes": 60185,
+      "baseline_expected_sha256": "5ab9ec9c9e4d9526ed8ea9e7cdea721ad05a36fa39a103e7daa6f6d425f94283",
+      "baseline_matches": true,
+      "baseline": "round74 source-after freeze"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+      "sha256": "06373a9c702420ab38c5afa20f888efb35cd6ea109cf094c662fa04511e60b3c",
+      "bytes": 14778,
+      "baseline_expected_sha256": "06373a9c702420ab38c5afa20f888efb35cd6ea109cf094c662fa04511e60b3c",
+      "baseline_matches": true,
+      "baseline": "round74 source-after freeze"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "sha256": "31cea6501ee9286ee933335f013422314985726036c8029844929cc96be2fdb4",
+      "bytes": 80239,
+      "baseline_expected_sha256": "31cea6501ee9286ee933335f013422314985726036c8029844929cc96be2fdb4",
+      "baseline_matches": true,
+      "baseline": "round74 source-after freeze"
+    },
+    {
+      "path": "tests/test_operational_prefix_cli_v1.py",
+      "sha256": "f3cc2a0d2de8fb18dbcfa3c9b9969d92f657fd03b448b7cda7c58d5926480cfc",
+      "bytes": 6546,
+      "baseline_expected_sha256": "f3cc2a0d2de8fb18dbcfa3c9b9969d92f657fd03b448b7cda7c58d5926480cfc",
+      "baseline_matches": true,
+      "baseline": "round74 source-after freeze"
+    },
+    {
+      "path": "tests/test_operational_prefix_v1.py",
+      "sha256": "1ccb56de190f5cea0280882690bead41ed15aaff0fdfa2b74b32ca9c5cd1b426",
+      "bytes": 11934,
+      "baseline_expected_sha256": "1ccb56de190f5cea0280882690bead41ed15aaff0fdfa2b74b32ca9c5cd1b426",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "tests/test_operational_capture_v1.py",
+      "sha256": "ebe63baa223a7f2dc1f99fc28603ceb3ae9505516085c605ef0dbb2a39fa6aaf",
+      "bytes": 18729,
+      "baseline_expected_sha256": "ebe63baa223a7f2dc1f99fc28603ceb3ae9505516085c605ef0dbb2a39fa6aaf",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+      "sha256": "918e029a6a1f0d2a7a455820c721118abdb50b7c5eda6e8ee15f54bed543e67c",
+      "bytes": 11537,
+      "baseline_expected_sha256": "918e029a6a1f0d2a7a455820c721118abdb50b7c5eda6e8ee15f54bed543e67c",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+      "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b",
+      "bytes": 20734,
+      "baseline_expected_sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "scripts/run_operational_prefix_v1.py",
+      "sha256": "fe8e8c9e021ec437b601895de724f1d10f17eb221fea6b8302c304a65fbcffa9",
+      "bytes": 1885,
+      "baseline_expected_sha256": "fe8e8c9e021ec437b601895de724f1d10f17eb221fea6b8302c304a65fbcffa9",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "configs/research/operational_prefix_v1.json",
+      "sha256": "c1d51bb28376f9a2c7e636efe16a0675d426951b8ed8849ead78d342f4b3ada1",
+      "bytes": 394,
+      "baseline_expected_sha256": "c1d51bb28376f9a2c7e636efe16a0675d426951b8ed8849ead78d342f4b3ada1",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "b2bf5c4042d568eaf9def415ae7b2f08f0fa541a01f970b7e68e6d950035bb6c",
+      "bytes": 2458,
+      "baseline_expected_sha256": "b2bf5c4042d568eaf9def415ae7b2f08f0fa541a01f970b7e68e6d950035bb6c",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "tests/test_native_clock_prefix_worker_v2.py",
+      "sha256": "fbfa14e5596bdba70d5263b7f770dd689bdda342e56389da16985f417bc20b7b",
+      "bytes": 9339,
+      "baseline_expected_sha256": "fbfa14e5596bdba70d5263b7f770dd689bdda342e56389da16985f417bc20b7b",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "tests/test_native_clock_publication_v2.py",
+      "sha256": "a57b3a1a7ffb8e0c4afb28b96cf355e83c3b52e93317ae17e151667528fa147f",
+      "bytes": 11677,
+      "baseline_expected_sha256": "a57b3a1a7ffb8e0c4afb28b96cf355e83c3b52e93317ae17e151667528fa147f",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "tests/test_native_reset_capture_v2.py",
+      "sha256": "551d080e6eb33d2bcc6183e3be044224aa903c4691066946d0d52775a584f7b8",
+      "bytes": 6239,
+      "baseline_expected_sha256": "551d080e6eb33d2bcc6183e3be044224aa903c4691066946d0d52775a584f7b8",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "tests/test_native_clock_prefix_cli_v2.py",
+      "sha256": "0df55934ca677b03a67dc186bfe14d989561f79bd27c6718ce79f8cc7effbae0",
+      "bytes": 4985,
+      "baseline_expected_sha256": "0df55934ca677b03a67dc186bfe14d989561f79bd27c6718ce79f8cc7effbae0",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/full_GREEN.command-result.json",
+      "sha256": "ccf4d0f164b3d311816c8ddba2fdde2d34e6e72ac95a1ecfdade780259856c6d",
+      "bytes": 839,
+      "baseline_expected_sha256": "ccf4d0f164b3d311816c8ddba2fdde2d34e6e72ac95a1ecfdade780259856c6d",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/full_GREEN.stdout.txt",
+      "sha256": "cf3b56b858287086ee0f769fe34993b63c55be21d161341f394ddd71caec16ee",
+      "bytes": 339,
+      "baseline_expected_sha256": "cf3b56b858287086ee0f769fe34993b63c55be21d161341f394ddd71caec16ee",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/full_GREEN.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "baseline_expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/full_GREEN.junit.xml",
+      "sha256": "8313fc28e1f4715bee46061d7b330f5fe1e1453d3c1e3e08738a915a7c539dbf",
+      "bytes": 8980,
+      "baseline_expected_sha256": "8313fc28e1f4715bee46061d7b330f5fe1e1453d3c1e3e08738a915a7c539dbf",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/ruff_check.command-result.json",
+      "sha256": "187a88b0efbf83a2fbdd80b6461845f4fcbe3f4d18c3d9625f1b44e7ad63d16f",
+      "bytes": 885,
+      "baseline_expected_sha256": "187a88b0efbf83a2fbdd80b6461845f4fcbe3f4d18c3d9625f1b44e7ad63d16f",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/ruff_check.stdout.txt",
+      "sha256": "99744fd905de28e27d8adb1c1eabf3f548d76e515c0eedecdb32d6e47ead0ce1",
+      "bytes": 999,
+      "baseline_expected_sha256": "99744fd905de28e27d8adb1c1eabf3f548d76e515c0eedecdb32d6e47ead0ce1",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/ruff_check.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "baseline_expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/mypy.command-result.json",
+      "sha256": "336d4a5e356cf1daa13d2fc6b9ca12ce66fbe3816969c757a6d144a140b34512",
+      "bytes": 755,
+      "baseline_expected_sha256": "336d4a5e356cf1daa13d2fc6b9ca12ce66fbe3816969c757a6d144a140b34512",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/mypy.stdout.txt",
+      "sha256": "cf51c2f99708ca4b7f8997492507161fe836c15aa949fe65e162e1290e68704a",
+      "bytes": 1113,
+      "baseline_expected_sha256": "cf51c2f99708ca4b7f8997492507161fe836c15aa949fe65e162e1290e68704a",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/mypy.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "baseline_expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/ruff_format_check.command-result.json",
+      "sha256": "bf660d1c30e51eec3c3e13e7570c6c6518bdafb650be5b2f8901a5fe0233c060",
+      "bytes": 901,
+      "baseline_expected_sha256": "bf660d1c30e51eec3c3e13e7570c6c6518bdafb650be5b2f8901a5fe0233c060",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/ruff_format_check.stdout.txt",
+      "sha256": "8e93d18ae56550d4eef2feac77e6630617c7e169246e56e39c75d58b46167985",
+      "bytes": 26,
+      "baseline_expected_sha256": "8e93d18ae56550d4eef2feac77e6630617c7e169246e56e39c75d58b46167985",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/source-freeze.json",
+      "sha256": "6c1413fa2d3aecea183ee7135c0203d67ae67e0334dae51affa59a90df0c2454",
+      "bytes": 1449,
+      "baseline_expected_sha256": "6c1413fa2d3aecea183ee7135c0203d67ae67e0334dae51affa59a90df0c2454",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/input-check-after.json",
+      "sha256": "ce7c6b4efba596a48eebfdff5aca866448f22a43c4c2c44d613d1bc884245d73",
+      "bytes": 33095,
+      "baseline_expected_sha256": "ce7c6b4efba596a48eebfdff5aca866448f22a43c4c2c44d613d1bc884245d73",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/test-outcomes.json",
+      "sha256": "b39fcf7bd4799894c42d9f7216380206838ac57ba4e5ed9abb149b227ea69a28",
+      "bytes": 7010,
+      "baseline_expected_sha256": "b39fcf7bd4799894c42d9f7216380206838ac57ba4e5ed9abb149b227ea69a28",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/failure-taxonomy.json",
+      "sha256": "8018eaf0f0ce0631de6fd5ea4aa58a333023f433947829e15f783c9ab4675634",
+      "bytes": 6449,
+      "baseline_expected_sha256": "8018eaf0f0ce0631de6fd5ea4aa58a333023f433947829e15f783c9ab4675634",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/format-equivalence.json",
+      "sha256": "2f42147ab625cb0c1cff21f0a17db0e1e9ff0c55d5b3880ff18927e435c3984f",
+      "bytes": 879,
+      "baseline_expected_sha256": "2f42147ab625cb0c1cff21f0a17db0e1e9ff0c55d5b3880ff18927e435c3984f",
+      "baseline_matches": true,
+      "baseline": "round74 protected input"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/plan.md",
+      "sha256": "66d3f6947fe3ff1f9375fb366d02eb6c64379d5b8b5be82402835fb2c69b9332",
+      "bytes": 18755,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/plan.json",
+      "sha256": "c0bef1f6970fb3dc7457fb7e240b4fba2b8ec561d139bde7b72a82cf86c64fe2",
+      "bytes": 25516,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/root-authorization.json",
+      "sha256": "cc2e8ba96bf8c92fdd08a17d8302ca8279bb5e393814764fb4f503851c24670a",
+      "bytes": 8994,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/step-report.md",
+      "sha256": "766ceba74dddfb9e4e33f7af469fd17c23a160f099e121e1ed05688d4215e916",
+      "bytes": 2161,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/step-report.json",
+      "sha256": "70d16e6478f869b60ec6d0a1d064fdbc25ec01ba7ac662c81287df55df8a25b6",
+      "bytes": 4896,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/failure-receipt.json",
+      "sha256": "70d16e6478f869b60ec6d0a1d064fdbc25ec01ba7ac662c81287df55df8a25b6",
+      "bytes": 4896,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/mypy.stdout.txt",
+      "sha256": "e7b2c483153c89e482a456521da2ce62b44cb1189d1fc54b32f3f83db4df122d",
+      "bytes": 287,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/mypy.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/mypy.command-start.json",
+      "sha256": "83640af1f138dc92d9889f2c86182aca77ad1ba13d6656520f3be1ee424b1808",
+      "bytes": 667,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/mypy.command-result.json",
+      "sha256": "c66ee3c94ff821036ea2a83544dd2ce4e772a8eb921034da5da290248bee808d",
+      "bytes": 770,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/source-freeze.json",
+      "sha256": "0df92ba0f2bb6fd3f5793758be5d77b71b9db485c245dfe260cf18927f46428a",
+      "bytes": 667,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/restricted-ast-proof.py",
+      "sha256": "507ab7a4b03c5698e1c8b72c97263856e73485ba6f7dca853283a9645e0f2454",
+      "bytes": 8879,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/restricted-ast-proof.json",
+      "sha256": "cd93e4edba88cef743fb20dba551927546b22ed7ead094a2580a4d4b41013a08",
+      "bytes": 11710,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/ruff_check.command-result.json",
+      "sha256": "5407925b5d4a947917c6be23d2bf552321a7c515f12ab93e6b9b199117874c2b",
+      "bytes": 900,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/ruff_check.stdout.txt",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "bytes": 19,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/ruff_format_check.command-result.json",
+      "sha256": "aba639c410ad5a4268b14d07b0f916d702412dcf2e599cac095116a62a90f2f7",
+      "bytes": 916,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/ruff_format_check.stdout.txt",
+      "sha256": "8e93d18ae56550d4eef2feac77e6630617c7e169246e56e39c75d58b46167985",
+      "bytes": 26,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/source-after/src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+      "sha256": "5ab9ec9c9e4d9526ed8ea9e7cdea721ad05a36fa39a103e7daa6f6d425f94283",
+      "bytes": 60185,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/source-after/src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+      "sha256": "06373a9c702420ab38c5afa20f888efb35cd6ea109cf094c662fa04511e60b3c",
+      "bytes": 14778,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/source-after/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "sha256": "31cea6501ee9286ee933335f013422314985726036c8029844929cc96be2fdb4",
+      "bytes": 80239,
+      "baseline": "immutable round74 evidence"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/source-after/tests/test_operational_prefix_cli_v1.py",
+      "sha256": "f3cc2a0d2de8fb18dbcfa3c9b9969d92f657fd03b448b7cda7c58d5926480cfc",
+      "bytes": 6546,
+      "baseline": "immutable round74 evidence"
+    }
+  ],
+  "environment_inputs": [
+    {
+      "path": ".venv/lib/python3.12/site-packages/mypy/checker.py",
+      "sha256": "a259272147aaab699a88d3f9ff5d123d70cf0797f80caf787ad166b4409f548b",
+      "bytes": 430682,
+      "purpose": "read-only installed type-checker causal evidence; not product or portable package"
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/mypy/version.py",
+      "sha256": "790cd0770ddf20796690e1c5c7266fb00e3911cb8d2f3ef4a089aff3cbbda7fa",
+      "bytes": 23,
+      "purpose": "read-only installed type-checker causal evidence; not product or portable package"
+    }
+  ],
+  "source_match_observation": [
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+      "sha256": "5ab9ec9c9e4d9526ed8ea9e7cdea721ad05a36fa39a103e7daa6f6d425f94283",
+      "matches_round74_freeze": true,
+      "byte_equal_round74_source_after": true
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+      "sha256": "06373a9c702420ab38c5afa20f888efb35cd6ea109cf094c662fa04511e60b3c",
+      "matches_round74_freeze": true,
+      "byte_equal_round74_source_after": true
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "sha256": "31cea6501ee9286ee933335f013422314985726036c8029844929cc96be2fdb4",
+      "matches_round74_freeze": true,
+      "byte_equal_round74_source_after": true
+    },
+    {
+      "path": "tests/test_operational_prefix_cli_v1.py",
+      "sha256": "f3cc2a0d2de8fb18dbcfa3c9b9969d92f657fd03b448b7cda7c58d5926480cfc",
+      "matches_round74_freeze": true,
+      "byte_equal_round74_source_after": true
+    }
+  ],
+  "all_bounded_inputs_match": true,
+  "scope": {
+    "modify": [
+      "src/cloud_edge_robot_arm/research/operational_prefix_v1.py"
+    ],
+    "allowed_AST_change": {
+      "class": "_LiveApplicationV1",
+      "field": "recorder",
+      "line_before": 170,
+      "old_annotation": "Any",
+      "new_annotation": "OperationalPrefixRecorderV1 | None",
+      "unchanged_default": "None"
+    },
+    "protected": "All other product/test/config/tool files, round74 artifacts and historical failures/63GREEN; RW1 independent work may proceed. Do not recursively pin active references inside old metadata."
+  },
+  "steps": [
+    "S1 ROOT复核本计划与输入；指定当前可用GPT-6.1-sol单写者（旧代理不在live列表，不冒称恢复）。仅协调prefix文件，不锁全仓或RW1。冻结source-before，核对四源等于round74 source-after及历史证据SHA。HEAD 34c7a559/1007仅为ROOT告知的本地背景，不作为本计划已核验事实，不执行Git或推送。",
+    "S2 沿登记表字段→精确类型检查→身份比较→_application→self→check_active审读完整类型链。_LiveApplicationV1.recorder只允许None初值和_issue_recorder_v1实际具体Recorder赋值；不新增诊断mypy/test调用，不重复RED。存在其他赋值/输入漂移则停止本轮。",
+    "S3 只把_LiveApplicationV1.recorder: Any = None改成recorder: OperationalPrefixRecorderV1 | None = None。使用既有future annotations及TYPE_CHECKING导入；无新import，无参数/return/guard变动，不变初值、字段序、工厂、登记表权威或异常顺序。",
+    "S4 保存逐hunk diff、前后source及受限AST证明：唯一允许差异为指定class中recorder AnnAssign.annotation；将这一节点注解还原为Any后全模块AST必须完全相等，注释相同。禁止批量删注解/排序/去assert。注明__annotations__/dataclass Field.type元数据确有变化，不能声称所有反射结果逐字节相同；业务执行与字段默认值保持。其余round74三源哈希不变。",
+    "S5 用实际源和原失败构成RED依据，按verification顺序ruff check、format --check、四显式源mypy各一次。前两项只检查本轮变动prefix，其他七个round74已通过Ruff目标以保护SHA沿用；mypy保留原四目标/选项，仅新独占cache-dir。任何失败立即保存原件并停止，不追加cast/ignore/第二次mypy或探针。",
+    "S6 静态全部成功后，消耗原剩余6case targeted_CPU一次，再消耗原剩余R03一次。完整63额外次数0。新targeted basetemp为/tmp/bigsmall-oc2-round75-targeted；R03沿原/tmp/bigsmall-oc2-round67-r03。所有输出/JUnit在round75新独占implementation；开跑前检查目录未存在（包括悬挂软链），不得清理旧目录。冲突记录并交ROOT/Astra，不自行反复换目录试跑。",
+    "S7 保存command-start/argv/env/stdout/stderr/exit/wall/JUnit、输入前后核对、source-after/限定diff和完整CPU产物分母。保留原63GREEN与所有失败/partial/数据库交付边界，不回写旧收据源SHA、不冒称清单为完整远端包。分别报告作者软件验证、独立审查待完成、actual=0、formal未验收。供ROOT复核再走既有阶段报告/Git交付；实施者本轮不操作Git。"
+  ],
+  "verification": {
+    "ruff_check": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py"
+      ],
+      "max_runs": 1,
+      "runs_before_round75": 1,
+      "budget_origin": "one new final check required by changed annotation",
+      "gate": "after source/AST proof",
+      "expected": "exit 0; no failure/error/skip"
+    },
+    "ruff_format_check": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "format",
+        "--check",
+        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py"
+      ],
+      "max_runs": 1,
+      "runs_before_round75": 1,
+      "budget_origin": "one new final check required by changed annotation",
+      "gate": "after source/AST proof",
+      "expected": "exit 0; no failure/error/skip"
+    },
+    "mypy": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "mypy",
+        "--cache-dir=/tmp/bigsmall-oc2-round75-mypy",
+        "--follow-imports=silent",
+        "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+        "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+        "scripts/run_operational_prefix_v1.py"
+      ],
+      "max_runs": 1,
+      "runs_before_round75": 1,
+      "budget_origin": "one new final check required by changed annotation",
+      "gate": "after source/AST proof",
+      "expected": "exit 0; no failure/error/skip"
+    },
+    "targeted_CPU": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--basetemp=/tmp/bigsmall-oc2-round75-targeted",
+        "tests/test_operational_prefix_v1.py::test_startup_exact_registry_and_once_only",
+        "tests/test_operational_prefix_cli_v1.py::test_real_default_import_has_no_runtime_or_network_effects",
+        "tests/test_operational_prefix_cli_v1.py::test_execute_once_cli_real_worker_no_retry",
+        "tests/test_operational_capture_v1.py::test_partial_prefix_keeps_all_failures[export]",
+        "tests/test_operational_capture_v1.py::test_reset_primary_survives_legacy_freeze_failure",
+        "tests/test_operational_capture_v1.py::test_reset_primary_survives_failure_export_failure",
+        "--junitxml=artifacts/research/process/20261004-ced-development/astra-rounds/round75-oc2-residual-type-20261007/implementation/targeted_CPU.junit.xml"
+      ],
+      "max_runs": 1,
+      "runs_before_round75": 0,
+      "budget_origin": "inherited unspent, no new allowance",
+      "gate": "all static checks pass; targeted_CPU before R03",
+      "expected": "exit 0; unique 6 cases, failures/errors/skips 0"
+    },
+    "R03_regression": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--basetemp=/tmp/bigsmall-oc2-round67-r03",
+        "tests/test_native_clock_prefix_worker_v2.py",
+        "tests/test_native_clock_publication_v2.py",
+        "tests/test_native_reset_capture_v2.py",
+        "tests/test_native_clock_prefix_cli_v2.py",
+        "--junitxml=artifacts/research/process/20261004-ced-development/astra-rounds/round75-oc2-residual-type-20261007/implementation/R03_regression.junit.xml"
+      ],
+      "max_runs": 1,
+      "runs_before_round75": 0,
+      "budget_origin": "inherited unspent, no new allowance",
+      "gate": "all static checks pass; targeted_CPU before R03",
+      "expected": "exit 0; no failure/error/skip"
+    },
+    "full_GREEN_63": {
+      "new_runs": 0,
+      "historical_pass": "63/63 at original frozen bytes only; not executed after round74 or round75"
+    },
+    "env": {
+      "PYTHONPATH": "src:.",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "MYPYPATH": "src"
+    }
+  },
+  "preconditions": [
+    "Plan and exact bounded input SHA rechecked immediately before implementation/validation; mismatch stops affected OC2 work only.",
+    "Existing .venv/bin/python and installed local mypy evidence hashes match; no install/upgrade/network.",
+    "Danger-full-access/current never approval; omit sandbox_permissions. Earlier require_escalated text does not apply.",
+    "One writer for prefix, no full repository or RW1 freeze.",
+    "Do not import product or run tests during planning; implementation tests must retain existing CPU substitution seams.",
+    "Reserve output directories without overwrite; record no external model/teacher/provider/GPU/actual action."
+  ],
+  "actual_run_preconditions": {
+    "authorized_this_round": false,
+    "runs": 0,
+    "future_required": [
+      "Complete OC2 author software evidence and independent review against frozen relevant sources.",
+      "Existing Gate C/D and ROOT-only actual authorization must be explicitly satisfied; this plan does not waive them.",
+      "Before any future actual, separately confirm original recipe/source/asset pins, exclusive output, real lease/worker/application/source ownership, OC1 clock/observer and raw denominator readiness under original OC2 plan.",
+      "Software CPU fixtures, type checks and AST proofs do not establish real capture/source-success or formal research acceptance."
+    ]
+  },
+  "acceptance": {
+    "planning": "Bounded SHA matches, original residual diagnostic and source causal route preserved, single annotation fix/verification limits explicit.",
+    "software": "One-field restricted AST proof and protected hashes, single Ruff check/format and mypy pass, inherited 6-case and R03 pass with complete fresh receipts; maximum author software verified, independent review pending.",
+    "historical": "Original 63/63GREEN and all failure/partial taxonomy remain valid at original hashes only; do not claim rerun at new SHA.",
+    "actual": "0; not authorized",
+    "formal_research": "NOT_ACCEPTED; no T12/METHOD/FINAL/T13 or benefit promotion"
+  },
+  "stop_conditions": [
+    "Any new root cause, unexpected command failure, changed protected input, output collision or scope expansion: retain raw evidence, stop affected repair, next actual Astra plan.",
+    "No repeated microprobes, full63 rerun, automatic formatter/fix, added tests, broad casts or extra type edits.",
+    "Never overwrite another author changes or old artifacts."
+  ],
+  "planning_counts": {
+    "product_changes": 0,
+    "mypy_runs": 0,
+    "ruff_runs": 0,
+    "tests": 0,
+    "actual": 0,
+    "model": 0,
+    "teacher": 0,
+    "GPU": 0,
+    "network": 0,
+    "git": 0,
+    "subagents": 0
+  }
+}

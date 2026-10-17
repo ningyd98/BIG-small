@@ -1,0 +1,15 @@
+# R226: preserve original signed-line edit provenance
+
+Actual planner: /root/astra_metadata_recovery, gpt-6-astra. Plan only; no generator, product, static, native or reader execution.
+
+R225 actual 95cde0 exited 1 at main188: the last and only failed item among 687 checks is per-file exact signed-line multiset. All nine unit transformations, class/method selection, natural function order and outside-region equality checks recorded before it passed. written_outputs is empty; the source reaches output construction/writes only afterward. Original actual and failure bytes are copied unchanged and pinned here.
+
+The original eighth unit explicitly includes `-        try:` and `+        try:` surrounding the inserted local branch. R225 regenerates signs using a whole-function SequenceMatcher; unchanged try can align as context and lose that explicit pair. This is a concrete source-supported representation mismatch, not evidence that product intent must change. The failed generated patch and Counter entries were not saved, so the exact full difference and uniqueness of this cause are not claimed. No rerun or reconstructed algorithm probe was performed.
+
+Sole Sol must author a new R226 metadata preparer source. Preserve the nine original raw signed/context units and splice their nonoverlapping baseline intervals directly into seven complete class-qualified native function hunks, with untouched context gaps. Retain every signed line, including the try deletion/re-addition; use natural function order and exact newline bytes. Check unit projections, independent expected after-text reconstruction, bytes outside the seven regions, exact SQL/parameters, strict per-file signed Counter and per-unit signed sequence. Never weaken or normalize Counter equality. Save complete Counter differences before any assertion failure.
+
+ROOT must full-read new source, precise argv/env, inputs and output scope and reserve the one new metadata generation before execution. New source is not authored or pinned by this plan. R225 generation stays permanently spent1/0 and is never retried. All writers, including R223, stay frozen across the gate and generation. Only faithful patch and prepared-values metadata may be written, exclusively.
+
+Keep the frozen existing reader and exact prepared-values interface: expected/edit_units/function_regions/manifest_pairs/protected/r225_inputs/role_pins/source_pin. r225_inputs retains original18 records and precise three-current-target to before-archive mappings; add new R226 authority fields separately. Actual new source_pin must identify R226. ROOT must verify compatibility; any need to edit reader requires a new plan.
+
+R226 generation is 0/1 HELD. Original R222 apply/readback and GREEN remain 0/1 HELD; RED remains1/0. Success only provides reviewable metadata. A distinct later R222 source gate is required for either original slot. Any mismatch, unexpected error, overlap, scope growth or partial metadata output stops with preserved evidence and new Astra planning. Development, real runs, native operation, formal research and T2/T12 acceptance remain separate and unclaimed.

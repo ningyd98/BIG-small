@@ -1,0 +1,231 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round141-p6-positive-publication-control-20261012/implementation/before-test.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -1542,3 +1542,228 @@
+         return "actual-delay-loop-and-maintain-thread"
+ 
+     _exercise(monkeypatch, tmp_path, check, configure=configure)
++
++
++def test_normal_success_publication_uses_real_operational_authority(monkeypatch, tmp_path):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
++    from cloud_edge_robot_arm.vision import execution
++
++    injected = {
++        "success": True,
++        "status": "SUCCESS",
++        "online_reported_complete": True,
++        "physical_success": True,
++        "failure_reason": None,
++        "terminal_reason": None,
++    }
++    outcomes, observations, references = [], [], []
++    wrapper_calls = []
++
++    def configure(data):
++        original_episode = execution.run_visual_episode
++
++        def controlled_episode(actual_planner, actual_robot, actual_capture, policy):
++            wrapper_calls.append("original-episode-called-once")
++            assert len(wrapper_calls) == 1
++            original = original_episode(actual_planner, actual_robot, actual_capture, policy)
++            before = asdict(original)
++            assert before["success"] is False and before["status"] == "FAILED"
++            assert before["failure_reason"] == before["terminal_reason"] == "SOFTWARE_FACTORY_ONLY"
++            controlled = replace(original, **injected)
++            after = asdict(controlled)
++            assert {key: value for key, value in before.items() if key not in injected} == {
++                key: value for key, value in after.items() if key not in injected
++            }
++            for key in ("measured_lift_m", "hold_s", "placed_stable_s", "elapsed_s"):
++                assert before[key] == after[key] == 0.0
++            for key in ("executed_actions", "model_calls", "observation_count"):
++                assert before[key] == after[key] == 0
++            assert before["verification_records"] == after["verification_records"] == []
++            outcomes.append({"original": before, "injected": after})
++            return controlled
++
++        monkeypatch.setattr(execution, "run_visual_episode", controlled_episode)
++
++    def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
++        current = repo.get_job(job.job_id)
++        attempts, leases = repo.list_attempts(job.run_id), repo.list_leases(job.run_id)
++        assert current.status == RuntimeJobStatus.RUNNING
++        assert session.worker is worker and session.repository is repo
++        assert worker.repository is repo and worker._operational_lease_session is session
++        assert session.job_id == current.job_id == job.job_id
++        assert session.worker_id == current.worker_id == worker.worker_id
++        assert session.lease_id == current.lease_id
++        assert len(attempts) == len(leases) == 1
++        attempt, lease = attempts[0], leases[0]
++        assert attempt.job_id == lease.job_id == current.job_id
++        assert attempt.run_id == current.run_id == job.run_id
++        assert attempt.worker_id == lease.worker_id == current.worker_id
++        assert attempt.attempt == current.attempt == 1
++        assert attempt.ended_at is None and attempt.result == "RUNNING"
++        assert lease.lease_id == current.lease_id and lease.released_at is None
++        owner = runtime._operational_owner
++        assert owner is not None and owner.task_window is not None
++        assert owner.task_origin is not None and not owner.clock._closed
++        app_export = owner.export_record(owner.task_window)
++        assert app_export["domain"] and app_export["task_origin_event_id"]
++        rows = _rows(repo)
++        assert len(rows) == 1
++        row = rows[0]
++        assert row["epoch"] == session.epoch and row["lease_id"] == session.lease_id
++        assert row["worker_id"] == worker.worker_id and row["attempt"] == attempt.attempt
++        assert row["durable_phase"] == "COMMITTED" and row["lifecycle"] == "ATTEMPT_BOUND"
++        observations.append(
++            _evidence_fields(
++                {"job": current, "attempt": attempt, "lease": lease, "row": row,
++                 "app_export": app_export, "broker_domain": session.domain,
++                 "app_owner_thread": owner.thread_id, "main_thread": session.main_thread}
++            )
++        )
++        references.append((session, owner))
++        return "observed-real-open-running-authority"
++
++    observed, data = _exercise(monkeypatch, tmp_path, check, configure=configure)
++    repo, original_job, worker, calls, received, backend, events = data
++    assert observed == "observed-real-open-running-authority"
++    assert len(observations) == len(outcomes) == len(wrapper_calls) == len(received) == 1
++    assert calls.count("episode") == calls.count("raw_exit") == calls.count("shutdown") == 1
++    session, owner = references[0]
++    assert session._closed and owner.clock._closed
++    assert not session._broker.is_alive() and not session.join_failed
++    assert session._heartbeat_thread is not None and not session._heartbeat_thread.is_alive()
++    assert worker._operational_lease_session is None
++    with pytest.raises(sqlite3.ProgrammingError):
++        _ = events._conn.in_transaction
++    current = repo.get_job(original_job.job_id)
++    attempts, leases = repo.list_attempts(original_job.run_id), repo.list_leases(original_job.run_id)
++    assert current.status == RuntimeJobStatus.SUCCEEDED
++    assert len(attempts) == len(leases) == 1
++    attempt, lease = attempts[0], leases[0]
++    during = observations[0]
++    assert current.job_id == during["job"]["job_id"] == original_job.job_id
++    assert current.run_id == during["job"]["run_id"] == original_job.run_id
++    assert current.worker_id == attempt.worker_id == lease.worker_id == during["job"]["worker_id"]
++    assert current.lease_id == lease.lease_id == during["lease"]["lease_id"]
++    assert current.attempt == attempt.attempt == during["attempt"]["attempt"] == 1
++    assert attempt.job_id == lease.job_id == current.job_id and attempt.run_id == current.run_id
++    assert attempt.result == "SUCCEEDED" and attempt.ended_at is not None and attempt.error == ""
++    assert lease.released_at is not None and current.completed_at is not None
++    rows = _rows(repo)
++    assert len(rows) == 1
++    row = rows[0]
++    assert row["epoch"] == during["row"]["epoch"] == session.epoch
++    assert row["lease_id"] == current.lease_id and row["worker_id"] == current.worker_id
++    assert row["original_acquisition_json"] == during["row"]["original_acquisition_json"]
++    assert row["lifecycle"] == "TERMINAL" and row["durable_phase"] == "COMMITTED"
++    assert row["terminal_reason"] == "owned publication completed"
++    snapshot = json.loads(row["job_snapshot_json"])
++    assert snapshot["job"]["job_id"] == current.job_id
++    assert snapshot["job"]["run_id"] == current.run_id
++    assert snapshot["job"]["status"] == "SUCCEEDED"
++    assert snapshot["job"]["worker_id"] == current.worker_id
++    assert snapshot["job"]["lease_id"] == current.lease_id
++    assert len(snapshot["attempts"]) == 1
++    assert snapshot["attempts"][0]["result"] == "SUCCEEDED"
++    assert snapshot["attempts"][0]["ended_at"] == attempt.ended_at.isoformat()
++    actual_events = repo.list_events(current.run_id)
++    transitions = [(event.previous_status, event.next_status) for event in actual_events]
++    assert ("RUNNING", "FINALIZING") in transitions
++    assert ("FINALIZING", "SUCCEEDED") in transitions
++    assert sum(event.event_type == "artifact_created" for event in actual_events) == 1
++    assert not current.cancel_requested and current.error_code == current.error_message == ""
++    assert not any(event.next_status in {"FAILED", "CANCELLED", "INTERRUPTED", "TIMED_OUT"}
++                   for event in actual_events)
++    case_root = tmp_path.resolve()
++    run_dir = (tmp_path / current.artifact_root).resolve()
++    assert run_dir.is_relative_to(case_root)
++
++    def artifact_path(key):
++        relative = Path(current.artifact_paths[key])
++        assert not relative.is_absolute()
++        path = (tmp_path / relative).resolve()
++        assert path.is_relative_to(run_dir) and path.is_file()
++        assert not any(part in {"stage", "previous", "unconfirmed"} for part in relative.parts)
++        return path
++
++    def read_json(key):
++        return json.loads(artifact_path(key).read_text())
++
++    def read_jsonl(key):
++        return [json.loads(line) for line in artifact_path(key).read_text().splitlines() if line]
++
++    for key in ("job", "runtime_job"):
++        value = read_json(key)
++        for field in ("job_id", "run_id", "worker_id", "lease_id", "attempt"):
++            assert value[field] == getattr(current, field)
++        assert value["status"] == "SUCCEEDED"
++        assert value["completed_at"] == current.completed_at.isoformat()
++        assert value["artifact_paths"] == current.artifact_paths
++    result = read_json("result")
++    assert result["status"] == "SUCCEEDED"
++    assert all(result[key] is True for key in (
++        "task_success", "success", "visual_episode_success", "online_reported_complete",
++        "physical_success", "semantic_success"))
++    assert result["terminal_reason"] is None and result["failure_reason"] is None
++    assert result["task_execution"] == "NOT_EXECUTED"
++    assert result["episode_id"] == outcomes[0]["original"]["episode_id"] == backend._episode_id
++    for key in ("executed_actions", "model_calls", "observation_count"):
++        assert result[key] == 0
++    for key in ("measured_lift_m", "hold_s", "placed_stable_s", "elapsed_s"):
++        assert result[key] == 0.0
++    assert result["verification_records"] == []
++    assert result["real_controller_contacted"] is False
++    assert result["hardware_motion_observed"] is False
++    file_attempts = read_jsonl("attempts")
++    assert len(file_attempts) == 1
++    for field in ("attempt", "worker_id", "result", "error"):
++        assert file_attempts[0][field] == getattr(attempt, field)
++    assert file_attempts[0]["started_at"] == attempt.started_at.isoformat()
++    assert file_attempts[0]["ended_at"] == attempt.ended_at.isoformat()
++    for key in ("leases", "lease_history"):
++        file_leases = read_jsonl(key)
++        assert len(file_leases) == 1
++        for field in ("job_id", "lease_id", "worker_id"):
++            assert file_leases[0][field] == getattr(lease, field)
++        for field in ("acquired_at", "expires_at", "heartbeat_at", "released_at"):
++            assert file_leases[0][field] == getattr(lease, field).isoformat()
++    file_transitions = read_jsonl("state_transitions")
++    assert [(value["previous_status"], value["next_status"]) for value in file_transitions] == [
++        (event.previous_status, event.next_status) for event in actual_events
++        if event.previous_status or event.next_status
++    ]
++    assert sum(value["event_type"] == "artifact_created" for value in read_jsonl("events")) == 1
++    consistency = read_json("evidence_consistency")
++    assert consistency["consistent"] is True and consistency["run_id"] == current.run_id
++    for key in ("api_status", "job_status", "runtime_job_status", "result_status",
++                "final_attempt_status", "final_transition_status", "expected_terminal_status"):
++        assert consistency[key] == "SUCCEEDED"
++    assert all(consistency[key] is True for key in (
++        "terminal_event_present", "artifact_created_present", "lease_released"))
++    assert consistency["file_hashes"]
++    verified_files = {}
++    for key, expected in consistency["file_hashes"].items():
++        path = artifact_path(key)
++        blob = path.read_bytes()
++        assert hashlib.sha256(blob).hexdigest() == expected
++        verified_files[key] = {"path": str(path), "bytes": len(blob), "sha256": expected}
++    assert not list(run_dir.rglob("rejection.json"))
++    _evidence(
++        tmp_path, "software-positive-publication",
++        {"label": "CPU_CONTROLLED_OUTCOME_NOT_PHYSICS_EVIDENCE",
++         "controlled_flags_injected": True, "native_physics_validated": False,
++         "real_controller_contacted": False, "hardware_motion_observed": False,
++         "injected_fields": injected, "outcomes": outcomes, "during_episode": observations,
++         "final_job": current, "final_attempts": attempts, "final_leases": leases,
++         "final_operational_rows": rows, "actual_events": actual_events,
++         "generated_consistency": consistency, "verified_files": verified_files,
++         "resources": {"episode_wrapper_calls": len(wrapper_calls), "original_episode_calls": calls.count("episode"),
++                       "received": len(received), "raw_exit": calls.count("raw_exit"),
++                       "shutdown": calls.count("shutdown"), "session_closed": session._closed,
++                       "app_clock_closed": owner.clock._closed,
++                       "exercise_asserted_all_owner_clocks_closed": True,
++                       "broker_alive": session._broker.is_alive(),
++                       "heartbeat_alive": session._heartbeat_thread.is_alive(),
++                       "events_closed_property_raised": True}},
++    )

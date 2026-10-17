@@ -1,0 +1,78 @@
+F..FF......                                                              [100%]
+=================================== FAILURES ===================================
+_____________ test_ced_max_reuses_successful_normalized_transport ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x732acfec31a0>
+tmp_path = PosixPath('/tmp/bigsmall-t12-p3-r92-red/test_ced_max_reuses_successful0')
+
+    def test_ced_max_reuses_successful_normalized_transport(monkeypatch, tmp_path):
+        import io
+        import struct
+        from pathlib import Path
+    
+        from PIL import Image
+    
+        from scripts.probe_rgbd_roles import read_role_config
+    
+        from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
+        from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
+        from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
+        from cloud_edge_robot_arm.model_control.service import ModelControlService
+        from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
+        from cloud_edge_robot_arm.vision.messages import model_to_observation_pixel
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+        config = read_role_config(Path("configs/research/ced_roles.yaml"))
+>       assert config["cloud"]["coordinate_system"] == "normalized_1000"
+E       AssertionError: assert 'pixel' == 'normalized_1000'
+E         
+E         - normalized_1000
+E         + pixel
+
+tests/test_rgbd_role_models.py:1144: AssertionError
+_______ test_role_compatible_thinking_reaches_serialized_request[false] ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x732aa3f5dd30>
+tmp_path = PosixPath('/tmp/bigsmall-t12-p3-r92-red/test_role_compatible_thinking_0')
+think = False
+
+    @pytest.mark.parametrize("think", [False, True], ids=["false", "true"])
+    def test_role_compatible_thinking_reaches_serialized_request(monkeypatch, tmp_path, think):
+        from cloud_edge_robot_arm.vision.model_resolver import resolve_visual_planner
+    
+        snapshot = _p3_snapshot_for_wire(think=think)
+        frozen = snapshot.evidence()
+        planner = resolve_visual_planner(snapshot, allow_paid=True)
+        captured = _p3_wire_boundary(monkeypatch, tmp_path)
+        planner._request_visual([{"role": "user", "content": "software-only thinking"}], {})
+        body = json.loads(captured[0]["sent"])
+>       assert "enable_thinking" in body
+E       AssertionError: assert 'enable_thinking' in {'max_tokens': 512, 'messages': [{'content': 'software-only thinking', 'role': 'user'}], 'model': 'generic-vision-model', 'response_format': {'type': 'json_object'}, ...}
+
+tests/test_rgbd_role_models.py:1238: AssertionError
+________ test_role_compatible_thinking_reaches_serialized_request[true] ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x732aa3f5cf50>
+tmp_path = PosixPath('/tmp/bigsmall-t12-p3-r92-red/test_role_compatible_thinking_1')
+think = True
+
+    @pytest.mark.parametrize("think", [False, True], ids=["false", "true"])
+    def test_role_compatible_thinking_reaches_serialized_request(monkeypatch, tmp_path, think):
+        from cloud_edge_robot_arm.vision.model_resolver import resolve_visual_planner
+    
+        snapshot = _p3_snapshot_for_wire(think=think)
+        frozen = snapshot.evidence()
+        planner = resolve_visual_planner(snapshot, allow_paid=True)
+        captured = _p3_wire_boundary(monkeypatch, tmp_path)
+        planner._request_visual([{"role": "user", "content": "software-only thinking"}], {})
+        body = json.loads(captured[0]["sent"])
+>       assert "enable_thinking" in body
+E       AssertionError: assert 'enable_thinking' in {'max_tokens': 512, 'messages': [{'content': 'software-only thinking', 'role': 'user'}], 'model': 'generic-vision-model', 'response_format': {'type': 'json_object'}, ...}
+
+tests/test_rgbd_role_models.py:1238: AssertionError
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round92-p3-compatible-thinking-wire-20261007/implementation/RED.junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_role_models.py::test_ced_max_reuses_successful_normalized_transport
+FAILED tests/test_rgbd_role_models.py::test_role_compatible_thinking_reaches_serialized_request[false]
+FAILED tests/test_rgbd_role_models.py::test_role_compatible_thinking_reaches_serialized_request[true]
+3 failed, 8 passed in 0.42s

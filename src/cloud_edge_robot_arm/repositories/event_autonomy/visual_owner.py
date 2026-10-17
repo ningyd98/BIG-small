@@ -19,9 +19,14 @@ from cloud_edge_robot_arm.contracts.models import (
     TaskStep,
 )
 from cloud_edge_robot_arm.repositories.event_autonomy.hashing import stable_payload_hash
+from cloud_edge_robot_arm.vision.local_temporal import LocalDomainEnvelope
 
 if TYPE_CHECKING:
-    from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
+    from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+        LocalRetryBudgetRecord,
+        LocalVerificationBudgetRecord,
+        VerificationBudgetRecord,
+    )
     from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
     from cloud_edge_robot_arm.vision.owner_registration import (
         OriginalActionRequirements,
@@ -114,9 +119,13 @@ def requirement_from_payload(payload: dict[str, Any]) -> OriginalActionRequireme
 def original_from_payload(payload: dict[str, Any]) -> VisualOriginalPlan:
     from cloud_edge_robot_arm.cloud.replanning.visual_dependencies import StepDependency
     from cloud_edge_robot_arm.vision.owner_registration import (
+        LocalVisualOriginalPlan,
         VisualOwnerIdentity,
         freeze_original_visual_plan,
     )
+
+    if payload.get("schema_version") == "visual.owner.original.local.v1":
+        return LocalVisualOriginalPlan.from_payload(payload)
 
     result = freeze_original_visual_plan(
         identity=VisualOwnerIdentity(**payload["identity"]),
@@ -144,9 +153,13 @@ def copy_original(original: VisualOriginalPlan) -> VisualOriginalPlan:
 
 def grounding_from_payload(payload: dict[str, Any]) -> StepGroundingBinding:
     from cloud_edge_robot_arm.vision.owner_registration import (
+        LocalStepGroundingBinding,
         StepGroundingBinding,
         VisualOwnerIdentity,
     )
+
+    if payload.get("schema_version") == "visual.owner.grounding.local.v1":
+        return LocalStepGroundingBinding.from_payload(payload)
 
     values = dict(payload)
     values.pop("binding_scope", None)
@@ -397,6 +410,8 @@ class VisualOwnerPublicationRecord:
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> VisualOwnerPublicationRecord:
+        if payload.get("schema_version") == "visual.owner.publication.local.v1":
+            return LocalVisualOwnerPublicationRecord.from_payload(payload)
         if "publication_hash" not in payload:
             raise ValueError("stored publication hash missing")
         return cls(payload)
@@ -444,6 +459,77 @@ class VisualOwnerPublicationRecord:
     @property
     def effective_deadline_at(self) -> datetime:
         return datetime.fromisoformat(json.loads(self._payload_json)["effective_deadline_at"])
+
+
+class LocalVisualOwnerPublicationRecord(LocalDomainEnvelope, VisualOwnerPublicationRecord):
+    _tag = "visual.owner.publication.local.v1"
+
+    @property
+    def identity(self) -> VisualOwnerIdentity:
+        from cloud_edge_robot_arm.vision.owner_registration import local_owner_identity
+
+        return local_owner_identity(self.object("identity"))
+
+    @property
+    def checkpoint(self) -> ExecutionCheckpoint:
+        return self.model("checkpoint", ExecutionCheckpoint)
+
+    @property
+    def verification_budget(self) -> VerificationBudgetRecord:
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
+
+        payload = self.object("verification_budget")
+        if payload.get("schema_version") == "recovery.verification-budget.local.v1":
+            raise ValueError("local verification budget requires verification_budget_history")
+        return VerificationBudgetRecord.from_payload(payload)
+
+    @property
+    def verification_budget_history(self) -> VerificationBudgetRecord | LocalVerificationBudgetRecord:
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+            LocalVerificationBudgetRecord,
+            VerificationBudgetRecord,
+        )
+
+        payload = self.object("verification_budget")
+        tag = payload.get("schema_version")
+        if tag == "recovery.verification-budget.local.v1":
+            return LocalVerificationBudgetRecord.from_payload(payload)
+        if tag == "recovery.verification-budget.v1":
+            return VerificationBudgetRecord.from_payload(payload)
+        raise ValueError("unsupported verification budget history schema")
+
+    @property
+    def retry_budget(self) -> RecoveryBudget:
+        if self.object("retry_budget").get("schema_version") == "recovery.retry-budget.local.v1":
+            raise ValueError("local retry budget requires retry_budget_history")
+        return self.model("retry_budget", RecoveryBudget)
+
+    @property
+    def retry_budget_history(self) -> RecoveryBudget | LocalRetryBudgetRecord:
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import LocalRetryBudgetRecord
+
+        payload = self.object("retry_budget")
+        if "schema_version" in payload:
+            if payload["schema_version"] == "recovery.retry-budget.local.v1":
+                return LocalRetryBudgetRecord.from_payload(payload)
+            raise ValueError("unsupported retry budget history schema")
+        return self.model("retry_budget", RecoveryBudget)
+
+    @property
+    def owner_revision(self) -> int:
+        return self.counter("owner_revision")
+
+    @property
+    def state_generation(self) -> int:
+        return self.counter("state_generation")
+
+    @property
+    def original_plan_hash(self) -> str:
+        return self.string("original_plan_hash")
+
+    @property
+    def effective_deadline_at(self) -> datetime:
+        return self.legacy_deadline()
 
 
 def publication(

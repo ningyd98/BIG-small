@@ -1,0 +1,5507 @@
+{
+  "schema_version": "bigsmall.r233.retained-diagnostic.v1",
+  "databases": [
+    {
+      "case_ordinal": 0,
+      "kind": "events.db",
+      "database": {
+        "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/events.db",
+        "bytes": 327680,
+        "sha256": "851199f0503d55c003d9fc1b638846e4a9e4b43474aaf4c95fb5bb453af506a8"
+      },
+      "schema": [
+        [
+          "active_task_contracts",
+          "table",
+          "CREATE TABLE active_task_contracts (\n                task_id TEXT PRIMARY KEY,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                scene_version INTEGER NOT NULL,\n                record_json TEXT NOT NULL,\n                contract_hash TEXT NOT NULL,\n                activated_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "command_acks",
+          "table",
+          "CREATE TABLE command_acks (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                ack_key TEXT NOT NULL UNIQUE,\n                request_id TEXT DEFAULT '',\n                task_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                checkpoint_id TEXT DEFAULT '',\n                status TEXT NOT NULL,\n                accepted INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "completion_summaries",
+          "table",
+          "CREATE TABLE completion_summaries (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                summary_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                final_plan_version INTEGER NOT NULL DEFAULT 0,\n                completed_step_ids_json TEXT DEFAULT '[]',\n                completion_criteria_results_json TEXT DEFAULT '{}',\n                local_retry_count INTEGER NOT NULL DEFAULT 0,\n                cloud_replan_count INTEGER NOT NULL DEFAULT 0,\n                result TEXT NOT NULL DEFAULT 'SUCCESS',\n                final_safety_decision TEXT DEFAULT 'ALLOW',\n                plan_version INTEGER NOT NULL DEFAULT 0,\n                command_seq INTEGER NOT NULL DEFAULT 0,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "edge_events",
+          "table",
+          "CREATE TABLE edge_events (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                event_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                event_type TEXT NOT NULL,\n                step_id TEXT,\n                severity TEXT NOT NULL DEFAULT 'ERROR',\n                reason_code TEXT DEFAULT '',\n                reason_detail TEXT DEFAULT '',\n                robot_id TEXT DEFAULT '',\n                plan_id TEXT DEFAULT '',\n                plan_version INTEGER NOT NULL DEFAULT 0,\n                command_seq INTEGER NOT NULL DEFAULT 0,\n                details_json TEXT DEFAULT '{}',\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                handled INTEGER NOT NULL DEFAULT 0,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_audit_events",
+          "table",
+          "CREATE TABLE event_audit_events (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                event_type TEXT NOT NULL,\n                details_json TEXT DEFAULT '{}',\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_mode_states",
+          "table",
+          "CREATE TABLE event_mode_states (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL UNIQUE,\n                current_state TEXT NOT NULL,\n                reason TEXT DEFAULT '',\n                event_id TEXT DEFAULT '',\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_mode_transitions",
+          "table",
+          "CREATE TABLE event_mode_transitions (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                from_state TEXT NOT NULL,\n                to_state TEXT NOT NULL,\n                reason TEXT DEFAULT '',\n                event_id TEXT DEFAULT '',\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_outbox",
+          "table",
+          "CREATE TABLE event_outbox (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                message_id TEXT NOT NULL UNIQUE,\n                idempotency_key TEXT,\n                task_id TEXT NOT NULL,\n                message_type TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                status TEXT NOT NULL DEFAULT 'PENDING',\n                retry_count INTEGER NOT NULL DEFAULT 0,\n                max_retries INTEGER NOT NULL DEFAULT 5,\n                backoff_base_ms INTEGER NOT NULL DEFAULT 1000,\n                next_attempt_at TEXT,\n                claimed_at TEXT,\n                last_error TEXT,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "execution_checkpoints",
+          "table",
+          "CREATE TABLE execution_checkpoints (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                checkpoint_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                execution_state TEXT NOT NULL,\n                completed_step_ids_json TEXT DEFAULT '[]',\n                payload_json TEXT NOT NULL,\n                checkpoint_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "failure_summaries",
+          "table",
+          "CREATE TABLE failure_summaries (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                summary_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                failure_event_id TEXT NOT NULL,\n                failed_step_id TEXT NOT NULL,\n                completed_step_ids_json TEXT DEFAULT '[]',\n                failure_type TEXT DEFAULT '',\n                severity TEXT DEFAULT 'ERROR',\n                reason TEXT NOT NULL,\n                recovery_hint TEXT DEFAULT '',\n                local_retry_count INTEGER NOT NULL DEFAULT 0,\n                retry_limit INTEGER NOT NULL DEFAULT 0,\n                requested_replan_scope TEXT DEFAULT '',\n                plan_version INTEGER NOT NULL DEFAULT 0,\n                command_seq INTEGER NOT NULL DEFAULT 0,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "plan_versions",
+          "table",
+          "CREATE TABLE plan_versions (\n                task_id TEXT PRIMARY KEY,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "recovery_attempts",
+          "table",
+          "CREATE TABLE recovery_attempts (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                step_id TEXT NOT NULL,\n                skill TEXT NOT NULL,\n                event_id TEXT DEFAULT '',\n                attempt_number INTEGER NOT NULL,\n                success INTEGER NOT NULL DEFAULT 0,\n                error_code TEXT DEFAULT '',\n                duration_ms INTEGER DEFAULT 0,\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "recovery_budgets",
+          "table",
+          "CREATE TABLE recovery_budgets (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                budget_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL UNIQUE,\n                per_step_retry_limit INTEGER NOT NULL DEFAULT 3,\n                per_skill_retry_limit INTEGER NOT NULL DEFAULT 5,\n                task_total_retry_limit INTEGER NOT NULL DEFAULT 10,\n                retry_count_used INTEGER NOT NULL DEFAULT 0,\n                task_retry_count INTEGER NOT NULL DEFAULT 0,\n                step_retry_counts_json TEXT DEFAULT '{}',\n                skill_retry_counts_json TEXT DEFAULT '{}',\n                event_retry_counts_json TEXT DEFAULT '{}',\n                retry_cooldown_ms INTEGER NOT NULL DEFAULT 500,\n                retry_deadline TEXT,\n                retry_backoff_policy TEXT NOT NULL DEFAULT 'exponential',\n                effective_retry_limit INTEGER NOT NULL DEFAULT 3,\n                remaining_retries INTEGER NOT NULL DEFAULT 3,\n                scene_version INTEGER NOT NULL DEFAULT 0,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "recovery_records",
+          "table",
+          "CREATE TABLE recovery_records (\n                recovery_id TEXT PRIMARY KEY,\n                event_id TEXT UNIQUE NOT NULL,\n                task_id TEXT NOT NULL,\n                revision INTEGER NOT NULL,\n                state TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                content_hash TEXT NOT NULL,\n                initial_hash TEXT NOT NULL\n            )"
+        ],
+        [
+          "replan_apply_records",
+          "table",
+          "CREATE TABLE replan_apply_records (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                apply_id TEXT NOT NULL UNIQUE,\n                request_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                previous_plan_version INTEGER NOT NULL,\n                previous_command_seq INTEGER NOT NULL,\n                new_plan_version INTEGER NOT NULL,\n                new_command_seq INTEGER NOT NULL,\n                checkpoint_id TEXT DEFAULT '',\n                status TEXT NOT NULL,\n                reason TEXT DEFAULT '',\n                payload_json TEXT NOT NULL,\n                apply_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "replan_requests",
+          "table",
+          "CREATE TABLE replan_requests (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                request_id TEXT NOT NULL UNIQUE,\n                idempotency_key TEXT,\n                task_id TEXT NOT NULL,\n                trigger_event_id TEXT NOT NULL,\n                failure_summary_id TEXT DEFAULT '',\n                current_plan_version INTEGER NOT NULL DEFAULT 0,\n                current_command_seq INTEGER NOT NULL DEFAULT 1,\n                requested_replan_scope TEXT DEFAULT '',\n                completed_step_ids_json TEXT DEFAULT '[]',\n                failed_step_id TEXT DEFAULT '',\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "replan_results",
+          "table",
+          "CREATE TABLE replan_results (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                request_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                outcome TEXT NOT NULL DEFAULT 'REPLANNED',\n                new_plan_version INTEGER NOT NULL DEFAULT 0,\n                new_command_seq INTEGER NOT NULL DEFAULT 1,\n                new_steps_json TEXT DEFAULT '[]',\n                validation_errors_json TEXT DEFAULT '[]',\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "sqlite_sequence",
+          "table",
+          "CREATE TABLE sqlite_sequence(name,seq)"
+        ],
+        [
+          "task_contract_versions",
+          "table",
+          "CREATE TABLE task_contract_versions (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                scene_version INTEGER NOT NULL,\n                status TEXT NOT NULL,\n                based_on_plan_version INTEGER,\n                contract_json TEXT NOT NULL,\n                record_json TEXT NOT NULL,\n                contract_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL,\n                activated_at TEXT NOT NULL,\n                superseded_at TEXT,\n                correlation_id TEXT DEFAULT '',\n                UNIQUE(task_id, plan_version)\n            )"
+        ],
+        [
+          "verification_budgets",
+          "table",
+          "CREATE TABLE verification_budgets (\n                task_id TEXT PRIMARY KEY,\n                revision INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                content_hash TEXT NOT NULL\n            )"
+        ],
+        [
+          "visual_bootstraps",
+          "table",
+          "CREATE TABLE visual_bootstraps (\n                bootstrap_id TEXT PRIMARY KEY,\n                job_id TEXT NOT NULL,\n                run_id TEXT NOT NULL,\n                episode_id TEXT NOT NULL UNIQUE,\n                revision INTEGER NOT NULL,\n                definition_hash TEXT NOT NULL,\n                record_hash TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                UNIQUE (job_id, run_id)\n            )"
+        ],
+        [
+          "visual_local_publications_v1",
+          "table",
+          "CREATE TABLE visual_local_publications_v1 (operation_id TEXT PRIMARY KEY, operation_sha256 TEXT NOT NULL, job_id TEXT NOT NULL, attempt INTEGER NOT NULL, lease_id TEXT NOT NULL, epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL, phase TEXT NOT NULL, event_record_hash TEXT NOT NULL, event_receipt_hash TEXT NOT NULL, job_receipt_hash TEXT NOT NULL, payload_json TEXT NOT NULL)"
+        ],
+        [
+          "visual_local_tasks_v1",
+          "table",
+          "CREATE TABLE visual_local_tasks_v1 (category TEXT NOT NULL, record_key TEXT NOT NULL, task_id TEXT NOT NULL, value_json TEXT NOT NULL, PRIMARY KEY(category,record_key))"
+        ],
+        [
+          "visual_original_plans",
+          "table",
+          "CREATE TABLE visual_original_plans (\n                task_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                original_hash TEXT NOT NULL,\n                PRIMARY KEY (task_id, plan_version)\n            )"
+        ],
+        [
+          "visual_owner_publications",
+          "table",
+          "CREATE TABLE visual_owner_publications (\n                task_id TEXT NOT NULL,\n                owner_revision INTEGER NOT NULL,\n                owner_epoch TEXT NOT NULL,\n                state_generation INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                publication_hash TEXT NOT NULL,\n                PRIMARY KEY (task_id, owner_revision)\n            )"
+        ],
+        [
+          "visual_supervision",
+          "table",
+          "CREATE TABLE visual_supervision (\n                task_id TEXT PRIMARY KEY,\n                revision INTEGER NOT NULL,\n                definition_hash TEXT NOT NULL,\n                record_hash TEXT NOT NULL,\n                payload_json TEXT NOT NULL\n            )"
+        ],
+        [
+          "visual_verification_routes",
+          "table",
+          "CREATE TABLE visual_verification_routes (\n                task_id TEXT NOT NULL,\n                event_key TEXT NOT NULL,\n                source_key TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                record_hash TEXT NOT NULL,\n                PRIMARY KEY (task_id, event_key),\n                UNIQUE (task_id, source_key)\n            )"
+        ]
+      ],
+      "tables": [
+        {
+          "name": "visual_bootstraps",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "bootstrap_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "run_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "episode_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "revision",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "definition_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "record_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "visual_local_tasks_v1",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "category",
+              "TEXT",
+              1,
+              null,
+              1
+            ],
+            [
+              1,
+              "record_key",
+              "TEXT",
+              1,
+              null,
+              2
+            ],
+            [
+              2,
+              "task_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "value_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "visual_local_publications_v1",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "operation_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "operation_sha256",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "attempt",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "lease_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "epoch",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "generation",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "row_revision",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              8,
+              "phase",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "event_record_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "event_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "job_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              12,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "event_audit_events",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "id",
+              "INTEGER",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "task_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "event_type",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "details_json",
+              "TEXT",
+              0,
+              "'{}'",
+              0
+            ],
+            [
+              4,
+              "created_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "failure_summaries",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "id",
+              "INTEGER",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "summary_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "task_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "failure_event_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "failed_step_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "completed_step_ids_json",
+              "TEXT",
+              0,
+              "'[]'",
+              0
+            ],
+            [
+              6,
+              "failure_type",
+              "TEXT",
+              0,
+              "''",
+              0
+            ],
+            [
+              7,
+              "severity",
+              "TEXT",
+              0,
+              "'ERROR'",
+              0
+            ],
+            [
+              8,
+              "reason",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "recovery_hint",
+              "TEXT",
+              0,
+              "''",
+              0
+            ],
+            [
+              10,
+              "local_retry_count",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              11,
+              "retry_limit",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              12,
+              "requested_replan_scope",
+              "TEXT",
+              0,
+              "''",
+              0
+            ],
+            [
+              13,
+              "plan_version",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              14,
+              "command_seq",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              15,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              16,
+              "payload_hash",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              17,
+              "created_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              18,
+              "updated_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        }
+      ]
+    },
+    {
+      "case_ordinal": 0,
+      "kind": "runtime.db",
+      "database": {
+        "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/runtime.db",
+        "bytes": 110592,
+        "sha256": "fcc98ee8e3d12046434f06bddea1b0755d5e134db603bf0e9a5c572fa492cb79"
+      },
+      "schema": [
+        [
+          "schema_migrations",
+          "table",
+          "CREATE TABLE schema_migrations (\n                    version INTEGER PRIMARY KEY,\n                    applied_at TEXT NOT NULL\n                )"
+        ],
+        [
+          "simulation_artifacts",
+          "table",
+          "CREATE TABLE simulation_artifacts (\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    name TEXT NOT NULL,\n                    relative_path TEXT NOT NULL,\n                    PRIMARY KEY(job_id, name),\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_batches",
+          "table",
+          "CREATE TABLE simulation_batches (\n                    batch_id TEXT PRIMARY KEY,\n                    manifest_json TEXT NOT NULL,\n                    run_ids_json TEXT NOT NULL,\n                    total INTEGER NOT NULL,\n                    created_at TEXT NOT NULL,\n                    completed_at TEXT NOT NULL DEFAULT ''\n                )"
+        ],
+        [
+          "simulation_job_attempts",
+          "table",
+          "CREATE TABLE simulation_job_attempts (\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    attempt INTEGER NOT NULL,\n                    worker_id TEXT NOT NULL,\n                    started_at TEXT NOT NULL,\n                    ended_at TEXT NOT NULL DEFAULT '',\n                    result TEXT NOT NULL,\n                    error TEXT NOT NULL DEFAULT '',\n                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',\n                    PRIMARY KEY(job_id, attempt),\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_job_events",
+          "table",
+          "CREATE TABLE simulation_job_events (\n                    event_id TEXT PRIMARY KEY,\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    sequence INTEGER NOT NULL,\n                    stream_sequence INTEGER NOT NULL UNIQUE,\n                    event_type TEXT NOT NULL,\n                    previous_status TEXT NOT NULL DEFAULT '',\n                    next_status TEXT NOT NULL DEFAULT '',\n                    reason_code TEXT NOT NULL DEFAULT '',\n                    timestamp TEXT NOT NULL,\n                    source TEXT NOT NULL,\n                    payload_json TEXT NOT NULL,\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_job_leases",
+          "table",
+          "CREATE TABLE simulation_job_leases (\n                    lease_id TEXT PRIMARY KEY,\n                    job_id TEXT NOT NULL,\n                    worker_id TEXT NOT NULL,\n                    acquired_at TEXT NOT NULL,\n                    expires_at TEXT NOT NULL,\n                    heartbeat_at TEXT NOT NULL,\n                    released_at TEXT NOT NULL DEFAULT '',\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_jobs",
+          "table",
+          "CREATE TABLE simulation_jobs (\n                    job_id TEXT PRIMARY KEY,\n                    run_id TEXT NOT NULL UNIQUE,\n                    batch_id TEXT NOT NULL DEFAULT '',\n                    backend TEXT NOT NULL,\n                    scenario_id TEXT NOT NULL,\n                    control_mode TEXT NOT NULL,\n                    seed INTEGER NOT NULL,\n                    manifest_id TEXT NOT NULL,\n                    reproducibility_hash TEXT NOT NULL,\n                    status TEXT NOT NULL,\n                    draft_json TEXT NOT NULL,\n                    manifest_json TEXT NOT NULL,\n                    attempt INTEGER NOT NULL DEFAULT 0,\n                    max_attempts INTEGER NOT NULL DEFAULT 1,\n                    priority INTEGER NOT NULL DEFAULT 0,\n                    created_at TEXT NOT NULL,\n                    queued_at TEXT,\n                    started_at TEXT,\n                    completed_at TEXT,\n                    updated_at TEXT NOT NULL,\n                    timeout_seconds INTEGER NOT NULL,\n                    cancel_requested INTEGER NOT NULL DEFAULT 0,\n                    worker_id TEXT NOT NULL DEFAULT '',\n                    lease_id TEXT NOT NULL DEFAULT '',\n                    lease_expires_at TEXT,\n                    blocker_codes_json TEXT NOT NULL DEFAULT '[]',\n                    error_code TEXT NOT NULL DEFAULT '',\n                    error_message TEXT NOT NULL DEFAULT '',\n                    artifact_root TEXT NOT NULL DEFAULT '',\n                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',\n                    provenance_json TEXT NOT NULL DEFAULT '{}',\n                    source_commit TEXT NOT NULL DEFAULT '',\n                    source_tree_hash TEXT NOT NULL DEFAULT ''\n                )"
+        ],
+        [
+          "simulation_local_publications_v1",
+          "table",
+          "CREATE TABLE simulation_local_publications_v1 (operation_id TEXT PRIMARY KEY, operation_sha256 TEXT NOT NULL, job_id TEXT NOT NULL, attempt INTEGER NOT NULL, lease_id TEXT NOT NULL, epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL, phase TEXT NOT NULL, event_record_hash TEXT NOT NULL, event_receipt_hash TEXT NOT NULL, job_receipt_hash TEXT NOT NULL, payload_json TEXT NOT NULL)"
+        ],
+        [
+          "simulation_metrics",
+          "table",
+          "CREATE TABLE simulation_metrics (\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    metric_index INTEGER NOT NULL,\n                    metric_json TEXT NOT NULL,\n                    PRIMARY KEY(job_id, metric_index),\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_operational_leases_v1",
+          "table",
+          "CREATE TABLE simulation_operational_leases_v1 (\n                    lease_id TEXT PRIMARY KEY, schema TEXT NOT NULL,\n                    job_id TEXT NOT NULL UNIQUE, run_id TEXT NOT NULL, worker_id TEXT NOT NULL,\n                    attempt INTEGER, lifecycle TEXT NOT NULL,\n                    pid INTEGER NOT NULL, boot_id TEXT NOT NULL, process_start_ticks INTEGER NOT NULL,\n                    epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL,\n                    original_job_digest TEXT NOT NULL, original_policy_digest TEXT NOT NULL,\n                    original_acquisition_json TEXT NOT NULL, segment_json TEXT NOT NULL,\n                    proposal_id TEXT NOT NULL, operation_sha256 TEXT NOT NULL,\n                    job_snapshot_json TEXT NOT NULL, proposed_row_digest TEXT NOT NULL,\n                    durable_phase TEXT NOT NULL, terminal_reason TEXT NOT NULL,\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ]
+      ],
+      "tables": [
+        {
+          "name": "simulation_jobs",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "job_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "run_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "batch_id",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              3,
+              "backend",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "scenario_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "control_mode",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "seed",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "manifest_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              8,
+              "reproducibility_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "status",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "draft_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "manifest_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              12,
+              "attempt",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              13,
+              "max_attempts",
+              "INTEGER",
+              1,
+              "1",
+              0
+            ],
+            [
+              14,
+              "priority",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              15,
+              "created_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              16,
+              "queued_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              17,
+              "started_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              18,
+              "completed_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              19,
+              "updated_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              20,
+              "timeout_seconds",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              21,
+              "cancel_requested",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              22,
+              "worker_id",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              23,
+              "lease_id",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              24,
+              "lease_expires_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              25,
+              "blocker_codes_json",
+              "TEXT",
+              1,
+              "'[]'",
+              0
+            ],
+            [
+              26,
+              "error_code",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              27,
+              "error_message",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              28,
+              "artifact_root",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              29,
+              "artifact_paths_json",
+              "TEXT",
+              1,
+              "'{}'",
+              0
+            ],
+            [
+              30,
+              "provenance_json",
+              "TEXT",
+              1,
+              "'{}'",
+              0
+            ],
+            [
+              31,
+              "source_commit",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              32,
+              "source_tree_hash",
+              "TEXT",
+              1,
+              "''",
+              0
+            ]
+          ],
+          "rows": [
+            [
+              "job-385c718787a04d5f",
+              "terminal-test",
+              "",
+              "MUJOCO",
+              "S01_NORMAL_STATIC",
+              "PCSC",
+              0,
+              "manifest",
+              "hash",
+              "QUEUED",
+              "{\"backend\":\"MUJOCO\",\"control_modes\":[\"PCSC\"],\"description\":\"runtime test\",\"domain_randomization\":{\"enabled\":false,\"level\":\"NONE\"},\"execution_scope\":\"VISION_CLOSED_LOOP\",\"fault_profiles\":[{\"name\":\"none\",\"parameters\":{}}],\"input_mode\":\"RGBD\",\"network_profiles\":[{\"bandwidth_kbps\":10000,\"base_latency_ms\":40,\"jitter_ms\":5,\"name\":\"NORMAL\",\"packet_loss\":0.0}],\"parameter_overrides\":{\"cache_policy\":\"CACHE_ENABLED\",\"retry_budget\":2,\"supervision_period_ms\":300,\"timeout_ms\":30000},\"repetitions\":1,\"run_type\":\"SINGLE\",\"scenarios\":[\"S01_NORMAL_STATIC\"],\"seeds\":[0],\"tags\":[\"phase11-1-test\"]}",
+              "{}",
+              0,
+              1,
+              0,
+              "2026-10-15T07:13:38.715034+00:00",
+              "2026-10-15T07:13:38.730925+00:00",
+              null,
+              null,
+              "2026-10-15T07:13:38.730925+00:00",
+              60,
+              0,
+              "",
+              "",
+              null,
+              "[]",
+              "",
+              "",
+              "terminal-test",
+              "{}",
+              "{}",
+              "test",
+              "test"
+            ]
+          ]
+        },
+        {
+          "name": "simulation_job_events",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "event_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "run_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "sequence",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "stream_sequence",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "event_type",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "previous_status",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              7,
+              "next_status",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              8,
+              "reason_code",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              9,
+              "timestamp",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "source",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": [
+            [
+              "evt-bc621afa569d43b9",
+              "job-385c718787a04d5f",
+              "terminal-test",
+              1,
+              1,
+              "job_created",
+              "",
+              "CREATED",
+              "created",
+              "2026-10-15T07:13:38.715492+00:00",
+              "simulation_runtime",
+              "{\"backend\":\"MUJOCO\",\"run_id\":\"terminal-test\",\"status\":\"CREATED\"}"
+            ],
+            [
+              "evt-15a8c8e0bd674e88",
+              "job-385c718787a04d5f",
+              "terminal-test",
+              2,
+              2,
+              "job_queued",
+              "CREATED",
+              "QUEUED",
+              "test",
+              "2026-10-15T07:13:38.731415+00:00",
+              "simulation_runtime",
+              "{\"lease_id\":\"\",\"status\":\"QUEUED\",\"worker_id\":\"\"}"
+            ]
+          ]
+        },
+        {
+          "name": "simulation_job_leases",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "lease_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "worker_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "acquired_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "expires_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "heartbeat_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "released_at",
+              "TEXT",
+              1,
+              "''",
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "simulation_local_publications_v1",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "operation_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "operation_sha256",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "attempt",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "lease_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "epoch",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "generation",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "row_revision",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              8,
+              "phase",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "event_record_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "event_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "job_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              12,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        }
+      ]
+    },
+    {
+      "case_ordinal": 1,
+      "kind": "events.db",
+      "database": {
+        "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/events.db",
+        "bytes": 327680,
+        "sha256": "678b957b2f24646682292d2743b337ec2b5b5fd2b2fad8d637ba8ad3e649f09c"
+      },
+      "schema": [
+        [
+          "active_task_contracts",
+          "table",
+          "CREATE TABLE active_task_contracts (\n                task_id TEXT PRIMARY KEY,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                scene_version INTEGER NOT NULL,\n                record_json TEXT NOT NULL,\n                contract_hash TEXT NOT NULL,\n                activated_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "command_acks",
+          "table",
+          "CREATE TABLE command_acks (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                ack_key TEXT NOT NULL UNIQUE,\n                request_id TEXT DEFAULT '',\n                task_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                checkpoint_id TEXT DEFAULT '',\n                status TEXT NOT NULL,\n                accepted INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "completion_summaries",
+          "table",
+          "CREATE TABLE completion_summaries (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                summary_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                final_plan_version INTEGER NOT NULL DEFAULT 0,\n                completed_step_ids_json TEXT DEFAULT '[]',\n                completion_criteria_results_json TEXT DEFAULT '{}',\n                local_retry_count INTEGER NOT NULL DEFAULT 0,\n                cloud_replan_count INTEGER NOT NULL DEFAULT 0,\n                result TEXT NOT NULL DEFAULT 'SUCCESS',\n                final_safety_decision TEXT DEFAULT 'ALLOW',\n                plan_version INTEGER NOT NULL DEFAULT 0,\n                command_seq INTEGER NOT NULL DEFAULT 0,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "edge_events",
+          "table",
+          "CREATE TABLE edge_events (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                event_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                event_type TEXT NOT NULL,\n                step_id TEXT,\n                severity TEXT NOT NULL DEFAULT 'ERROR',\n                reason_code TEXT DEFAULT '',\n                reason_detail TEXT DEFAULT '',\n                robot_id TEXT DEFAULT '',\n                plan_id TEXT DEFAULT '',\n                plan_version INTEGER NOT NULL DEFAULT 0,\n                command_seq INTEGER NOT NULL DEFAULT 0,\n                details_json TEXT DEFAULT '{}',\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                handled INTEGER NOT NULL DEFAULT 0,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_audit_events",
+          "table",
+          "CREATE TABLE event_audit_events (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                event_type TEXT NOT NULL,\n                details_json TEXT DEFAULT '{}',\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_mode_states",
+          "table",
+          "CREATE TABLE event_mode_states (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL UNIQUE,\n                current_state TEXT NOT NULL,\n                reason TEXT DEFAULT '',\n                event_id TEXT DEFAULT '',\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_mode_transitions",
+          "table",
+          "CREATE TABLE event_mode_transitions (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                from_state TEXT NOT NULL,\n                to_state TEXT NOT NULL,\n                reason TEXT DEFAULT '',\n                event_id TEXT DEFAULT '',\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_outbox",
+          "table",
+          "CREATE TABLE event_outbox (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                message_id TEXT NOT NULL UNIQUE,\n                idempotency_key TEXT,\n                task_id TEXT NOT NULL,\n                message_type TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                status TEXT NOT NULL DEFAULT 'PENDING',\n                retry_count INTEGER NOT NULL DEFAULT 0,\n                max_retries INTEGER NOT NULL DEFAULT 5,\n                backoff_base_ms INTEGER NOT NULL DEFAULT 1000,\n                next_attempt_at TEXT,\n                claimed_at TEXT,\n                last_error TEXT,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "execution_checkpoints",
+          "table",
+          "CREATE TABLE execution_checkpoints (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                checkpoint_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                execution_state TEXT NOT NULL,\n                completed_step_ids_json TEXT DEFAULT '[]',\n                payload_json TEXT NOT NULL,\n                checkpoint_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "failure_summaries",
+          "table",
+          "CREATE TABLE failure_summaries (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                summary_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                failure_event_id TEXT NOT NULL,\n                failed_step_id TEXT NOT NULL,\n                completed_step_ids_json TEXT DEFAULT '[]',\n                failure_type TEXT DEFAULT '',\n                severity TEXT DEFAULT 'ERROR',\n                reason TEXT NOT NULL,\n                recovery_hint TEXT DEFAULT '',\n                local_retry_count INTEGER NOT NULL DEFAULT 0,\n                retry_limit INTEGER NOT NULL DEFAULT 0,\n                requested_replan_scope TEXT DEFAULT '',\n                plan_version INTEGER NOT NULL DEFAULT 0,\n                command_seq INTEGER NOT NULL DEFAULT 0,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "plan_versions",
+          "table",
+          "CREATE TABLE plan_versions (\n                task_id TEXT PRIMARY KEY,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "recovery_attempts",
+          "table",
+          "CREATE TABLE recovery_attempts (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                step_id TEXT NOT NULL,\n                skill TEXT NOT NULL,\n                event_id TEXT DEFAULT '',\n                attempt_number INTEGER NOT NULL,\n                success INTEGER NOT NULL DEFAULT 0,\n                error_code TEXT DEFAULT '',\n                duration_ms INTEGER DEFAULT 0,\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "recovery_budgets",
+          "table",
+          "CREATE TABLE recovery_budgets (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                budget_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL UNIQUE,\n                per_step_retry_limit INTEGER NOT NULL DEFAULT 3,\n                per_skill_retry_limit INTEGER NOT NULL DEFAULT 5,\n                task_total_retry_limit INTEGER NOT NULL DEFAULT 10,\n                retry_count_used INTEGER NOT NULL DEFAULT 0,\n                task_retry_count INTEGER NOT NULL DEFAULT 0,\n                step_retry_counts_json TEXT DEFAULT '{}',\n                skill_retry_counts_json TEXT DEFAULT '{}',\n                event_retry_counts_json TEXT DEFAULT '{}',\n                retry_cooldown_ms INTEGER NOT NULL DEFAULT 500,\n                retry_deadline TEXT,\n                retry_backoff_policy TEXT NOT NULL DEFAULT 'exponential',\n                effective_retry_limit INTEGER NOT NULL DEFAULT 3,\n                remaining_retries INTEGER NOT NULL DEFAULT 3,\n                scene_version INTEGER NOT NULL DEFAULT 0,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "recovery_records",
+          "table",
+          "CREATE TABLE recovery_records (\n                recovery_id TEXT PRIMARY KEY,\n                event_id TEXT UNIQUE NOT NULL,\n                task_id TEXT NOT NULL,\n                revision INTEGER NOT NULL,\n                state TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                content_hash TEXT NOT NULL,\n                initial_hash TEXT NOT NULL\n            )"
+        ],
+        [
+          "replan_apply_records",
+          "table",
+          "CREATE TABLE replan_apply_records (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                apply_id TEXT NOT NULL UNIQUE,\n                request_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                previous_plan_version INTEGER NOT NULL,\n                previous_command_seq INTEGER NOT NULL,\n                new_plan_version INTEGER NOT NULL,\n                new_command_seq INTEGER NOT NULL,\n                checkpoint_id TEXT DEFAULT '',\n                status TEXT NOT NULL,\n                reason TEXT DEFAULT '',\n                payload_json TEXT NOT NULL,\n                apply_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "replan_requests",
+          "table",
+          "CREATE TABLE replan_requests (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                request_id TEXT NOT NULL UNIQUE,\n                idempotency_key TEXT,\n                task_id TEXT NOT NULL,\n                trigger_event_id TEXT NOT NULL,\n                failure_summary_id TEXT DEFAULT '',\n                current_plan_version INTEGER NOT NULL DEFAULT 0,\n                current_command_seq INTEGER NOT NULL DEFAULT 1,\n                requested_replan_scope TEXT DEFAULT '',\n                completed_step_ids_json TEXT DEFAULT '[]',\n                failed_step_id TEXT DEFAULT '',\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "replan_results",
+          "table",
+          "CREATE TABLE replan_results (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                request_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                outcome TEXT NOT NULL DEFAULT 'REPLANNED',\n                new_plan_version INTEGER NOT NULL DEFAULT 0,\n                new_command_seq INTEGER NOT NULL DEFAULT 1,\n                new_steps_json TEXT DEFAULT '[]',\n                validation_errors_json TEXT DEFAULT '[]',\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "sqlite_sequence",
+          "table",
+          "CREATE TABLE sqlite_sequence(name,seq)"
+        ],
+        [
+          "task_contract_versions",
+          "table",
+          "CREATE TABLE task_contract_versions (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                scene_version INTEGER NOT NULL,\n                status TEXT NOT NULL,\n                based_on_plan_version INTEGER,\n                contract_json TEXT NOT NULL,\n                record_json TEXT NOT NULL,\n                contract_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL,\n                activated_at TEXT NOT NULL,\n                superseded_at TEXT,\n                correlation_id TEXT DEFAULT '',\n                UNIQUE(task_id, plan_version)\n            )"
+        ],
+        [
+          "verification_budgets",
+          "table",
+          "CREATE TABLE verification_budgets (\n                task_id TEXT PRIMARY KEY,\n                revision INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                content_hash TEXT NOT NULL\n            )"
+        ],
+        [
+          "visual_bootstraps",
+          "table",
+          "CREATE TABLE visual_bootstraps (\n                bootstrap_id TEXT PRIMARY KEY,\n                job_id TEXT NOT NULL,\n                run_id TEXT NOT NULL,\n                episode_id TEXT NOT NULL UNIQUE,\n                revision INTEGER NOT NULL,\n                definition_hash TEXT NOT NULL,\n                record_hash TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                UNIQUE (job_id, run_id)\n            )"
+        ],
+        [
+          "visual_local_publications_v1",
+          "table",
+          "CREATE TABLE visual_local_publications_v1 (operation_id TEXT PRIMARY KEY, operation_sha256 TEXT NOT NULL, job_id TEXT NOT NULL, attempt INTEGER NOT NULL, lease_id TEXT NOT NULL, epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL, phase TEXT NOT NULL, event_record_hash TEXT NOT NULL, event_receipt_hash TEXT NOT NULL, job_receipt_hash TEXT NOT NULL, payload_json TEXT NOT NULL)"
+        ],
+        [
+          "visual_local_tasks_v1",
+          "table",
+          "CREATE TABLE visual_local_tasks_v1 (category TEXT NOT NULL, record_key TEXT NOT NULL, task_id TEXT NOT NULL, value_json TEXT NOT NULL, PRIMARY KEY(category,record_key))"
+        ],
+        [
+          "visual_original_plans",
+          "table",
+          "CREATE TABLE visual_original_plans (\n                task_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                original_hash TEXT NOT NULL,\n                PRIMARY KEY (task_id, plan_version)\n            )"
+        ],
+        [
+          "visual_owner_publications",
+          "table",
+          "CREATE TABLE visual_owner_publications (\n                task_id TEXT NOT NULL,\n                owner_revision INTEGER NOT NULL,\n                owner_epoch TEXT NOT NULL,\n                state_generation INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                publication_hash TEXT NOT NULL,\n                PRIMARY KEY (task_id, owner_revision)\n            )"
+        ],
+        [
+          "visual_supervision",
+          "table",
+          "CREATE TABLE visual_supervision (\n                task_id TEXT PRIMARY KEY,\n                revision INTEGER NOT NULL,\n                definition_hash TEXT NOT NULL,\n                record_hash TEXT NOT NULL,\n                payload_json TEXT NOT NULL\n            )"
+        ],
+        [
+          "visual_verification_routes",
+          "table",
+          "CREATE TABLE visual_verification_routes (\n                task_id TEXT NOT NULL,\n                event_key TEXT NOT NULL,\n                source_key TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                record_hash TEXT NOT NULL,\n                PRIMARY KEY (task_id, event_key),\n                UNIQUE (task_id, source_key)\n            )"
+        ]
+      ],
+      "tables": [
+        {
+          "name": "visual_bootstraps",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "bootstrap_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "run_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "episode_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "revision",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "definition_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "record_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "visual_local_tasks_v1",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "category",
+              "TEXT",
+              1,
+              null,
+              1
+            ],
+            [
+              1,
+              "record_key",
+              "TEXT",
+              1,
+              null,
+              2
+            ],
+            [
+              2,
+              "task_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "value_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "visual_local_publications_v1",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "operation_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "operation_sha256",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "attempt",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "lease_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "epoch",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "generation",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "row_revision",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              8,
+              "phase",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "event_record_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "event_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "job_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              12,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "event_audit_events",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "id",
+              "INTEGER",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "task_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "event_type",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "details_json",
+              "TEXT",
+              0,
+              "'{}'",
+              0
+            ],
+            [
+              4,
+              "created_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "failure_summaries",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "id",
+              "INTEGER",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "summary_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "task_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "failure_event_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "failed_step_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "completed_step_ids_json",
+              "TEXT",
+              0,
+              "'[]'",
+              0
+            ],
+            [
+              6,
+              "failure_type",
+              "TEXT",
+              0,
+              "''",
+              0
+            ],
+            [
+              7,
+              "severity",
+              "TEXT",
+              0,
+              "'ERROR'",
+              0
+            ],
+            [
+              8,
+              "reason",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "recovery_hint",
+              "TEXT",
+              0,
+              "''",
+              0
+            ],
+            [
+              10,
+              "local_retry_count",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              11,
+              "retry_limit",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              12,
+              "requested_replan_scope",
+              "TEXT",
+              0,
+              "''",
+              0
+            ],
+            [
+              13,
+              "plan_version",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              14,
+              "command_seq",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              15,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              16,
+              "payload_hash",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              17,
+              "created_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              18,
+              "updated_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        }
+      ]
+    },
+    {
+      "case_ordinal": 1,
+      "kind": "runtime.db",
+      "database": {
+        "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/runtime.db",
+        "bytes": 118784,
+        "sha256": "3d08ecb313703100b1da73b52b3ff30695ec62ee89dbe6d6e44c0c2bbb1edcc0"
+      },
+      "schema": [
+        [
+          "schema_migrations",
+          "table",
+          "CREATE TABLE schema_migrations (\n                    version INTEGER PRIMARY KEY,\n                    applied_at TEXT NOT NULL\n                )"
+        ],
+        [
+          "simulation_artifacts",
+          "table",
+          "CREATE TABLE simulation_artifacts (\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    name TEXT NOT NULL,\n                    relative_path TEXT NOT NULL,\n                    PRIMARY KEY(job_id, name),\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_batches",
+          "table",
+          "CREATE TABLE simulation_batches (\n                    batch_id TEXT PRIMARY KEY,\n                    manifest_json TEXT NOT NULL,\n                    run_ids_json TEXT NOT NULL,\n                    total INTEGER NOT NULL,\n                    created_at TEXT NOT NULL,\n                    completed_at TEXT NOT NULL DEFAULT ''\n                )"
+        ],
+        [
+          "simulation_job_attempts",
+          "table",
+          "CREATE TABLE simulation_job_attempts (\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    attempt INTEGER NOT NULL,\n                    worker_id TEXT NOT NULL,\n                    started_at TEXT NOT NULL,\n                    ended_at TEXT NOT NULL DEFAULT '',\n                    result TEXT NOT NULL,\n                    error TEXT NOT NULL DEFAULT '',\n                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',\n                    PRIMARY KEY(job_id, attempt),\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_job_events",
+          "table",
+          "CREATE TABLE simulation_job_events (\n                    event_id TEXT PRIMARY KEY,\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    sequence INTEGER NOT NULL,\n                    stream_sequence INTEGER NOT NULL UNIQUE,\n                    event_type TEXT NOT NULL,\n                    previous_status TEXT NOT NULL DEFAULT '',\n                    next_status TEXT NOT NULL DEFAULT '',\n                    reason_code TEXT NOT NULL DEFAULT '',\n                    timestamp TEXT NOT NULL,\n                    source TEXT NOT NULL,\n                    payload_json TEXT NOT NULL,\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_job_leases",
+          "table",
+          "CREATE TABLE simulation_job_leases (\n                    lease_id TEXT PRIMARY KEY,\n                    job_id TEXT NOT NULL,\n                    worker_id TEXT NOT NULL,\n                    acquired_at TEXT NOT NULL,\n                    expires_at TEXT NOT NULL,\n                    heartbeat_at TEXT NOT NULL,\n                    released_at TEXT NOT NULL DEFAULT '',\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_jobs",
+          "table",
+          "CREATE TABLE simulation_jobs (\n                    job_id TEXT PRIMARY KEY,\n                    run_id TEXT NOT NULL UNIQUE,\n                    batch_id TEXT NOT NULL DEFAULT '',\n                    backend TEXT NOT NULL,\n                    scenario_id TEXT NOT NULL,\n                    control_mode TEXT NOT NULL,\n                    seed INTEGER NOT NULL,\n                    manifest_id TEXT NOT NULL,\n                    reproducibility_hash TEXT NOT NULL,\n                    status TEXT NOT NULL,\n                    draft_json TEXT NOT NULL,\n                    manifest_json TEXT NOT NULL,\n                    attempt INTEGER NOT NULL DEFAULT 0,\n                    max_attempts INTEGER NOT NULL DEFAULT 1,\n                    priority INTEGER NOT NULL DEFAULT 0,\n                    created_at TEXT NOT NULL,\n                    queued_at TEXT,\n                    started_at TEXT,\n                    completed_at TEXT,\n                    updated_at TEXT NOT NULL,\n                    timeout_seconds INTEGER NOT NULL,\n                    cancel_requested INTEGER NOT NULL DEFAULT 0,\n                    worker_id TEXT NOT NULL DEFAULT '',\n                    lease_id TEXT NOT NULL DEFAULT '',\n                    lease_expires_at TEXT,\n                    blocker_codes_json TEXT NOT NULL DEFAULT '[]',\n                    error_code TEXT NOT NULL DEFAULT '',\n                    error_message TEXT NOT NULL DEFAULT '',\n                    artifact_root TEXT NOT NULL DEFAULT '',\n                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',\n                    provenance_json TEXT NOT NULL DEFAULT '{}',\n                    source_commit TEXT NOT NULL DEFAULT '',\n                    source_tree_hash TEXT NOT NULL DEFAULT ''\n                )"
+        ],
+        [
+          "simulation_local_publications_v1",
+          "table",
+          "CREATE TABLE simulation_local_publications_v1 (operation_id TEXT PRIMARY KEY, operation_sha256 TEXT NOT NULL, job_id TEXT NOT NULL, attempt INTEGER NOT NULL, lease_id TEXT NOT NULL, epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL, phase TEXT NOT NULL, event_record_hash TEXT NOT NULL, event_receipt_hash TEXT NOT NULL, job_receipt_hash TEXT NOT NULL, payload_json TEXT NOT NULL)"
+        ],
+        [
+          "simulation_metrics",
+          "table",
+          "CREATE TABLE simulation_metrics (\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    metric_index INTEGER NOT NULL,\n                    metric_json TEXT NOT NULL,\n                    PRIMARY KEY(job_id, metric_index),\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_operational_leases_v1",
+          "table",
+          "CREATE TABLE simulation_operational_leases_v1 (\n                    lease_id TEXT PRIMARY KEY, schema TEXT NOT NULL,\n                    job_id TEXT NOT NULL UNIQUE, run_id TEXT NOT NULL, worker_id TEXT NOT NULL,\n                    attempt INTEGER, lifecycle TEXT NOT NULL,\n                    pid INTEGER NOT NULL, boot_id TEXT NOT NULL, process_start_ticks INTEGER NOT NULL,\n                    epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL,\n                    original_job_digest TEXT NOT NULL, original_policy_digest TEXT NOT NULL,\n                    original_acquisition_json TEXT NOT NULL, segment_json TEXT NOT NULL,\n                    proposal_id TEXT NOT NULL, operation_sha256 TEXT NOT NULL,\n                    job_snapshot_json TEXT NOT NULL, proposed_row_digest TEXT NOT NULL,\n                    durable_phase TEXT NOT NULL, terminal_reason TEXT NOT NULL,\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ]
+      ],
+      "tables": [
+        {
+          "name": "simulation_jobs",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "job_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "run_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "batch_id",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              3,
+              "backend",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "scenario_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "control_mode",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "seed",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "manifest_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              8,
+              "reproducibility_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "status",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "draft_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "manifest_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              12,
+              "attempt",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              13,
+              "max_attempts",
+              "INTEGER",
+              1,
+              "1",
+              0
+            ],
+            [
+              14,
+              "priority",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              15,
+              "created_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              16,
+              "queued_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              17,
+              "started_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              18,
+              "completed_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              19,
+              "updated_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              20,
+              "timeout_seconds",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              21,
+              "cancel_requested",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              22,
+              "worker_id",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              23,
+              "lease_id",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              24,
+              "lease_expires_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              25,
+              "blocker_codes_json",
+              "TEXT",
+              1,
+              "'[]'",
+              0
+            ],
+            [
+              26,
+              "error_code",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              27,
+              "error_message",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              28,
+              "artifact_root",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              29,
+              "artifact_paths_json",
+              "TEXT",
+              1,
+              "'{}'",
+              0
+            ],
+            [
+              30,
+              "provenance_json",
+              "TEXT",
+              1,
+              "'{}'",
+              0
+            ],
+            [
+              31,
+              "source_commit",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              32,
+              "source_tree_hash",
+              "TEXT",
+              1,
+              "''",
+              0
+            ]
+          ],
+          "rows": [
+            [
+              "job-0cb895a0537345ea",
+              "terminal-test",
+              "",
+              "MUJOCO",
+              "S01_NORMAL_STATIC",
+              "PCSC",
+              0,
+              "manifest",
+              "hash",
+              "INTERRUPTED",
+              "{\"backend\":\"MUJOCO\",\"control_modes\":[\"PCSC\"],\"description\":\"runtime test\",\"domain_randomization\":{\"enabled\":false,\"level\":\"NONE\"},\"execution_scope\":\"VISION_CLOSED_LOOP\",\"fault_profiles\":[{\"name\":\"none\",\"parameters\":{}}],\"input_mode\":\"RGBD\",\"network_profiles\":[{\"bandwidth_kbps\":10000,\"base_latency_ms\":40,\"jitter_ms\":5,\"name\":\"NORMAL\",\"packet_loss\":0.0}],\"parameter_overrides\":{\"cache_policy\":\"CACHE_ENABLED\",\"retry_budget\":2,\"supervision_period_ms\":300,\"timeout_ms\":30000},\"repetitions\":1,\"run_type\":\"SINGLE\",\"scenarios\":[\"S01_NORMAL_STATIC\"],\"seeds\":[0],\"tags\":[\"phase11-1-test\"]}",
+              "{}",
+              1,
+              1,
+              0,
+              "2026-10-15T07:13:40.631344+00:00",
+              "2026-10-15T07:13:40.648618+00:00",
+              "2026-10-15T07:13:41.468774+00:00",
+              null,
+              "2026-10-15T07:13:48.559753+00:00",
+              60,
+              0,
+              "worker",
+              "lease-de1bddb57d7b453d",
+              "2026-10-15T07:14:11.071516+00:00",
+              "[]",
+              "operational_epoch_ended",
+              "original worker poll ended",
+              "terminal-test",
+              "{}",
+              "{}",
+              "test",
+              "test"
+            ]
+          ]
+        },
+        {
+          "name": "simulation_job_events",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "event_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "run_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "sequence",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "stream_sequence",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "event_type",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "previous_status",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              7,
+              "next_status",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              8,
+              "reason_code",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              9,
+              "timestamp",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "source",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": [
+            [
+              "evt-2a90c4222126470b",
+              "job-0cb895a0537345ea",
+              "terminal-test",
+              1,
+              1,
+              "job_created",
+              "",
+              "CREATED",
+              "created",
+              "2026-10-15T07:13:40.632017+00:00",
+              "simulation_runtime",
+              "{\"backend\":\"MUJOCO\",\"run_id\":\"terminal-test\",\"status\":\"CREATED\"}"
+            ],
+            [
+              "evt-77f3e0f69bc14180",
+              "job-0cb895a0537345ea",
+              "terminal-test",
+              2,
+              2,
+              "job_queued",
+              "CREATED",
+              "QUEUED",
+              "test",
+              "2026-10-15T07:13:40.649101+00:00",
+              "simulation_runtime",
+              "{\"lease_id\":\"\",\"status\":\"QUEUED\",\"worker_id\":\"\"}"
+            ],
+            [
+              "evt-4e9a7d95c43b4e22",
+              "job-0cb895a0537345ea",
+              "terminal-test",
+              3,
+              3,
+              "job_leased",
+              "QUEUED",
+              "LEASED",
+              "lease_acquired",
+              "2026-10-15T07:13:40.927863+00:00",
+              "simulation_runtime",
+              "{\"lease_id\":\"lease-de1bddb57d7b453d\",\"worker_id\":\"worker\"}"
+            ],
+            [
+              "evt-a0a355af06734df2",
+              "job-0cb895a0537345ea",
+              "terminal-test",
+              4,
+              4,
+              "job_started",
+              "LEASED",
+              "STARTING",
+              "starting",
+              "2026-10-15T07:13:41.475006+00:00",
+              "simulation_runtime",
+              "{\"lease_id\":\"lease-de1bddb57d7b453d\",\"status\":\"STARTING\",\"worker_id\":\"worker\"}"
+            ],
+            [
+              "evt-7bdcc449e9824b52",
+              "job-0cb895a0537345ea",
+              "terminal-test",
+              5,
+              5,
+              "job_started",
+              "STARTING",
+              "RUNNING",
+              "running",
+              "2026-10-15T07:13:41.635937+00:00",
+              "simulation_runtime",
+              "{\"lease_id\":\"lease-de1bddb57d7b453d\",\"status\":\"RUNNING\",\"worker_id\":\"worker\"}"
+            ]
+          ]
+        },
+        {
+          "name": "simulation_job_leases",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "lease_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "worker_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "acquired_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "expires_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "heartbeat_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "released_at",
+              "TEXT",
+              1,
+              "''",
+              0
+            ]
+          ],
+          "rows": [
+            [
+              "lease-de1bddb57d7b453d",
+              "job-0cb895a0537345ea",
+              "worker",
+              "2026-10-15T07:13:40.925004+00:00",
+              "2026-10-15T07:14:11.071516+00:00",
+              "2026-10-15T07:13:41.071516+00:00",
+              "2026-10-15T07:13:48.559753+00:00"
+            ]
+          ]
+        },
+        {
+          "name": "simulation_local_publications_v1",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "operation_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "operation_sha256",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "attempt",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "lease_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "epoch",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "generation",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "row_revision",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              8,
+              "phase",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "event_record_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "event_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "job_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              12,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        }
+      ]
+    },
+    {
+      "case_ordinal": 2,
+      "kind": "events.db",
+      "database": {
+        "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/events.db",
+        "bytes": 327680,
+        "sha256": "af8d14f0aa6134b19877d64692cb8fbb2810d4644c1e4706428087582a3a21b7"
+      },
+      "schema": [
+        [
+          "active_task_contracts",
+          "table",
+          "CREATE TABLE active_task_contracts (\n                task_id TEXT PRIMARY KEY,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                scene_version INTEGER NOT NULL,\n                record_json TEXT NOT NULL,\n                contract_hash TEXT NOT NULL,\n                activated_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "command_acks",
+          "table",
+          "CREATE TABLE command_acks (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                ack_key TEXT NOT NULL UNIQUE,\n                request_id TEXT DEFAULT '',\n                task_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                checkpoint_id TEXT DEFAULT '',\n                status TEXT NOT NULL,\n                accepted INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "completion_summaries",
+          "table",
+          "CREATE TABLE completion_summaries (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                summary_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                final_plan_version INTEGER NOT NULL DEFAULT 0,\n                completed_step_ids_json TEXT DEFAULT '[]',\n                completion_criteria_results_json TEXT DEFAULT '{}',\n                local_retry_count INTEGER NOT NULL DEFAULT 0,\n                cloud_replan_count INTEGER NOT NULL DEFAULT 0,\n                result TEXT NOT NULL DEFAULT 'SUCCESS',\n                final_safety_decision TEXT DEFAULT 'ALLOW',\n                plan_version INTEGER NOT NULL DEFAULT 0,\n                command_seq INTEGER NOT NULL DEFAULT 0,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "edge_events",
+          "table",
+          "CREATE TABLE edge_events (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                event_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                event_type TEXT NOT NULL,\n                step_id TEXT,\n                severity TEXT NOT NULL DEFAULT 'ERROR',\n                reason_code TEXT DEFAULT '',\n                reason_detail TEXT DEFAULT '',\n                robot_id TEXT DEFAULT '',\n                plan_id TEXT DEFAULT '',\n                plan_version INTEGER NOT NULL DEFAULT 0,\n                command_seq INTEGER NOT NULL DEFAULT 0,\n                details_json TEXT DEFAULT '{}',\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                handled INTEGER NOT NULL DEFAULT 0,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_audit_events",
+          "table",
+          "CREATE TABLE event_audit_events (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                event_type TEXT NOT NULL,\n                details_json TEXT DEFAULT '{}',\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_mode_states",
+          "table",
+          "CREATE TABLE event_mode_states (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL UNIQUE,\n                current_state TEXT NOT NULL,\n                reason TEXT DEFAULT '',\n                event_id TEXT DEFAULT '',\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_mode_transitions",
+          "table",
+          "CREATE TABLE event_mode_transitions (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                from_state TEXT NOT NULL,\n                to_state TEXT NOT NULL,\n                reason TEXT DEFAULT '',\n                event_id TEXT DEFAULT '',\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "event_outbox",
+          "table",
+          "CREATE TABLE event_outbox (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                message_id TEXT NOT NULL UNIQUE,\n                idempotency_key TEXT,\n                task_id TEXT NOT NULL,\n                message_type TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                status TEXT NOT NULL DEFAULT 'PENDING',\n                retry_count INTEGER NOT NULL DEFAULT 0,\n                max_retries INTEGER NOT NULL DEFAULT 5,\n                backoff_base_ms INTEGER NOT NULL DEFAULT 1000,\n                next_attempt_at TEXT,\n                claimed_at TEXT,\n                last_error TEXT,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "execution_checkpoints",
+          "table",
+          "CREATE TABLE execution_checkpoints (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                checkpoint_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                execution_state TEXT NOT NULL,\n                completed_step_ids_json TEXT DEFAULT '[]',\n                payload_json TEXT NOT NULL,\n                checkpoint_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "failure_summaries",
+          "table",
+          "CREATE TABLE failure_summaries (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                summary_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                failure_event_id TEXT NOT NULL,\n                failed_step_id TEXT NOT NULL,\n                completed_step_ids_json TEXT DEFAULT '[]',\n                failure_type TEXT DEFAULT '',\n                severity TEXT DEFAULT 'ERROR',\n                reason TEXT NOT NULL,\n                recovery_hint TEXT DEFAULT '',\n                local_retry_count INTEGER NOT NULL DEFAULT 0,\n                retry_limit INTEGER NOT NULL DEFAULT 0,\n                requested_replan_scope TEXT DEFAULT '',\n                plan_version INTEGER NOT NULL DEFAULT 0,\n                command_seq INTEGER NOT NULL DEFAULT 0,\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "plan_versions",
+          "table",
+          "CREATE TABLE plan_versions (\n                task_id TEXT PRIMARY KEY,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "recovery_attempts",
+          "table",
+          "CREATE TABLE recovery_attempts (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                step_id TEXT NOT NULL,\n                skill TEXT NOT NULL,\n                event_id TEXT DEFAULT '',\n                attempt_number INTEGER NOT NULL,\n                success INTEGER NOT NULL DEFAULT 0,\n                error_code TEXT DEFAULT '',\n                duration_ms INTEGER DEFAULT 0,\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "recovery_budgets",
+          "table",
+          "CREATE TABLE recovery_budgets (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                budget_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL UNIQUE,\n                per_step_retry_limit INTEGER NOT NULL DEFAULT 3,\n                per_skill_retry_limit INTEGER NOT NULL DEFAULT 5,\n                task_total_retry_limit INTEGER NOT NULL DEFAULT 10,\n                retry_count_used INTEGER NOT NULL DEFAULT 0,\n                task_retry_count INTEGER NOT NULL DEFAULT 0,\n                step_retry_counts_json TEXT DEFAULT '{}',\n                skill_retry_counts_json TEXT DEFAULT '{}',\n                event_retry_counts_json TEXT DEFAULT '{}',\n                retry_cooldown_ms INTEGER NOT NULL DEFAULT 500,\n                retry_deadline TEXT,\n                retry_backoff_policy TEXT NOT NULL DEFAULT 'exponential',\n                effective_retry_limit INTEGER NOT NULL DEFAULT 3,\n                remaining_retries INTEGER NOT NULL DEFAULT 3,\n                scene_version INTEGER NOT NULL DEFAULT 0,\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "recovery_records",
+          "table",
+          "CREATE TABLE recovery_records (\n                recovery_id TEXT PRIMARY KEY,\n                event_id TEXT UNIQUE NOT NULL,\n                task_id TEXT NOT NULL,\n                revision INTEGER NOT NULL,\n                state TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                content_hash TEXT NOT NULL,\n                initial_hash TEXT NOT NULL\n            )"
+        ],
+        [
+          "replan_apply_records",
+          "table",
+          "CREATE TABLE replan_apply_records (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                apply_id TEXT NOT NULL UNIQUE,\n                request_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                previous_plan_version INTEGER NOT NULL,\n                previous_command_seq INTEGER NOT NULL,\n                new_plan_version INTEGER NOT NULL,\n                new_command_seq INTEGER NOT NULL,\n                checkpoint_id TEXT DEFAULT '',\n                status TEXT NOT NULL,\n                reason TEXT DEFAULT '',\n                payload_json TEXT NOT NULL,\n                apply_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "replan_requests",
+          "table",
+          "CREATE TABLE replan_requests (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                request_id TEXT NOT NULL UNIQUE,\n                idempotency_key TEXT,\n                task_id TEXT NOT NULL,\n                trigger_event_id TEXT NOT NULL,\n                failure_summary_id TEXT DEFAULT '',\n                current_plan_version INTEGER NOT NULL DEFAULT 0,\n                current_command_seq INTEGER NOT NULL DEFAULT 1,\n                requested_replan_scope TEXT DEFAULT '',\n                completed_step_ids_json TEXT DEFAULT '[]',\n                failed_step_id TEXT DEFAULT '',\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "replan_results",
+          "table",
+          "CREATE TABLE replan_results (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                request_id TEXT NOT NULL UNIQUE,\n                task_id TEXT NOT NULL,\n                outcome TEXT NOT NULL DEFAULT 'REPLANNED',\n                new_plan_version INTEGER NOT NULL DEFAULT 0,\n                new_command_seq INTEGER NOT NULL DEFAULT 1,\n                new_steps_json TEXT DEFAULT '[]',\n                validation_errors_json TEXT DEFAULT '[]',\n                payload_json TEXT NOT NULL,\n                payload_hash TEXT NOT NULL DEFAULT '',\n                created_at TEXT NOT NULL,\n                updated_at TEXT NOT NULL\n            )"
+        ],
+        [
+          "sqlite_sequence",
+          "table",
+          "CREATE TABLE sqlite_sequence(name,seq)"
+        ],
+        [
+          "task_contract_versions",
+          "table",
+          "CREATE TABLE task_contract_versions (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                task_id TEXT NOT NULL,\n                plan_id TEXT NOT NULL,\n                robot_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                command_seq INTEGER NOT NULL,\n                scene_version INTEGER NOT NULL,\n                status TEXT NOT NULL,\n                based_on_plan_version INTEGER,\n                contract_json TEXT NOT NULL,\n                record_json TEXT NOT NULL,\n                contract_hash TEXT NOT NULL,\n                created_at TEXT NOT NULL,\n                activated_at TEXT NOT NULL,\n                superseded_at TEXT,\n                correlation_id TEXT DEFAULT '',\n                UNIQUE(task_id, plan_version)\n            )"
+        ],
+        [
+          "verification_budgets",
+          "table",
+          "CREATE TABLE verification_budgets (\n                task_id TEXT PRIMARY KEY,\n                revision INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                content_hash TEXT NOT NULL\n            )"
+        ],
+        [
+          "visual_bootstraps",
+          "table",
+          "CREATE TABLE visual_bootstraps (\n                bootstrap_id TEXT PRIMARY KEY,\n                job_id TEXT NOT NULL,\n                run_id TEXT NOT NULL,\n                episode_id TEXT NOT NULL UNIQUE,\n                revision INTEGER NOT NULL,\n                definition_hash TEXT NOT NULL,\n                record_hash TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                UNIQUE (job_id, run_id)\n            )"
+        ],
+        [
+          "visual_local_publications_v1",
+          "table",
+          "CREATE TABLE visual_local_publications_v1 (operation_id TEXT PRIMARY KEY, operation_sha256 TEXT NOT NULL, job_id TEXT NOT NULL, attempt INTEGER NOT NULL, lease_id TEXT NOT NULL, epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL, phase TEXT NOT NULL, event_record_hash TEXT NOT NULL, event_receipt_hash TEXT NOT NULL, job_receipt_hash TEXT NOT NULL, payload_json TEXT NOT NULL)"
+        ],
+        [
+          "visual_local_tasks_v1",
+          "table",
+          "CREATE TABLE visual_local_tasks_v1 (category TEXT NOT NULL, record_key TEXT NOT NULL, task_id TEXT NOT NULL, value_json TEXT NOT NULL, PRIMARY KEY(category,record_key))"
+        ],
+        [
+          "visual_original_plans",
+          "table",
+          "CREATE TABLE visual_original_plans (\n                task_id TEXT NOT NULL,\n                plan_version INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                original_hash TEXT NOT NULL,\n                PRIMARY KEY (task_id, plan_version)\n            )"
+        ],
+        [
+          "visual_owner_publications",
+          "table",
+          "CREATE TABLE visual_owner_publications (\n                task_id TEXT NOT NULL,\n                owner_revision INTEGER NOT NULL,\n                owner_epoch TEXT NOT NULL,\n                state_generation INTEGER NOT NULL,\n                payload_json TEXT NOT NULL,\n                publication_hash TEXT NOT NULL,\n                PRIMARY KEY (task_id, owner_revision)\n            )"
+        ],
+        [
+          "visual_supervision",
+          "table",
+          "CREATE TABLE visual_supervision (\n                task_id TEXT PRIMARY KEY,\n                revision INTEGER NOT NULL,\n                definition_hash TEXT NOT NULL,\n                record_hash TEXT NOT NULL,\n                payload_json TEXT NOT NULL\n            )"
+        ],
+        [
+          "visual_verification_routes",
+          "table",
+          "CREATE TABLE visual_verification_routes (\n                task_id TEXT NOT NULL,\n                event_key TEXT NOT NULL,\n                source_key TEXT NOT NULL,\n                payload_json TEXT NOT NULL,\n                record_hash TEXT NOT NULL,\n                PRIMARY KEY (task_id, event_key),\n                UNIQUE (task_id, source_key)\n            )"
+        ]
+      ],
+      "tables": [
+        {
+          "name": "visual_bootstraps",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "bootstrap_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "run_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "episode_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "revision",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "definition_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "record_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "visual_local_tasks_v1",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "category",
+              "TEXT",
+              1,
+              null,
+              1
+            ],
+            [
+              1,
+              "record_key",
+              "TEXT",
+              1,
+              null,
+              2
+            ],
+            [
+              2,
+              "task_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "value_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "visual_local_publications_v1",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "operation_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "operation_sha256",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "attempt",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "lease_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "epoch",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "generation",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "row_revision",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              8,
+              "phase",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "event_record_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "event_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "job_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              12,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "event_audit_events",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "id",
+              "INTEGER",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "task_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "event_type",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "details_json",
+              "TEXT",
+              0,
+              "'{}'",
+              0
+            ],
+            [
+              4,
+              "created_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        },
+        {
+          "name": "failure_summaries",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "id",
+              "INTEGER",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "summary_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "task_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "failure_event_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "failed_step_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "completed_step_ids_json",
+              "TEXT",
+              0,
+              "'[]'",
+              0
+            ],
+            [
+              6,
+              "failure_type",
+              "TEXT",
+              0,
+              "''",
+              0
+            ],
+            [
+              7,
+              "severity",
+              "TEXT",
+              0,
+              "'ERROR'",
+              0
+            ],
+            [
+              8,
+              "reason",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "recovery_hint",
+              "TEXT",
+              0,
+              "''",
+              0
+            ],
+            [
+              10,
+              "local_retry_count",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              11,
+              "retry_limit",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              12,
+              "requested_replan_scope",
+              "TEXT",
+              0,
+              "''",
+              0
+            ],
+            [
+              13,
+              "plan_version",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              14,
+              "command_seq",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              15,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              16,
+              "payload_hash",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              17,
+              "created_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              18,
+              "updated_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        }
+      ]
+    },
+    {
+      "case_ordinal": 2,
+      "kind": "runtime.db",
+      "database": {
+        "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/runtime.db",
+        "bytes": 118784,
+        "sha256": "9ca9116d4296eb193e1068d4f9ec75b255372919ff77087d4c2f073b51ca783b"
+      },
+      "schema": [
+        [
+          "schema_migrations",
+          "table",
+          "CREATE TABLE schema_migrations (\n                    version INTEGER PRIMARY KEY,\n                    applied_at TEXT NOT NULL\n                )"
+        ],
+        [
+          "simulation_artifacts",
+          "table",
+          "CREATE TABLE simulation_artifacts (\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    name TEXT NOT NULL,\n                    relative_path TEXT NOT NULL,\n                    PRIMARY KEY(job_id, name),\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_batches",
+          "table",
+          "CREATE TABLE simulation_batches (\n                    batch_id TEXT PRIMARY KEY,\n                    manifest_json TEXT NOT NULL,\n                    run_ids_json TEXT NOT NULL,\n                    total INTEGER NOT NULL,\n                    created_at TEXT NOT NULL,\n                    completed_at TEXT NOT NULL DEFAULT ''\n                )"
+        ],
+        [
+          "simulation_job_attempts",
+          "table",
+          "CREATE TABLE simulation_job_attempts (\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    attempt INTEGER NOT NULL,\n                    worker_id TEXT NOT NULL,\n                    started_at TEXT NOT NULL,\n                    ended_at TEXT NOT NULL DEFAULT '',\n                    result TEXT NOT NULL,\n                    error TEXT NOT NULL DEFAULT '',\n                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',\n                    PRIMARY KEY(job_id, attempt),\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_job_events",
+          "table",
+          "CREATE TABLE simulation_job_events (\n                    event_id TEXT PRIMARY KEY,\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    sequence INTEGER NOT NULL,\n                    stream_sequence INTEGER NOT NULL UNIQUE,\n                    event_type TEXT NOT NULL,\n                    previous_status TEXT NOT NULL DEFAULT '',\n                    next_status TEXT NOT NULL DEFAULT '',\n                    reason_code TEXT NOT NULL DEFAULT '',\n                    timestamp TEXT NOT NULL,\n                    source TEXT NOT NULL,\n                    payload_json TEXT NOT NULL,\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_job_leases",
+          "table",
+          "CREATE TABLE simulation_job_leases (\n                    lease_id TEXT PRIMARY KEY,\n                    job_id TEXT NOT NULL,\n                    worker_id TEXT NOT NULL,\n                    acquired_at TEXT NOT NULL,\n                    expires_at TEXT NOT NULL,\n                    heartbeat_at TEXT NOT NULL,\n                    released_at TEXT NOT NULL DEFAULT '',\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_jobs",
+          "table",
+          "CREATE TABLE simulation_jobs (\n                    job_id TEXT PRIMARY KEY,\n                    run_id TEXT NOT NULL UNIQUE,\n                    batch_id TEXT NOT NULL DEFAULT '',\n                    backend TEXT NOT NULL,\n                    scenario_id TEXT NOT NULL,\n                    control_mode TEXT NOT NULL,\n                    seed INTEGER NOT NULL,\n                    manifest_id TEXT NOT NULL,\n                    reproducibility_hash TEXT NOT NULL,\n                    status TEXT NOT NULL,\n                    draft_json TEXT NOT NULL,\n                    manifest_json TEXT NOT NULL,\n                    attempt INTEGER NOT NULL DEFAULT 0,\n                    max_attempts INTEGER NOT NULL DEFAULT 1,\n                    priority INTEGER NOT NULL DEFAULT 0,\n                    created_at TEXT NOT NULL,\n                    queued_at TEXT,\n                    started_at TEXT,\n                    completed_at TEXT,\n                    updated_at TEXT NOT NULL,\n                    timeout_seconds INTEGER NOT NULL,\n                    cancel_requested INTEGER NOT NULL DEFAULT 0,\n                    worker_id TEXT NOT NULL DEFAULT '',\n                    lease_id TEXT NOT NULL DEFAULT '',\n                    lease_expires_at TEXT,\n                    blocker_codes_json TEXT NOT NULL DEFAULT '[]',\n                    error_code TEXT NOT NULL DEFAULT '',\n                    error_message TEXT NOT NULL DEFAULT '',\n                    artifact_root TEXT NOT NULL DEFAULT '',\n                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',\n                    provenance_json TEXT NOT NULL DEFAULT '{}',\n                    source_commit TEXT NOT NULL DEFAULT '',\n                    source_tree_hash TEXT NOT NULL DEFAULT ''\n                )"
+        ],
+        [
+          "simulation_local_publications_v1",
+          "table",
+          "CREATE TABLE simulation_local_publications_v1 (operation_id TEXT PRIMARY KEY, operation_sha256 TEXT NOT NULL, job_id TEXT NOT NULL, attempt INTEGER NOT NULL, lease_id TEXT NOT NULL, epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL, phase TEXT NOT NULL, event_record_hash TEXT NOT NULL, event_receipt_hash TEXT NOT NULL, job_receipt_hash TEXT NOT NULL, payload_json TEXT NOT NULL)"
+        ],
+        [
+          "simulation_metrics",
+          "table",
+          "CREATE TABLE simulation_metrics (\n                    job_id TEXT NOT NULL,\n                    run_id TEXT NOT NULL,\n                    metric_index INTEGER NOT NULL,\n                    metric_json TEXT NOT NULL,\n                    PRIMARY KEY(job_id, metric_index),\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ],
+        [
+          "simulation_operational_leases_v1",
+          "table",
+          "CREATE TABLE simulation_operational_leases_v1 (\n                    lease_id TEXT PRIMARY KEY, schema TEXT NOT NULL,\n                    job_id TEXT NOT NULL UNIQUE, run_id TEXT NOT NULL, worker_id TEXT NOT NULL,\n                    attempt INTEGER, lifecycle TEXT NOT NULL,\n                    pid INTEGER NOT NULL, boot_id TEXT NOT NULL, process_start_ticks INTEGER NOT NULL,\n                    epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL,\n                    original_job_digest TEXT NOT NULL, original_policy_digest TEXT NOT NULL,\n                    original_acquisition_json TEXT NOT NULL, segment_json TEXT NOT NULL,\n                    proposal_id TEXT NOT NULL, operation_sha256 TEXT NOT NULL,\n                    job_snapshot_json TEXT NOT NULL, proposed_row_digest TEXT NOT NULL,\n                    durable_phase TEXT NOT NULL, terminal_reason TEXT NOT NULL,\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\n                )"
+        ]
+      ],
+      "tables": [
+        {
+          "name": "simulation_jobs",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "job_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "run_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "batch_id",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              3,
+              "backend",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "scenario_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "control_mode",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "seed",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "manifest_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              8,
+              "reproducibility_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "status",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "draft_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "manifest_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              12,
+              "attempt",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              13,
+              "max_attempts",
+              "INTEGER",
+              1,
+              "1",
+              0
+            ],
+            [
+              14,
+              "priority",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              15,
+              "created_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              16,
+              "queued_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              17,
+              "started_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              18,
+              "completed_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              19,
+              "updated_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              20,
+              "timeout_seconds",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              21,
+              "cancel_requested",
+              "INTEGER",
+              1,
+              "0",
+              0
+            ],
+            [
+              22,
+              "worker_id",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              23,
+              "lease_id",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              24,
+              "lease_expires_at",
+              "TEXT",
+              0,
+              null,
+              0
+            ],
+            [
+              25,
+              "blocker_codes_json",
+              "TEXT",
+              1,
+              "'[]'",
+              0
+            ],
+            [
+              26,
+              "error_code",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              27,
+              "error_message",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              28,
+              "artifact_root",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              29,
+              "artifact_paths_json",
+              "TEXT",
+              1,
+              "'{}'",
+              0
+            ],
+            [
+              30,
+              "provenance_json",
+              "TEXT",
+              1,
+              "'{}'",
+              0
+            ],
+            [
+              31,
+              "source_commit",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              32,
+              "source_tree_hash",
+              "TEXT",
+              1,
+              "''",
+              0
+            ]
+          ],
+          "rows": [
+            [
+              "job-78b43ab9095347f7",
+              "terminal-test",
+              "",
+              "MUJOCO",
+              "S01_NORMAL_STATIC",
+              "PCSC",
+              0,
+              "manifest",
+              "hash",
+              "INTERRUPTED",
+              "{\"backend\":\"MUJOCO\",\"control_modes\":[\"PCSC\"],\"description\":\"runtime test\",\"domain_randomization\":{\"enabled\":false,\"level\":\"NONE\"},\"execution_scope\":\"VISION_CLOSED_LOOP\",\"fault_profiles\":[{\"name\":\"none\",\"parameters\":{}}],\"input_mode\":\"RGBD\",\"network_profiles\":[{\"bandwidth_kbps\":10000,\"base_latency_ms\":40,\"jitter_ms\":5,\"name\":\"NORMAL\",\"packet_loss\":0.0}],\"parameter_overrides\":{\"cache_policy\":\"CACHE_ENABLED\",\"retry_budget\":2,\"supervision_period_ms\":300,\"timeout_ms\":30000},\"repetitions\":1,\"run_type\":\"SINGLE\",\"scenarios\":[\"S01_NORMAL_STATIC\"],\"seeds\":[0],\"tags\":[\"phase11-1-test\"]}",
+              "{}",
+              1,
+              1,
+              0,
+              "2026-10-15T07:13:48.927923+00:00",
+              "2026-10-15T07:13:48.949219+00:00",
+              "2026-10-15T07:13:49.835794+00:00",
+              null,
+              "2026-10-15T07:13:56.922048+00:00",
+              60,
+              0,
+              "worker",
+              "lease-aee5256421f9486a",
+              "2026-10-15T07:14:19.421978+00:00",
+              "[]",
+              "operational_epoch_ended",
+              "original worker poll ended",
+              "terminal-test",
+              "{}",
+              "{}",
+              "test",
+              "test"
+            ]
+          ]
+        },
+        {
+          "name": "simulation_job_events",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "event_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "run_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "sequence",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "stream_sequence",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "event_type",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "previous_status",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              7,
+              "next_status",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              8,
+              "reason_code",
+              "TEXT",
+              1,
+              "''",
+              0
+            ],
+            [
+              9,
+              "timestamp",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "source",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": [
+            [
+              "evt-12ebfe9c23534046",
+              "job-78b43ab9095347f7",
+              "terminal-test",
+              1,
+              1,
+              "job_created",
+              "",
+              "CREATED",
+              "created",
+              "2026-10-15T07:13:48.928473+00:00",
+              "simulation_runtime",
+              "{\"backend\":\"MUJOCO\",\"run_id\":\"terminal-test\",\"status\":\"CREATED\"}"
+            ],
+            [
+              "evt-ce7ea1221d23401f",
+              "job-78b43ab9095347f7",
+              "terminal-test",
+              2,
+              2,
+              "job_queued",
+              "CREATED",
+              "QUEUED",
+              "test",
+              "2026-10-15T07:13:48.949668+00:00",
+              "simulation_runtime",
+              "{\"lease_id\":\"\",\"status\":\"QUEUED\",\"worker_id\":\"\"}"
+            ],
+            [
+              "evt-774209c748844b54",
+              "job-78b43ab9095347f7",
+              "terminal-test",
+              3,
+              3,
+              "job_leased",
+              "QUEUED",
+              "LEASED",
+              "lease_acquired",
+              "2026-10-15T07:13:49.275728+00:00",
+              "simulation_runtime",
+              "{\"lease_id\":\"lease-aee5256421f9486a\",\"worker_id\":\"worker\"}"
+            ],
+            [
+              "evt-c410d1be91c44d22",
+              "job-78b43ab9095347f7",
+              "terminal-test",
+              4,
+              4,
+              "job_started",
+              "LEASED",
+              "STARTING",
+              "starting",
+              "2026-10-15T07:13:49.840785+00:00",
+              "simulation_runtime",
+              "{\"lease_id\":\"lease-aee5256421f9486a\",\"status\":\"STARTING\",\"worker_id\":\"worker\"}"
+            ],
+            [
+              "evt-73c36b930b354d2e",
+              "job-78b43ab9095347f7",
+              "terminal-test",
+              5,
+              5,
+              "job_started",
+              "STARTING",
+              "RUNNING",
+              "running",
+              "2026-10-15T07:13:50.021457+00:00",
+              "simulation_runtime",
+              "{\"lease_id\":\"lease-aee5256421f9486a\",\"status\":\"RUNNING\",\"worker_id\":\"worker\"}"
+            ]
+          ]
+        },
+        {
+          "name": "simulation_job_leases",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "lease_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "worker_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "acquired_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "expires_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "heartbeat_at",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "released_at",
+              "TEXT",
+              1,
+              "''",
+              0
+            ]
+          ],
+          "rows": [
+            [
+              "lease-aee5256421f9486a",
+              "job-78b43ab9095347f7",
+              "worker",
+              "2026-10-15T07:13:49.272949+00:00",
+              "2026-10-15T07:14:19.421978+00:00",
+              "2026-10-15T07:13:49.421978+00:00",
+              "2026-10-15T07:13:56.922048+00:00"
+            ]
+          ]
+        },
+        {
+          "name": "simulation_local_publications_v1",
+          "status": "COMPLETE_BOUNDED_READ",
+          "columns": [
+            [
+              0,
+              "operation_id",
+              "TEXT",
+              0,
+              null,
+              1
+            ],
+            [
+              1,
+              "operation_sha256",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              2,
+              "job_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              3,
+              "attempt",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              4,
+              "lease_id",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              5,
+              "epoch",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              6,
+              "generation",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              7,
+              "row_revision",
+              "INTEGER",
+              1,
+              null,
+              0
+            ],
+            [
+              8,
+              "phase",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              9,
+              "event_record_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              10,
+              "event_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              11,
+              "job_receipt_hash",
+              "TEXT",
+              1,
+              null,
+              0
+            ],
+            [
+              12,
+              "payload_json",
+              "TEXT",
+              1,
+              null,
+              0
+            ]
+          ],
+          "rows": []
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "name": "cwd",
+      "passed": true
+    },
+    {
+      "name": "plan_SHA",
+      "passed": true
+    },
+    {
+      "name": "exact_actual_argv",
+      "passed": true
+    },
+    {
+      "name": "fully_reviewed_source",
+      "passed": true
+    },
+    {
+      "name": "single_ROOT_reservation",
+      "passed": true
+    },
+    {
+      "name": "finite_argv_env",
+      "passed": true
+    },
+    {
+      "name": "own_source",
+      "passed": true
+    },
+    {
+      "name": "own_source_pin",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.0",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.1",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.2",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.3",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.4",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.5",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.6",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.7",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.8",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.9",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.10",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.11",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.12",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.13",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.14",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.15",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.16",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.17",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.18",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.19",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.20",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.21",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.22",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.23",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.24",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.25",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.26",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.27",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.28",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.29",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.30",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.31",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.32",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.33",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.34",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.35",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.36",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.37",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.38",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.39",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.40",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.41",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.42",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.43",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.44",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.45",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.46",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.47",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.48",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.49",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.50",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.51",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.52",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.53",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.54",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.55",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.56",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.57",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.58",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.59",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.60",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.61",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.62",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.63",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.64",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.65",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.66",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.67",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.68",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.69",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.70",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.71",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.72",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.73",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.74",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.75",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.76",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.77",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.78",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.79",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.80",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.81",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.82",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.83",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.84",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.85",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.86",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.87",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.88",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.89",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.90",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.91",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.92",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.93",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.94",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.95",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.96",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.97",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.98",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.99",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.100",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.101",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.102",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.103",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.104",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.105",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.106",
+      "passed": true
+    },
+    {
+      "name": "before.fixed.107",
+      "passed": true
+    },
+    {
+      "name": "six_exact_databases",
+      "passed": true
+    },
+    {
+      "name": "fixed_output_paths_absent",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/events.db-wal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/events.db-shm",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/events.db-journal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/runtime.db-wal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/runtime.db-shm",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/runtime.db-journal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/events.db-wal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/events.db-shm",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/events.db-journal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/runtime.db-wal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/runtime.db-shm",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/runtime.db-journal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/events.db-wal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/events.db-shm",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/events.db-journal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/runtime.db-wal",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/runtime.db-shm",
+      "passed": true
+    },
+    {
+      "name": "before.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/runtime.db-journal",
+      "passed": true
+    },
+    {
+      "name": "immediate_gate_ledger_CAS",
+      "passed": true
+    },
+    {
+      "name": "regular_exact_database./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/events.db",
+      "passed": true
+    },
+    {
+      "name": "database_before./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/events.db",
+      "passed": true
+    },
+    {
+      "name": "regular_exact_database./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/runtime.db",
+      "passed": true
+    },
+    {
+      "name": "database_before./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/runtime.db",
+      "passed": true
+    },
+    {
+      "name": "regular_exact_database./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/events.db",
+      "passed": true
+    },
+    {
+      "name": "database_before./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/events.db",
+      "passed": true
+    },
+    {
+      "name": "regular_exact_database./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/runtime.db",
+      "passed": true
+    },
+    {
+      "name": "database_before./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/runtime.db",
+      "passed": true
+    },
+    {
+      "name": "regular_exact_database./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/events.db",
+      "passed": true
+    },
+    {
+      "name": "database_before./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/events.db",
+      "passed": true
+    },
+    {
+      "name": "regular_exact_database./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/runtime.db",
+      "passed": true
+    },
+    {
+      "name": "database_before./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/runtime.db",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.0",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.1",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.2",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.3",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.4",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.5",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.6",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.7",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.8",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.9",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.10",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.11",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.12",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.13",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.14",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.15",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.16",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.17",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.18",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.19",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.20",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.21",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.22",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.23",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.24",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.25",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.26",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.27",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.28",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.29",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.30",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.31",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.32",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.33",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.34",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.35",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.36",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.37",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.38",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.39",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.40",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.41",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.42",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.43",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.44",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.45",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.46",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.47",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.48",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.49",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.50",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.51",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.52",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.53",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.54",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.55",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.56",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.57",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.58",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.59",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.60",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.61",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.62",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.63",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.64",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.65",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.66",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.67",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.68",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.69",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.70",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.71",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.72",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.73",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.74",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.75",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.76",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.77",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.78",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.79",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.80",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.81",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.82",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.83",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.84",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.85",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.86",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.87",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.88",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.89",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.90",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.91",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.92",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.93",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.94",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.95",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.96",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.97",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.98",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.99",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.100",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.101",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.102",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.103",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.104",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.105",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.106",
+      "passed": true
+    },
+    {
+      "name": "after.fixed.107",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/events.db-wal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/events.db-shm",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/events.db-journal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/runtime.db-wal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/runtime.db-shm",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/runtime.db-journal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/events.db-wal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/events.db-shm",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/events.db-journal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/runtime.db-wal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/runtime.db-shm",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/runtime.db-journal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/events.db-wal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/events.db-shm",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/events.db-journal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/runtime.db-wal",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/runtime.db-shm",
+      "passed": true
+    },
+    {
+      "name": "after.sidecar_absent./tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/runtime.db-journal",
+      "passed": true
+    },
+    {
+      "name": "gate_ledger_unchanged",
+      "passed": true
+    },
+    {
+      "name": "all_opened_connections_closed",
+      "passed": true
+    }
+  ],
+  "queries": [
+    {
+      "ordinal": 1,
+      "sql": "PRAGMA query_only=ON",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 2,
+      "sql": "SELECT name, type, sql FROM sqlite_schema WHERE type IN ('table','view') ORDER BY name LIMIT 129",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 3,
+      "sql": "PRAGMA table_info(\"visual_bootstraps\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 4,
+      "sql": "SELECT * FROM \"visual_bootstraps\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 5,
+      "sql": "PRAGMA table_info(\"visual_local_tasks_v1\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 6,
+      "sql": "SELECT * FROM \"visual_local_tasks_v1\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 7,
+      "sql": "PRAGMA table_info(\"visual_local_publications_v1\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 8,
+      "sql": "SELECT * FROM \"visual_local_publications_v1\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 9,
+      "sql": "PRAGMA table_info(\"event_audit_events\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 10,
+      "sql": "SELECT * FROM \"event_audit_events\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 11,
+      "sql": "PRAGMA table_info(\"failure_summaries\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 12,
+      "sql": "SELECT * FROM \"failure_summaries\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 13,
+      "sql": "PRAGMA query_only=ON",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 14,
+      "sql": "SELECT name, type, sql FROM sqlite_schema WHERE type IN ('table','view') ORDER BY name LIMIT 129",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 15,
+      "sql": "PRAGMA table_info(\"simulation_jobs\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 16,
+      "sql": "SELECT * FROM \"simulation_jobs\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 17,
+      "sql": "PRAGMA table_info(\"simulation_job_events\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 18,
+      "sql": "SELECT * FROM \"simulation_job_events\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 19,
+      "sql": "PRAGMA table_info(\"simulation_job_leases\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 20,
+      "sql": "SELECT * FROM \"simulation_job_leases\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 21,
+      "sql": "PRAGMA table_info(\"simulation_local_publications_v1\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 22,
+      "sql": "SELECT * FROM \"simulation_local_publications_v1\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 23,
+      "sql": "PRAGMA query_only=ON",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 24,
+      "sql": "SELECT name, type, sql FROM sqlite_schema WHERE type IN ('table','view') ORDER BY name LIMIT 129",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 25,
+      "sql": "PRAGMA table_info(\"visual_bootstraps\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 26,
+      "sql": "SELECT * FROM \"visual_bootstraps\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 27,
+      "sql": "PRAGMA table_info(\"visual_local_tasks_v1\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 28,
+      "sql": "SELECT * FROM \"visual_local_tasks_v1\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 29,
+      "sql": "PRAGMA table_info(\"visual_local_publications_v1\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 30,
+      "sql": "SELECT * FROM \"visual_local_publications_v1\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 31,
+      "sql": "PRAGMA table_info(\"event_audit_events\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 32,
+      "sql": "SELECT * FROM \"event_audit_events\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 33,
+      "sql": "PRAGMA table_info(\"failure_summaries\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 34,
+      "sql": "SELECT * FROM \"failure_summaries\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 35,
+      "sql": "PRAGMA query_only=ON",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 36,
+      "sql": "SELECT name, type, sql FROM sqlite_schema WHERE type IN ('table','view') ORDER BY name LIMIT 129",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 37,
+      "sql": "PRAGMA table_info(\"simulation_jobs\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 38,
+      "sql": "SELECT * FROM \"simulation_jobs\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 39,
+      "sql": "PRAGMA table_info(\"simulation_job_events\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 40,
+      "sql": "SELECT * FROM \"simulation_job_events\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 41,
+      "sql": "PRAGMA table_info(\"simulation_job_leases\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 42,
+      "sql": "SELECT * FROM \"simulation_job_leases\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 43,
+      "sql": "PRAGMA table_info(\"simulation_local_publications_v1\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 44,
+      "sql": "SELECT * FROM \"simulation_local_publications_v1\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 45,
+      "sql": "PRAGMA query_only=ON",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 46,
+      "sql": "SELECT name, type, sql FROM sqlite_schema WHERE type IN ('table','view') ORDER BY name LIMIT 129",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 47,
+      "sql": "PRAGMA table_info(\"visual_bootstraps\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 48,
+      "sql": "SELECT * FROM \"visual_bootstraps\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 49,
+      "sql": "PRAGMA table_info(\"visual_local_tasks_v1\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 50,
+      "sql": "SELECT * FROM \"visual_local_tasks_v1\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 51,
+      "sql": "PRAGMA table_info(\"visual_local_publications_v1\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 52,
+      "sql": "SELECT * FROM \"visual_local_publications_v1\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 53,
+      "sql": "PRAGMA table_info(\"event_audit_events\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 54,
+      "sql": "SELECT * FROM \"event_audit_events\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 55,
+      "sql": "PRAGMA table_info(\"failure_summaries\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 56,
+      "sql": "SELECT * FROM \"failure_summaries\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 57,
+      "sql": "PRAGMA query_only=ON",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 58,
+      "sql": "SELECT name, type, sql FROM sqlite_schema WHERE type IN ('table','view') ORDER BY name LIMIT 129",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 59,
+      "sql": "PRAGMA table_info(\"simulation_jobs\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 60,
+      "sql": "SELECT * FROM \"simulation_jobs\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 61,
+      "sql": "PRAGMA table_info(\"simulation_job_events\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 62,
+      "sql": "SELECT * FROM \"simulation_job_events\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 63,
+      "sql": "PRAGMA table_info(\"simulation_job_leases\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 64,
+      "sql": "SELECT * FROM \"simulation_job_leases\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 65,
+      "sql": "PRAGMA table_info(\"simulation_local_publications_v1\")",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    },
+    {
+      "ordinal": 66,
+      "sql": "SELECT * FROM \"simulation_local_publications_v1\" LIMIT 65",
+      "execute_attempted": true,
+      "execute_returned": true,
+      "error": null
+    }
+  ],
+  "connections": [
+    {
+      "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/events.db",
+      "open_attempted": true,
+      "opened": true,
+      "closed": true,
+      "progress_callbacks": 0,
+      "exception": null,
+      "close_exception": null,
+      "query_only": "ON set by the exact connection-local pragma"
+    },
+    {
+      "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ0/real-factory/runtime.db",
+      "open_attempted": true,
+      "opened": true,
+      "closed": true,
+      "progress_callbacks": 0,
+      "exception": null,
+      "close_exception": null,
+      "query_only": "ON set by the exact connection-local pragma"
+    },
+    {
+      "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/events.db",
+      "open_attempted": true,
+      "opened": true,
+      "closed": true,
+      "progress_callbacks": 0,
+      "exception": null,
+      "close_exception": null,
+      "query_only": "ON set by the exact connection-local pragma"
+    },
+    {
+      "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ1/real-factory/runtime.db",
+      "open_attempted": true,
+      "opened": true,
+      "closed": true,
+      "progress_callbacks": 0,
+      "exception": null,
+      "close_exception": null,
+      "query_only": "ON set by the exact connection-local pragma"
+    },
+    {
+      "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/events.db",
+      "open_attempted": true,
+      "opened": true,
+      "closed": true,
+      "progress_callbacks": 0,
+      "exception": null,
+      "close_exception": null,
+      "query_only": "ON set by the exact connection-local pragma"
+    },
+    {
+      "path": "/tmp/bigsmall-p6-r232-red/test_late_binding_rejects_publ2/real-factory/runtime.db",
+      "open_attempted": true,
+      "opened": true,
+      "closed": true,
+      "progress_callbacks": 0,
+      "exception": null,
+      "close_exception": null,
+      "query_only": "ON set by the exact connection-local pragma"
+    }
+  ],
+  "errors": [],
+  "root_cause": "unresolved; persisted rows are evidence, not a causal verdict",
+  "product_execution": false,
+  "T2_complete": false,
+  "legal_RED": false,
+  "complete": true,
+  "status": "COMPLETE_BOUNDED_READ_CAUSE_UNRESOLVED",
+  "SQL_statements_attempted": 66,
+  "connection_attempts": 6
+}

@@ -754,3 +754,88 @@ def test_malformed_clock_original_structure_refuses_with_valueerror(change):
         payload = None
     with pytest.raises(ValueError):
         producer.independent_utc_uncertainty_ns(payload, envelope, records)
+
+
+def test_native_timing_never_multiplies_sim_speed_by_wall_age():
+    from cloud_edge_robot_arm.vision import native_references
+
+    module, _ = api()
+    assert hasattr(native_references, "NativeActionTiming"), "P2 timing descriptor missing"
+    assert hasattr(module, "describe_native_action_timing"), "P2 separate S/D math missing"
+    timing = native_references.NativeActionTiming(
+        schema_version="native.action_timing.operational.v1",
+        episode_id="CPU-same-episode",
+        capture_sim_s=10.0,
+        current_sim_s=12.0,
+        full_horizon_sim_s=3.0,
+        future_wall_bound_ns=None,
+        capture_window_id="CPU-capture-descriptor",
+        action_window_id="CPU-action-descriptor",
+        mapping_source_digest="a" * 64,
+    )
+    exact = module.describe_native_action_timing(
+        timing,
+        geometric_error_m=0.004,
+        reference_motion_m_per_sim_s=0.001,
+        recorded_wall_age_ns=5_000_000_000,
+    )
+    expired = module.describe_native_action_timing(
+        timing,
+        geometric_error_m=0.004,
+        reference_motion_m_per_sim_s=0.001,
+        recorded_wall_age_ns=5_000_000_001,
+    )
+    assert exact.sim_completion_bound_m == pytest.approx(0.009)
+    assert exact.sim_completion_bound_m < 0.010
+    assert expired.sim_completion_bound_m == exact.sim_completion_bound_m
+    assert exact.recorded_wall_age_within_ttl is True
+    assert expired.recorded_wall_age_within_ttl is False
+    assert exact.native_authority == expired.native_authority == "UNAVAILABLE"
+    with pytest.raises(FrozenInstanceError):
+        timing.current_sim_s = 13.0
+    with pytest.raises(ValueError):
+        module.describe_native_action_timing(
+            timing,
+            geometric_error_m=0.004,
+            reference_motion_m_per_sim_s=0.001,
+            recorded_wall_age_ns=True,
+        )
+
+
+def test_full_future_wall_bound_missing_is_unknown_when_required():
+    from cloud_edge_robot_arm.vision import native_references
+
+    module, _ = api()
+    assert hasattr(native_references, "NativeActionTiming"), "P2 future-wall descriptor missing"
+    assert hasattr(module, "describe_native_action_timing"), "P2 future-wall UNKNOWN missing"
+    timing = native_references.NativeActionTiming(
+        schema_version="native.action_timing.operational.v1",
+        episode_id="CPU-same-episode",
+        capture_sim_s=10.0,
+        current_sim_s=12.0,
+        full_horizon_sim_s=3.0,
+        future_wall_bound_ns=None,
+        capture_window_id="CPU-capture-descriptor",
+        action_window_id="CPU-action-descriptor",
+        mapping_source_digest="a" * 64,
+    )
+    missing = module.describe_native_action_timing(
+        timing,
+        geometric_error_m=0.004,
+        reference_motion_m_per_sim_s=0.001,
+        recorded_wall_age_ns=1_000_000_000,
+    )
+    assert timing.future_wall_bound_ns is None
+    assert missing.full_future_qualification == "UNKNOWN"
+    assert missing.native_completion_bound_m is None
+    assert "full_future_wall_source_unavailable" in missing.reasons
+    # A caller's finite future number is still only a declaration, never a source.
+    declared = module.describe_native_action_timing(
+        replace(timing, future_wall_bound_ns=1_000_000_000),
+        geometric_error_m=0.004,
+        reference_motion_m_per_sim_s=0.001,
+        recorded_wall_age_ns=1_000_000_000,
+    )
+    assert declared.full_future_qualification == "UNKNOWN"
+    assert declared.native_completion_bound_m is None
+    assert declared.native_authority == "UNAVAILABLE"

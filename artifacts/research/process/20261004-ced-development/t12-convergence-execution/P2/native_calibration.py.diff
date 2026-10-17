@@ -1,0 +1,79 @@
+--- P2/source-before/src/cloud_edge_robot_arm/vision/native_calibration.py
++++ src/cloud_edge_robot_arm/vision/native_calibration.py
+@@ -12,16 +12,17 @@
+ import math
+ import re
+ from collections.abc import Mapping
+-from dataclasses import dataclass
++from dataclasses import asdict, dataclass
+ from datetime import datetime
+ from pathlib import Path
+-from typing import Any, cast
++from typing import Any, Literal, cast
+ from xml.etree import ElementTree as ET
+ 
+ import numpy as np
+ 
+ from cloud_edge_robot_arm.vision.native_references import (
+     NativeActionReference,
++    NativeActionTiming,
+     resolve_native_reference,
+     validate_native_reference,
+ )
+@@ -610,3 +611,56 @@
+             current.full_horizon_s,
+             tuple(reasons),
+         )
++
++
++@dataclass(frozen=True, slots=True)
++class NativeTimingCalculation:
++    """Pure numeric diagnostics; finite values and caller ages grant no authority."""
++
++    sim_completion_bound_m: float | None
++    recorded_wall_age_within_ttl: bool
++    future_wall_bound_ns: int | None
++    reasons: tuple[str, ...]
++    native_completion_bound_m: None = None
++    full_future_qualification: Literal["UNKNOWN"] = "UNKNOWN"
++    native_authority: Literal["UNAVAILABLE"] = "UNAVAILABLE"
++
++
++def describe_native_action_timing(
++    timing: NativeActionTiming,
++    *,
++    geometric_error_m: float | None,
++    reference_motion_m_per_sim_s: float | None,
++    recorded_wall_age_ns: int,
++) -> NativeTimingCalculation:
++    """Compute e + v*(S age + full S horizon), with D TTL separately described.
++
++    No UTC path, owner window or calibration provider calls this pure calculation.
++    Recorded D age is not a live clock read. Even a finite future declaration is
++    not a future-source certificate; full native qualification remains UNKNOWN.
++    """
++    if type(timing) is not NativeActionTiming:
++        raise ValueError("exact timing description required")
++    timing = NativeActionTiming(**asdict(timing))
++    if type(recorded_wall_age_ns) is not int or recorded_wall_age_ns < 0:
++        raise ValueError("recorded D age requires nonnegative integer ns")
++    geometry = None if geometric_error_m is None else _number(geometric_error_m, 0)
++    motion = (
++        None if reference_motion_m_per_sim_s is None else _number(reference_motion_m_per_sim_s, 0)
++    )
++    bound = None
++    reasons = ["full_future_wall_source_unavailable"]
++    if geometry is not None and motion is not None:
++        bound = geometry + motion * (
++            timing.current_sim_s - timing.capture_sim_s + timing.full_horizon_sim_s
++        )
++        if not math.isfinite(bound):
++            raise ValueError("finite S completion calculation required")
++    else:
++        reasons.append("geometry_or_reference_motion_quantity_unavailable")
++    if timing.future_wall_bound_ns is None:
++        reasons.append("full_future_wall_bound_missing")
++    within_ttl = recorded_wall_age_ns <= 5_000_000_000
++    if not within_ttl:
++        reasons.append("recorded_D_age_exceeds_5s")
++    return NativeTimingCalculation(bound, within_ttl, timing.future_wall_bound_ns, tuple(reasons))

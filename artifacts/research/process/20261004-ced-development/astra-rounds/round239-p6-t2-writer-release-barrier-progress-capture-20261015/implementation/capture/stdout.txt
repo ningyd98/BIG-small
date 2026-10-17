@@ -1,0 +1,78 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_______________ test_late_binding_rejects_public_writer[memory] ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x760f5e03a030>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r239-capture/test_late_binding_rejects_publ0')
+request = <FixtureRequest for <Function test_late_binding_rejects_public_writer[memory]>>
+backend = 'memory'
+
+    @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
+    def test_late_binding_rejects_public_writer(monkeypatch, tmp_path, request, backend):
+        with _r223_observe(monkeypatch, request) as observed:
+            case = _r223_case(monkeypatch, tmp_path, request, backend, observed, mode='race')
+            assert case['writer_joined'] and case['writer']['attempted'] and case['bootstrap_complete']
+            error = case['writer']['exception']
+>           assert error is not None and error['type'] == 'ValueError' and re.search(
+                'private|operational|scope', error['message']), 'R223 late local binding was not rejected'
+E           AssertionError: R223 late local binding was not rejected
+E           assert ({'message': 'R223 original writer release timed out\nassert False\n +  where False = wait(10)\n +    where wait = <threading.Event at 0x760f5cb948c0: unset>.wait', 'type': 'AssertionError'} is not None and 'AssertionError' == 'ValueError'
+E             
+E             - ValueError
+E             + AssertionError)
+
+tests/test_local_public_writer_binding_race.py:255: AssertionError
+_______________ test_late_binding_rejects_public_writer[sqlite] ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x760f5e0ca390>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r239-capture/test_late_binding_rejects_publ1')
+request = <FixtureRequest for <Function test_late_binding_rejects_public_writer[sqlite]>>
+backend = 'sqlite'
+
+    @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
+    def test_late_binding_rejects_public_writer(monkeypatch, tmp_path, request, backend):
+        with _r223_observe(monkeypatch, request) as observed:
+            case = _r223_case(monkeypatch, tmp_path, request, backend, observed, mode='race')
+            assert case['writer_joined'] and case['writer']['attempted'] and case['bootstrap_complete']
+            error = case['writer']['exception']
+>           assert error is not None and error['type'] == 'ValueError' and re.search(
+                'private|operational|scope', error['message']), 'R223 late local binding was not rejected'
+E           AssertionError: R223 late local binding was not rejected
+E           assert ({'message': 'R223 original writer release timed out\nassert False\n +  where False = wait(10)\n +    where wait = <threading.Event at 0x760f5d173200: unset>.wait', 'type': 'AssertionError'} is not None and 'AssertionError' == 'ValueError'
+E             
+E             - ValueError
+E             + AssertionError)
+
+tests/test_local_public_writer_binding_race.py:255: AssertionError
+__________ test_late_binding_rejects_public_writer_second_connection ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x760f5d1736e0>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r239-capture/test_late_binding_rejects_publ2')
+request = <FixtureRequest for <Function test_late_binding_rejects_public_writer_second_connection>>
+
+    def test_late_binding_rejects_public_writer_second_connection(monkeypatch, tmp_path, request):
+        with _r223_observe(monkeypatch, request) as observed:
+            case = _r223_case(monkeypatch, tmp_path, request, 'sqlite', observed, mode='race', second=True)
+            assert case['writer_joined'] and case['writer']['attempted'] and case['bootstrap_complete']
+            error = case['writer']['exception']
+>           assert error is not None and error['type'] == 'ValueError' and re.search(
+                'private|operational|scope', error['message']), 'R223 late local binding was not rejected'
+E           AssertionError: R223 late local binding was not rejected
+E           assert ({'message': 'R223 original writer release timed out\nassert False\n +  where False = wait(10)\n +    where wait = <threading.Event at 0x760f5d152e70: unset>.wait', 'type': 'AssertionError'} is not None and 'AssertionError' == 'ValueError'
+E             
+E             - ValueError
+E             + AssertionError)
+
+tests/test_local_public_writer_binding_race.py:265: AssertionError
+=============================== warnings summary ===============================
+tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round239-p6-t2-writer-release-barrier-progress-capture-20261015/implementation/capture/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]
+FAILED tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[sqlite]
+FAILED tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer_second_connection
+3 failed, 1 warning in 148.23s (0:02:28)

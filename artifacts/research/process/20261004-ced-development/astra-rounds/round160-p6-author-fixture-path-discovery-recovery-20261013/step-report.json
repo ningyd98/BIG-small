@@ -1,0 +1,56 @@
+{
+  "schema_version": "bigsmall.author-recovery-step.v1",
+  "round": "R160",
+  "status": "METADATA_ACTION_SUCCEEDED_PENDING_ROOT_REPORT_REVIEW",
+  "author": {
+    "agent": "/root/p6_stage_b_sol",
+    "configured_model": "gpt-6.1-sol"
+  },
+  "command": {
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-c",
+      "from pathlib import Path\nimport hashlib, json\nround_dir = Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round160-p6-author-fixture-path-discovery-recovery-20261013\")\nplan = json.loads((round_dir / \"plan.json\").read_text())\ndef check(record):\n    assert isinstance(record, dict)\n    assert isinstance(record[\"path\"], str) and Path(record[\"path\"]).is_absolute()\n    assert type(record[\"bytes\"]) is int and record[\"bytes\"] >= 0\n    assert isinstance(record[\"sha256\"], str) and len(record[\"sha256\"]) == 64\n    raw = Path(record[\"path\"]).read_bytes()\n    assert len(raw) == record[\"bytes\"] and hashlib.sha256(raw).hexdigest() == record[\"sha256\"], record[\"path\"]\n    return {\"path\": record[\"path\"], \"bytes\": len(raw), \"sha256\": hashlib.sha256(raw).hexdigest(), \"match\": True}\ninput_checks = [check(record) for record in plan[\"inputs\"]]\nmanifest = json.loads(Path(plan[\"manifest_path\"]).read_text())\nassert isinstance(manifest[\"all_inputs\"], list) and isinstance(manifest[\"protected\"], list) and isinstance(manifest[\"owned_existing\"], list)\nall_records = {record[\"path\"]: record for record in manifest[\"all_inputs\"]}\nprotected_records = {record[\"path\"]: record for record in manifest[\"protected\"]}\nassert len(all_records) == len(manifest[\"all_inputs\"]) == 245\nfixture_checks = []\nfor record in plan[\"fixture_authorities\"]:\n    assert all_records[record[\"path\"]] == protected_records[record[\"path\"]]\n    assert all(all_records[record[\"path\"]][key] == record[key] for key in (\"path\", \"relative_path\", \"bytes\", \"sha256\"))\n    fixture_checks.append(check(record))\nassert len(fixture_checks) == 7 and len(manifest[\"owned_existing\"]) == 23\nowned_checks = [check(record) for record in manifest[\"owned_existing\"]]\nnew_paths = plan[\"owned_new_absent\"]\nassert len(new_paths) == 1 and all(not Path(path).exists() for path in new_paths)\nreport = {\"schema_version\": \"bigsmall.fixture-authorities.v1\", \"round\": \"R160\", \"author\": \"/root/p6_stage_b_sol\", \"model\": \"gpt-6.1-sol\", \"input_checks\": input_checks, \"fixture_authorities\": plan[\"fixture_authorities\"], \"fixture_checks\": fixture_checks, \"owned_checks\": owned_checks, \"owned_new_absent\": new_paths, \"all_valid\": True, \"unapproved_reads\": {\"count\": 19, \"status\": \"PRESERVED_NOT_RETROACTIVELY_AUTHORIZED_NOT_B_EVIDENCE\", \"capture_gaps\": \"Original null fields retained; no reconstruction or replay.\"}, \"product_commands\": 0, \"old_budget_resets\": 0, \"R158_commands_used\": 0, \"resume\": \"T1_TEST_AND_RUNNER_PREPARATION_ONLY\"}\noutput = round_dir / \"exactfixture-authorities.json\"\nwith output.open(\"x\", encoding=\"utf-8\") as handle:\n    json.dump(report, handle, ensure_ascii=False, indent=2)\n    handle.write(\"\\n\")\nraw = output.read_bytes()\nprint(json.dumps({\"path\": str(output), \"bytes\": len(raw), \"sha256\": hashlib.sha256(raw).hexdigest(), \"inputs\": len(input_checks), \"fixtures\": len(fixture_checks), \"owned\": len(owned_checks), \"new_absent\": len(new_paths), \"all_valid\": True}, ensure_ascii=False))\n"
+    ],
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "tool_invocation": {
+      "cmd": "'/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '-c' 'from pathlib import Path\nimport hashlib, json\nround_dir = Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round160-p6-author-fixture-path-discovery-recovery-20261013\")\nplan = json.loads((round_dir / \"plan.json\").read_text())\ndef check(record):\n    assert isinstance(record, dict)\n    assert isinstance(record[\"path\"], str) and Path(record[\"path\"]).is_absolute()\n    assert type(record[\"bytes\"]) is int and record[\"bytes\"] >= 0\n    assert isinstance(record[\"sha256\"], str) and len(record[\"sha256\"]) == 64\n    raw = Path(record[\"path\"]).read_bytes()\n    assert len(raw) == record[\"bytes\"] and hashlib.sha256(raw).hexdigest() == record[\"sha256\"], record[\"path\"]\n    return {\"path\": record[\"path\"], \"bytes\": len(raw), \"sha256\": hashlib.sha256(raw).hexdigest(), \"match\": True}\ninput_checks = [check(record) for record in plan[\"inputs\"]]\nmanifest = json.loads(Path(plan[\"manifest_path\"]).read_text())\nassert isinstance(manifest[\"all_inputs\"], list) and isinstance(manifest[\"protected\"], list) and isinstance(manifest[\"owned_existing\"], list)\nall_records = {record[\"path\"]: record for record in manifest[\"all_inputs\"]}\nprotected_records = {record[\"path\"]: record for record in manifest[\"protected\"]}\nassert len(all_records) == len(manifest[\"all_inputs\"]) == 245\nfixture_checks = []\nfor record in plan[\"fixture_authorities\"]:\n    assert all_records[record[\"path\"]] == protected_records[record[\"path\"]]\n    assert all(all_records[record[\"path\"]][key] == record[key] for key in (\"path\", \"relative_path\", \"bytes\", \"sha256\"))\n    fixture_checks.append(check(record))\nassert len(fixture_checks) == 7 and len(manifest[\"owned_existing\"]) == 23\nowned_checks = [check(record) for record in manifest[\"owned_existing\"]]\nnew_paths = plan[\"owned_new_absent\"]\nassert len(new_paths) == 1 and all(not Path(path).exists() for path in new_paths)\nreport = {\"schema_version\": \"bigsmall.fixture-authorities.v1\", \"round\": \"R160\", \"author\": \"/root/p6_stage_b_sol\", \"model\": \"gpt-6.1-sol\", \"input_checks\": input_checks, \"fixture_authorities\": plan[\"fixture_authorities\"], \"fixture_checks\": fixture_checks, \"owned_checks\": owned_checks, \"owned_new_absent\": new_paths, \"all_valid\": True, \"unapproved_reads\": {\"count\": 19, \"status\": \"PRESERVED_NOT_RETROACTIVELY_AUTHORIZED_NOT_B_EVIDENCE\", \"capture_gaps\": \"Original null fields retained; no reconstruction or replay.\"}, \"product_commands\": 0, \"old_budget_resets\": 0, \"R158_commands_used\": 0, \"resume\": \"T1_TEST_AND_RUNNER_PREPARATION_ONLY\"}\noutput = round_dir / \"exactfixture-authorities.json\"\nwith output.open(\"x\", encoding=\"utf-8\") as handle:\n    json.dump(report, handle, ensure_ascii=False, indent=2)\n    handle.write(\"\\n\")\nraw = output.read_bytes()\nprint(json.dumps({\"path\": str(output), \"bytes\": len(raw), \"sha256\": hashlib.sha256(raw).hexdigest(), \"inputs\": len(input_checks), \"fixtures\": len(fixture_checks), \"owned\": len(owned_checks), \"new_absent\": len(new_paths), \"all_valid\": True}, ensure_ascii=False))\n'",
+      "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "max_output_tokens": 2000
+    },
+    "actual_tool_result": {
+      "chunk_id": "55191c",
+      "wall_time_seconds": 1.06e-05,
+      "exit_code": 0,
+      "original_token_count": 94,
+      "output": "{\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round160-p6-author-fixture-path-discovery-recovery-20261013/exactfixture-authorities.json\", \"bytes\": 11982, \"sha256\": \"12bb7955199ddbbe1792c8aded2b0ac6aeba2de1e0b90dede3c3d8f672154a27\", \"inputs\": 6, \"fixtures\": 7, \"owned\": 23, \"new_absent\": 1, \"all_valid\": true}\n"
+    },
+    "independent_stdout": null,
+    "independent_stderr": null,
+    "stream_capture_note": "exec_command returned one combined output field; no independent streams were produced or invented."
+  },
+  "receipt": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round160-p6-author-fixture-path-discovery-recovery-20261013/exactfixture-authorities.json",
+    "bytes": 11982,
+    "sha256": "12bb7955199ddbbe1792c8aded2b0ac6aeba2de1e0b90dede3c3d8f672154a27",
+    "inputs": 6,
+    "fixtures": 7,
+    "owned": 23,
+    "new_absent": 1,
+    "all_valid": true
+  },
+  "action_budget": {
+    "authorized": 1,
+    "used": 1,
+    "remaining": 0,
+    "retries": 0
+  },
+  "R158": {
+    "commands_used": 0,
+    "all_15_commands": "HELD",
+    "source_test_runner_writes": 0
+  },
+  "original_gaps": "All original null fields and the nineteen unapproved-read capture gaps remain unchanged; no reconstruction or replay.",
+  "acceptance": "Metadata path authority and owned-byte continuity only; no B9/runtime/static/native/actual/formal/Git acceptance.",
+  "next": "STOP pending ROOT report review, then only an explicit resumption of original T1 preparation."
+}

@@ -1,0 +1,433 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round217-p6-t2-writer-append-placement-20261015/implementation/before-test.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -4346,6 +4346,216 @@
+                 assert _b_t2_exercise(monkeypatch, directory, backend, observed, exercise)
+ 
+ 
++def test_dual_database_order_and_partial_commit(monkeypatch, tmp_path, request):
++    with _b_t2_attempt(request) as attempt:
++        _b_t2_api()
++        attempt["entered_behavior"] = True
++        with _b_t2_observe(monkeypatch, attempt) as observed:
++            cases = (("event", "PENDING"), ("job", "EVENT_COMMITTED"),
++                     ("event", "COMPLETE"), ("job", "COMPLETE"))
++            for index, (database, phase) in enumerate(cases):
++                directory = tmp_path / ("commit-seam-" + str(index))
++
++                def exercise(runtime, session, worker, repo, job, events, reads, observed):
++                    before_record = _b_t2_capture_and_unusable_plan(runtime, events, "seam-setup")
++                    before = _b_t2_snapshot(events, reads)
++                    operation_id = "commit-seam:" + str(index)
++                    transition = _b_t2_bootstrap_request(
++                        before_record, "RESERVE_REOBSERVATION", operation_id
++                    )
++                    observed.fault.update(operation_id=operation_id, database=database,
++                                          phase=phase, fired=False)
++                    try:
++                        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
++                            _b_t2_operation(runtime, events, transition)
++                    finally:
++                        observed.fault["operation_id"] = None
++                    assert observed.fault["fired"] is True
++                    faults = [item for item in attempt["observations"]["scenarios"]
++                              if item.get("operation_id") == operation_id
++                              and item.get("kind") == "TRUE_COMMIT_THEN_SAME_CONNECTION_CLOSE"]
++                    assert len(faults) == 1
++                    assert faults[0]["in_transaction_after_commit"] is False
++                    assert faults[0]["actual_closed_connection_error"]["type"] == "ProgrammingError"
++                    rows = _b_t2_operation_rows(reads, operation_id)
++                    assert rows[database] and any(row["phase"] == phase for row in rows[database])
++                    identity = before_record.to_payload()["original_time"]["lease_identity"]
++                    for row in rows["event"] + rows["job"]:
++                        assert row["operation_id"] == operation_id
++                        assert row["operation_sha256"] == _b_t2_digest(transition)
++                        for field in ("job_id", "lease_id", "attempt", "epoch"):
++                            assert row[field] == identity[field]
++                        assert type(row["event_record_hash"]) is str and len(row["event_record_hash"]) == 64
++                    if index == 0:
++                        assert rows["job"] == [], "event PENDING COMMIT must precede the job receipt"
++                    both_complete = all(any(row["phase"] == "COMPLETE" for row in value)
++                                        for value in rows.values())
++                    assert both_complete is (index == 3)
++                    if index < 2:
++                        assert not any(row["phase"] == "COMPLETE" for row in rows["event"])
++                    if index == 2:
++                        assert not any(row["phase"] == "COMPLETE" for row in rows["job"])
++                    after = _b_t2_snapshot(events, reads)
++                    _b_t2_retained_spend(after, before_record.to_payload(), 1)
++                    _b_t2_case_evidence(directory, "true-commit-loss", {
++                        "database": database, "phase": phase, "before": before, "after": after,
++                        "rows": rows, "fault": faults[0], "both_complete": both_complete,
++                        "operation_id": operation_id, "operation_sha256": _b_t2_digest(transition),
++                        "original": before_record.to_payload()["original_time"],
++                        "returned_NEW_COMMIT": False,
++                    })
++                    return {"operation_id": operation_id, "run_id": runtime.source.run_id,
++                            "job_path": str(repo.database_path), "event_path": str(events.path),
++                            "before_record": before_record.to_payload(), "request": transition.to_payload()}
++
++                saved = _b_t2_exercise(monkeypatch, directory, "sqlite", observed, exercise)
++                # A new repository has no live owner/session. Reconciliation is evidence only.
++                from cloud_edge_robot_arm.repositories.event_autonomy import SQLiteEventAutonomyRepository
++                from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
++                    VisualBootstrapTransitionInput,
++                )
++                from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
++
++                restarted_job = SQLiteSimulationJobRepository(Path(saved["job_path"]))
++                restarted_event = SQLiteEventAutonomyRepository(Path(saved["event_path"]))
++                job_read = event_read = None
++                try:
++                    job_read = sqlite3.connect(saved["job_path"])
++                    event_read = sqlite3.connect(saved["event_path"])
++                    job_read.row_factory = event_read.row_factory = sqlite3.Row
++                    read_map = {"job": job_read, "event": event_read}
++                    before_restart = _b_t2_snapshot(restarted_event, read_map)
++                    detached = _b_t2_detached_read(restarted_job, saved["run_id"], saved["operation_id"])
++                    reconciliation = _b_t2_plain(restarted_job.reconcile_local_publications())
++                    with pytest.raises((RuntimeError, ValueError), match="owner|scope|private|authority|session"):
++                        restarted_event.transition_visual_bootstrap_if_current(
++                            request=VisualBootstrapTransitionInput.from_payload(saved["request"])
++                        )
++                    after_restart = _b_t2_snapshot(restarted_event, read_map)
++                    _b_t2_retained_spend(after_restart, saved["before_record"], 1)
++                    new_rows = _b_t2_operation_rows(read_map, saved["operation_id"])
++                    if index != 3:
++                        assert not all(any(row["phase"] == "COMPLETE" for row in value)
++                                       for value in new_rows.values())
++                    _b_t2_case_evidence(directory, "restart-no-authority", {
++                        "before": before_restart, "after": after_restart, "detached": detached,
++                        "reconciliation": reconciliation, "rows": new_rows,
++                    })
++                finally:
++                    restarted_event.close()
++                    if job_read is not None:
++                        job_read.close()
++                    if event_read is not None:
++                        event_read.close()
++
++            directory = tmp_path / "same-live-owner"
++
++            def continue_live(runtime, session, worker, repo, job, events, reads, observed):
++                before = _b_t2_capture_and_unusable_plan(runtime, events, "live-setup")
++                transition = _b_t2_bootstrap_request(before, "RESERVE_REOBSERVATION", "live-exact-operation")
++                committed = _b_t2_operation(runtime, events, transition)
++                assert committed.write_disposition == "NEW_COMMIT"
++                rows = _b_t2_operation_rows(reads, "live-exact-operation")
++                assert all(any(row["phase"] == "COMPLETE" for row in value) for value in rows.values())
++                for row in rows["event"] + rows["job"]:
++                    assert row["operation_sha256"] == _b_t2_digest(transition)
++                    assert row["job_id"] == runtime.source.job_id
++                    assert row["lease_id"] == before.to_payload()["original_time"]["lease_identity"]["lease_id"]
++                state = committed.record.to_payload()
++                duplicate = _b_t2_operation(runtime, events, transition)
++                assert duplicate.write_disposition == "HISTORICAL_DUPLICATE"
++                assert duplicate.record.to_payload()["payload"] == state["payload"]
++                assert duplicate.record.to_payload()["original_time"] == state["original_time"]
++                _b_t2_detached_read(repo, runtime.source.run_id, "live-exact-operation")
++                changed = copy.deepcopy(transition.to_payload())
++                changed["payload"]["robot_state"]["connected"] = False
++                from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import VisualBootstrapTransitionInput
++                with pytest.raises((RuntimeError, ValueError), match="changed|hash|conflict|identity|source"):
++                    _b_t2_operation(runtime, events, VisualBootstrapTransitionInput.from_payload(changed))
++                after = _b_t2_snapshot(events, reads)
++                _b_t2_retained_spend(after, before.to_payload(), 1)
++                _b_t2_case_evidence(directory, "same-owner-exact-history", {
++                    "before": before.to_payload(), "current": state, "rows": rows,
++                    "after": after, "duplicate_disposition": duplicate.write_disposition,
++                })
++                return True
++
++            assert _b_t2_exercise(monkeypatch, directory, "sqlite", observed, continue_live)
++
++
++@pytest.mark.parametrize("backend", ["memory", "sqlite"])
++def test_original_budget_debit_not_refilled_by_retry(monkeypatch, tmp_path, request, backend):
++    with _b_t2_attempt(request) as attempt:
++        _b_t2_api()
++        attempt["entered_behavior"] = True
++        with _b_t2_observe(monkeypatch, attempt) as observed:
++            for lost_response in (False, True):
++                directory = tmp_path / (backend + ("-ack-loss" if lost_response else "-one-CAS"))
++
++                def exercise(runtime, session, worker, repo, job, events, reads, observed):
++                    import time
++                    from cloud_edge_robot_arm.contracts import RobotState
++
++                    record = _b_t2_capture_and_unusable_plan(runtime, events, "budget-setup")
++                    before = record.to_payload()
++                    operation_id = backend + ":budget:" + str(lost_response)
++                    transition = _b_t2_bootstrap_request(record, "RESERVE_REOBSERVATION", operation_id)
++                    if lost_response:
++                        observed.fault.update(operation_id=operation_id, database="job",
++                                              phase="COMPLETE", fired=False)
++                        try:
++                            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
++                                _b_t2_operation(runtime, events, transition)
++                        finally:
++                            observed.fault["operation_id"] = None
++                        assert observed.fault["fired"] is True
++                    else:
++                        first = _b_t2_operation(runtime, events, transition)
++                        assert first.write_disposition == "NEW_COMMIT"
++                    spent = runtime.bootstrap.to_payload()
++                    assert spent["payload"]["revision"] == before["payload"]["revision"] + 1
++                    _b_t2_retained_spend(_b_t2_snapshot(events, reads), before, 1)
++                    duplicate = _b_t2_operation(runtime, events, transition)
++                    assert duplicate.write_disposition == "HISTORICAL_DUPLICATE"
++                    assert duplicate.record.to_payload()["payload"] == spent["payload"]
++                    assert duplicate.record.to_payload()["original_time"] == before["original_time"]
++                    assert runtime.bootstrap.to_payload()["payload"] == spent["payload"]
++                    # The true installed heartbeat thread performs renewal; no permission callback.
++                    lease_before = dict(reads["job"].execute(
++                        "SELECT * FROM simulation_operational_leases_v1 WHERE lease_id=?", (session.lease_id,)
++                    ).fetchone())
++                    limit = time.monotonic() + min(60.0, worker.lease_ttl_seconds / 3 + 5.0)
++                    renewed = None
++                    while time.monotonic() < limit:
++                        row = dict(reads["job"].execute(
++                            "SELECT * FROM simulation_operational_leases_v1 WHERE lease_id=?", (session.lease_id,)
++                        ).fetchone())
++                        if row["generation"] > lease_before["generation"]:
++                            renewed = row
++                            break
++                        time.sleep(0.01)
++                    assert renewed is not None, "actual installed heartbeat renewal was not observed"
++                    assert runtime.bootstrap.to_payload()["original_time"] == before["original_time"]
++                    assert runtime.bootstrap.to_payload()["payload"]["state"] == spent["payload"]["state"]
++                    with pytest.raises((RuntimeError, ValueError), match="pending|claimed|source|claim|replay"):
++                        runtime.reserve_capture(RobotState(connected=True))
++                    assert runtime.bootstrap.to_payload()["payload"]["state"] == spent["payload"]["state"]
++                    with pytest.raises((RuntimeError, ValueError), match="owner|scope|private|authority|operational"):
++                        events.initialize_visual_bootstrap_if_absent(record.definition)
++                    after = _b_t2_snapshot(events, reads)
++                    _b_t2_retained_spend(after, before, 1)
++                    _b_t2_case_evidence(directory, "one-CAS-no-refund", {
++                        "before": before, "spent": spent, "after": after,
++                        "lost_response": lost_response, "duplicate": duplicate.write_disposition,
++                        "lease_before": lease_before, "actual_renewed_row": renewed,
++                        "original_time": runtime.bootstrap.to_payload()["original_time"],
++                        "session_id": id(session), "worker_id": id(worker),
++                    })
++                    return True
++
++                assert _b_t2_exercise(monkeypatch, directory, backend, observed, exercise)
++
++
+ def _b_t2_writer_json(value):
+     from collections.abc import Mapping
+     from dataclasses import fields
+@@ -4721,213 +4931,3 @@
+                 return True
+ 
+             assert _b_t2_exercise(monkeypatch, directory, backend, observed, exercise)
+-
+-
+-def test_dual_database_order_and_partial_commit(monkeypatch, tmp_path, request):
+-    with _b_t2_attempt(request) as attempt:
+-        _b_t2_api()
+-        attempt["entered_behavior"] = True
+-        with _b_t2_observe(monkeypatch, attempt) as observed:
+-            cases = (("event", "PENDING"), ("job", "EVENT_COMMITTED"),
+-                     ("event", "COMPLETE"), ("job", "COMPLETE"))
+-            for index, (database, phase) in enumerate(cases):
+-                directory = tmp_path / ("commit-seam-" + str(index))
+-
+-                def exercise(runtime, session, worker, repo, job, events, reads, observed):
+-                    before_record = _b_t2_capture_and_unusable_plan(runtime, events, "seam-setup")
+-                    before = _b_t2_snapshot(events, reads)
+-                    operation_id = "commit-seam:" + str(index)
+-                    transition = _b_t2_bootstrap_request(
+-                        before_record, "RESERVE_REOBSERVATION", operation_id
+-                    )
+-                    observed.fault.update(operation_id=operation_id, database=database,
+-                                          phase=phase, fired=False)
+-                    try:
+-                        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+-                            _b_t2_operation(runtime, events, transition)
+-                    finally:
+-                        observed.fault["operation_id"] = None
+-                    assert observed.fault["fired"] is True
+-                    faults = [item for item in attempt["observations"]["scenarios"]
+-                              if item.get("operation_id") == operation_id
+-                              and item.get("kind") == "TRUE_COMMIT_THEN_SAME_CONNECTION_CLOSE"]
+-                    assert len(faults) == 1
+-                    assert faults[0]["in_transaction_after_commit"] is False
+-                    assert faults[0]["actual_closed_connection_error"]["type"] == "ProgrammingError"
+-                    rows = _b_t2_operation_rows(reads, operation_id)
+-                    assert rows[database] and any(row["phase"] == phase for row in rows[database])
+-                    identity = before_record.to_payload()["original_time"]["lease_identity"]
+-                    for row in rows["event"] + rows["job"]:
+-                        assert row["operation_id"] == operation_id
+-                        assert row["operation_sha256"] == _b_t2_digest(transition)
+-                        for field in ("job_id", "lease_id", "attempt", "epoch"):
+-                            assert row[field] == identity[field]
+-                        assert type(row["event_record_hash"]) is str and len(row["event_record_hash"]) == 64
+-                    if index == 0:
+-                        assert rows["job"] == [], "event PENDING COMMIT must precede the job receipt"
+-                    both_complete = all(any(row["phase"] == "COMPLETE" for row in value)
+-                                        for value in rows.values())
+-                    assert both_complete is (index == 3)
+-                    if index < 2:
+-                        assert not any(row["phase"] == "COMPLETE" for row in rows["event"])
+-                    if index == 2:
+-                        assert not any(row["phase"] == "COMPLETE" for row in rows["job"])
+-                    after = _b_t2_snapshot(events, reads)
+-                    _b_t2_retained_spend(after, before_record.to_payload(), 1)
+-                    _b_t2_case_evidence(directory, "true-commit-loss", {
+-                        "database": database, "phase": phase, "before": before, "after": after,
+-                        "rows": rows, "fault": faults[0], "both_complete": both_complete,
+-                        "operation_id": operation_id, "operation_sha256": _b_t2_digest(transition),
+-                        "original": before_record.to_payload()["original_time"],
+-                        "returned_NEW_COMMIT": False,
+-                    })
+-                    return {"operation_id": operation_id, "run_id": runtime.source.run_id,
+-                            "job_path": str(repo.database_path), "event_path": str(events.path),
+-                            "before_record": before_record.to_payload(), "request": transition.to_payload()}
+-
+-                saved = _b_t2_exercise(monkeypatch, directory, "sqlite", observed, exercise)
+-                # A new repository has no live owner/session. Reconciliation is evidence only.
+-                from cloud_edge_robot_arm.repositories.event_autonomy import SQLiteEventAutonomyRepository
+-                from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
+-                    VisualBootstrapTransitionInput,
+-                )
+-                from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+-
+-                restarted_job = SQLiteSimulationJobRepository(Path(saved["job_path"]))
+-                restarted_event = SQLiteEventAutonomyRepository(Path(saved["event_path"]))
+-                job_read = event_read = None
+-                try:
+-                    job_read = sqlite3.connect(saved["job_path"])
+-                    event_read = sqlite3.connect(saved["event_path"])
+-                    job_read.row_factory = event_read.row_factory = sqlite3.Row
+-                    read_map = {"job": job_read, "event": event_read}
+-                    before_restart = _b_t2_snapshot(restarted_event, read_map)
+-                    detached = _b_t2_detached_read(restarted_job, saved["run_id"], saved["operation_id"])
+-                    reconciliation = _b_t2_plain(restarted_job.reconcile_local_publications())
+-                    with pytest.raises((RuntimeError, ValueError), match="owner|scope|private|authority|session"):
+-                        restarted_event.transition_visual_bootstrap_if_current(
+-                            request=VisualBootstrapTransitionInput.from_payload(saved["request"])
+-                        )
+-                    after_restart = _b_t2_snapshot(restarted_event, read_map)
+-                    _b_t2_retained_spend(after_restart, saved["before_record"], 1)
+-                    new_rows = _b_t2_operation_rows(read_map, saved["operation_id"])
+-                    if index != 3:
+-                        assert not all(any(row["phase"] == "COMPLETE" for row in value)
+-                                       for value in new_rows.values())
+-                    _b_t2_case_evidence(directory, "restart-no-authority", {
+-                        "before": before_restart, "after": after_restart, "detached": detached,
+-                        "reconciliation": reconciliation, "rows": new_rows,
+-                    })
+-                finally:
+-                    restarted_event.close()
+-                    if job_read is not None:
+-                        job_read.close()
+-                    if event_read is not None:
+-                        event_read.close()
+-
+-            directory = tmp_path / "same-live-owner"
+-
+-            def continue_live(runtime, session, worker, repo, job, events, reads, observed):
+-                before = _b_t2_capture_and_unusable_plan(runtime, events, "live-setup")
+-                transition = _b_t2_bootstrap_request(before, "RESERVE_REOBSERVATION", "live-exact-operation")
+-                committed = _b_t2_operation(runtime, events, transition)
+-                assert committed.write_disposition == "NEW_COMMIT"
+-                rows = _b_t2_operation_rows(reads, "live-exact-operation")
+-                assert all(any(row["phase"] == "COMPLETE" for row in value) for value in rows.values())
+-                for row in rows["event"] + rows["job"]:
+-                    assert row["operation_sha256"] == _b_t2_digest(transition)
+-                    assert row["job_id"] == runtime.source.job_id
+-                    assert row["lease_id"] == before.to_payload()["original_time"]["lease_identity"]["lease_id"]
+-                state = committed.record.to_payload()
+-                duplicate = _b_t2_operation(runtime, events, transition)
+-                assert duplicate.write_disposition == "HISTORICAL_DUPLICATE"
+-                assert duplicate.record.to_payload()["payload"] == state["payload"]
+-                assert duplicate.record.to_payload()["original_time"] == state["original_time"]
+-                _b_t2_detached_read(repo, runtime.source.run_id, "live-exact-operation")
+-                changed = copy.deepcopy(transition.to_payload())
+-                changed["payload"]["robot_state"]["connected"] = False
+-                from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import VisualBootstrapTransitionInput
+-                with pytest.raises((RuntimeError, ValueError), match="changed|hash|conflict|identity|source"):
+-                    _b_t2_operation(runtime, events, VisualBootstrapTransitionInput.from_payload(changed))
+-                after = _b_t2_snapshot(events, reads)
+-                _b_t2_retained_spend(after, before.to_payload(), 1)
+-                _b_t2_case_evidence(directory, "same-owner-exact-history", {
+-                    "before": before.to_payload(), "current": state, "rows": rows,
+-                    "after": after, "duplicate_disposition": duplicate.write_disposition,
+-                })
+-                return True
+-
+-            assert _b_t2_exercise(monkeypatch, directory, "sqlite", observed, continue_live)
+-
+-
+-@pytest.mark.parametrize("backend", ["memory", "sqlite"])
+-def test_original_budget_debit_not_refilled_by_retry(monkeypatch, tmp_path, request, backend):
+-    with _b_t2_attempt(request) as attempt:
+-        _b_t2_api()
+-        attempt["entered_behavior"] = True
+-        with _b_t2_observe(monkeypatch, attempt) as observed:
+-            for lost_response in (False, True):
+-                directory = tmp_path / (backend + ("-ack-loss" if lost_response else "-one-CAS"))
+-
+-                def exercise(runtime, session, worker, repo, job, events, reads, observed):
+-                    import time
+-                    from cloud_edge_robot_arm.contracts import RobotState
+-
+-                    record = _b_t2_capture_and_unusable_plan(runtime, events, "budget-setup")
+-                    before = record.to_payload()
+-                    operation_id = backend + ":budget:" + str(lost_response)
+-                    transition = _b_t2_bootstrap_request(record, "RESERVE_REOBSERVATION", operation_id)
+-                    if lost_response:
+-                        observed.fault.update(operation_id=operation_id, database="job",
+-                                              phase="COMPLETE", fired=False)
+-                        try:
+-                            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+-                                _b_t2_operation(runtime, events, transition)
+-                        finally:
+-                            observed.fault["operation_id"] = None
+-                        assert observed.fault["fired"] is True
+-                    else:
+-                        first = _b_t2_operation(runtime, events, transition)
+-                        assert first.write_disposition == "NEW_COMMIT"
+-                    spent = runtime.bootstrap.to_payload()
+-                    assert spent["payload"]["revision"] == before["payload"]["revision"] + 1
+-                    _b_t2_retained_spend(_b_t2_snapshot(events, reads), before, 1)
+-                    duplicate = _b_t2_operation(runtime, events, transition)
+-                    assert duplicate.write_disposition == "HISTORICAL_DUPLICATE"
+-                    assert duplicate.record.to_payload()["payload"] == spent["payload"]
+-                    assert duplicate.record.to_payload()["original_time"] == before["original_time"]
+-                    assert runtime.bootstrap.to_payload()["payload"] == spent["payload"]
+-                    # The true installed heartbeat thread performs renewal; no permission callback.
+-                    lease_before = dict(reads["job"].execute(
+-                        "SELECT * FROM simulation_operational_leases_v1 WHERE lease_id=?", (session.lease_id,)
+-                    ).fetchone())
+-                    limit = time.monotonic() + min(60.0, worker.lease_ttl_seconds / 3 + 5.0)
+-                    renewed = None
+-                    while time.monotonic() < limit:
+-                        row = dict(reads["job"].execute(
+-                            "SELECT * FROM simulation_operational_leases_v1 WHERE lease_id=?", (session.lease_id,)
+-                        ).fetchone())
+-                        if row["generation"] > lease_before["generation"]:
+-                            renewed = row
+-                            break
+-                        time.sleep(0.01)
+-                    assert renewed is not None, "actual installed heartbeat renewal was not observed"
+-                    assert runtime.bootstrap.to_payload()["original_time"] == before["original_time"]
+-                    assert runtime.bootstrap.to_payload()["payload"]["state"] == spent["payload"]["state"]
+-                    with pytest.raises((RuntimeError, ValueError), match="pending|claimed|source|claim|replay"):
+-                        runtime.reserve_capture(RobotState(connected=True))
+-                    assert runtime.bootstrap.to_payload()["payload"]["state"] == spent["payload"]["state"]
+-                    with pytest.raises((RuntimeError, ValueError), match="owner|scope|private|authority|operational"):
+-                        events.initialize_visual_bootstrap_if_absent(record.definition)
+-                    after = _b_t2_snapshot(events, reads)
+-                    _b_t2_retained_spend(after, before, 1)
+-                    _b_t2_case_evidence(directory, "one-CAS-no-refund", {
+-                        "before": before, "spent": spent, "after": after,
+-                        "lost_response": lost_response, "duplicate": duplicate.write_disposition,
+-                        "lease_before": lease_before, "actual_renewed_row": renewed,
+-                        "original_time": runtime.bootstrap.to_payload()["original_time"],
+-                        "session_id": id(session), "worker_id": id(worker),
+-                    })
+-                    return True
+-
+-                assert _b_t2_exercise(monkeypatch, directory, backend, observed, exercise)

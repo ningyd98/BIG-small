@@ -1,0 +1,32 @@
+[
+  {
+    "status": "fulfilled",
+    "value": {
+      "chunk_id": "6c0a25",
+      "wall_time_seconds": 0.00001456,
+      "exit_code": 2,
+      "original_token_count": 23,
+      "output": "sed: can't read src/bigsmall/edge/simulation_runtime/worker.py: No such file or directory\n"
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "chunk_id": "57c695",
+      "wall_time_seconds": 0.00001101,
+      "exit_code": 2,
+      "original_token_count": 26,
+      "output": "sed: can't read src/bigsmall/edge/simulation_runtime/operational_lease.py: No such file or directory\n"
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "chunk_id": "9c49b2",
+      "wall_time_seconds": 0.00000908,
+      "exit_code": 0,
+      "original_token_count": 1360,
+      "output": "        def close(obj, *args, **kwargs):\n            record = add(obj, kind)\n            call = {\"thread\": threading.get_ident(), \"native_thread\": threading.get_native_id(),\n                    \"returned\": False, \"error\": None}\n            record[\"close_attempts\"].append(call)\n            try:\n                result = original(obj, *args, **kwargs)\n            except BaseException as error:\n                call[\"error\"] = {\"type\": type(error).__name__, \"message\": str(error)}\n                raise\n            else:\n                call[\"returned\"] = True\n                record[\"cleanup_observed\"] = True\n                return result\n        return close\n\n    def init_wrapper(original, kind):\n        def initialize(obj, *args, **kwargs):\n            record = add(obj, kind)\n            try:\n                result = original(obj, *args, **kwargs)\n            except BaseException as error:\n                record[\"initialization_error\"] = {\"type\": type(error).__name__, \"message\": str(error)}\n                if kind == \"worker\":\n                    record[\"initial_active_job_id\"] = getattr(obj, \"active_job_id\", None)\n                    record[\"initial_state_observation\"] = \"constructor_exception\"\n                    sample_runtime(obj)\n                raise\n            else:\n                record[\"initialized\"] = True\n                if kind == \"worker\":\n                    record[\"initial_active_job_id\"] = getattr(obj, \"active_job_id\", None)\n                    record[\"initial_state_observation\"] = \"constructor_return\"\n                    sample_runtime(obj)\n                return result\n        return initialize\n\n    def sample_runtime(worker):\n        with guard:\n            sample_runtime_locked(worker)\n\n    def sample_runtime_locked(worker):\n        record = objects[id(worker)][1]\n        session = getattr(worker, \"_operational_lease_session\", None)\n        heartbeat = None if session is None else getattr(session, \"_heartbeat_thread\", None)\n        # Presence is observed separately from constructor success and from a close call.\n        if hasattr(worker, \"_operational_lease_session\"):\n            record[\"session_observed\"] = session is not None or record[\"session_observed\"] is True\n        if hasattr(worker, \"_operational_lease_session\"):\n            record[\"heartbeat_observed\"] = heartbeat is not None or record[\"heartbeat_observed\"] is True\n        if session is not None:\n            session_record = add(session, \"lease_session\")\n            if id(session) not in record[\"session_resource_ids\"]:\n                record[\"session_resource_ids\"].append(id(session))\n            session_record[\"worker_resource_id\"] = id(worker)\n        for thread, kind, key, peak_key in (\n            (None if session is None else getattr(session, \"_broker\", None),\n             \"broker_thread\", \"broker_resource_ids\", \"broker_peak_alive\"),\n            (heartbeat, \"heartbeat_thread\", \"heartbeat_resource_ids\", \"heartbeat_peak_alive\"),\n        ):\n            if thread is not None:\n                thread_record = add(thread, kind)\n                thread_record[\"initialized\"] = thread.ident is not None\n                thread_record[\"worker_resource_id\"] = id(worker)\n                thread_record[\"session_resource_id\"] = None if session is None else id(session)\n                if id(thread) not in record[key]:\n                    record[key].append(id(thread))\n            if hasattr(worker, \"_operational_lease_session\"):\n                alive = sum(int(objects[item][0].is_alive()) for item in record[key])\n                record[peak_key] = max(record[peak_key] or 0, alive)\n\n    def poll_once(worker, *args, **kwargs):\n        record = add(worker, \"worker\")\n        with guard:\n            call = {\"poll_id\": len(value[\"worker_lifecycles\"]) + 1,\n                    \"worker_resource_id\": id(worker), \"attempted\": True, \"entered\": False,\n                    \"returned_normally\": False, \"return_value\": None, \"exception\": None,\n                    \"start_sequence\": tick(), \"entry_sequence\": None, \"end_sequence\": None,\n                    \"thread_id\": None, \"native_thread_id\": None}\n            value[\"worker_lifecycles\"].append(call)\n            record[\"poll_ids\"].append(call[\"poll_id\"])\n        previous_call = getattr(poll_context, \"call\", None)\n        poll_context.call = call\n        try:\n            result = real_poll(worker, *args, **kwargs)\n        except BaseException as error:\n            call[\"exception\"] = {\"type\": type(error).__name__, \"message\": str(error)}\n            raise\n        else:\n            call[\"returned_normally\"] = True\n            call[\"return_value\"] = result\n            return result\n        finally:\n            sample_runtime(worker)\n            call[\"end_sequence\"] = tick()\n            poll_context.call = previous_call\n\n    def after_commit(conn, entrance):\n        if fault[\"fired\"] or fault[\"operation_id\"] is None:\n            return\n        record = objects[id(conn)][1]\n        if record[\"database\"] != fault[\"database\"]:\n            return\n        table = (\"visual_local_publications_v1\" if fault[\"database\"] == \"event\"\n                 else \"simulation_local_publications_v1\")\n        rows = [dict(row) for row in conn.execute(\n            f\"SELECT * FROM {table} WHERE operation_id=?\", (fault[\"operation_id\"],)\n        )]\n        if not any(row[\"phase\"] == fault[\"phase\"] for row in rows):\n            return\n        assert conn.in_transaction is False\n"
+    }
+  }
+]

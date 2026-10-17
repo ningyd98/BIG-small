@@ -1,0 +1,31 @@
+{
+  "round": "R146",
+  "status": "COMPLETED_METADATA_ONLY",
+  "actual_recovery": {
+    "command": ".venv/bin/python -c 'from pathlib import Path\nimport json,hashlib\nr=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall\");a=r/\"artifacts/research/process/20261004-ced-development/astra-rounds\"\nout=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round146-astra-pin-summary-wrapper-recovery-20261012\");activation=(out/\"root-activation.json\").read_bytes()\nassert hashlib.sha256(activation).hexdigest()==\"7533cd439f1ae37898de9dcbd57ffc5f4de4a5144d8f26733d9676f1a77feacd\"\np=a/\"round141-p6-positive-publication-control-20261012\";f=p/\"implementation/stopped-final-mypy\"\nb=(f/\"source-index.json\").read_bytes();assert hashlib.sha256(b).hexdigest()==\"7929a2084bc6471007f77d9cbd1f3951fa95abc581690b3824e5dc9d39a7ae72\"\nbfind=(f/\"finding.json\").read_bytes();assert hashlib.sha256(bfind).hexdigest()==\"828c2f91b934fe54d12a63991b454f7e40761fa1d8b79bf405e209608d0f6daf\"\nidx=json.loads(b);finding=json.loads(bfind);pins={};checks=[]\ndef pin(path,expected=None):\n q=Path(path);b=q.read_bytes();v={\"path\":str(q),\"bytes\":len(b),\"sha256\":hashlib.sha256(b).hexdigest()};pins[str(q)]=v\n if expected:checks.append({\"path\":str(q),\"match\":v[\"bytes\"]==expected[\"bytes\"] and v[\"sha256\"]==expected[\"sha256\"]})\nfor e in idx[\"files\"]:\n pin(e[\"snapshot\"],e)\n if \"/sources/\" in e[\"snapshot\"] or \"/commands/\" in e[\"snapshot\"]:pin(e[\"source\"],e)\nfor e in idx[\"protected\"]:pin(e[\"path\"],e)\nfor q in [f/\"source-index.json\",f/\"finding.json\",f/\"step-report.json\",p/\"plan.json\",p/\"implementation/root-mypy-failure-reader/reader.json\",p/\"implementation/root-positive-reader/reader.json\"]:pin(q)\nledgers={}\nfor e in idx[\"files\"]:\n if e[\"source\"].endswith(\"command-ledger.json\"):\n  pin(e[\"source\"]);v=json.loads(Path(e[\"source\"]).read_text())\n  ledgers[e[\"source\"]]={k:{n:{z:c.get(z) for z in [\"used\",\"remaining\",\"status\",\"exit_code\",\"argv\",\"cwd\",\"env\",\"evidence_dir\"] if z in c} for n,c in v[k].items()} for k in [\"commands\",\"inherited_final_commands\"] if k in v and isinstance(v[k],dict)}\nraw=Path(finding[\"stdout\"][\"path\"]).read_text()\nreceipt={\"round\":\"R146\",\"status\":\"METADATA_PIN_RECEIPT\",\"inputs\":list(pins.values()),\"comparisons\":checks,\"sources\":idx[\"sources\"],\"protected\":idx[\"protected\"],\"ledgers\":ledgers,\"diagnostics\":[l for l in raw.splitlines() if \": error:\" in l],\"snapshot_timing\":idx[\"root_snapshot_timing\"],\"product_commands\":0,\"old_failed_reader_retries\":0}\ntarget=out/\"pin-receipt.json\"\nwith target.open(\"x\",encoding=\"utf-8\") as handle:handle.write(json.dumps(receipt,ensure_ascii=False,indent=2)+\"\\n\")\ndata=target.read_bytes()\nprint(json.dumps({\"path\":str(target),\"bytes\":len(data),\"sha256\":hashlib.sha256(data).hexdigest(),\"pins\":len(pins),\"comparisons\":len(checks),\"mismatches\":sum(not q[\"match\"] for q in checks),\"diagnostics\":len(receipt[\"diagnostics\"]),\"product_commands\":0},ensure_ascii=False))\n'",
+    "result": {
+      "chunk_id": "e7aaeb",
+      "wall_time_seconds": 0.00001219,
+      "exit_code": 0,
+      "original_token_count": 93,
+      "output": "{\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round146-astra-pin-summary-wrapper-recovery-20261012/pin-receipt.json\", \"bytes\": 117521, \"sha256\": \"b8f5b940c9778245acedfb2c969543688a781b3ec419c4c1b2936c1c71cbeb48\", \"pins\": 103, \"comparisons\": 92, \"mismatches\": 0, \"diagnostics\": 22, \"product_commands\": 0}\n"
+    }
+  },
+  "receipt": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round146-astra-pin-summary-wrapper-recovery-20261012/pin-receipt.json",
+    "bytes": 117521,
+    "sha256": "b8f5b940c9778245acedfb2c969543688a781b3ec419c4c1b2936c1c71cbeb48"
+  },
+  "pins": 103,
+  "comparisons": 92,
+  "mismatches": 0,
+  "diagnostics": 22,
+  "metadata_generation_used": 1,
+  "remaining": 0,
+  "original_reader_retries": 0,
+  "product_commands": 0,
+  "product_writes": 0,
+  "budget_resets": 0,
+  "capture_limits": "Actual successful nested returned object saved in full; combined tool output only. Old failed nested raw and exit unavailable, no reconstruction.",
+  "ledger_interpretation": "Receipt finite summaries retain R141 inherited_final_commands old0/1; do not imply unspent format_check/mypy. Actual result files and R113 command ledger/R127 inherited_commands show spent1/0. R141 inherited_gate is HELD. No ledger repaired here; R145 explicitly records authority."
+}

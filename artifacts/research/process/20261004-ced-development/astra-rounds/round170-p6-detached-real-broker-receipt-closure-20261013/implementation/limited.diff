@@ -1,0 +1,141 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round170-p6-detached-real-broker-receipt-closure-20261013/implementation/before-local-temporal.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py
+@@ -140,6 +140,22 @@
+     if _integer(bracket["lower_ns"]) > _integer(bracket["upper_ns"]):
+         raise ValueError("reversed detached bracket")
+     return bracket
++
++
++def _lease_segment_receipt(value: JSONValue) -> dict[str, JSONValue]:
++    """Validate and preserve a detached raw broker receipt, without issuing one."""
++    receipt = _object(value, frozenset(
++        "domain event_id lower_ns upper_ns deadline_ns budget_ns end_exclusive".split()
++    ))
++    _domain(receipt["domain"])
++    _text(receipt["event_id"])
++    lower = _integer(receipt["lower_ns"])
++    upper = _integer(receipt["upper_ns"])
++    budget = _integer(receipt["budget_ns"], positive=True)
++    deadline = _integer(receipt["deadline_ns"], positive=True)
++    if lower > upper or deadline != lower + budget or receipt["end_exclusive"] is not True:
++        raise ValueError("exact detached broker HARD_OPEN receipt required")
++    return receipt
+ 
+ 
+ def _reference(value: JSONValue) -> dict[str, JSONValue]:
+@@ -215,7 +231,7 @@
+     for key in ("job_id", "run_id", "worker_id", "lease_id", "epoch"):
+         _text(identity[key])
+     _integer(identity["attempt"], positive=True); _sha(identity["source_identity"])
+-    acquisition = _bracket(identity["original_acquisition"])
++    acquisition = _lease_segment_receipt(identity["original_acquisition"])
+     if acquisition["domain"] == app_domain:
+         raise ValueError("app and broker authority domains must remain distinct")
+     references = [_reference(original[name]) for name in ("task_reference", "verification_reference", "recovery_reference")]
+@@ -255,18 +271,25 @@
+     if not refs or any(ref["domain"] != domain for ref in refs):
+         raise ValueError("same original D_app references required")
+     app = _object(decision["app_verdict"], frozenset(("status", "reasons")))
+-    observation = _object(decision["lease_observation"])
+-    if observation.get("schema") != "simulation.operational-lease-observation.v1":
+-        raise ValueError("detached actual broker observation shape required")
++    _text(app["status"])
++    observation = _object(decision["lease_observation"], frozenset(
++        "status reasons domain original_acquisition segment current job_id lease_id worker_id attempt generation source_identity schema stage_label".split()
++    ))
++    if observation["schema"] != "simulation.operational-lease-observation.v1" or observation["stage_label"] != "LEASE_FOUNDATION_WITH_LEGACY_UTC_VETO":
++        raise ValueError("exact unchanged broker observation schema/stage required")
++    _text(observation["status"])
+     lease_domain = _domain(observation["domain"])
+     if lease_domain == domain:
+         raise ValueError("never merge D_app and D_lease")
+-    if observation["generation"] != decision["lease_generation"] or any(observation[key] != decision[key] for key in ("job_id", "worker_id", "lease_id", "attempt", "source_identity")):
++    if _integer(observation["generation"], positive=True) != decision["lease_generation"] or any(observation[key] != decision[key] for key in ("job_id", "worker_id", "lease_id", "attempt", "source_identity")):
+         raise ValueError("decision current lease/fence mismatch")
+-    if _object(observation["current"])["domain"] != lease_domain:
+-        raise ValueError("broker current domain changed")
+-    if _bracket(observation["original_acquisition"])["domain"] != lease_domain:
+-        raise ValueError("broker original acquisition domain changed")
++    acquisition = _lease_segment_receipt(observation["original_acquisition"])
++    segment = _lease_segment_receipt(observation["segment"])
++    lease_current = _bracket(observation["current"], event=False)
++    if any(item["domain"] != lease_domain for item in (acquisition, segment, lease_current)):
++        raise ValueError("broker acquisition/current segment/current bracket domain changed")
++    if acquisition["budget_ns"] != segment["budget_ns"]:
++        raise ValueError("renewal cannot change the frozen broker TTL")
+     if decision["disposition"] not in {"VALID", "REJECTED", "UNKNOWN"}:
+         raise ValueError("detached disposition required")
+     for raw in (decision["reasons"], app["reasons"], observation["reasons"]):
+@@ -275,8 +298,14 @@
+     if decision["disposition"] == "VALID":
+         if app["status"] != "VALID" or observation["status"] != "VALID":
+             raise ValueError("both independent recorded authorities must be valid")
+-        if any(_integer(current["upper_ns"]) >= _integer(ref["deadline_ns"], positive=True) for ref in refs):
+-            raise ValueError("recorded app decision expired at original hard bound")
++        app_upper = _integer(current["upper_ns"])
++        for ref in refs:
++            effective = _object(ref["effective_upper"])
++            endpoint = _integer(effective["value_ns"])
++            if app_upper >= _integer(ref["deadline_ns"], positive=True) or app_upper > endpoint or (app_upper == endpoint and effective["inclusive"] is not True):
++                raise ValueError("recorded D_app decision crosses original HARD_OPEN/AGE_CLOSED bounds")
++        if _integer(lease_current["upper_ns"]) >= _integer(segment["deadline_ns"], positive=True):
++            raise ValueError("recorded D_lease decision crosses current segment HARD_OPEN bound")
+     return decision
+ 
+ 
+@@ -499,6 +528,8 @@
+                     raise ValueError("current decision cannot replace original identity")
+             if decision["lease_epoch"] != identity["epoch"]:
+                 raise ValueError("original lease epoch changed")
++            if _object(decision["lease_observation"])["original_acquisition"] != identity["original_acquisition"]:
++                raise ValueError("renewal cannot replace the immutable raw original acquisition")
+             for current_name, decision_name in (("operation_id", "operation_id"), ("operation_sha256", "operation_sha256"), ("job_id", "job_id"), ("attempt", "attempt"), ("lease_id", "lease_id"), ("epoch", "lease_epoch"), ("generation", "lease_generation"), ("row_revision", "lease_row_revision")):
+                 if transaction[current_name] != decision[decision_name]:
+                     raise ValueError("transaction and two-authority evidence disagree")
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round170-p6-detached-real-broker-receipt-closure-20261013/implementation/before-test.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -2173,9 +2173,13 @@
+             "lease_identity": {
+                 **{key: identity[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")},
+                 "epoch": identity["owner_epoch"], "source_identity": source_identity,
++                # Caller-created SOURCE_ONLY descriptor in the unchanged raw broker shape.
+                 "original_acquisition": {
+-                    "domain": lease_domain, "event_identity": lease_token.event_identity,
++                    "domain": lease_domain, "event_id": lease_token.event_identity,
+                     "lower_ns": acquisition.lower_ns, "upper_ns": acquisition.upper_ns,
++                    "budget_ns": 1_000_000_000,
++                    "deadline_ns": acquisition.lower_ns + 1_000_000_000,
++                    "end_exclusive": True,
+                 },
+             },
+             "source_hashes": hashes, "contract_provenance": provenance,
+@@ -2193,12 +2197,26 @@
+ def _b_decision(original, app_current, generation=1):
+     acquisition = original["lease_identity"]["original_acquisition"]
+     identity = original["lease_identity"]
++    # Caller-created UNKNOWN shape controls; these are not live broker receipts.
++    segment = copy.deepcopy(acquisition)
++    if generation > 1:
++        shift = (generation - 1) * 1_000_000
++        segment["event_id"] = "r158-caller-segment-" + str(generation)
++        segment["lower_ns"] = acquisition["lower_ns"] + shift
++        segment["upper_ns"] = acquisition["upper_ns"] + shift
++        segment["deadline_ns"] = segment["lower_ns"] + segment["budget_ns"]
++    exact_receipt_fields = {"domain", "event_id", "lower_ns", "upper_ns",
++                            "deadline_ns", "budget_ns", "end_exclusive"}
++    assert set(acquisition) == set(segment) == exact_receipt_fields
++    assert segment["budget_ns"] == acquisition["budget_ns"]
++    assert generation == 1 or segment != acquisition
++    assert acquisition == original["lease_identity"]["original_acquisition"]
+     lease_observation = {
+         "status": "UNKNOWN", "reasons": ["detached_codec_fixture_no_broker_authority"],
+         "domain": acquisition["domain"], "original_acquisition": acquisition,
+-        "segment": {"domain": acquisition["domain"], "generation": generation,
+-                    "origin": acquisition, "deadline_ns": 1_000_000_000},
+-        "current": {"domain": acquisition["domain"], "lower_ns": 0, "upper_ns": 0},
++        "segment": segment,
++        "current": {"domain": acquisition["domain"],
++                    "lower_ns": segment["upper_ns"], "upper_ns": segment["upper_ns"]},
+         "job_id": identity["job_id"], "lease_id": identity["lease_id"],
+         "worker_id": identity["worker_id"], "attempt": identity["attempt"],
+         "generation": generation, "source_identity": identity["source_identity"],

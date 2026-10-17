@@ -288,12 +288,20 @@ class MarkerFrameContext:
     calibration_version: str
     plan_version: int
     command_seq: int
+    operational_reference: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "task_target_payload", _freeze(_plain(self.task_target_payload)))
+        if self.operational_reference is not None:
+            object.__setattr__(
+                self, "operational_reference", _freeze(_plain(self.operational_reference))
+            )
 
     def digest(self) -> str:
-        return _digest({name: getattr(self, name) for name in self.__dataclass_fields__})
+        body = {name: getattr(self, name) for name in self.__dataclass_fields__}
+        if self.operational_reference is None:
+            body.pop("operational_reference")
+        return _digest(body)
 
 
 def marker_frame_context(
@@ -328,6 +336,7 @@ def marker_frame_context(
         observation.calibration_version or "",
         plan_version,
         command_seq,
+        _marker_reference(observation),
     )
 
 
@@ -443,7 +452,17 @@ def _associate(
         return result("INVALID", "frame_identity_mismatch")
     if context.camera_profile_sha256 != camera_profile_hash(observation):
         return result("INVALID", "camera_profile_changed")
-    if now.tzinfo is None or not 0 <= (now - observation.captured_at).total_seconds() <= 5:
+    from cloud_edge_robot_arm.vision.operational_windows import _check_observation
+
+    local = None if replay else _check_observation(
+        observation, "marker", reference=(
+            dict(context.operational_reference)
+            if context.operational_reference is not None else None
+        ),
+    )
+    if local is False or (local is None and (
+        now.tzinfo is None or not 0 <= (now - observation.captured_at).total_seconds() <= 5
+    )):
         return result("UNKNOWN", "capture_not_fresh")
     pose = detect_pose_marker(observation, registration.pose_marker)
     if pose.status != "OBSERVED" or pose.ordered_corners_px is None:
@@ -627,3 +646,14 @@ def replay_marker_target_development(
 ) -> MarkerTargetAssociation:
     """Original capture-time replay only; cannot produce native/fresh admission."""
     return _associate(observation, registration, context, observation.captured_at, True)
+
+
+def _marker_reference(observation: RGBDObservation) -> Mapping[str, object] | None:
+    from cloud_edge_robot_arm.research.operational_time_v1 import OperationalTimeError
+    from cloud_edge_robot_arm.vision.operational_windows import _reference_for_observation
+
+    try:
+        return _reference_for_observation(observation, "marker")
+    except OperationalTimeError:
+        # An unsupported frame never gains permission by this descriptive field.
+        return {"schema_version": "simulation.operational-window.v1", "status": "UNKNOWN"}

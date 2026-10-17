@@ -6,6 +6,15 @@ is created here. JSON-backed model properties return fresh detached copies.
 
 from __future__ import annotations
 
+from cloud_edge_robot_arm.vision.local_temporal import (
+    JSONValue,
+    LocalDomainEnvelope,
+    _array as local_array,
+    _integer as local_integer,
+    _object as local_object,
+    _text as local_text,
+)
+
 import hashlib
 import json
 import math
@@ -463,6 +472,86 @@ class VisualOriginalPlan:
         return _digest(self.to_payload())
 
 
+
+def local_owner_identity(payload: Mapping[str, JSONValue]) -> VisualOwnerIdentity:
+    values = local_object(payload, frozenset("job_id run_id attempt worker_id lease_id owner_epoch episode_id task_id plan_id robot_id".split()))
+    return VisualOwnerIdentity(
+        local_text(values["job_id"]), local_text(values["run_id"]),
+        local_integer(values["attempt"], positive=True), local_text(values["worker_id"]),
+        local_text(values["lease_id"]), local_text(values["owner_epoch"]),
+        local_text(values["episode_id"]), local_text(values["task_id"]),
+        local_text(values["plan_id"]), local_text(values["robot_id"]),
+    )
+
+
+class LocalVisualOriginalPlan(LocalDomainEnvelope, VisualOriginalPlan):
+    _tag = "visual.owner.original.local.v1"
+
+    @property
+    def identity(self) -> VisualOwnerIdentity:
+        return local_owner_identity(self.object("identity"))
+
+    @property
+    def contract(self) -> TaskContract:
+        return self.model("contract", TaskContract)
+
+    @property
+    def proposal_hash(self) -> str:
+        return self.string("proposal_hash")
+
+    @property
+    def role_bundle_hash(self) -> str:
+        return self.string("role_bundle_hash")
+
+    @property
+    def compiler_source_hashes(self) -> Mapping[str, str]:
+        return self.hashes("compiler_source_hashes")
+
+    @property
+    def source_hashes(self) -> Mapping[str, str]:
+        return self.hashes("source_hashes")
+
+    @property
+    def requirements(self) -> Mapping[str, OriginalActionRequirements]:
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import requirement_from_payload
+
+        return {key: requirement_from_payload(local_object(value))
+                for key, value in self.object("requirements").items()}
+
+    @property
+    def dependencies(self) -> tuple[StepDependency, ...]:
+        result: list[StepDependency] = []
+        for raw in local_array(self.semantic["dependencies"]):
+            item = local_object(raw)
+            completed = item["completed"]
+            if type(completed) is not bool:
+                raise ValueError("strict dependency completion flag required")
+            effect = item["physical_effect_id"]
+            result.append(StepDependency(
+                local_text(item["step_id"]),
+                tuple(local_text(value) for value in local_array(item["depends_on"])),
+                tuple(local_text(value) for value in local_array(item["evidence_ids"])),
+                None if effect is None else local_text(effect),
+                completed,
+            ))
+        return tuple(result)
+
+    @property
+    def task_deadline_at(self) -> datetime:
+        return self.legacy_deadline()
+
+    @property
+    def verification_deadline_at(self) -> datetime:
+        return self.legacy_deadline()
+
+    @property
+    def registered_at(self) -> datetime:
+        return self.legacy_deadline()
+
+    @property
+    def effective_deadline_at(self) -> datetime:
+        return self.legacy_deadline()
+
 def freeze_original_visual_plan(
     *,
     identity: VisualOwnerIdentity,
@@ -775,6 +864,89 @@ class StepGroundingBinding:
 
     def digest(self) -> str:
         return _digest(self.to_payload())
+
+
+
+class LocalStepGroundingBinding(LocalDomainEnvelope, StepGroundingBinding):
+    _tag = "visual.owner.grounding.local.v1"
+
+    @property
+    def current_identity(self) -> VisualOwnerIdentity:
+        return local_owner_identity(self.object("current_identity"))
+
+    @property
+    def original_requirements(self) -> OriginalActionRequirements:
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import requirement_from_payload
+
+        return requirement_from_payload(self.object("original_requirements"))
+
+    @property
+    def grounded_step(self) -> TaskStep:
+        return self.model("grounded_step", TaskStep)
+
+    @property
+    def original_plan_hash(self) -> str:
+        return self.string("original_plan_hash")
+
+    @property
+    def source_checkpoint_hash(self) -> str:
+        return self.string("source_checkpoint_hash")
+
+    @property
+    def observation_id(self) -> str:
+        return self.string("observation_id")
+
+    @property
+    def observation_checksum_sha256(self) -> str:
+        return self.string("observation_checksum_sha256")
+
+    @property
+    def calibration_version(self) -> str:
+        return self.string("calibration_version")
+
+    @property
+    def grounding_policy_hash(self) -> str:
+        return self.string("grounding_policy_hash")
+
+    @property
+    def grounding_inputs_hash(self) -> str:
+        return self.string("grounding_inputs_hash")
+
+    @property
+    def owner_revision(self) -> int:
+        return self.counter("owner_revision")
+
+    @property
+    def state_generation(self) -> int:
+        return self.counter("state_generation")
+
+    @property
+    def plan_version(self) -> int:
+        return self.counter("plan_version")
+
+    @property
+    def command_seq(self) -> int:
+        return self.counter("command_seq")
+
+    @property
+    def duration_check_hash(self) -> str | None:
+        return self.optional_string("duration_check_hash")
+
+    @property
+    def grounding_source_hashes(self) -> Mapping[str, str]:
+        return self.hashes("grounding_source_hashes")
+
+    @property
+    def expected_duration_s(self) -> float:
+        return self.number("expected_duration_s", positive=True)
+
+    @property
+    def created_at(self) -> datetime:
+        return self.legacy_deadline()
+
+    @property
+    def valid_until(self) -> datetime:
+        return self.legacy_deadline()
 
 
 def _resolved_parameters(

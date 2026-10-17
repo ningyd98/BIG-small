@@ -1,0 +1,85 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round218-p6-t2-writer-fixture-schema-and-reader-20261015/implementation/before-test.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -3908,17 +3908,22 @@
+ 
+ 
+ def _b_t2_plain(value):
++    from collections.abc import Mapping
++    from dataclasses import fields
++
++    codec = getattr(value, "to_payload", None)
++    if callable(codec):
++        return _b_t2_plain(codec())
++    model_dump = getattr(value, "model_dump", None)
++    if callable(model_dump):
++        return _b_t2_plain(model_dump(mode="json"))
+     if is_dataclass(value) and not isinstance(value, type):
+-        return _b_t2_plain(asdict(value))
++        return {item.name: _b_t2_plain(getattr(value, item.name)) for item in fields(value)}
+     if isinstance(value, datetime):
+         return value.isoformat()
+     if isinstance(value, Enum):
+         return value.value
+-    if hasattr(value, "to_payload"):
+-        return _b_t2_plain(value.to_payload())
+-    if hasattr(value, "model_dump"):
+-        return value.model_dump(mode="json")
+-    if isinstance(value, dict):
++    if isinstance(value, Mapping):
+         return {str(key): _b_t2_plain(item) for key, item in value.items()}
+     if isinstance(value, (list, tuple)):
+         return [_b_t2_plain(item) for item in value]
+@@ -4709,17 +4714,29 @@
+     # All these are complete concrete model inputs. Their diagnostic UTC is never a local lease.
+     for model in (event, replan, apply, message, replacement, response, failure, completion, ack, contract):
+         assert type(model).model_validate_json(model.model_dump_json()) == model
+-    promotions = [item["promotion"] for item in runtime.bootstrap.to_payload()["payload"]["history"]
+-                  if "promotion" in item]
++    bootstrap_raw = runtime.bootstrap.to_payload()
++    history = bootstrap_raw["payload"]["history"]
++    assert all(set(item) == {"request", "decision", "transaction", "resulting_record_hash"}
++               for item in history)
++    promotions = [item["request"] for item in history
++                  if item["request"]["schema_version"] == "visual.bootstrap.promotion.local.v1"]
+     assert len(promotions) == 1
+     promotion = VisualBootstrapPromotionInput.from_payload(promotions[0])
++    assert promotion.to_payload() == promotions[0]
++    assert promotion.to_payload()["original_time"] == bootstrap_raw["original_time"]
+     online = OnlineEvidenceSnapshot(
+         observation, robot, {}, contract.plan_version, contract.command_seq, checkpoint.checkpoint_hash
+     )
+     route_payload = {
+         "schema_version": "visual.verification.route-input.local.v1",
+         "payload": {"scope": "SOURCE_ROUTE_ONLY", "original": original.to_payload(),
+-                    "publication": publication.to_payload(), "online": _b_t2_writer_json(online),
++                    "publication": publication.to_payload(), "online": {
++                        "observation": _b_t2_writer_json(online.observation),
++                        "robot_state": _b_t2_writer_json(online.robot_state),
++                        "visual_facts": _b_t2_writer_json(online.visual_facts),
++                        "plan_version": online.plan_version, "command_seq": online.command_seq,
++                        "context_hash": online.context_hash,
++                    },
+                     "step_id": checkpoint.current_step_id, "attempt": 1, "phase": "PRECONDITION",
+                     "event_key": "t2-writer-route", "execution_contract": contract.model_dump(mode="json"),
+                     "completion": None, "grounding_receipt": None},
+@@ -4769,10 +4786,16 @@
+     visual = VisualEvidence(observation.observation_id, observation.calibration_version,
+                             observation.captured_at, 0.001, 0.0, "CONFIRMED", "VALID")
+     requirement = data["original"].requirements[recovery.step_id]
+-    action = ActionEvidenceContract(visual, requirement.ordinary_ttl_s, requirement.required_accuracy_m,
+-                                    requirement.sensor_requirements, requirement.preconditions,
+-                                    requirement.postconditions, contract.plan_version, contract.command_seq,
+-                                    data["checkpoint"].checkpoint_hash)
++    assert data["original"].contract == contract
++    step = next(item for item in contract.steps if item.step_id == recovery.step_id)
++    assert requirement.expected_duration_s >= max(step.timeout_ms, step.expected_duration_ms) / 1000
++    action = ActionEvidenceContract(
++        evidence=visual, expected_duration_s=requirement.expected_duration_s,
++        ordinary_ttl_s=requirement.ordinary_ttl_s, allowed_error_m=requirement.required_accuracy_m,
++        sensor_requirements=requirement.sensor_requirements, preconditions=requirement.preconditions,
++        postconditions=requirement.postconditions, plan_version=contract.plan_version,
++        command_seq=contract.command_seq, context_hash=data["checkpoint"].checkpoint_hash,
++    )
+     decision = DecisionEnvelope(
+         "t2-CPU-data-not-private-permission", contract.task_id, publication.identity.episode_id,
+         observation.observation_id, contract.plan_version, contract.command_seq, contract.scene_version,

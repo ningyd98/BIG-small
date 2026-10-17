@@ -1,0 +1,47 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round133-p6-report-pin-coordinate-repair-20261011/implementation/before-script.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round131-p6-test-report-count-recovery-20261011/implementation/generate-report.py
+@@ -176,13 +176,30 @@
+     selected = [path for path in owned if path != TEST_RELATIVE]
+     require(selected == PRODUCTION, 'Exact ordered five-production selection mismatch')
+     production = []
++    production_pin_mapping = []
++    resolved_production = []
+     for relative in selected:
+         absolute = str(WORKSPACE / relative)
+-        records = [pin for pin in p129['inputs'] if pin['path'] == absolute]
+-        require(len(records) == 1, 'Exact R129 input record count: ' + absolute)
++        records = [pin for pin in p129['inputs'] if pin['path'] == relative]
++        require(len(records) == 1, 'Exact relative R129 input record count: ' + relative)
++        raw = records[0]
++        resolved_raw = (WORKSPACE / raw['path']).resolve(strict=True)
++        resolved_current = (WORKSPACE / relative).resolve(strict=True)
++        require(resolved_raw == resolved_current and resolved_current.is_relative_to(WORKSPACE.resolve(strict=True)),
++                'R129 raw-to-current resolved file identity mismatch: ' + relative)
++        require(resolved_current not in resolved_production, 'Duplicate resolved production identity: ' + relative)
++        resolved_production.append(resolved_current)
+         actual = receipt(absolute)
+-        require(actual == records[0] and actual == pinned[absolute], 'Production pin mismatch: ' + absolute)
++        require(actual['bytes'] == raw['bytes'] and actual['sha256'] == raw['sha256'],
++                'R129 production content pin mismatch: ' + relative)
++        require(actual == pinned[absolute], 'R131 absolute production pin mismatch: ' + absolute)
+         production.append(actual)
++        production_pin_mapping.append({'raw_coordinate_system': 'R129 repository-relative original pin',
++                                       'raw_R129_pin': raw,
++                                       'normalized_coordinate_system': 'R131 absolute current receipt',
++                                       'normalized_current_receipt': actual,
++                                       'raw_record_resolved_absolute': str(resolved_raw),
++                                       'expected_current_resolved_absolute': str(resolved_current)})
+     protected = receipt(WORKSPACE / PROTECTED)
+     require(protected == pinned[protected['path']], 'Protected state-machine pin mismatch')
+     require(protected['path'] not in {row['path'] for row in production}, 'Protected file included as production')
+@@ -254,7 +271,9 @@
+                             'current_test': receipt(current_path, after_bytes), 'limited_diff': receipt(diff_path),
+                             'current_equals_after': True, 'diff_checked_in_memory_only': True,
+                             'R129_test_edits_already_saved': True, 'recovery_product_or_test_writes': 0,
+-                            'unchanged_owned_production': production, 'protected_state_machine_separate': protected},
++                            'unchanged_owned_production': production,
++                            'production_pin_mapping': production_pin_mapping,
++                            'protected_state_machine_separate': protected},
+         'repairs': {
+             'evidence_kind': 'source-only descriptions; pending ROOT full diff/text review, not runtime conclusions',
+             'changed_functions': changes,

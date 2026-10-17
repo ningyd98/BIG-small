@@ -1,0 +1,144 @@
+............................F.........                                   [100%]
+=================================== FAILURES ===================================
+_________________ test_r179_publication_history_getters[local] _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72c62a093770>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-green/test_r179_publication_history_0')
+variant = 'local'
+
+    @pytest.mark.parametrize("variant", ["local", "legacy"])
+    def test_r179_publication_history_getters(monkeypatch, tmp_path, variant):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+            LocalRetryBudgetRecord, LocalVerificationBudgetRecord, VerificationBudgetRecord,
+        )
+    
+        registries = _r179_registries()
+        before = [dict(registry) for registry in registries]
+        fixture = _r179_fixture(monkeypatch)
+        seed = copy.deepcopy(fixture["publication"])
+        if variant == "legacy":
+            source = fixture["legacy"]["data"]["publication"].to_payload()
+            seed["payload"]["verification_budget"] = copy.deepcopy(source["verification_budget"])
+            seed["payload"]["retry_budget"] = copy.deepcopy(source["retry_budget"])
+            seed["payload"]["publication_hash"] = _r179_publication_hash(seed)
+        domain = _r179_accepted(seed)
+        verification = domain.verification_budget_history
+        retry = domain.retry_budget_history
+        if variant == "local":
+            assert type(verification) is LocalVerificationBudgetRecord
+            assert type(retry) is LocalRetryBudgetRecord
+            assert verification.state.original_budget_reference == seed["original_time"]["verification_reference"]
+            assert retry.original_recovery_reference == seed["original_time"]["recovery_reference"]
+            for name, value in seed["payload"]["retry_budget"]["payload"].items():
+                assert getattr(retry, name) == value, name
+            with pytest.raises(ValueError, match="history"):
+                _ = domain.verification_budget
+            with pytest.raises(ValueError, match="history"):
+                _ = domain.retry_budget
+            exported = retry.to_payload()
+            exported["payload"]["event_retry_counts"]["caller"] = 1
+            assert retry.to_payload() == seed["payload"]["retry_budget"]
+            derived = retry.original_recovery_reference
+            derived["window_id"] = "caller"
+            assert retry.original_recovery_reference == seed["original_time"]["recovery_reference"]
+        else:
+            assert type(verification) is VerificationBudgetRecord
+            assert type(retry) is RecoveryBudget
+            assert domain.verification_budget.to_payload() == verification.to_payload()
+            assert domain.retry_budget.model_dump(mode="json") == retry.model_dump(mode="json")
+        for key in ("verification_budget", "retry_budget"):
+            changed = copy.deepcopy(seed)
+            changed["payload"][key]["schema_version"] = "unsupported.r179.v1"
+            changed["payload"]["publication_hash"] = _r179_publication_hash(changed)
+            with pytest.raises(ValueError, match="tag|schema|source|publication|budget|field|semantic"):
+>               _r179_accepted(changed)
+
+tests/test_operational_runtime_closure.py:3433: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:2970: in _r179_accepted
+    decoded = LocalEnvelope.from_payload(record)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:1748: in from_payload
+    _semantic(tag, body, original, diagnostics,
+src/cloud_edge_robot_arm/vision/local_temporal.py:1532: in _semantic
+    _publication_body(body, local_original=original)
+src/cloud_edge_robot_arm/vision/local_temporal.py:541: in _publication_body
+    retry_task = strict_retry(_model(retry_raw, RecoveryBudget)).task_id
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = {'decision': {'app_current': {'domain': {'accuracy_status': 'UNVERIFIED', 'api': 'Linux time.clock_gettime_ns(time.CLO...58-legacy-original-retry', 'effective_retry_limit': 2, 'event_retry_counts': {}, 'per_skill_retry_limit': 2, ...}, ...}
+model = <class 'cloud_edge_robot_arm.contracts.models.RecoveryBudget'>
+
+    def _model[Model: BaseModel](value: JSONValue, model: type[Model]) -> Model:
+>       parsed = model.model_validate_json(_canonical(value))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RecoveryBudget
+E       task_id
+E         Field required [type=missing, input_value={'decision': {'app_curren...cation-transaction.v1'}}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+src/cloud_edge_robot_arm/vision/local_temporal.py:407: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72c62a093770>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-green/test_r179_publication_history_0')
+variant = 'local'
+
+    @pytest.mark.parametrize("variant", ["local", "legacy"])
+    def test_r179_publication_history_getters(monkeypatch, tmp_path, variant):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+            LocalRetryBudgetRecord, LocalVerificationBudgetRecord, VerificationBudgetRecord,
+        )
+    
+        registries = _r179_registries()
+        before = [dict(registry) for registry in registries]
+        fixture = _r179_fixture(monkeypatch)
+        seed = copy.deepcopy(fixture["publication"])
+        if variant == "legacy":
+            source = fixture["legacy"]["data"]["publication"].to_payload()
+            seed["payload"]["verification_budget"] = copy.deepcopy(source["verification_budget"])
+            seed["payload"]["retry_budget"] = copy.deepcopy(source["retry_budget"])
+            seed["payload"]["publication_hash"] = _r179_publication_hash(seed)
+        domain = _r179_accepted(seed)
+        verification = domain.verification_budget_history
+        retry = domain.retry_budget_history
+        if variant == "local":
+            assert type(verification) is LocalVerificationBudgetRecord
+            assert type(retry) is LocalRetryBudgetRecord
+            assert verification.state.original_budget_reference == seed["original_time"]["verification_reference"]
+            assert retry.original_recovery_reference == seed["original_time"]["recovery_reference"]
+            for name, value in seed["payload"]["retry_budget"]["payload"].items():
+                assert getattr(retry, name) == value, name
+            with pytest.raises(ValueError, match="history"):
+                _ = domain.verification_budget
+            with pytest.raises(ValueError, match="history"):
+                _ = domain.retry_budget
+            exported = retry.to_payload()
+            exported["payload"]["event_retry_counts"]["caller"] = 1
+            assert retry.to_payload() == seed["payload"]["retry_budget"]
+            derived = retry.original_recovery_reference
+            derived["window_id"] = "caller"
+            assert retry.original_recovery_reference == seed["original_time"]["recovery_reference"]
+        else:
+            assert type(verification) is VerificationBudgetRecord
+            assert type(retry) is RecoveryBudget
+            assert domain.verification_budget.to_payload() == verification.to_payload()
+            assert domain.retry_budget.model_dump(mode="json") == retry.model_dump(mode="json")
+        for key in ("verification_budget", "retry_budget"):
+            changed = copy.deepcopy(seed)
+            changed["payload"][key]["schema_version"] = "unsupported.r179.v1"
+            changed["payload"]["publication_hash"] = _r179_publication_hash(changed)
+>           with pytest.raises(ValueError, match="tag|schema|source|publication|budget|field|semantic"):
+E           AssertionError: Regex pattern did not match.
+E            Regex: 'tag|schema|source|publication|budget|field|semantic'
+E            Input: "1 validation error for RecoveryBudget\ntask_id\n  Field required [type=missing, input_value={'decision': {'app_curren...cation-transaction.v1'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+
+tests/test_operational_runtime_closure.py:3432: AssertionError
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round179-p6-t1-detached-causality-hash-audit-20261014/implementation/green/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_operational_runtime_closure.py::test_r179_publication_history_getters[local]
+1 failed, 37 passed in 18.07s

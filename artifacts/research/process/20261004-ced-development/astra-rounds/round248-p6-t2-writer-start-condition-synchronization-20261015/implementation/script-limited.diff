@@ -1,0 +1,629 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round248-p6-t2-writer-start-condition-synchronization-20261015/implementation/before/r242-prepare-evidence.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round248-p6-t2-writer-start-condition-synchronization-20261015/implementation/prepare-evidence.py
+@@ -1,4 +1,4 @@
+-"""R242/R245 once-only source baseline with explicit historical evidence loss."""
++"""R248 once-only source baseline with explicit historical evidence loss."""
+ from pathlib import Path
+ import base64
+ import hashlib
+@@ -9,7 +9,7 @@
+ import traceback
+ 
+ ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
+-D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round242-p6-t2-writer-barrier-condition-synchronization-20261015'
++D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round248-p6-t2-writer-start-condition-synchronization-20261015'
+ E = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round245-p6-t2-missing-temporary-evidence-continuation-20261015'
+ 
+ 
+@@ -52,35 +52,23 @@
+         raise ValueError('exclusive metadata readback differs')
+ 
+ 
+-def commands(plan, overlay):
+-    result = json.loads(json.dumps(plan['commands']))
+-    change = overlay['execution_override']['replace_exact_child_argument']
+-    for row in result:
+-        if row['id'] == 'red':
+-            if row['child_argv'].count(change['old']) != 1:
+-                raise ValueError('one exact persistent basetemp overlay required')
+-            row['child_argv'] = [change['new'] if value == change['old'] else value for value in row['child_argv']]
+-    return result
+-
+ 
+ def verify_contract(plan, gate):
+-    overlay = json.loads(fixed(gate['overlay_plan_pin']))
+-    missing_observation = json.loads(fixed(gate['overlay_observation_pin']))
+     observation = json.loads(fixed(plan['inputs']['observation']))
+-    source = json.loads(fixed(observation['protected_authority']['index']))
+-    findings = json.loads(fixed(plan['inputs']['root_final_findings']))
+-    if (len(source['sources']) != 27 or len(source['protected']) != 211
+-            or len(source['input_records']) != 419 or len(source['history']) != 321):
+-        raise ValueError('exact original27/211/419/321 authority required')
+-    registry = {}
+-    for row in missing_observation['known_missing']:
++    source = json.loads(fixed(plan['inputs']['current_baseline']))
++    if (len(source['sources']) != 27 or len(source['protected']) != 211 or len(source['scripts']) != 3
++            or len(source['history_observations']) != 812 or len(source['explicit_maps']) != 13
++            or len(source['input_records']) != 28 or len(observation['inputs']) != 344):
++        raise ValueError('actual R24227/211/3/812/13/28 and R248344 schema required')
++    registry, missing = {}, []
++    for row in observation['known_missing']:
+         original, authority = row['original'], row['authority']
+         if key(original) in registry or row['disposition'] != 'HISTORICAL_BYTES_CURRENTLY_UNAVAILABLE_R245':
+-            raise ValueError('unique exact unavailable original identity required')
++            raise ValueError('unique exact historical unavailable identity required')
+         container = json.loads(fixed(authority['pin']))
+         ordinal, selector = authority['ordinal'], authority['selector']
+         if type(ordinal) is not int or ordinal < 0:
+-            raise ValueError('explicit nonnegative ordinal required')
++            raise ValueError('exact nonnegative authority ordinal required')
+         if selector == 'input_records':
+             values = container['input_records']
+             if type(values) is not list or ordinal >= len(values):
+@@ -88,115 +76,138 @@
+             authoritative = values[ordinal]
+         elif selector == 'new_retained_databases.pin':
+             values = container['new_retained_databases']
+-            if type(values) is not list or ordinal >= len(values) or type(values[ordinal]) is not dict:
++            if type(values) is not list or ordinal >= len(values):
+                 raise ValueError('new database authority range differs')
+             authoritative = values[ordinal]['pin']
+         else:
+-            raise ValueError('unknown exact unavailable selector')
++            raise ValueError('unrecognized exact authority selector')
+         if identity(authoritative) != identity(original):
+-            raise ValueError('registered original differs from authoritative exact selector')
+-        registry[key(original)] = row
+-    if len(registry) != 35:
+-        raise ValueError('exact35 unavailable identities required')
+-    missing = []
+-    for row in registry.values():
+-        path = Path(row['original']['path'])
++            raise ValueError('historical registry exact original differs')
++        path = Path(original['path'])
+         try:
+             path.lstat()
+         except FileNotFoundError:
+             pass
+         else:
+-            raise ValueError('registered unavailable path appeared; provenance review required: ' + str(path))
+-        missing.append({'original': row['original'], 'authority': row['authority'],
+-                        'disposition': row['disposition'], 'current_exists': False,
+-                        'current_is_symlink': False, 'current_bytes': None, 'current_sha256': None,
+-                        'hash_match': None})
++            raise ValueError('historical unavailable path reappeared; provenance review required')
++        registry[key(original)] = row
++        missing.append({'original': original, 'authority': authority, 'disposition': row['disposition'],
++                        'current_exists': False, 'current_is_symlink': False,
++                        'current_bytes': None, 'current_sha256': None, 'hash_match': None})
++    if len(registry) != 35:
++        raise ValueError('exact35 unavailable identities required')
++    pairs = (observation['history_authority']['explicit_maps']
++             + [observation['additional_fixture_generation']] + observation['R242_final_settlement_maps'])
++    if (len(observation['history_authority']['explicit_maps']) != 13
++            or len(observation['R242_final_settlement_maps']) != 7):
++        raise ValueError('exact inherited13 plus c14 plus final7 maps required')
++    allowed = {str(ROOT / 'artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007' / name)
++               for name in ('active-t12-state.json', 'phase-summary.md')}
++    allowed.update(str(D / name) for name in ('script-gate.json', 'source-gate.json', 'root-activation.json',
++                                              'command-ledger.json', 'root-command-ledger.json'))
++    for pair in gate['context_history']:
++        if pair['original']['path'] not in allowed:
++            raise ValueError('extra mapping outside authorized mutable context')
++        pairs.append(pair)
+     mappings = {}
+-    for entry in source['resolved_history']['entries']:
+-        if entry['resolution']['kind'] not in {'CURRENT_EXACT_BYTES', 'EXACT_PHYSICAL_BEFORE'}:
+-            raise ValueError('unknown inherited explicit mapping kind')
+-        mappings[key(entry['original'])] = entry['resolution']['pin']
+-    pairs = [observation['frozen_fixture_archive']] + observation['explicit_R239_settlement_history']
+-    if len(observation['explicit_R239_settlement_history']) != 7:
+-        raise ValueError('exact seven R239 settlement maps required')
+-    allowed_context = {str(ROOT / 'artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007' / name)
+-                       for name in ('active-t12-state.json', 'phase-summary.md')}
+-    allowed_context.update(str(D / name) for name in
+-                           ('source-gate.json', 'script-gate.json', 'root-activation.json',
+-                            'command-ledger.json', 'root-command-ledger.json'))
+-    for pair in gate['context_history']:
+-        if pair['original']['path'] not in allowed_context:
+-            raise ValueError('context archive outside explicitly mutable paths')
+-        pairs.append(pair)
+     for pair in pairs:
+         raw = fixed(pair['archive'])
+         if (len(raw), hashlib.sha256(raw).hexdigest()) != (pair['original']['bytes'], pair['original']['sha256']):
+-            raise ValueError('full physical original/archive byte equivalence differs')
++            raise ValueError('full physical original/archive equivalence differs')
+         mappings[key(pair['original'])] = identity(pair['archive'])
+     observations = []
+-    def historical(row, origin):
+-        if key(row) in registry:
+-            observations.append({'original': identity(row), 'origin': origin,
++    def historical(original, origin, resolved=None):
++        if key(original) in registry:
++            observations.append({'original': identity(original), 'origin': origin,
+                                  'classification': 'HISTORICAL_BYTES_CURRENTLY_UNAVAILABLE_R245',
+                                  'hash_match': None})
+-            return
+-        target = mappings.get(key(row), row)
++            return None
++        target = mappings.get(key(original), mappings.get(key(resolved), resolved) if resolved is not None else original)
+         raw = fixed(target)
+-        if (len(raw), hashlib.sha256(raw).hexdigest()) != (row['bytes'], row['sha256']):
+-            raise ValueError('historical mapped bytes differ')
+-        observations.append({'original': identity(row), 'origin': origin, 'resolved': identity(target),
+-                             'classification': 'VERIFIED_ARCHIVED' if target['path'] != row['path'] else 'CURRENT_EXACT',
++        if (len(raw), hashlib.sha256(raw).hexdigest()) != (original['bytes'], original['sha256']):
++            raise ValueError('exact mapped historical bytes differ')
++        observations.append({'original': identity(original), 'origin': origin, 'resolved': identity(target),
++                             'classification': 'VERIFIED_ARCHIVED' if target['path'] != original['path'] else 'CURRENT_EXACT',
+                              'hash_match': True})
+-    for name, rows in [('input_records419', source['input_records']), ('history321', source['history']),
+-                       ('inherited_documents', source['resolved_history']['documents']),
+-                       ('original_inputs', observation['inputs']), ('overlay_inputs', missing_observation['inputs']),
+-                       ('immutable_raw', observation['immutable_raw']), ('context', list(observation['context_only'].values())),
++        return raw
++    for name, rows in [('inputs344', observation['inputs']), ('baseline_inputs28', source['input_records']),
++                       ('current_context', [observation['current_final_context']['STATE'],
++                                            observation['current_final_context']['PHASE']]
++                        + observation['current_final_context']['controls']),
+                        ('gate_fixed_inputs', gate['input_records'])]:
+         for ordinal, row in enumerate(rows):
+-            historical(row, {'list': name, 'ordinal': ordinal})
+-    fixture = Path(observation['frozen_fixture_archive']['original']['path'])
++            raw = historical(row, {'list': name, 'ordinal': ordinal})
++            if raw is not None and row['path'].endswith('/invocation.json'):
++                invocation = json.loads(raw)
++                for control in invocation.get('controls_before', []):
++                    decoded = base64.b64decode(control['base64'], validate=True)
++                    if file_pin(Path(control['path']), decoded) != identity(control):
++                        raise ValueError('invocation own exact recorded control generation differs')
++    for ordinal, row in enumerate(source['history_observations']):
++        if key(row['original']) in registry:
++            if row['hash_match'] is not None:
++                raise ValueError('unavailable historical hash cannot become true')
++            historical(row['original'], {'list': 'history_observations812', 'ordinal': ordinal})
++        else:
++            historical(row['original'], {'list': 'history_observations812', 'ordinal': ordinal}, row['resolved'])
++    fixture = Path(plan['scope']['modified_existing'][0])
+     before = fixed(gate['fixture_before_pin'])
+-    if before != fixed(observation['frozen_fixture_archive']['archive']):
+-        raise ValueError('fixture physical before differs from accepted complete archive')
++    if before != fixed(observation['additional_fixture_generation']['archive']):
++        raise ValueError('c14 complete fixture before differs from physical authority')
+     delta = plan['scope']['exact_change']
+     old, new = delta['before'].encode(), delta['after'].encode()
+     after = fixture.read_bytes()
+     if (before.count(old) != 1 or after != before.replace(old, new, 1)
+             or len(after) != delta['expected_after_bytes']
+             or hashlib.sha256(after).hexdigest() != delta['expected_after_sha256']):
+-        raise ValueError('exact whole fixture two-byte delta differs')
++        raise ValueError('unique whole fixture start wait2B delta differs')
+     for row in source['sources']:
+         raw = base64.b64decode(row['base64'], validate=True)
+-        if file_pin(Path(row['path']), raw) != identity(row):
+-            raise ValueError('original source fullbase64 identity differs')
+-        if fixed(row['physical']) != raw:
+-            raise ValueError('R239 full physical original source differs')
+-        current = Path(row['path']).read_bytes()
+-        if current != (after if row['path'] == str(fixture) else raw):
+-            raise ValueError('current source outside single fixture delta differs')
++        if file_pin(Path(row['path']), raw) != identity(row) or fixed(row['physical']) != raw:
++            raise ValueError('actual R242 physical/base64 source identity differs')
++        if Path(row['path']).read_bytes() != (after if row['path'] == str(fixture) else raw):
++            raise ValueError('unapproved current source byte difference')
+         if Path(row['path']).stat().st_mode != row['mode']:
+-            raise ValueError('source mode differs')
+-    for row in source['protected']:
++            raise ValueError('current source mode differs')
++    if len(observation['current_sources']) != 27 or len(observation['protected']) != 211:
++        raise ValueError('current27/protected211 observation required')
++    for row in observation['current_sources']:
++        if fixed(row['physical']) != base64.b64decode(next(
++                item['base64'] for item in source['sources'] if item['path'] == row['original']['path']), validate=True):
++            raise ValueError('observed current source complete physical generation differs')
++    for row in observation['protected'] + source['protected']:
+         fixed(row)
+     for row in source['scripts']:
+         if fixed(row) != base64.b64decode(row['base64'], validate=True):
+-            raise ValueError('old script full byte generation differs')
+-    databases = source['retained_databases'] + findings['new_retained_databases']
+-    sidecars = source['absent_sidecars'] + [item for row in findings['new_retained_databases'] for item in row['sidecars']]
+-    if (len(databases) != 30 or len({key(row['pin']) for row in databases}) != 30
+-            or any(key(row['pin']) not in registry for row in databases)
+-            or len(sidecars) != 90 or len({row['path'] for row in sidecars}) != 90):
+-        raise ValueError('exact missing30 databases and90 sidecars required')
++            raise ValueError('frozen parent script full bytes differ')
++    sidecars = observation['old_absent_sidecars']
++    if len(sidecars) != 90 or len({row['path'] for row in sidecars}) != 90:
++        raise ValueError('exact90 historical sidecar paths required')
+     for row in sidecars:
+         path = Path(row['path'])
+         if row['exists'] is not False or path.exists() or path.is_symlink():
+-            raise ValueError('recorded old sidecar absence differs')
++            raise ValueError('old90 sidecar state differs')
++    databases = observation['R242_current_persistent_databases']
++    if len(databases) != 6 or len({row['pin']['path'] for row in databases}) != 6:
++        raise ValueError('six current persistent R242 databases required')
++    count = 0
++    for row in databases:
++        fixed(row['pin'])
++        if key(row['pin']) in registry:
++            raise ValueError('current persistent DB cannot use historical missing exception')
++        for side in row['sidecars']:
++            path = Path(side['path'])
++            if (side['exists'] is not False or side['is_symlink'] is not False
++                    or path.exists() or path.is_symlink()):
++                raise ValueError('current R242 database sidecar state differs')
++            count += 1
++    if count != 18:
++        raise ValueError('exact18 current R242 sidecar states required')
+     return {'status': 'ACCEPTED_FOR_BOUNDED_NEW_RUN_WITH_DECLARED_HISTORICAL_EVIDENCE_LOSS',
+-            'source': source, 'observation': observation, 'overlay': overlay, 'missing_registry': missing,
++            'source': source, 'observation': observation, 'missing_registry': missing,
+             'history_observations': observations, 'explicit_maps': pairs, 'sidecars': sidecars,
+-            'commands': commands(plan, overlay), 'fixture_after': file_pin(fixture),
+-            'all_historical_bytes_available': False}
+-
++            'current_R242_databases': databases, 'commands': plan['commands'],
++            'fixture_after': file_pin(fixture), 'all_historical_bytes_available': False}
+ 
+ def role_gate(key_name):
+     plan = read_json(D / 'plan.json')
+@@ -246,7 +257,7 @@
+             fixed(row)
+ 
+ def main():
+-    signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError('R242 baseline120s')))
++    signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError('R248 baseline120s')))
+     signal.alarm(120)
+     plan, gate, author, entry, controls, raw_roles = role_gate('baseline')
+     verified = verify_contract(plan, gate)
+@@ -276,7 +287,7 @@
+     fixture_after = Path(verified['fixture_after']['path']).read_bytes()
+     artifacts[out / 'fixture-before.py'] = fixture_before
+     artifacts[out / 'fixture-after.py'] = fixture_after
+-    snapshot = {'round': 'R242', 'overlay': 'R245', 'sources': source_rows,
++    snapshot = {'round': 'R248', 'overlay': 'R245', 'sources': source_rows,
+                 'protected': verified['source']['protected'], 'scripts': scripts,
+                 'historical_registry': verified['missing_registry'],
+                 'history_observations': verified['history_observations'], 'explicit_maps': verified['explicit_maps'],
+@@ -287,7 +298,7 @@
+     artifacts[out / 'source-index.json'] = encoded(snapshot)
+     artifacts[out / 'historical-unavailable.json'] = encoded({'registry': verified['missing_registry'],
+          'all_historical_bytes_available': False, 'status': verified['status']})
+-    invocation = {'round': 'R242', 'overlay': 'R245', 'command': 'baseline',
++    invocation = {'round': 'R248', 'overlay': 'R245', 'command': 'baseline',
+                   'argv': command['launcher_argv'], 'launcher_argv': command['launcher_argv'],
+                   'cwd': command['cwd'], 'finite_env': command['finite_env'], 'timeout_seconds': 120,
+                   'attempt': 1, 'retry': 0, 'reservation_id': gate['reservation_id'],
+@@ -304,7 +315,7 @@
+         fixed(row)
+     post_controls(controls, author)
+     files = [path for path in out.rglob('*') if path.is_file() and not path.is_symlink()]
+-    result = {'round': 'R242', 'overlay': 'R245', 'command': 'baseline', 'exit_code': 0,
++    result = {'round': 'R248', 'overlay': 'R245', 'command': 'baseline', 'exit_code': 0,
+               'attempt': 1, 'retry': 0, 'test_execution': False, 'product_commands': 0,
+               'qualification': post['status'], 'all_historical_bytes_available': False,
+               'candidate': file_pin(out / 'source-index.json'), 'outputs': [file_pin(path) for path in sorted(files)],
+@@ -320,14 +331,14 @@
+ if __name__ == '__main__':
+     try:
+         if sys.argv != [str(D / 'implementation/prepare-evidence.py'), 'baseline']:
+-            raise ValueError('exact R242 baseline launcher required')
++            raise ValueError('exact R248 baseline launcher required')
+         main()
+     except BaseException as error:
+         signal.alarm(0)
+         out = D / 'implementation/baseline'
+         out.mkdir(parents=True, exist_ok=True)
+         if not (out / 'result.json').exists():
+-            save(out / 'result.json', {'round': 'R242', 'command': 'baseline', 'exit_code': 1,
++            save(out / 'result.json', {'round': 'R248', 'command': 'baseline', 'exit_code': 1,
+                  'attempt': 1, 'retry': 0, 'exception': {'type': type(error).__name__, 'message': str(error),
+                  'traceback': traceback.format_exc()}, 'runtime_evidence': None})
+         print(json.dumps({'command': 'baseline', 'exit_code': 1, 'result_pin': file_pin(out / 'result.json')},
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round248-p6-t2-writer-start-condition-synchronization-20261015/implementation/before/r242-run-command.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round248-p6-t2-writer-start-condition-synchronization-20261015/implementation/run-command.py
+@@ -1,4 +1,4 @@
+-"""R242/R245 once-only Ruff and genuine race RED with explicit historical evidence loss."""
++"""R248 once-only Ruff and genuine race RED with explicit historical evidence loss."""
+ from pathlib import Path
+ import base64
+ import hashlib
+@@ -9,7 +9,7 @@
+ import traceback
+ 
+ ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
+-D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round242-p6-t2-writer-barrier-condition-synchronization-20261015'
++D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round248-p6-t2-writer-start-condition-synchronization-20261015'
+ E = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round245-p6-t2-missing-temporary-evidence-continuation-20261015'
+ 
+ 
+@@ -52,35 +52,23 @@
+         raise ValueError('exclusive metadata readback differs')
+ 
+ 
+-def commands(plan, overlay):
+-    result = json.loads(json.dumps(plan['commands']))
+-    change = overlay['execution_override']['replace_exact_child_argument']
+-    for row in result:
+-        if row['id'] == 'red':
+-            if row['child_argv'].count(change['old']) != 1:
+-                raise ValueError('one exact persistent basetemp overlay required')
+-            row['child_argv'] = [change['new'] if value == change['old'] else value for value in row['child_argv']]
+-    return result
+-
+ 
+ def verify_contract(plan, gate):
+-    overlay = json.loads(fixed(gate['overlay_plan_pin']))
+-    missing_observation = json.loads(fixed(gate['overlay_observation_pin']))
+     observation = json.loads(fixed(plan['inputs']['observation']))
+-    source = json.loads(fixed(observation['protected_authority']['index']))
+-    findings = json.loads(fixed(plan['inputs']['root_final_findings']))
+-    if (len(source['sources']) != 27 or len(source['protected']) != 211
+-            or len(source['input_records']) != 419 or len(source['history']) != 321):
+-        raise ValueError('exact original27/211/419/321 authority required')
+-    registry = {}
+-    for row in missing_observation['known_missing']:
++    source = json.loads(fixed(plan['inputs']['current_baseline']))
++    if (len(source['sources']) != 27 or len(source['protected']) != 211 or len(source['scripts']) != 3
++            or len(source['history_observations']) != 812 or len(source['explicit_maps']) != 13
++            or len(source['input_records']) != 28 or len(observation['inputs']) != 344):
++        raise ValueError('actual R24227/211/3/812/13/28 and R248344 schema required')
++    registry, missing = {}, []
++    for row in observation['known_missing']:
+         original, authority = row['original'], row['authority']
+         if key(original) in registry or row['disposition'] != 'HISTORICAL_BYTES_CURRENTLY_UNAVAILABLE_R245':
+-            raise ValueError('unique exact unavailable original identity required')
++            raise ValueError('unique exact historical unavailable identity required')
+         container = json.loads(fixed(authority['pin']))
+         ordinal, selector = authority['ordinal'], authority['selector']
+         if type(ordinal) is not int or ordinal < 0:
+-            raise ValueError('explicit nonnegative ordinal required')
++            raise ValueError('exact nonnegative authority ordinal required')
+         if selector == 'input_records':
+             values = container['input_records']
+             if type(values) is not list or ordinal >= len(values):
+@@ -88,115 +76,138 @@
+             authoritative = values[ordinal]
+         elif selector == 'new_retained_databases.pin':
+             values = container['new_retained_databases']
+-            if type(values) is not list or ordinal >= len(values) or type(values[ordinal]) is not dict:
++            if type(values) is not list or ordinal >= len(values):
+                 raise ValueError('new database authority range differs')
+             authoritative = values[ordinal]['pin']
+         else:
+-            raise ValueError('unknown exact unavailable selector')
++            raise ValueError('unrecognized exact authority selector')
+         if identity(authoritative) != identity(original):
+-            raise ValueError('registered original differs from authoritative exact selector')
+-        registry[key(original)] = row
+-    if len(registry) != 35:
+-        raise ValueError('exact35 unavailable identities required')
+-    missing = []
+-    for row in registry.values():
+-        path = Path(row['original']['path'])
++            raise ValueError('historical registry exact original differs')
++        path = Path(original['path'])
+         try:
+             path.lstat()
+         except FileNotFoundError:
+             pass
+         else:
+-            raise ValueError('registered unavailable path appeared; provenance review required: ' + str(path))
+-        missing.append({'original': row['original'], 'authority': row['authority'],
+-                        'disposition': row['disposition'], 'current_exists': False,
+-                        'current_is_symlink': False, 'current_bytes': None, 'current_sha256': None,
+-                        'hash_match': None})
++            raise ValueError('historical unavailable path reappeared; provenance review required')
++        registry[key(original)] = row
++        missing.append({'original': original, 'authority': authority, 'disposition': row['disposition'],
++                        'current_exists': False, 'current_is_symlink': False,
++                        'current_bytes': None, 'current_sha256': None, 'hash_match': None})
++    if len(registry) != 35:
++        raise ValueError('exact35 unavailable identities required')
++    pairs = (observation['history_authority']['explicit_maps']
++             + [observation['additional_fixture_generation']] + observation['R242_final_settlement_maps'])
++    if (len(observation['history_authority']['explicit_maps']) != 13
++            or len(observation['R242_final_settlement_maps']) != 7):
++        raise ValueError('exact inherited13 plus c14 plus final7 maps required')
++    allowed = {str(ROOT / 'artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007' / name)
++               for name in ('active-t12-state.json', 'phase-summary.md')}
++    allowed.update(str(D / name) for name in ('script-gate.json', 'source-gate.json', 'root-activation.json',
++                                              'command-ledger.json', 'root-command-ledger.json'))
++    for pair in gate['context_history']:
++        if pair['original']['path'] not in allowed:
++            raise ValueError('extra mapping outside authorized mutable context')
++        pairs.append(pair)
+     mappings = {}
+-    for entry in source['resolved_history']['entries']:
+-        if entry['resolution']['kind'] not in {'CURRENT_EXACT_BYTES', 'EXACT_PHYSICAL_BEFORE'}:
+-            raise ValueError('unknown inherited explicit mapping kind')
+-        mappings[key(entry['original'])] = entry['resolution']['pin']
+-    pairs = [observation['frozen_fixture_archive']] + observation['explicit_R239_settlement_history']
+-    if len(observation['explicit_R239_settlement_history']) != 7:
+-        raise ValueError('exact seven R239 settlement maps required')
+-    allowed_context = {str(ROOT / 'artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007' / name)
+-                       for name in ('active-t12-state.json', 'phase-summary.md')}
+-    allowed_context.update(str(D / name) for name in
+-                           ('source-gate.json', 'script-gate.json', 'root-activation.json',
+-                            'command-ledger.json', 'root-command-ledger.json'))
+-    for pair in gate['context_history']:
+-        if pair['original']['path'] not in allowed_context:
+-            raise ValueError('context archive outside explicitly mutable paths')
+-        pairs.append(pair)
+     for pair in pairs:
+         raw = fixed(pair['archive'])
+         if (len(raw), hashlib.sha256(raw).hexdigest()) != (pair['original']['bytes'], pair['original']['sha256']):
+-            raise ValueError('full physical original/archive byte equivalence differs')
++            raise ValueError('full physical original/archive equivalence differs')
+         mappings[key(pair['original'])] = identity(pair['archive'])
+     observations = []
+-    def historical(row, origin):
+-        if key(row) in registry:
+-            observations.append({'original': identity(row), 'origin': origin,
++    def historical(original, origin, resolved=None):
++        if key(original) in registry:
++            observations.append({'original': identity(original), 'origin': origin,
+                                  'classification': 'HISTORICAL_BYTES_CURRENTLY_UNAVAILABLE_R245',
+                                  'hash_match': None})
+-            return
+-        target = mappings.get(key(row), row)
++            return None
++        target = mappings.get(key(original), mappings.get(key(resolved), resolved) if resolved is not None else original)
+         raw = fixed(target)
+-        if (len(raw), hashlib.sha256(raw).hexdigest()) != (row['bytes'], row['sha256']):
+-            raise ValueError('historical mapped bytes differ')
+-        observations.append({'original': identity(row), 'origin': origin, 'resolved': identity(target),
+-                             'classification': 'VERIFIED_ARCHIVED' if target['path'] != row['path'] else 'CURRENT_EXACT',
++        if (len(raw), hashlib.sha256(raw).hexdigest()) != (original['bytes'], original['sha256']):
++            raise ValueError('exact mapped historical bytes differ')
++        observations.append({'original': identity(original), 'origin': origin, 'resolved': identity(target),
++                             'classification': 'VERIFIED_ARCHIVED' if target['path'] != original['path'] else 'CURRENT_EXACT',
+                              'hash_match': True})
+-    for name, rows in [('input_records419', source['input_records']), ('history321', source['history']),
+-                       ('inherited_documents', source['resolved_history']['documents']),
+-                       ('original_inputs', observation['inputs']), ('overlay_inputs', missing_observation['inputs']),
+-                       ('immutable_raw', observation['immutable_raw']), ('context', list(observation['context_only'].values())),
++        return raw
++    for name, rows in [('inputs344', observation['inputs']), ('baseline_inputs28', source['input_records']),
++                       ('current_context', [observation['current_final_context']['STATE'],
++                                            observation['current_final_context']['PHASE']]
++                        + observation['current_final_context']['controls']),
+                        ('gate_fixed_inputs', gate['input_records'])]:
+         for ordinal, row in enumerate(rows):
+-            historical(row, {'list': name, 'ordinal': ordinal})
+-    fixture = Path(observation['frozen_fixture_archive']['original']['path'])
++            raw = historical(row, {'list': name, 'ordinal': ordinal})
++            if raw is not None and row['path'].endswith('/invocation.json'):
++                invocation = json.loads(raw)
++                for control in invocation.get('controls_before', []):
++                    decoded = base64.b64decode(control['base64'], validate=True)
++                    if file_pin(Path(control['path']), decoded) != identity(control):
++                        raise ValueError('invocation own exact recorded control generation differs')
++    for ordinal, row in enumerate(source['history_observations']):
++        if key(row['original']) in registry:
++            if row['hash_match'] is not None:
++                raise ValueError('unavailable historical hash cannot become true')
++            historical(row['original'], {'list': 'history_observations812', 'ordinal': ordinal})
++        else:
++            historical(row['original'], {'list': 'history_observations812', 'ordinal': ordinal}, row['resolved'])
++    fixture = Path(plan['scope']['modified_existing'][0])
+     before = fixed(gate['fixture_before_pin'])
+-    if before != fixed(observation['frozen_fixture_archive']['archive']):
+-        raise ValueError('fixture physical before differs from accepted complete archive')
++    if before != fixed(observation['additional_fixture_generation']['archive']):
++        raise ValueError('c14 complete fixture before differs from physical authority')
+     delta = plan['scope']['exact_change']
+     old, new = delta['before'].encode(), delta['after'].encode()
+     after = fixture.read_bytes()
+     if (before.count(old) != 1 or after != before.replace(old, new, 1)
+             or len(after) != delta['expected_after_bytes']
+             or hashlib.sha256(after).hexdigest() != delta['expected_after_sha256']):
+-        raise ValueError('exact whole fixture two-byte delta differs')
++        raise ValueError('unique whole fixture start wait2B delta differs')
+     for row in source['sources']:
+         raw = base64.b64decode(row['base64'], validate=True)
+-        if file_pin(Path(row['path']), raw) != identity(row):
+-            raise ValueError('original source fullbase64 identity differs')
+-        if fixed(row['physical']) != raw:
+-            raise ValueError('R239 full physical original source differs')
+-        current = Path(row['path']).read_bytes()
+-        if current != (after if row['path'] == str(fixture) else raw):
+-            raise ValueError('current source outside single fixture delta differs')
++        if file_pin(Path(row['path']), raw) != identity(row) or fixed(row['physical']) != raw:
++            raise ValueError('actual R242 physical/base64 source identity differs')
++        if Path(row['path']).read_bytes() != (after if row['path'] == str(fixture) else raw):
++            raise ValueError('unapproved current source byte difference')
+         if Path(row['path']).stat().st_mode != row['mode']:
+-            raise ValueError('source mode differs')
+-    for row in source['protected']:
++            raise ValueError('current source mode differs')
++    if len(observation['current_sources']) != 27 or len(observation['protected']) != 211:
++        raise ValueError('current27/protected211 observation required')
++    for row in observation['current_sources']:
++        if fixed(row['physical']) != base64.b64decode(next(
++                item['base64'] for item in source['sources'] if item['path'] == row['original']['path']), validate=True):
++            raise ValueError('observed current source complete physical generation differs')
++    for row in observation['protected'] + source['protected']:
+         fixed(row)
+     for row in source['scripts']:
+         if fixed(row) != base64.b64decode(row['base64'], validate=True):
+-            raise ValueError('old script full byte generation differs')
+-    databases = source['retained_databases'] + findings['new_retained_databases']
+-    sidecars = source['absent_sidecars'] + [item for row in findings['new_retained_databases'] for item in row['sidecars']]
+-    if (len(databases) != 30 or len({key(row['pin']) for row in databases}) != 30
+-            or any(key(row['pin']) not in registry for row in databases)
+-            or len(sidecars) != 90 or len({row['path'] for row in sidecars}) != 90):
+-        raise ValueError('exact missing30 databases and90 sidecars required')
++            raise ValueError('frozen parent script full bytes differ')
++    sidecars = observation['old_absent_sidecars']
++    if len(sidecars) != 90 or len({row['path'] for row in sidecars}) != 90:
++        raise ValueError('exact90 historical sidecar paths required')
+     for row in sidecars:
+         path = Path(row['path'])
+         if row['exists'] is not False or path.exists() or path.is_symlink():
+-            raise ValueError('recorded old sidecar absence differs')
++            raise ValueError('old90 sidecar state differs')
++    databases = observation['R242_current_persistent_databases']
++    if len(databases) != 6 or len({row['pin']['path'] for row in databases}) != 6:
++        raise ValueError('six current persistent R242 databases required')
++    count = 0
++    for row in databases:
++        fixed(row['pin'])
++        if key(row['pin']) in registry:
++            raise ValueError('current persistent DB cannot use historical missing exception')
++        for side in row['sidecars']:
++            path = Path(side['path'])
++            if (side['exists'] is not False or side['is_symlink'] is not False
++                    or path.exists() or path.is_symlink()):
++                raise ValueError('current R242 database sidecar state differs')
++            count += 1
++    if count != 18:
++        raise ValueError('exact18 current R242 sidecar states required')
+     return {'status': 'ACCEPTED_FOR_BOUNDED_NEW_RUN_WITH_DECLARED_HISTORICAL_EVIDENCE_LOSS',
+-            'source': source, 'observation': observation, 'overlay': overlay, 'missing_registry': missing,
++            'source': source, 'observation': observation, 'missing_registry': missing,
+             'history_observations': observations, 'explicit_maps': pairs, 'sidecars': sidecars,
+-            'commands': commands(plan, overlay), 'fixture_after': file_pin(fixture),
+-            'all_historical_bytes_available': False}
+-
++            'current_R242_databases': databases, 'commands': plan['commands'],
++            'fixture_after': file_pin(fixture), 'all_historical_bytes_available': False}
+ 
+ def role_gate(key_name):
+     plan = read_json(D / 'plan.json')
+@@ -605,7 +616,7 @@
+     for name in ('BIGSMALL_R223_RESOURCE_ROOT', 'BIGSMALL_R223_CASE_ROOT'):
+         if name in command['finite_env']:
+             Path(command['finite_env'][name]).mkdir(parents=True, exist_ok=False)
+-    invocation = {'round': 'R242', 'command': key, 'argv': command['argv'], 'launcher_argv': launcher,
++    invocation = {'round': 'R248', 'command': key, 'argv': command['argv'], 'launcher_argv': launcher,
+                   'cwd': str(ROOT), 'finite_env': command['finite_env'], 'timeout_seconds': command['timeout_seconds'],
+                   'cleanup_seconds': 15, 'attempt': 1, 'retry': 0, 'reservation_id': gate['reservation_id'],
+                   'source': gate['source'], 'script_gate': file_pin(D / 'script-gate.json'),
+@@ -738,7 +749,7 @@
+     wrapper_exit = child_exit if accepted else 1
+     streams = {name: file_pin(out / (name + '.txt')) if (out / (name + '.txt')).is_file() else None
+                for name in ('stdout', 'stderr')}
+-    result = {'round': 'R242', 'command': key, 'attempt': 1, 'retry': 0, 'child_pid': None if process is None else process.pid,
++    result = {'round': 'R248', 'command': key, 'attempt': 1, 'retry': 0, 'child_pid': None if process is None else process.pid,
+               'child_exit': child_exit, 'wrapper_exit': wrapper_exit, 'accepted_command_outcome': bool(accepted),
+               'timed_out': timed_out, 'cleanup': cleaned, 'JUnit': xml, 'resource_summary': resources,
+               'cases': case_records, 'streams': streams, 'input_records': gate['input_records'],
+@@ -762,13 +773,13 @@
+ if __name__ == '__main__':
+     try:
+         if len(sys.argv) != 2 or sys.argv[1] not in {'ruff', 'red'}:
+-            raise ValueError('exact R242 ruff|red launcher required')
++            raise ValueError('exact R248 ruff|red launcher required')
+         raise SystemExit(main(sys.argv[1]))
+     except Exception as error:
+         key_name = sys.argv[1] if len(sys.argv) == 2 else 'unknown'
+         out = D / 'implementation' / key_name
+         out.mkdir(parents=True, exist_ok=True)
+-        failure = {'round': 'R242', 'command': key_name, 'attempt': 1, 'retry': 0,
++        failure = {'round': 'R248', 'command': key_name, 'attempt': 1, 'retry': 0,
+                    'wrapper_exit': 1, 'child_exit': None, 'accepted_command_outcome': False,
+                    'runner_exception': {'type': type(error).__name__, 'message': str(error),
+                                         'traceback': traceback.format_exc()}, 'file_index': index(out)}

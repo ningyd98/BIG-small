@@ -1,0 +1,14 @@
+.venv/bin/python - <<'PY'
+from pathlib import Path
+import json,hashlib,xml.etree.ElementTree as ET
+root=Path('/home/ningyd/文档/ChatGPT/BIGsmall');b=root/'artifacts/research/process/20261004-ced-development/astra-rounds/round127-p6-private-authority-lifecycle-repair-20261011';f=b/'implementation/stopped-red-20261011';d=json.loads((f/'finding.json').read_text());print('ALL CASE CLASSIFICATIONS')
+for c in d['cases']:print(c['nodeid'].split('::')[-1],c['classification'],c.get('planned_group'),c.get('failure_attributes',{}).get('message','PASS')[:160])
+p=root/'src/cloud_edge_robot_arm/simulation_runtime/models.py';s=p.read_text().splitlines();print('MODELS HEADER','\n'.join(s[:20]))
+for i,l in enumerate(s):
+ if 'class SimulationJobRecord' in l or 'class SimulationJobAttempt' in l:print('\n'.join(f'{j+1}: {s[j]}' for j in range(max(0,i-2),min(i+58,len(s)))))
+ss=(f/'sources/tests/test_operational_runtime_closure.py').read_text().splitlines();print('TEST SERIALIZATION SITES',[(i+1,l.strip()) for i,l in enumerate(ss) if 'model_dump' in l or l.startswith('def _evidence')]);print('INDEX STRUCTURE');idx=json.loads((f/'source-index.json').read_text());print(type(idx).__name__,str(idx)[:1100])
+x=ET.parse(b/'implementation/red/junit.xml').getroot();cases=x.findall('.//testcase');print('JUNIT',len(cases),sum(c.find('failure') is not None for c in cases),sum(c.find('error') is not None for c in cases),sum(c.find('skipped') is not None for c in cases));raw=(b/'implementation/red/stdout.txt').read_text();print('STDOUT TAIL',raw[-4000:]);print('CURRENT LEDGERS')
+for n in ['command-ledger.json','root-command-ledger.json']:
+ l=json.loads((b/n).read_text());print(n,{k:(v['used'],v['remaining']) for k,v in l['commands'].items()})
+PY
+

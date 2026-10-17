@@ -1,0 +1,736 @@
+--- r103-before/src/cloud_edge_robot_arm/vision/operational_windows.py
++++ current/src/cloud_edge_robot_arm/vision/operational_windows.py
+@@ -9,6 +9,7 @@
+ 
+ import hashlib
+ import json
++import math
+ import threading
+ from collections.abc import Iterator, Mapping
+ from contextlib import contextmanager
+@@ -47,15 +48,39 @@
+ _CONSTRUCTION = object()
+ 
+ 
++def _descriptor_plain(value: object) -> Any:
++    """Detach JSON data without coercion; acyclic aliases are allowed."""
++    active: set[int] = set()
++
++    def plain(item: object) -> Any:
++        if item is None or type(item) in {str, bool, int}:
++            return item
++        if type(item) is float:
++            if not math.isfinite(item):
++                raise ValueError("nonfinite operational JSON number")
++            return item
++        if isinstance(item, Mapping) or type(item) in {list, tuple}:
++            identity = id(item)
++            if identity in active:
++                raise ValueError("cyclic operational JSON data")
++            active.add(identity)
++            try:
++                if isinstance(item, Mapping):
++                    if any(type(key) is not str for key in item):
++                        raise ValueError("operational JSON keys must be strings")
++                    return {key: plain(value) for key, value in item.items()}
++                return [plain(value) for value in item]
++            finally:
++                active.remove(identity)
++        raise ValueError("unsupported operational JSON value")
++
++    return plain(value)
++
++
+ def _json(value: object) -> str:
+-    def plain(item):
+-        if isinstance(item, Mapping):
+-            return {key: plain(value) for key, value in item.items()}
+-        if isinstance(item, (tuple, list)):
+-            return [plain(value) for value in item]
+-        return item
+-
+-    return json.dumps(plain(value), sort_keys=True, separators=(",", ":"), allow_nan=False)
++    return json.dumps(
++        _descriptor_plain(value), sort_keys=True, separators=(",", ":"), allow_nan=False
++    )
+ 
+ 
+ def _hash(value: object) -> str:
+@@ -200,6 +225,7 @@
+         self._observation_values: dict[str, object] = {}
+         self._references: dict[tuple[str, str, int], str] = {}
+         self._policies: dict[tuple[str, str], tuple[int, str]] = {}
++        self._maximum_ages: dict[str, tuple[int, str]] = {}
+         self._source_root: object | None = None
+         self._source_hashes: dict[str, str] | None = None
+         self._source_identity = startup.job_source
+@@ -594,18 +620,28 @@
+     from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
+ 
+     try:
++        reference = _descriptor_plain(reference)
++        _validate_references([reference])
+         owner = _current_owner()
+-        if (
+-            owner is None
+-            or type(reference) is not dict
+-            or reference.get("schema_version") != _SCHEMA
+-        ):
++        if owner is None:
+             raise OperationalTimeError("descriptive reference has no live owner")
+         identifier = reference["window_id"]
+         if _json(reference) != _json(owner.export_record(identifier)):
+             raise OperationalTimeError("descriptor differs from immutable registered window")
+         window = owner._windows[identifier]
+-        return owner.check(identifier, after=_event_token(owner, window.event))
++        verdict = owner.check(identifier, after=_event_token(owner, window.event))
++        if verdict.status != "VALID":
++            return verdict
++        for key, (event, _) in owner._observations.items():
++            policy = owner._policies.get((key, window.kind))
++            maximum = owner._maximum_ages.get(key) if window.kind == "supervision" else None
++            caps = [bound[0] for bound in (policy, maximum) if bound is not None]
++            if caps and any(age.event is event for age in window.ages):
++                current = owner._clock.read_current(after=_event_token(owner, event))
++                if not owner._clock.within_age(event, current, max_age_ns=min(caps)):
++                    return EvidenceVerdict("INVALID", ("original_policy_age_exhausted",))
++        owner._check_live()
++        return verdict
+     except (OperationalTimeError, ValueError, TypeError, KeyError, OSError):
+         return EvidenceVerdict("UNKNOWN", ("unregistered_operational_reference",))
+ 
+@@ -617,8 +653,10 @@
+             reference = _reference_for_observation(observation, kind, max_age_s=max_age_s)
+         if reference is None:
+             return None
++        reference = _descriptor_plain(reference)
++        _validate_references([reference])
+         owner = _current_owner()
+-        if owner is None or type(reference) is not dict:
++        if owner is None:
+             return False
+         key = _observation_key(observation)
+         if key not in owner._observations or reference.get("kind") != kind:
+@@ -673,29 +711,185 @@
+         raise OperationalTimeError("original transition obligations unavailable or exhausted")
+ 
+ 
++def _descriptor_fields(record: object, expected: set[str]) -> dict[str, Any]:
++    if type(record) is not dict or set(record) != expected:
++        raise ValueError("exact operational descriptor fields required")
++    return record
++
++
++def _descriptor_integer(value: object, *, positive: bool = False) -> int:
++    if type(value) is not int or value < (1 if positive else 0):
++        raise ValueError("original integer operational constraint required")
++    return value
++
++
++def _descriptor_text(value: object) -> str:
++    if type(value) is not str or not value:
++        raise ValueError("original operational identity required")
++    return value
++
++
++def _descriptor_digest(value: object) -> str:
++    text = _descriptor_text(value)
++    if len(text) != 64 or any(character not in "0123456789abcdef" for character in text):
++        raise ValueError("original operational source hash required")
++    return text
++
++
++def _validate_domain(value: object) -> None:
++    domain = _descriptor_fields(
++        value,
++        {
++            "boot_id", "pid", "process_start_ticks", "owner_thread_id",
++            "owner_native_thread_id", "namespace_device", "namespace_inode",
++            "namespace_offsets", "startup_nonce", "startup_counter_ns", "os_name",
++            "os_release", "os_version", "machine", "python_version", "resolution_seconds",
++            "schema", "api", "scope", "utc_accuracy", "si_accuracy", "accuracy_status",
++            "worker_authority", "lease_authority",
++        },
++    )
++    for name in (
++        "boot_id", "startup_nonce", "os_release", "os_version", "machine", "python_version"
++    ):
++        _descriptor_text(domain[name])
++    for name in ("pid", "process_start_ticks", "owner_thread_id", "owner_native_thread_id",
++                 "namespace_inode"):
++        _descriptor_integer(domain[name], positive=True)
++    for name in ("namespace_device", "startup_counter_ns"):
++        _descriptor_integer(domain[name])
++    offsets = domain["namespace_offsets"]
++    if type(offsets) is not list or len(offsets) != 2:
++        raise ValueError("complete original time namespace offsets required")
++    for expected, entry in zip(("monotonic", "boottime"), offsets, strict=True):
++        if (type(entry) is not list or len(entry) != 3 or entry[0] != expected
++                or type(entry[1]) is not int):
++            raise ValueError("typed original time namespace offsets required")
++        if _descriptor_integer(entry[2]) >= 1_000_000_000:
++            raise ValueError("namespace nanoseconds out of range")
++    constants = {
++        "os_name": "Linux", "schema": "simulation.operational-time.v1",
++        "api": "Linux time.clock_gettime_ns(time.CLOCK_BOOTTIME)", "scope": "SOFTWARE_ONLY",
++        "utc_accuracy": None, "si_accuracy": None, "accuracy_status": "UNVERIFIED",
++        "worker_authority": "UNAVAILABLE", "lease_authority": "UNAVAILABLE",
++    }
++    if any(domain[name] != expected for name, expected in constants.items()):
++        raise ValueError("unsupported descriptive operational domain")
++    resolution = domain["resolution_seconds"]
++    if resolution is not None and (type(resolution) is not float or resolution <= 0):
++        raise ValueError("original positive descriptive resolution required")
++
++
+ def _validate_references(references: object) -> None:
+-    """Pure schema check for historical descriptors; grants no live authority."""
+-    if type(references) not in {list, tuple} or not references:
++    """Pure typed history validation; never authenticates source or owner."""
++    references = _descriptor_plain(references)
++    if type(references) is not list or not references:
+         raise ValueError("nonempty versioned operational references required")
+     for record in references:
+-        if not isinstance(record, Mapping) or record.get("schema_version") != _SCHEMA:
+-            raise ValueError("unsupported operational reference schema")
+-        if record.get("kind") not in _KINDS or record.get("deadline_semantics") != "HARD_OPEN":
++        record = _descriptor_fields(
++            record,
++            {
++                "schema_version", "window_id", "kind", "kind_policy", "budget_semantics",
++                "budget_ns", "domain", "origin_domain", "task_origin_event_id", "event_id",
++                "source_hashes", "source_identity", "job_id", "run_id", "worker_id",
++                "lease_id", "attempt", "fencing", "episode_id", "parents", "age_constraints",
++                "hard_deadlines", "deadline_ns", "deadline_semantics", "effective_upper",
++                "lease_deadline_domain", "live_authority",
++            },
++        )
++        if (record["schema_version"] != _SCHEMA or type(record["kind"]) is not str
++                or record["kind"] not in _KINDS):
++            raise ValueError("unsupported operational reference schema/kind")
++        bootstrap = record["kind"] == "bootstrap"
++        constants = {
++            "kind_policy": "HARD_ORIGINAL_TASK_LIFECYCLE" if bootstrap else "AGE_CLOSED",
++            "budget_semantics": "HARD_OPEN" if bootstrap else "AGE_CLOSED",
++            "origin_domain": "ORIGINAL_TASK_D", "deadline_semantics": "HARD_OPEN",
++            "lease_deadline_domain": "UTC_LEGACY_VETO", "live_authority": "NOT_EXPORTED",
++        }
++        if any(record[name] != expected for name, expected in constants.items()):
+             raise ValueError("typed original operational policy required")
+-        for name in (
+-            "window_id", "event_id", "task_origin_event_id", "source_identity", "job_id", "lease_id"
+-        ):
+-            if type(record.get(name)) is not str or not record[name]:
+-                raise ValueError("original operational identity missing")
+-        if type(record.get("budget_ns")) is not int or record["budget_ns"] <= 0:
+-            raise ValueError("original integer operational budget required")
+-        if (
+-            type(record.get("age_constraints")) is not list
+-            or type(record.get("hard_deadlines")) is not list
+-            or not record["hard_deadlines"]
+-        ):
++        for name in ("window_id", "event_id", "task_origin_event_id", "job_id", "run_id",
++                     "worker_id", "lease_id", "fencing"):
++            _descriptor_text(record[name])
++        _descriptor_digest(record["source_identity"])
++        _descriptor_integer(record["attempt"], positive=True)
++        if record["episode_id"] is not None:
++            _descriptor_text(record["episode_id"])
++        budget = _descriptor_integer(record["budget_ns"], positive=True)
++        if not bootstrap and budget > _FIVE_NS:
++            raise ValueError("evidence budget exceeds original maximum")
++        _validate_domain(record["domain"])
++        hashes = record["source_hashes"]
++        if type(hashes) is not dict:
++            raise ValueError("descriptive source inventory required")
++        for path, digest in hashes.items():
++            _descriptor_text(path)
++            _descriptor_digest(digest)
++        parents = record["parents"]
++        if type(parents) is not list:
++            raise ValueError("parent identity sequence required")
++        for parent in parents:
++            _descriptor_text(parent)
++        if len(set(parents)) != len(parents) or record["window_id"] in parents:
++            raise ValueError("duplicate or self parent identity")
++        ages = record["age_constraints"]
++        hard = record["hard_deadlines"]
++        if type(ages) is not list or type(hard) is not list or not hard:
+             raise ValueError("complete typed operational constraints required")
+-        _json(dict(record))
++        endpoints = []
++        own_age = False
++        for age in ages:
++            age = _descriptor_fields(
++                age,
++                {"event_id", "source_id", "lower_ns", "upper_ns", "max_age_ns",
++                 "upper_age_inclusive", "expiry_upper_ns"},
++            )
++            _descriptor_text(age["event_id"])
++            source_id = _descriptor_text(age["source_id"])
++            _descriptor_digest(source_id.split(":", 1)[0])
++            lower = _descriptor_integer(age["lower_ns"])
++            upper = _descriptor_integer(age["upper_ns"])
++            maximum = _descriptor_integer(age["max_age_ns"], positive=True)
++            expiry = _descriptor_integer(age["expiry_upper_ns"], positive=True)
++            if (lower > upper or maximum > _FIVE_NS or expiry != lower + maximum
++                    or age["upper_age_inclusive"] is not True):
++                raise ValueError("inconsistent original AGE_CLOSED constraint")
++            own_age |= age["event_id"] == record["event_id"] and maximum == budget
++            endpoints.append(expiry)
++        if not bootstrap and not own_age:
++            raise ValueError("original evidence event age constraint required")
++        hard_endpoints = []
++        hard_origins = set()
++        own_bootstrap = False
++        for deadline in hard:
++            deadline = _descriptor_fields(
++                deadline, {"origin_event_id", "source_id", "budget_ns", "deadline_ns",
++                           "end_exclusive"},
++            )
++            if deadline["origin_event_id"] != record["task_origin_event_id"]:
++                raise ValueError("original task hard origin identity required")
++            source_id = _descriptor_text(deadline["source_id"])
++            _descriptor_digest(source_id.split(":", 1)[0])
++            hard_budget = _descriptor_integer(deadline["budget_ns"], positive=True)
++            end = _descriptor_integer(deadline["deadline_ns"], positive=True)
++            if end < hard_budget or deadline["end_exclusive"] is not True:
++                raise ValueError("original HARD_OPEN constraint required")
++            hard_endpoints.append(end)
++            hard_origins.add(end - hard_budget)
++            own_bootstrap |= hard_budget == budget
++        if len(hard_origins) != 1 or (bootstrap and (
++            record["event_id"] != record["task_origin_event_id"] or not own_bootstrap
++        )):
++            raise ValueError("inconsistent original task hard constraints")
++        minimum = min(hard_endpoints)
++        if _descriptor_integer(record["deadline_ns"], positive=True) != minimum:
++            raise ValueError("inconsistent minimum hard deadline")
++        effective = _descriptor_fields(record["effective_upper"], {"value_ns", "inclusive"})
++        value = min([minimum, *endpoints])
++        if (_descriptor_integer(effective["value_ns"], positive=True) != value
++                or type(effective["inclusive"]) is not bool
++                or effective["inclusive"] != (value < minimum)):
++            raise ValueError("inconsistent effective operational endpoint")
+ 
+ 
+ def _bind_observation_policy(owner: OperationalWindowOwner, observation: object, kind: str,
+@@ -723,7 +917,16 @@
+                    and owner._observation_values[key].captured_at == context.captured_at]
+         if len(matches) != 1:
+             return False
+-        return _check_observation(owner._observation_values[matches[0]], "supervision",
++        key = matches[0]
++        maximum = (
++            min(_FIVE_NS, _seconds_ns(max_age_s)),
++            _hash({"context": context.model_dump(mode="json"), "maximum_age_s": max_age_s}),
++        )
++        existing = owner._maximum_ages.get(key)
++        if existing is not None and existing != maximum:
++            return False
++        owner._maximum_ages[key] = maximum
++        return _check_observation(owner._observation_values[key], "supervision",
+                                   max_age_s=max_age_s, reference=reference)
+     except (OperationalTimeError, ValueError, TypeError, KeyError, OSError):
+         return False
+--- r103-before/tests/test_operational_windows.py
++++ current/tests/test_operational_windows.py
+@@ -10,6 +10,8 @@
+ from contextvars import copy_context
+ from dataclasses import replace
+ from datetime import UTC, datetime, timedelta
++from pathlib import Path
++from types import MappingProxyType
+ 
+ import pytest
+ 
+@@ -22,6 +24,28 @@
+ from tests.test_operational_time_v1 import _identity
+ 
+ 
++def frozen_json(value):
++    if type(value) is dict:
++        return MappingProxyType({key: frozen_json(item) for key, item in value.items()})
++    if type(value) is list:
++        return tuple(frozen_json(item) for item in value)
++    return value
++
++
++def legacy_codec(name):
++    """Use frozen pre-P5 bytes, not a copied expected value from today's codec."""
++    path = Path(
++        "artifacts/research/process/20261004-ced-development/astra-rounds/"
++        "round102-p5-preflight-plan-shape-20261008/implementation/source-before/"
++        "src/cloud_edge_robot_arm/repositories/event_autonomy"
++    ) / (name + ".py")
++    namespace = {
++        "__name__": "cloud_edge_robot_arm.repositories.event_autonomy." + name,
++    }
++    exec(compile(path.read_text(), str(path), "exec"), namespace)
++    return namespace
++
++
+ class CpuCounter:
+     resolution_seconds = 1e-9
+ 
+@@ -49,7 +73,8 @@
+ 
+ 
+ def exercise(
+-    monkeypatch, tmp_path, callback, *, initialize=None, settle=None, startup_config=None
++    monkeypatch, tmp_path, callback, *, initialize=None, settle=None, startup_config=None,
++    startup_parameters=None,
+ ):
+     module = api()
+     from tests.test_visual_worker_factory import software_factory
+@@ -92,6 +117,10 @@
+     )
+     repo, job, worker, calls, actual_received, backend, events = data
+     received = actual_received
++    if startup_parameters is not None:
++        from tests.test_visual_worker_factory import persist_original_runtime_parameters
++
++        persist_original_runtime_parameters(repo, job, startup_parameters)
+     if startup_config:
+         task_s, verification_s = startup_config
+         with sqlite3.connect(repo.database_path) as connection:
+@@ -311,7 +340,9 @@
+             )[0]
+             assert verdict.status == "PASS"
+         raw.now = 5_000_000_001
+-        assert evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "UNKNOWN"
++        assert (
++            evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "UNKNOWN"
++        )
+ 
+     exercise(monkeypatch, tmp_path, run)
+ 
+@@ -416,11 +447,15 @@
+         owner = runtime._operational_owner
+         if termination == "exception":
+             # _execute handles this, but cleanup must remain observable afterward.
+-            worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(RuntimeError("CPU failure"))
++            worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(
++                RuntimeError("CPU failure")
++            )
+         elif termination == "cancellation":
+             from cloud_edge_robot_arm.simulation_runtime.worker import CancelledByOperator
+ 
+-            worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(CancelledByOperator("CPU cancelled"))
++            worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(
++                CancelledByOperator("CPU cancelled")
++            )
+         elif termination == "lease_loss":
+             repo.release_lease(runtime.source.lease_id)
+             assert owner.check(owner.task_window, after=owner.task_origin_token).status == "UNKNOWN"
+@@ -432,7 +467,9 @@
+     assert owner.check(owner.task_window, after=owner.task_origin_token).status == "UNKNOWN"
+ 
+ 
+-@pytest.mark.parametrize("category", ["bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"])
++@pytest.mark.parametrize(
++    "category", ["bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"]
++)
+ def test_all_p5_categories_use_same_original_owner(monkeypatch, tmp_path, category):
+     def run(module, runtime, raw, *args):
+         owner = runtime._operational_owner
+@@ -452,40 +489,61 @@
+ 
+             evidence = OnlineEvidenceSnapshot(observation, RobotState(connected=True),
+                                               operational_reference=reference)
+-            assert evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
++            assert (
++                evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
++            )
+         elif category == "supervision":
+-            from cloud_edge_robot_arm.vision.supervision import (
+-                SupervisionContext,
+-                SupervisionDecision,
+-                decide_supervision,
+-            )
+-
+-            context = SupervisionContext(episode_id=runtime.episode_id, plan_version=1,
+-                                         state_version=1, next_step_id="p5-step", next_skill="MOVE_TO",
+-                                         task_instruction=runtime.bootstrap.definition.user_instruction,
+-                                         observation_id=observation.observation_id,
+-                                         captured_at=observation.captured_at, proprioception={})
+-            reply = SupervisionDecision(episode_id=runtime.episode_id, plan_version=1,
+-                                        state_version=1, next_step_id="p5-step",
+-                                        observation_id=observation.observation_id,
+-                                        recommendation="CONTINUE", reason="CPU")
+-            assert decide_supervision(reply, context, context, maximum_age_s=5,
+-                                      operational_reference=reference) == "CONTINUE"
++            from cloud_edge_robot_arm.vision.observations import RGBDObservation
++            from cloud_edge_robot_arm.vision.supervision import decide_supervision
++            from tests.test_visual_worker_supervision_runtime import context_for, decision_for
++
++            usable_plan(runtime, observation)
++            runtime.adopt_plan(RobotState(connected=True))
++            runtime.initialize_supervision(0.000001, RobotState(connected=True))
++            claim = runtime.reserve_supervision_capture(1, RobotState(connected=True))
++            payload = observation.model_dump(mode="json")
++            payload.update(
++                captured_at=datetime.now(UTC).isoformat(), observation_id="p5-supervisor",
++                frame_id="p5-supervisor", checksum_sha256="",
++            )
++            fresh = RGBDObservation.model_validate(payload)
++            context = context_for(claim, fresh).model_copy(update={
++                "task_instruction": runtime.bootstrap.definition.user_instruction,
++            })
++            runtime.complete_supervision_capture(claim, fresh, context, RobotState(connected=True))
++            frame = runtime.reserve_supervision_plan(claim, RobotState(connected=True))
++            reply = decision_for(frame)
++            reference = module._reference_for_observation(fresh, "supervision")
++            assert decide_supervision(
++                reply, frame.context, frame.context, maximum_age_s=5,
++                operational_reference=frozen_json(reference),
++            ) == "CONTINUE"
++            assert decide_supervision(
++                reply, frame.context, frame.context, maximum_age_s=6,
++                operational_reference=frozen_json(reference),
++            ) == "DISCARD"
++            record = runtime.complete_supervision_plan(frame, reply, RobotState(connected=True))
++            assert record.to_payload()["claims"][frame.claim_id]["plan_completed_at"] is not None
+         elif category == "grounding":
+             usable_plan(runtime, observation)
+             contract, publication = runtime.adopt_plan(RobotState(connected=True))
+             from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding
+ 
+-            step = contract.steps[0].model_copy(update={"preconditions": [], "success_conditions": []})
++            step = contract.steps[0].model_copy(
++                update={"preconditions": [], "success_conditions": []}
++            )
+             now = datetime.now(UTC)
+-            binding = StepGroundingBinding(runtime.original.digest(), runtime.original.identity,
+-                                           runtime.original.requirements[step.step_id], publication.owner_revision,
+-                                           publication.state_generation + 1, publication.checkpoint.checkpoint_hash,
+-                                           observation.observation_id, observation.checksum_sha256,
+-                                           observation.calibration_version, contract.plan_version, contract.command_seq,
+-                                           "6" * 64, "7" * 64, None, runtime.source.source_hashes,
+-                                           step.model_dump_json(), runtime.original.requirements[step.step_id].expected_duration_s,
+-                                           now, now + timedelta(seconds=3))
++            binding = StepGroundingBinding(
++                runtime.original.digest(), runtime.original.identity,
++                runtime.original.requirements[step.step_id], publication.owner_revision,
++                publication.state_generation + 1, publication.checkpoint.checkpoint_hash,
++                observation.observation_id, observation.checksum_sha256,
++                observation.calibration_version, contract.plan_version, contract.command_seq,
++                "6" * 64, "7" * 64, None, runtime.source.source_hashes,
++                step.model_dump_json(),
++                runtime.original.requirements[step.step_id].expected_duration_s,
++                now, now + timedelta(seconds=3),
++            )
+             assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+         else:
+             # Real marker consumer's freshness gate over an actual CPU image source.
+@@ -500,10 +558,34 @@
+             fresh = RGBDObservation.model_validate(payload)
+             token, receipt = event(owner)
+             module._register_observation(owner, receipt, fresh)
+-            context = replace(context, observation_id=fresh.observation_id,
+-                              observation_sha256=fresh.checksum_sha256, episode_id=runtime.episode_id,
+-                              operational_reference=module._reference_for_observation(fresh, "marker"))
+-            assert associate_marker_target(fresh, registration, context).status == "OBSERVED_CANDIDATE"
++            context = replace(
++                context, observation_id=fresh.observation_id,
++                observation_sha256=fresh.checksum_sha256, episode_id=runtime.episode_id,
++                operational_reference=module._reference_for_observation(fresh, "marker"),
++            )
++            frozen = context.operational_reference
++            assert isinstance(frozen, MappingProxyType)
++            assert isinstance(frozen["domain"], MappingProxyType)
++            assert type(frozen["hard_deadlines"]) is tuple
++            assert (
++                associate_marker_target(fresh, registration, context).status == "OBSERVED_CANDIDATE"
++            )
++            changed = module._descriptor_plain(frozen)
++            changed["source_identity"] = "0" * 64
++            assert associate_marker_target(
++                fresh, registration, replace(context, operational_reference=changed)
++            ).status != "OBSERVED_CANDIDATE"
++            legacy_context = replace(context, operational_reference=None)
++            legacy_body = {
++                name: getattr(legacy_context, name)
++                for name in legacy_context.__dataclass_fields__
++                if name != "operational_reference"
++            }
++            assert legacy_context.digest() == marker._digest(legacy_body)
++            raw.now = 5_000_000_001
++            assert (
++                associate_marker_target(fresh, registration, context).status != "OBSERVED_CANDIDATE"
++            )
+         raw.now = 5_000_000_000
+         assert module._check_reference(reference).status == "VALID"
+         raw.now += 1
+@@ -511,7 +593,10 @@
+         rebound = {**reference, "job_id": "foreign-job"}
+         assert module._check_reference(rebound).status == "UNKNOWN"
+ 
+-    exercise(monkeypatch, tmp_path, run)
++    exercise(
++        monkeypatch, tmp_path, run,
++        startup_parameters={"supervision_period_ms": 0.001} if category == "supervision" else None,
++    )
+ 
+ 
+ def test_public_replay_descriptor_never_live_authority(monkeypatch, tmp_path):
+@@ -519,18 +604,30 @@
+         observation = captured(runtime)
+         usable_plan(runtime, observation)
+         from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
++            VisualBootstrapDefinition,
+             VisualBootstrapRecord,
+             VisualBootstrapTransitionInput,
+             derive_bootstrap,
+         )
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import (
++            VisualSupervisionDefinition,
++        )
++        from cloud_edge_robot_arm.repositories.event_autonomy.memory import (
++            InMemoryEventAutonomyRepository,
++        )
++        from tests.test_visual_supervision_repository import definition, initialize
+ 
+         original = runtime.bootstrap
+         detached = VisualBootstrapRecord.from_json(original.to_json())
+         assert detached.to_json() == original.to_json()
++        historical_definition = VisualBootstrapDefinition.from_payload(
++            frozen_json(original.definition.to_payload())
++        )
++        assert historical_definition.digest() == original.definition.digest()
+         history = original.to_payload()["history"]
+-        request = VisualBootstrapTransitionInput.from_payload(history[-1]["request"])
+-        assert request.to_payload()["operational_windows"]
+-        # Historical duplicate remains descriptive and grants no new live effect.
++        request = VisualBootstrapTransitionInput.from_payload(frozen_json(history[-1]["request"]))
++        references = request.to_payload()["operational_windows"]
++        assert references
+         result = derive_bootstrap(detached, request, now=datetime.now(UTC))
+         assert result.write_disposition == "HISTORICAL_DUPLICATE"
+         payload = request.to_payload()
+@@ -538,9 +635,46 @@
+         copied = VisualBootstrapTransitionInput.from_payload(payload)
+         with pytest.raises(OperationalTimeError):
+             derive_bootstrap(detached, copied, now=datetime.now(UTC))
+-        return request.to_payload()["operational_windows"][0]
++
++        # Compare legacy no-new-field output to independently frozen pre-P5 codec.
++        legacy_arguments = {
++            name: getattr(original.definition, name)
++            for name in original.definition.__dataclass_fields__
++            if name != "operational_windows"
++        }
++        legacy = VisualBootstrapDefinition(**legacy_arguments)
++        old_bootstrap = legacy_codec("visual_bootstrap")
++        old_legacy = old_bootstrap["VisualBootstrapDefinition"](**legacy_arguments)
++        assert legacy.to_payload() == old_legacy.to_payload()
++        assert legacy.digest() == old_legacy.digest()
++        assert VisualBootstrapRecord.start(legacy).to_json() == (
++            old_bootstrap["VisualBootstrapRecord"].start(old_legacy).to_json()
++        )
++        repo = InMemoryEventAutonomyRepository()
++        try:
++            data = initialize(repo)
++            legacy_supervision = definition(data)
++            legacy_payload = legacy_supervision.to_payload()
++            old_supervision = legacy_codec("visual_supervision")
++            old_definition = old_supervision["VisualSupervisionDefinition"].from_payload(
++                legacy_payload
++            )
++            assert legacy_supervision.to_payload() == old_definition.to_payload()
++            assert legacy_supervision.digest() == old_definition.digest()
++            assert legacy_supervision._json == old_definition._json
++            described = {**legacy_payload, "operational_windows": references}
++            immutable = VisualSupervisionDefinition.from_payload(frozen_json(described))
++            roundtrip = VisualSupervisionDefinition.from_payload(
++                json.loads(module._json(described))
++            )
++            assert immutable.to_payload() == roundtrip.to_payload()
++            assert immutable.digest() == roundtrip.digest()
++        finally:
++            repo.close()
++        return references[0]
+ 
+     reference, _, _ = exercise(monkeypatch, tmp_path, run)
++    assert api()._check_reference(frozen_json(reference)).status == "UNKNOWN"
+     assert api()._check_reference(json.loads(json.dumps(reference))).status == "UNKNOWN"
+ 
+ 
+@@ -562,7 +696,9 @@
+         reference = module._reference_for_observation(observation, "condition")
+         results = []
+         context = copy_context()
+-        thread = threading.Thread(target=lambda: results.append(context.run(module._check_reference, reference)))
++        thread = threading.Thread(
++            target=lambda: results.append(context.run(module._check_reference, reference))
++        )
+         thread.start()
+         thread.join()
+         assert results[0].status == "UNKNOWN"
+@@ -592,6 +728,8 @@
+ 
+ def test_window_export_preserves_typed_boundary_constraints(monkeypatch, tmp_path):
+     def run(module, runtime, raw, *args):
++        from cloud_edge_robot_arm.edge.evidence.models import VisualEvidence
++
+         owner = runtime._operational_owner
+         token, receipt = event(owner)
+         parent = owner.issue("bootstrap", owner.task_origin, budget_ns=5_000_000_000, parent_ids=())
+@@ -603,8 +741,57 @@
+         assert all(h["end_exclusive"] for h in record["hard_deadlines"])
+         assert record["effective_upper"] == {"value_ns": 5_000_000_000, "inclusive": False}
+         assert all(a["source_id"] and a["event_id"] for a in record["age_constraints"])
++        immutable = frozen_json(record)
++        assert module._json(immutable) == module._json(record)
++        module._validate_references((immutable,))
++        evidence = VisualEvidence(
++            "cpu-descriptor", "cpu-calibration", datetime.now(UTC), None, None,
++            "UNKNOWN", "VALID", operational_reference=record,
++        )
++        assert isinstance(evidence.operational_reference, MappingProxyType)
++        assert module._check_reference(evidence.operational_reference).status == "VALID"
++        assert module._check_reference(immutable).status == "VALID"
++        malformed = []
++        for key, value in (("attempt", True), ("budget_ns", True), ("budget_ns", 2.5)):
++            changed = copy.deepcopy(record)
++            changed[key] = value
++            malformed.append(changed)
++        for key, value in (("lower_ns", True), ("upper_ns", 0.5),
++                           ("upper_age_inclusive", 1), ("expiry_upper_ns", 1)):
++            changed = copy.deepcopy(record)
++            changed["age_constraints"][0][key] = value
++            malformed.append(changed)
++        for key, value in (("end_exclusive", 1), ("budget_ns", True), ("deadline_ns", 1.5)):
++            changed = copy.deepcopy(record)
++            changed["hard_deadlines"][0][key] = value
++            malformed.append(changed)
++        for key, value in (("pid", True), ("startup_counter_ns", 0.5)):
++            changed = copy.deepcopy(record)
++            changed["domain"][key] = value
++            malformed.append(changed)
++        changed = copy.deepcopy(record)
++        changed["effective_upper"]["inclusive"] = True
++        malformed.append(changed)
++        for changed in malformed:
++            with pytest.raises(ValueError):
++                module._validate_references([changed])
++            assert module._check_reference(frozen_json(changed)).status == "UNKNOWN"
++        for changed in ({**record, "window_id": "forged"}, {**record, "budget_ns": 1}):
++            assert module._check_reference(changed).status == "UNKNOWN"
++        for bad in (float("nan"), float("inf"), float("-inf"), object(), b"bytes", {1: "key"}):
++            with pytest.raises(ValueError):
++                module._json({"value": bad})
++        cycle = []
++        cycle.append(cycle)
++        with pytest.raises(ValueError):
++            module._json(cycle)
++        alias = {"valid": [None, True, 1, 1.5, "文本"]}
++        assert module._json([alias, alias]) == json.dumps(
++            [alias, alias], sort_keys=True, separators=(",", ":"), allow_nan=False
++        )
+         with pytest.raises(OperationalTimeError):
+             owner.issue("capture", receipt, budget_ns=5_000_000_001, parent_ids=())
++        assert owner.check(window, after=token).status == "VALID"
+         return json.loads(json.dumps(record))
+ 
+     reference, _, _ = exercise(monkeypatch, tmp_path, run)

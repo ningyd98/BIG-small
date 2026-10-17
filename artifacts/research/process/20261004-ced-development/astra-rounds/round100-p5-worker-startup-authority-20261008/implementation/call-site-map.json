@@ -1,0 +1,64 @@
+{
+  "status": "FINITE_TEN_OWNED_CALL_MAP_RECORDED_BEFORE_EDITS",
+  "categories": [
+    {
+      "category": "bootstrap",
+      "original_event": "original worker task origin",
+      "policy_budget": "original task/verification intersection",
+      "issue_producer": "worker.py _execute and worker_runtime.__init__/_transition",
+      "check_consumer": "check_active plus derive_bootstrap live transition gate",
+      "owner_lifetime": "real startup until _execute finally"
+    },
+    {
+      "category": "capture",
+      "original_event": "reserve_capture / reserve_supervision_capture / reserve_effect_capture enclosing effect; immutable returned RGBD identity",
+      "policy_budget": "5000000000 ns and original task/verification",
+      "issue_producer": "worker_runtime reserve/complete camera methods",
+      "check_consumer": "complete methods; cached observation lookup by exact payload hash",
+      "owner_lifetime": "same startup owner; no reconstructed acquisition"
+    },
+    {
+      "category": "plan",
+      "original_event": "original captured observation plus reserve_plan/reserve_supervision_plan through returned draft/reply",
+      "policy_budget": "5000000000 ns and original observation/task/verification/parent",
+      "issue_producer": "worker_runtime reserve_plan/complete_plan and supervision plan",
+      "check_consumer": "_transition/_supervision_transition and derive_bootstrap/derive_supervision live gates",
+      "owner_lifetime": "same owner; reply/reobserve never refreshes acquisition"
+    },
+    {
+      "category": "grounding",
+      "original_event": "original binding observation receipt and published binding immutable digest",
+      "policy_budget": "original observation 5s plus task/verification/parent",
+      "issue_producer": "worker_runtime publish_grounding/route",
+      "check_consumer": "publication gate; current original observation/source",
+      "owner_lifetime": "same owner; native/SafetyShield/action gates untouched"
+    },
+    {
+      "category": "supervision",
+      "original_event": "reserve/complete capture, exact SupervisionContext and immutable frame/reply",
+      "policy_budget": "original ordinary TTL bounded by 5s and task/verification",
+      "issue_producer": "worker_runtime supervisor paths",
+      "check_consumer": "supervision.decide_supervision; repository derive_supervision; classify_supervision_reply",
+      "owner_lifetime": "same owner main thread; IO pending checks retain UTC/source guards"
+    },
+    {
+      "category": "marker",
+      "original_event": "original registered actual frame acquisition and exact marker/camera/object context",
+      "policy_budget": "5000000000 ns and original task/verification",
+      "issue_producer": "worker_runtime captured frame registry; marker_frame_context resolves reference",
+      "check_consumer": "marker_association._associate live freshness; replay remains offline",
+      "owner_lifetime": "private owner-thread scope around actual _run; copied/foreign context not authority"
+    },
+    {
+      "category": "condition",
+      "original_event": "original registered actual frame acquisition and exact OnlineEvidenceSnapshot/ConditionSpec",
+      "policy_budget": "max_age_s at most original 5s plus task/verification",
+      "issue_producer": "worker_runtime frame registry; conditions resolves registered observation",
+      "check_consumer": "evaluate_conditions/_evaluate; optional descriptive references; external UTC legacy unchanged",
+      "owner_lifetime": "private owner-thread scope; public reference alone UNKNOWN"
+    }
+  ],
+  "additional_scope_required": false,
+  "outside_signatures_strategy": "Private exact registry owner-thread scope around normal _run preserves current callers; serialized requests carry only explicit descriptors; canonical request scope consumed once at live derive entry, historical _derive/_apply bypass pure. No source change outside ten files proposed.",
+  "P6": "D lease producer, atomic cross-thread dispatch and transaction closure remain deferred; UTC lease independent veto."
+}

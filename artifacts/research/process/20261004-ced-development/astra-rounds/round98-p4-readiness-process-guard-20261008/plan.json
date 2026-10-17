@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "round": "round98-p4-readiness-process-guard-20261008",
+  "generated_at_utc": "2026-10-07T17:05:34.572013+00:00",
+  "planner": {
+    "requested_model": "gpt-6-astra",
+    "actual_model": "gpt-6-astra",
+    "agent": "/root/astra_oc2_residual",
+    "role": "planning_only"
+  },
+  "status": "READY_FOR_ROOT_PIN_REVIEW_NOT_ACTUAL_AUTHORIZATION",
+  "task_count": 1,
+  "problem": {
+    "original_exit": 1,
+    "original_tool_chunk": "48c791",
+    "original_pid": 2761145,
+    "original_trace": "Traceback (most recent call last): File \"<stdin>\", line 10, in <module> AssertionError",
+    "observed": "One PID matched all seven substring needles. Original argv/starttime was not retained; PID absent during later observation.",
+    "proven_algorithmic_defect": "any(needle in each short argv token) searches shell -c source and ordinary data arguments as though they were executed script operands. Ten in-memory counterexamples/controls validate the distinction.",
+    "historical_cause": "UNPROVEN: original PID may have been the observer ancestor shell containing seven literals; cannot certify original argv, terminal capture, renderer activity or process identity retrospectively."
+  },
+  "scope": {
+    "allowed_write": [
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round98-p4-readiness-process-guard-20261008/implementation/process-guard.py",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round98-p4-readiness-process-guard-20261008/implementation/*command receipts and resource observations",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round98-p4-readiness-process-guard-20261008/implementation/step-report.md",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round98-p4-readiness-process-guard-20261008/implementation/step-report.json"
+    ],
+    "forbidden": [
+      "product/config/test source",
+      "old guard/failure evidence",
+      "other chat messages",
+      "raw/DB contents",
+      "Git",
+      "signals/kill",
+      "actual/model/network"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "R98-T1",
+      "title": "Correct local argv classifier and evidence-based readiness reporting",
+      "specification": [
+        "Read NUL-delimited /proc/<pid>/cmdline bytes; parse actual argv structure, never substring-search shell source or ordinary payload arguments. Record PID, PPID, /proc stat start_ticks, UID, basename classification, argv SHA256/argc and observation time; never emit full shell source, credentials or private chat content.",
+        "Exact known program basenames: run_operational_prefix_v1.py, collect_native_calibration.py, run_rgbd_pilot.py, probe_rgbd_roles.py, generate_rgbd_protocol_evidence.py. collect_native_calibration.py remains a declared legacy name, not proof a current file exists. Direct executable basename or Python script operand may produce KNOWN_CAPTURE_PROGRAM candidate; exact Python module stem or scripts.<stem> equivalent is allowed. Candidate name is not proof of actual --execute-once rendering.",
+        "Python interpreter detection uses a precise basename pattern (python, python3, python3.<digits> and documented python alternatives only). Parse recognized options before script: -W/-X/--check-hash-based-pycs consume their next argument when separate; attached forms consume no next argument; recognized no-argument flags and -- are handled. -m consumes only its module operand, -c is OPAQUE_PYTHON_CODE, - or no script is OPAQUE_PYTHON_STDIN. Unrecognized/ambiguous options become UNRESOLVED_INTERPRETER rather than guessing.",
+        "Shell -c/-lc text is OPAQUE_SHELL_COMMAND. Shell script operands are classified as shell scripts, not parsed as Python code. env/timeout/nice or other wrappers stay UNRESOLVED_WRAPPER unless an explicitly tested argv parser is provided. visible_marker/marker_observ are unresolved marker-family hints only when present in an actual program basename; never search all arguments for them.",
+        "Collect observer self and ancestor chain by PPID and start_ticks. Mark only the actual guard process SELF; preserve ancestor rows. An ancestor matching a real capture program remains a candidate. Observer shell code is not a capture program, but ancestry alone must not silently suppress a real renderer. Detect PID reuse/races by checking start_ticks before/after relevant reads.",
+        "Enumerate readable /proc once in --observe. Record denied/disappeared/truncated entries and UID coverage. Planning snapshot was limited to current UID1000 and does not establish whole-host absence. Do not log unrelated argv. Output named_program_candidates, unknowns, observer_chain, coverage_and_races, resource_evidence and readiness_decision=ROOT_RESOURCE_REVIEW. Unknown is a classification, not a universal busy condition.",
+        "For project-relevant unknowns/candidates only, read bounded stat/cwd/children and FD symlink targets for /dev/nvidia*, /dev/dri*, P4 output roots and own temp DB ownership; never open DB/raw/stdout content or attach/debug/signal. Device FDs indicate a holder needing attribution, not automatically an active renderer. Record resource-query coverage and limitations. ROOT uses renderer/task/GPU evidence to decide single-renderer conflict, not a requirement for a host with no Python/shell.",
+        "Exit0 certifies valid observation JSON only. Actual conflict is a structured BUSY result for ROOT, not a fabricated software failure. Relevant ambiguity is WAITING_RESOURCE_EVIDENCE; unrelated known desktop/other-chat/CPU activity is recorded without automatic blocking. An observation cannot promise future resource inactivity."
+      ],
+      "prior_unknown_observations": [
+        {
+          "pid": 2006579,
+          "snapshot_class": "PROJECT_CPU_TEST_OWN_TEMP_NO_OBSERVED_GPU",
+          "evidence": "ROOT observed python -m pytest tests/ -q in project, S/futex, parent2006578 bash/do_wait; no nvidia/dri FD, children[],23threads; runtime DB/lock only under /tmp/pytest-of-ningyd/pytest-1140/test_post_run_returns_queued_i0/.",
+          "limit": "Not terminated; not proof it can never use GPU. No permanent actual blocker. Parent shell is separately retained."
+        },
+        {
+          "pid": 2686174,
+          "snapshot_class": "OTHER_CHAT_SHELL",
+          "evidence": "ROOT associated cwd with a different Copilot chat; no private message read.",
+          "limit": "Do not label current T12 renderer from shell/unknown status; do not inspect its messages or signal."
+        },
+        {
+          "pid": 5847,
+          "snapshot_class": "DESKTOP_TERMINAL_ENTRY",
+          "evidence": "ROOT observed Python gnome-terminal entry cwd Desktop, waiting.",
+          "limit": "Neither name nor Python interpreter alone proves a renderer."
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "commands": [
+      {
+        "name": "memory_classifier_and_syntax",
+        "argv": [
+          ".venv/bin/python",
+          "artifacts/research/process/20261004-ced-development/astra-rounds/round98-p4-readiness-process-guard-20261008/implementation/process-guard.py",
+          "--self-test"
+        ],
+        "maximum_invocations": 1,
+        "expected_exit": 0,
+        "proc_reads": 0
+      },
+      {
+        "name": "fresh_resource_observation",
+        "argv": [
+          ".venv/bin/python",
+          "artifacts/research/process/20261004-ced-development/astra-rounds/round98-p4-readiness-process-guard-20261008/implementation/process-guard.py",
+          "--observe",
+          "--output",
+          "artifacts/research/process/20261004-ced-development/astra-rounds/round98-p4-readiness-process-guard-20261008/implementation/process-observation.json"
+        ],
+        "maximum_invocations": 1,
+        "expected_exit": 0,
+        "meaning": "Scan completed only; ROOT decides resource readiness from structured evidence. No actual authorization from exit0."
+      }
+    ],
+    "additional_memory_controls": [
+      "actual known capture ancestor remains candidate",
+      "unknown wrapper remains unresolved",
+      "known basename in data argument is not program",
+      "unsupported interpreter option unresolved"
+    ],
+    "budgets": {
+      "planner_memory_argv_cases_completed": 10,
+      "planner_current_uid_proc_observations_completed": 1,
+      "implementation_memory_self_test": 1,
+      "implementation_corrected_proc_observation": 1,
+      "old_guard_rerun": 0,
+      "product_tests": 0,
+      "product_static_runs": 0,
+      "product_changes": 0,
+      "kill_signal": 0,
+      "Git": 0,
+      "new_actual_budget": 0,
+      "R93_inherited_remaining": {
+        "default_preflight": 1,
+        "actual_execute_once": 1,
+        "external_public_readout": 1,
+        "automatic_retry": 0
+      }
+    },
+    "failure_policy": "Save exact original command return then stop immediately on any unexpected nonzero/failed assertion. No retries or automatic next command. Resource BUSY/WAITING is explicit state, not a made-up implementation failure."
+  },
+  "execution_preconditions": [
+    "ROOT verifies plan MD linkage and eight immutable pins; does not pin active P3/P4 product sources or require repository-wide quiet. All old failure files remain immutable.",
+    "Implement only a new ROOT-local stdlib process guard and receipt harness under this round implementation directory. No product/config/test edits, Git, process cleanup, signal or kill. Create outputs exclusively and retain every original command stdout/stderr/start/result; do not backfill missing old times or argv.",
+    "Run commands sequentially with subprocess.run(check=False), write exact returncode, then stop immediately on nonzero or failed self-test; never concatenate subsequent commands after an unhandled failure. New unexpected failure/scope goes to next Astra; no retry budget reset.",
+    "Use one fresh corrected observation at ROOT resource window, plus bounded targeted resource attribution in that observation if necessary. Parent supplied earlier targeted observations remain historical and must not be overwritten. No repeated global scans/polling or old guard rerun.",
+    "ROOT alone activates P4 after relevant resource evidence supports existing single-renderer contract and current task source freeze is stable. Preserve other tasks; unknown software classes do not create an all-host-idle precondition."
+  ],
+  "actual_running_preconditions": {
+    "authorized_by_this_plan": false,
+    "ROOT_separate_authorization": true,
+    "inherited_plan": "artifacts/research/process/20261004-ced-development/astra-rounds/round93-p4-empty-instance-inventory-20261007/plan.json",
+    "same_remaining_budget": {
+      "default_preflight": 1,
+      "actual_execute_once": 1,
+      "external_public_readout": 1,
+      "automatic_retry": 0
+    },
+    "prepared_runner": "/tmp/bigsmall-p4-r93-command.py remains unexecuted by this round",
+    "resource_contract": "single relevant renderer and current-task immutable source window; no host-wide ban on Python, shells or unrelated work",
+    "historical_gpu_evidence": "ROOT snapshot only,4070TiSUPER15449MiBfree0%; not proof of no renderer or future inactivity"
+  },
+  "acceptance": [
+    "Only local metadata tool changed; all original failure bytes preserved.",
+    "Memory controls pass; one fresh observation accurately preserves classification, ancestors, coverage/races and unknown limitations.",
+    "ROOT independently records resource readiness; no non-authorized actual launch, kill, product test, model call, Git or formal acceptance claim."
+  ],
+  "input_pins": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t12-convergence-execution/P4/readiness-round93-failure/original-guard.py",
+      "bytes": 663,
+      "sha256": "be14095fc2d47623134e89e83451a5070a7c4ae8439ee50f4b255752af52ad65"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t12-convergence-execution/P4/readiness-round93-failure/tool-output.txt",
+      "bytes": 328,
+      "sha256": "eae0fdcb0a98121d067fa29bfc25cea34c04c6f2e091e7721a108c20ddadaa32"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t12-convergence-execution/P4/readiness-round93-failure/failure.json",
+      "bytes": 469,
+      "sha256": "e5621548b7e648e350561f313e0eed5f30dda1a07342ac6e4392eb7e5b6fef38"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t12-convergence-execution/P4/readiness-round93-failure/root-unknown-process-observation.json",
+      "bytes": 1851,
+      "sha256": "bf585213fb3329d7d34ece877b8899f964a41a4685afdbb72c04c6dd3db5b993"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t12-convergence-execution/P4/readiness-round93-failure/root-project-pytest-resources.json",
+      "bytes": 1661,
+      "sha256": "3ab127f94bbf93cdbde564e9507b36cea8740be3892ac703b1015ffb463c3db3"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round98-p4-readiness-process-guard-20261008/bounded-diagnosis.json",
+      "bytes": 6517,
+      "sha256": "eb00539853a69a260a021a0e742bf735c9ce26f8be80053372fa85636d701ffe"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round93-p4-empty-instance-inventory-20261007/plan.json",
+      "bytes": 37590,
+      "sha256": "fde9eb4ea5dc173032b44a94929aed002faac1975b86854a31451f514fce1ba6"
+    }
+  ],
+  "planning_execution": {
+    "limited_proc_snapshot": "artifacts/research/process/20261004-ced-development/astra-rounds/round98-p4-readiness-process-guard-20261008/bounded-diagnosis.json",
+    "original_guard_reruns": 0,
+    "product_imports_tests_actual_git": 0,
+    "ROOT_resource_observations": "Independent read-only parent evidence, not generated by planner and not proof processes have terminated."
+  },
+  "plan_md_sha256": "9462f596d35f7620097f0198329584fb90f0830113ee09508c6ffba866fa0f80"
+}

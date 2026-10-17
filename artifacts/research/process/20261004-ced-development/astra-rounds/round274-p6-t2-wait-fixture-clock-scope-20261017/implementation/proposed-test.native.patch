@@ -1,0 +1,49 @@
+*** Begin Patch
+*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@
+                 connection.close()
+ 
+ 
+-def _b_t2_wait_for_event_lock(runtime, session, repo, events, observed, counter_kind):
++def _b_t2_wait_for_event_lock(runtime, session, repo, events, observed, counter_kind, *, clock_start):
+     import queue
+     import sys
+     import time
+@@
+                         history.append({"event": "main_returned_from_profile_inside_real_acquire",
+                                         "frame_id": id(top), "offset": top.f_lasti,
+                                         "no_c_return_yet": True, "holder_still_owns_lock": True})
+-                        matching = [item for item in observed.clocks if item[2] == counter_kind]
++                        matching = [item for item in observed.clocks[clock_start:] if item[2] == counter_kind]
+                         assert len(matching) == 1
+                         clock, raw, _ = matching[0]
+                         assert clock._closed is False
+@@
+         with _b_t2_observe(monkeypatch, attempt) as observed:
+             for domain in ("D_app", "D_lease"):
+                 directory = tmp_path / (backend + "-wait-" + domain)
++                clock_start = len(observed.clocks)
+ 
+                 def exercise(runtime, session, worker, repo, job, events, reads, observed):
+                     from cloud_edge_robot_arm.contracts import RobotState
+@@
+                         runtime.bootstrap, "RESERVE_INITIAL_CAPTURE", operation_id
+                     )
+                     history, errors, holder, state = _b_t2_wait_for_event_lock(
+-                        runtime, session, repo, events, observed, domain
++                        runtime, session, repo, events, observed, domain, clock_start=clock_start
+                     )
+                     try:
+                         with pytest.raises((RuntimeError, ValueError),
+@@
+                         for release in observed.release_events:
+                             release.set()
+                         holder.join(timeout=5)
+-                    assert not holder.is_alive()
+-                    assert not errors, errors
++                        assert not holder.is_alive()
++                        assert not errors, errors
+                     names = [item["event"] for item in history]
+                     for earlier, later in zip((
+                         "holder_owns_real_lock", "real_lock_acquire_c_call",
+*** End Patch

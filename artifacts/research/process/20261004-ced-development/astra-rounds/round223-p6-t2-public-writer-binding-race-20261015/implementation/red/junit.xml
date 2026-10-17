@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="3.338" timestamp="2026-10-15T14:37:18.924176+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_local_public_writer_binding_race" name="test_late_binding_rejects_public_writer[memory]" time="1.713"><failure message="cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: only genuine exact worker poll opens session">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x76ea4d779b50&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r223-red/test_late_binding_rejects_publ0')
+request = &lt;FixtureRequest for &lt;Function test_late_binding_rejects_public_writer[memory]&gt;&gt;
+backend = 'memory'
+
+    @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
+    def test_late_binding_rejects_public_writer(monkeypatch, tmp_path, request, backend):
+        with _r223_observe(monkeypatch, request) as observed:
+&gt;           case = _r223_case(monkeypatch, tmp_path, request, backend, observed, mode='race')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_local_public_writer_binding_race.py:252: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_local_public_writer_binding_race.py:242: in _r223_case
+    return _r223_run(monkeypatch, tmp_path / 'real-factory', backend, observed, mode=mode, second=second)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_local_public_writer_binding_race.py:220: in _r223_run
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:3654: in poll_once
+    result = real_poll(worker, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:166: in poll_once
+    session = _open_worker_lease_session(self)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+worker = &lt;cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x76ea4c316210&gt;
+
+    def _open_worker_lease_session(worker: SimulationWorker) -&gt; OperationalLeaseSession:
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+            SQLiteSimulationJobRepository,
+        )
+        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+    
+        if (
+            type(worker) is not SimulationWorker
+            or sys._getframe(1).f_code is not SimulationWorker.poll_once.__code__
+        ):
+&gt;           raise OperationalLeaseError("only genuine exact worker poll opens session")
+E           cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: only genuine exact worker poll opens session
+
+src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py:923: OperationalLeaseError</failure></testcase><testcase classname="tests.test_local_public_writer_binding_race" name="test_late_binding_rejects_public_writer[sqlite]" time="0.485"><failure message="cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: only genuine exact worker poll opens session">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x76ea4c317a40&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r223-red/test_late_binding_rejects_publ1')
+request = &lt;FixtureRequest for &lt;Function test_late_binding_rejects_public_writer[sqlite]&gt;&gt;
+backend = 'sqlite'
+
+    @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
+    def test_late_binding_rejects_public_writer(monkeypatch, tmp_path, request, backend):
+        with _r223_observe(monkeypatch, request) as observed:
+&gt;           case = _r223_case(monkeypatch, tmp_path, request, backend, observed, mode='race')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_local_public_writer_binding_race.py:252: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_local_public_writer_binding_race.py:242: in _r223_case
+    return _r223_run(monkeypatch, tmp_path / 'real-factory', backend, observed, mode=mode, second=second)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_local_public_writer_binding_race.py:220: in _r223_run
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:3654: in poll_once
+    result = real_poll(worker, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:166: in poll_once
+    session = _open_worker_lease_session(self)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+worker = &lt;cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x76ea4c137ef0&gt;
+
+    def _open_worker_lease_session(worker: SimulationWorker) -&gt; OperationalLeaseSession:
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+            SQLiteSimulationJobRepository,
+        )
+        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+    
+        if (
+            type(worker) is not SimulationWorker
+            or sys._getframe(1).f_code is not SimulationWorker.poll_once.__code__
+        ):
+&gt;           raise OperationalLeaseError("only genuine exact worker poll opens session")
+E           cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: only genuine exact worker poll opens session
+
+src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py:923: OperationalLeaseError</failure></testcase><testcase classname="tests.test_local_public_writer_binding_race" name="test_late_binding_rejects_public_writer_second_connection" time="0.493"><failure message="cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: only genuine exact worker poll opens session">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x76ea4c3164e0&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r223-red/test_late_binding_rejects_publ2')
+request = &lt;FixtureRequest for &lt;Function test_late_binding_rejects_public_writer_second_connection&gt;&gt;
+
+    def test_late_binding_rejects_public_writer_second_connection(monkeypatch, tmp_path, request):
+        with _r223_observe(monkeypatch, request) as observed:
+&gt;           case = _r223_case(monkeypatch, tmp_path, request, 'sqlite', observed, mode='race', second=True)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_local_public_writer_binding_race.py:262: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_local_public_writer_binding_race.py:242: in _r223_case
+    return _r223_run(monkeypatch, tmp_path / 'real-factory', backend, observed, mode=mode, second=second)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_local_public_writer_binding_race.py:220: in _r223_run
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:3654: in poll_once
+    result = real_poll(worker, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:166: in poll_once
+    session = _open_worker_lease_session(self)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+worker = &lt;cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x76ea4c32a7e0&gt;
+
+    def _open_worker_lease_session(worker: SimulationWorker) -&gt; OperationalLeaseSession:
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+            SQLiteSimulationJobRepository,
+        )
+        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+    
+        if (
+            type(worker) is not SimulationWorker
+            or sys._getframe(1).f_code is not SimulationWorker.poll_once.__code__
+        ):
+&gt;           raise OperationalLeaseError("only genuine exact worker poll opens session")
+E           cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: only genuine exact worker poll opens session
+
+src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py:923: OperationalLeaseError</failure></testcase></testsuite></testsuites>

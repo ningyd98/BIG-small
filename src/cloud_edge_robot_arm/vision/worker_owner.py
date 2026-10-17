@@ -478,6 +478,50 @@ def compile_worker_original_plan(
     )
 
 
+def _local_worker_policy(contract, observation, source_hashes):
+    """Pure compiler values shared by staged production and detached audit."""
+    from cloud_edge_robot_arm.vision.local_temporal import _camera_descriptor
+
+    sources = _plain_worker_sources(source_hashes)
+    if (not REQUIRED_COMPILER_SOURCES <= sources.keys()
+            or "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py" not in sources):
+        raise ValueError("complete local compiler source inventory required")
+    descriptor = _camera_descriptor(observation.model_dump(mode="json"))
+    requirements, graph = {}, []
+    for index, step in enumerate(contract.steps):
+        if step.skill not in _PRE:
+            raise ValueError("unsupported original local skill policy")
+
+        def condition(name):
+            if name not in WORKER_CONDITION_REGISTRY:
+                raise ValueError("original local condition has no versioned mapping")
+            tolerances = {
+                "max_age_s": 5.0, "calibration_version": observation.calibration_version,
+                "minimum_safe_height": contract.safety_constraints.minimum_safe_height,
+                "condition_registry_version": WORKER_CONDITION_REGISTRY_VERSION,
+                "camera_source_descriptor_sha256": descriptor,
+            }
+            if name == "object_held":
+                tolerances["holding_feedback_required"] = True
+            if name == "tcp_at_resolved_target":
+                tolerances.update(target_reference="grounded_step.parameters.target_pose", max_distance_m=0.02)
+            target = (contract.task_target.target_region_id if WORKER_CONDITION_REGISTRY[name] == "region"
+                      else contract.task_target.object_id)
+            return ConditionSpec(name, target, tolerances, ("rgbd",))
+
+        requirements[step.step_id] = OriginalActionRequirements(
+            step, tuple(condition(name) for name in dict.fromkeys((*step.preconditions, *_PRE[step.skill]))),
+            tuple(condition(name) for name in dict.fromkeys((*step.success_conditions, *_POST[step.skill],
+                  *(contract.completion_criteria if index == len(contract.steps) - 1 else ())))),
+            0.01, ("rgbd",), 5.0, max(step.timeout_ms, step.expected_duration_ms) / 1000, sources,
+        )
+        graph.append({"step_id": step.step_id,
+                      "depends_on": [] if index == 0 else [contract.steps[index - 1].step_id],
+                      "evidence_ids": [observation.observation_id],
+                      "physical_effect_id": f"{step.step_id}:effect", "completed": False})
+    return requirements, graph
+
+
 def grounded_worker_effect_conditions(
     original: VisualOriginalPlan, grounding: StepGroundingBinding
 ) -> tuple[ConditionSpec, ...]:

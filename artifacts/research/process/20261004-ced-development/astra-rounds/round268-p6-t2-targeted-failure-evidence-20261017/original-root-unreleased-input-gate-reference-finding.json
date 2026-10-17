@@ -1,0 +1,247 @@
+{
+  "round": "R268",
+  "status": "UNRELEASED_METADATA_GATE_REFERENCE_REVIEW_FINDING",
+  "problem": "Unexecuted ROOT metadata gate draft selects parent/input-observation.json from R268's45 inputs, but that path is absent from the exact frozen list. Existing reviewed author runner instead resolves old manifest through pinned parent plan.inputs.complete_manifest.",
+  "failure_kind": "Static source review before gate release; draft has not executed, no StopIteration or runtime failure claimed",
+  "original_draft": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-final-source-input-argv-gate.py",
+    "source": "\"\"\"R268 ROOT finite metadata/source/native/argv gate; no imports of reviewed sources.\"\"\"\nfrom pathlib import Path\nimport base64, hashlib, json, shlex, stat\nROOT=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall\")\nB=ROOT/\"artifacts/research/process/20261004-ced-development/astra-rounds\"\nD=B/\"round268-p6-t2-targeted-failure-evidence-20261017\"\nD272=B/\"round272-p6-t2-plugin-timeout-ini-normalization-20261017\"\nREPORT={\"path\":str(D/\"implementation/change-report.json\"),\"bytes\":15532,\"sha256\":\"6eeec1ab8649f55cfe09955054625af71d5fcba49b0b8bfb54a0b722407f358d\"}\nchecks=0\ndef identity(p):\n return {k:p[k] for k in (\"path\",\"bytes\",\"sha256\")}\ndef check(p):\n global checks\n q=Path(p[\"path\"]); before=q.lstat()\n assert stat.S_ISREG(before.st_mode),str(q)\n raw=q.read_bytes(); after=q.lstat()\n assert (before.st_ino,before.st_mode,before.st_size,before.st_mtime_ns,before.st_ctime_ns)==(after.st_ino,after.st_mode,after.st_size,after.st_mtime_ns,after.st_ctime_ns)\n assert len(raw)==p[\"bytes\"] and hashlib.sha256(raw).hexdigest()==p[\"sha256\"],str(q)\n checks+=1\n return raw\ndef record(q,raw):\n return {\"path\":str(q),\"bytes\":len(raw),\"sha256\":hashlib.sha256(raw).hexdigest()}\ndef absent(q):\n q=Path(q); assert not q.exists() and not q.is_symlink(),str(q)\ndef full_before(row):\n raw=base64.b64decode(row[\"base64\"],validate=True)\n assert check(row[\"archive\"])==raw and record(row[\"original\"][\"path\"],raw)==identity(row[\"original\"])\n return raw\nr=json.loads(check(REPORT)); fixed={REPORT[\"path\"]:REPORT}\ndef fixed_check(pin):\n raw=check(pin); fixed[pin[\"path\"]]=identity(pin); return raw\nfor group in (\"sources\",\"candidates\",\"before\",\"authority\",\"component_reports\"):\n for pin in r[group].values(): fixed_check(pin)\nfixed_check(r[\"native\"]); fixed_check(r[\"limited_diff\"])\np=json.loads(check(r[\"authority\"][\"plan\"]))\nassert p[\"round\"]==\"R268\"\nobs_pin=p[\"input_observation\"]; o=json.loads(fixed_check(obs_pin))\ncontext=json.loads(check(r[\"authority\"][\"context_manifest\"])); mapped={}\nfor row in context[\"changes\"]:\n raw=full_before(row[\"before\"]); old=identity(row[\"before\"][\"original\"])\n assert old[\"path\"]==row[\"after\"][\"path\"] and old[\"path\"] not in mapped\n check(row[\"after\"]); assert Path(old[\"path\"]).lstat().st_mode==row[\"mode\"]\n mapped[old[\"path\"]]=(old,raw)\nassert set(mapped)=={p[\"history_and_context\"][\"state_path\"],p[\"history_and_context\"][\"phase_path\"]}\nassert len(o[\"inputs\"])==45\nfor pin in o[\"inputs\"]:\n if pin[\"path\"] in mapped:\n  old,raw=mapped[pin[\"path\"]]; assert identity(pin)==old and record(pin[\"path\"],raw)==old\n else: check(pin)\nfor key in (\"whitelist_supplement\",\"ini_normalization_plan\"):\n s=json.loads(check(r[\"authority\"][key]))\n for pin in s[\"inputs\"]: fixed_check(pin)\n observation=s[\"input_observation\"] if key==\"whitelist_supplement\" else s[\"observation\"]\n fixed_check(observation)\np272=json.loads(check(r[\"authority\"][\"ini_normalization_plan\"]))\nold=check(p272[\"source_scope\"][\"old_candidate\"])\na=p272[\"source_scope\"][\"old_line\"].encode(); b=p272[\"source_scope\"][\"new_line\"].encode()\nassert old.count(a)==1\nexpected=old.replace(a,b,1)\nassert expected==check(r[\"candidates\"][\"plugin_current\"])==check(r[\"sources\"][\"plugin\"])\nassert len(expected)==19919 and hashlib.sha256(expected).hexdigest()==\"6ab2b3ac36f511337ff740ee99866307f315c7d1ec73d0a6f204c3703f48a711\"\nassert check(r[\"sources\"][\"runner\"])==check(r[\"candidates\"][\"runner\"])\nassert r[\"sources\"][\"runner\"][\"sha256\"]==\"12f00855102f3818d5abf4093041d3701ba83234cd8d1930f4633ee49043d4fd\"\nfor key,pin in r[\"sources\"].items(): assert Path(pin[\"path\"]).lstat().st_mode==r[\"source_modes\"][key]==33204\nrunner_report=json.loads(check(r[\"component_reports\"][\"runner\"]))\nfor pin in runner_report[\"records\"]: fixed_check(pin)\nfixed_check(runner_report[\"limited_diff\"])\nplugin_report=json.loads(check(r[\"component_reports\"][\"plugin\"]))\nfor key in (\"plan\",\"release\",\"original_candidate\",\"before\",\"before_manifest\",\"candidate\",\"installed_target\",\"native_receipt\",\"limited_diff\"):\n fixed_check(plugin_report[key])\nrunner_manifest=json.loads(check(r[\"before\"][\"runner_manifest\"]))\nfull_before(runner_manifest[\"template\"])\nplugin_manifest=json.loads(check(r[\"before\"][\"plugin_manifest\"]))\nassert full_before(plugin_manifest)==old\nassert plugin_manifest[\"mode\"]==33204\nfixed_check(plugin_manifest[\"original_native_receipt\"])\nnative=json.loads(check(r[\"native\"]))\nrunner_native=json.loads(check(next(pin for pin in runner_report[\"records\"] if pin[\"path\"].endswith(\"/runner-implementation-native-tool-return.json\"))))\nplugin_native=json.loads(check(plugin_report[\"native_receipt\"]))\nassert native[\"runner\"]==runner_native and native[\"plugin\"]==plugin_native\nassert native[\"numeric_exit\"] is None and native[\"independent_stdout\"] is None and native[\"independent_stderr\"] is None\ndef native_add(stage,target):\n assert stage[\"tool\"]==\"tools.apply_patch\" and stage[\"actual_tool_return\"]=={}\n assert stage[\"numeric_exit\"] is None and stage[\"independent_stdout\"] is None and stage[\"independent_stderr\"] is None\n lines=stage[\"arguments\"].splitlines()\n assert lines[0]==\"*** Begin Patch\" and lines[1]==\"*** Add File: \"+target[\"path\"] and lines[-1]==\"*** End Patch\"\n assert all(line.startswith(\"+\") for line in lines[2:-1])\n raw=(\"\\n\".join(line[1:] for line in lines[2:-1])+\"\\n\").encode()\n assert raw==check(target)\nassert len(runner_native[\"stages\"])==2\nnative_add(runner_native[\"stages\"][0],r[\"candidates\"][\"runner\"])\nnative_add(runner_native[\"stages\"][1],r[\"sources\"][\"runner\"])\nnative_add(plugin_native,r[\"sources\"][\"plugin\"])\nnative_add(native[\"historical_plugin_candidate\"],r[\"candidates\"][\"plugin_historical\"])\nparent=B/\"round258-p6-t2-parent-green7-continuation-20261017\"\nresult=json.loads(check(next(pin for pin in o[\"inputs\"] if pin[\"path\"]==str(parent/\"implementation/green/result.json\"))))\nsi=json.loads(check(result[\"source_before\"]))\nassert len(si[\"sources\"])==27 and len(si[\"protected\"])==211\nfor row in si[\"sources\"]:\n raw=check(row); assert raw==check(row[\"physical\"])==base64.b64decode(row[\"base64\"],validate=True)\n assert Path(row[\"path\"]).lstat().st_mode==row[\"mode\"]\nfor pin in si[\"protected\"]: check(pin)\nh=json.loads(check(next(pin for pin in o[\"inputs\"] if pin[\"path\"]==str(parent/\"input-observation.json\"))))\nassert len(h[\"missing_registry35\"])==35 and len(h[\"old_absent_sidecars90\"])==90\nfor row in h[\"missing_registry35\"]: absent(row[\"original\"][\"path\"])\nfor row in h[\"old_absent_sidecars90\"]: absent(row[\"path\"])\nfor group,count in ((\"R242_R248\",12),(\"R251\",18)):\n assert len(h[\"retained_workspace_databases\"][group])==count\n for row in h[\"retained_workspace_databases\"][group]:\n  check(row[\"pin\"]); assert len(row[\"sidecars\"])==3\n  for side in row[\"sidecars\"]:\n   assert side[\"exists\"] is False and side[\"is_symlink\"] is False and side[\"pin\"] is None\n   absent(side[\"path\"])\nassert len(result[\"new_retained_databases\"])==10\npresent=missing=0\nfor row in result[\"new_retained_databases\"]:\n assert check(row[\"pin\"])==check(row[\"archive\"]) and len(row[\"sidecars\"])==3\n for side in row[\"sidecars\"]:\n  if side[\"exists\"]:\n   assert side[\"is_symlink\"] is False and check(side[\"pin\"])==check(side[\"archive\"]); present+=1\n  else:\n   assert side[\"is_symlink\"] is False and side[\"pin\"] is None; absent(side[\"path\"]); missing+=1\nassert (present,missing)==(2,28)\nsettlement=json.loads(check(next(pin for pin in o[\"inputs\"] if pin[\"path\"]==str(parent/\"root-parent-green7-failure-settlement.json\"))))\nfull_before(settlement[\"root_before\"])\nargv={}\nassert set(p[\"commands\"])=={\"wait_memory_failure\",\"dual_progress\"}\nfor name,c in p[\"commands\"].items():\n assert c[\"authorized\"]==1 and c[\"used\"]==0 and c[\"remaining\"]==1 and c[\"node_count\"]==1\n assert [a for a in c[\"child_argv\"] if \"::\" in a]==[c[\"node\"]]\n assert c[\"limits\"][\"child_wall_seconds\"]==600 and c[\"limits\"][\"cleanup_total_seconds\"]==15\n assert c[\"limits\"][\"faulthandler_one_shot_seconds\"]==540 and c[\"limits\"][\"attempts\"]==1 and c[\"limits\"][\"retries\"]==0\n assert c[\"outputs\"]==r[\"command_outputs\"][name]\n for path in c[\"outputs\"].values(): absent(path)\n literal=\"env -i \"+\" \".join(shlex.quote(k+\"=\"+v) for k,v in c[\"launcher_env\"].items())+\" \"+\" \".join(shlex.quote(x) for x in c[\"launcher_argv\"])\n argv[name]={\"cmd\":literal,\"workdir\":c[\"cwd\"],\"yield_time_ms\":c[\"tool_yield_time_ms\"],\"max_output_tokens\":c[\"tool_max_output_tokens\"]}\nfor path in p[\"runner_contract\"][\"role_files\"].values(): absent(path)\nfor path in (D/\"source-gate.json\",D/\"script-gate.json\",D/\"root-reservations\",D/\"root-final-input-check.json\"): absent(path)\nout={\"round\":\"R268\",\"status\":\"ROOT_FINAL_SOURCE_NATIVE_INPUT_ARGV_VERIFIED_NO_RUNTIME\",\"checks\":checks,\"sources\":r[\"sources\"],\"report\":REPORT,\"fixed_inputs\":list(fixed.values()),\"context_manifest\":r[\"authority\"][\"context_manifest\"],\"interface\":r[\"authority\"][\"role_gate_interface\"],\"native\":r[\"native\"],\"plan\":r[\"authority\"][\"plan\"],\"observation\":obs_pin,\"exact_tool_arguments\":argv,\"T2_complete\":False,\"runtime_executed\":False}\nraw=(json.dumps(out,ensure_ascii=False,indent=2)+\"\\n\").encode()\nsummary=json.dumps({\"checks\":checks,\"input_records\":45,\"full_sources\":27,\"protected\":211,\"old_DB\":30,\"R258_DB_pairs\":10,\"R258_sidecars\":[present,missing],\"native_Add_reconstructions\":4,\"exact_tool_arguments\":argv,\"runtime_released\":False},ensure_ascii=False)\nassert len(summary.encode())<=6000\nwith (D/\"root-final-input-check.json\").open(\"xb\") as handle: assert handle.write(raw)==len(raw)\nprint(summary)\n"
+  },
+  "frozen_observation": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/input-observation.json",
+    "bytes": 25321,
+    "sha256": "b9bf488904254377daf32daa0ddaca61aafc5f24194c10605a1983e42a00c03e"
+  },
+  "exact_45_input_records": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/plan.json",
+      "bytes": 152521,
+      "sha256": "50970ee4e58d28f7732686ff11befd01f1d56a3657a200d97dba9b45ffa764e7"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/root-original-green7-failure-observation.json",
+      "bytes": 15180,
+      "sha256": "9bc01afc8d3019a3638c950ff7af280b1cba0b746e5e6debedf966b094ad9087"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/root-failure-raw-attempt-observation.json",
+      "bytes": 4508,
+      "sha256": "03e6e3fcd23e6f920e7a2a82edea659084aca407f316f11183800043f49d6aae"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/root-parent-green7-failure-settlement-gate.py",
+      "bytes": 6630,
+      "sha256": "34da62aafb833023f2828bde338144734987e7614e7f4e9480d40fb01f5e5ece"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/root-parent-green7-reservation.json",
+      "bytes": 485237,
+      "sha256": "3800e2227569acada86497b632151e4de3f7bf476a218a523869ed6003f1d99e"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/run-parent-t2-green.py",
+      "bytes": 71517,
+      "sha256": "c157178f61ae3609356fa9441f9f953b116a4ebccbd8f324b172b6d2c0980cba"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/result.json",
+      "bytes": 540348,
+      "sha256": "51714d471403baaf8a2e7b8dc3f3963c8a66c3ab951ab9400066ac7ed0485b8f"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/actual-tool-return.json",
+      "bytes": 4323,
+      "sha256": "4e2e5867bc1e153751f943c760b5ff0ba01905d5ab47bd6746bc93c81ab9dbe2"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/invocation.json",
+      "bytes": 690772,
+      "sha256": "b463b3c4699bc2bf3b65e808d3dbf81dd87c1032d92b9219420d6c09f5057a76"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/resource-summary.json",
+      "bytes": 1109814,
+      "sha256": "cd22744a18a1fdd36aae4169c1d45d24e18c4657bc1013f2614842c793a43efc"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/cases.json",
+      "bytes": 4868398,
+      "sha256": "a911b9d027fec5b77e4252a538df53067d44fc61d8c897fc8371c08d094dc832"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/stdout.txt",
+      "bytes": 2,
+      "sha256": "096aa8510b0dc13190f1f237db8e29ad6ea34e2f779f2088c7826248535fbf6a"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/prerequisite.json",
+      "bytes": 17604,
+      "sha256": "039047e1a76dd41dd98a4f2c03a0667a18908849340ec4075112c9ddbe862c5d"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/before/source-index.json",
+      "bytes": 33005846,
+      "sha256": "25c03568905b28bd8cfa3e9f4d1f74434a833800fcb3b3a0b3bf737b5d87479b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/source-after.json",
+      "bytes": 415703,
+      "sha256": "f86c1b0819fa649babe9be6e3b863e557651b346b8dae46e6b90db7304c8162a"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py",
+      "bytes": 254018,
+      "sha256": "ed602dc9ba5c0b15af20fbe8ca4d9b58d2e4e45fac621dc6f5e5e2cd4a94e7d3"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "bytes": 123955,
+      "sha256": "9b94e77bdffa6744d228d508b19c2235762c0c728aabc7a39bba739173b1a25f"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "bytes": 48952,
+      "sha256": "096262bd46d86c2acbd0cbe03f4bb03942191d38e47d93b399de6ad12a0dcb69"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "bytes": 40869,
+      "sha256": "f71d9bcb9c38a7c93e989f7649360b4a0624b4cc2d869bc389b9c9f6b8a76580"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json",
+      "bytes": 91691,
+      "sha256": "5013b4328d6d651de7b760d69773e49821d5b88bb87cb55b392d163d296199e7"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/before/root-parent-green7-failure-settlement/root-command-ledger.json",
+      "bytes": 90758,
+      "sha256": "c06208e660cf9c3fbea8012fa297f9467565038969b4bdac6331c1c05859cad5"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json",
+      "bytes": 47274,
+      "sha256": "a0622a2011ee44f6ea2299db8e9e6ed4d2c31b9964818168e7a003b6a3a822a1"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round266-p6-t2-parent-green7-timeout-disposition-20261017/original-planner-control-before-schema-failure.json",
+      "bytes": 89447,
+      "sha256": "9e99b7a4cb2b577059c7185cbf3a8655e4c7aba09e267a648aee4fcfd85a9825"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round267-p6-t2-planner-control-before-schema-disposition-20261017/plan.json",
+      "bytes": 4673,
+      "sha256": "a1d39efb8564d1c921913599f1439a960dd501e6543e9c4750a8f6ac2ffb8fea"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round267-p6-t2-planner-control-before-schema-disposition-20261017/root-disposition.json",
+      "bytes": 32483,
+      "sha256": "064cae7c93126ad44f22cc4a56761d8bf4142db7df2d01a7f114a93ce130b87d"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/resources/6d5986b581e0d1d96315725cd768e9acc5ca2ebc807503c29bebbed0a195f85b.json",
+      "bytes": 479644,
+      "sha256": "b8e43f6bff10278a15c4f23c343806d1f83829843c91b9ccf48ba12feb5d1ad9"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/resources/b19d08e3d464a0d299421b035233b275c13285446ac5830e1605936b5c94bdc3.json",
+      "bytes": 479687,
+      "sha256": "ab7dc2ef80ad1819c9f2b22c51acd30c0c7eea0930079296ceda9bdc9b565c0b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/persistent-basetemp/test_memory_sqlite_publication1/sqlite-wait-D_app/after-both-lock-denial.json",
+      "bytes": 1383206,
+      "sha256": "856c33617185dd4be92796a6b866808fa838ed816be0d335a4c8c8783e7cd3eb"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/implementation/green/persistent-basetemp/test_memory_sqlite_publication0/memory-wait-D_app/after-both-lock-denial.json",
+      "bytes": 1430416,
+      "sha256": "cb92993ed1f6d9ee89a909963beed62704cb3d21fc62f780ecd9fb3d62ee9670"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round266-p6-t2-parent-green7-timeout-disposition-20261017/plan.json",
+      "bytes": 22052,
+      "sha256": "65cf6dba0e8410d24d2a52c13e85b0fe16d3c45c60f7e41fb35d41a99afc3bdd"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round266-p6-t2-parent-green7-timeout-disposition-20261017/input-observation.json",
+      "bytes": 48661,
+      "sha256": "cfa29eeb4ddde122edb5ad68991fa2c415362165039c1dc68b5dd422071caf5d"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round266-p6-t2-parent-green7-timeout-disposition-20261017/root-failure-settlement-acceptance.json",
+      "bytes": 6697,
+      "sha256": "a84a71feae586a4f18ebcd6340368a99ff1f017eead4bf929defa2eff0b3b5bf"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round266-p6-t2-parent-green7-timeout-disposition-20261017/step-report.json",
+      "bytes": 1208,
+      "sha256": "ecd1e67a62ed716d2cd7d023733d6126c16d2e2f47ba14808d8ad7e118e7effc"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/root-parent-green7-failure-settlement.json",
+      "bytes": 123661,
+      "sha256": "74f6fac117c69342a9954be5ffe668387467b3bd32f74fd89c6abd75af29772e"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/step-report.json",
+      "bytes": 2855,
+      "sha256": "d50b62c7224ea4d9bc3d540fcb7d6e2f336a9e7b26ad7b85efea9d9ae526a33e"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round264-p6-t2-parent-bridge-lifecycle-case-binding-20261017/plan.json",
+      "bytes": 18817,
+      "sha256": "76deed087d52b0806c5f70bd01975941d0b70817747a8241067ce699cac91666"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round267-p6-t2-planner-control-before-schema-disposition-20261017/step-report.json",
+      "bytes": 491,
+      "sha256": "f6acae4efdb292e8c18e4f7e9937e8ab2edc8d09e498ec1773d51934f92fadc9"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation/r235_startup_prerequisite.py",
+      "bytes": 5022,
+      "sha256": "e46122f6ce00f9c5d0e13be33301b8861b567cb3f25c33d41447f1ea68880e0d"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_time_v1.py",
+      "bytes": 24211,
+      "sha256": "ff226e9a616462c67d74d29931f8f9a7d21548f4f13f93ced64901b263229c0f"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/_pytest/runner.py",
+      "bytes": 19543,
+      "sha256": "10f2433cca73efa0f9772c6cc190119a6e85d67f5ac61f181549c14e4e6438cf"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/_pytest/faulthandler.py",
+      "bytes": 3683,
+      "sha256": "6e4854441dbef9131221c5a19b689fcdae3e1a5cc850fff9125bbb4fb7be2c3b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/_pytest/hookspec.py",
+      "bytes": 42849,
+      "sha256": "ca5ce6d785970ed31a20bd5134bac4715892fcc8528eab2158276df93ef11e72"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/active-t12-state.json",
+      "bytes": 139128,
+      "sha256": "ae2bc7fe7d66df41f51fa1e769bdfd94bdca5ecfb5ab686394dce43e05a5d221"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/phase-summary.md",
+      "bytes": 90577,
+      "sha256": "cc174501724be1d2c06dda1e917dc7f266d8c631c3bb6c613052bcaa7186aad1"
+    }
+  ],
+  "proposed_minimal_disposition": "Preserve original draft. Existing ROOT may use exact pinned parent plan already in45inputs then its explicit inputs.complete_manifest identity to obtain same historical35/90/database schema. No speculative fallback, no new manifest authority, no new validator/runtime slot.",
+  "source_change_or_gate_execution": false,
+  "all_R268_diagnostic_allowances_held": true,
+  "independent_stdout": null,
+  "independent_stderr": null
+}

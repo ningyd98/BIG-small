@@ -1,0 +1,437 @@
+{
+  "schema_version": "bigsmall.r228.root-normal-reader-activation.v1",
+  "plan": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round228-p6-t2-root-report-scalar-reader-20261015/plan.json",
+    "bytes": 28533,
+    "sha256": "b323050dd2453744cf212c0b78edefa6af52bf49052796f9a0863cbdac5ee467"
+  },
+  "plan_md": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round228-p6-t2-root-report-scalar-reader-20261015/plan.md",
+    "bytes": 2694,
+    "sha256": "afac26370bd797dd2663732d83bdb7c941a0d72ad0ac274c6211e894d025f98e"
+  },
+  "ROOT_complete_plan_read": "ccf843",
+  "ROOT_source_review": "Full final160-line stdin source displayed and reviewed in functions, collection lengths guarded by actual type, explicit document scalars, precise before/after mapping, complete durable result/failures; no source execution yet",
+  "stdin_source": "from pathlib import Path\nimport hashlib,json,sys,traceback,shlex\nROOT=Path('/home/ningyd/文档/ChatGPT/BIGsmall')\nA=ROOT/'artifacts/research/process/20261004-ced-development/astra-rounds'\nR=A/'round228-p6-t2-root-report-scalar-reader-20261015'\nD=A/'round222-p6-t2-local-lease-dispatch-patch-recovery-20261015'\nI=D/'implementation'\nREPORT=R/'root-report-validation.json'\nchecks=[];pins=[];location='startup'\nreport={'schema_version':'bigsmall.r228.type-safe-validation.v1','status':'INCOMPLETE','checks':checks,'pin_records':pins,'phases':{k:'NOT_COMPLETED' for k in ('inputs','normatives','outputs_sources','protected_history','roles')},'product_execution':False,'T2_complete':False}\ndef need(ok,label):\n    checks.append({'check':label,'passed':ok is True})\n    if ok is not True:raise ValueError(label)\ndef identity(v):\n    need(type(v) is dict,'identity object')\n    need(type(v.get('path')) is str and type(v.get('bytes')) is int and type(v.get('sha256')) is str,'identity field types')\n    return {k:v[k] for k in ('path','bytes','sha256')}\ndef pin(path,data):\n    return {'path':str(path),'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}\ndef read_pin(record,original=None):\n    global location\n    v=identity(record);p=Path(v['path']);location=str(p)\n    need(not p.is_symlink(),'not symlink: '+str(p))\n    data=p.read_bytes();observed=pin(p,data)\n    pins.append({'expected':record,'original_historical':original,'observed':observed,'matches':observed==v})\n    need(observed==v,'exact bytes: '+str(p))\n    return data\ndef load(path):\n    global location\n    location=str(path);v=json.loads(Path(path).read_bytes())\n    need(type(v) is dict,'JSON root object: '+str(path))\n    return v\ndef shape(v):\n    if type(v) is dict:return {'kind':'object','count':len(v),'keys':list(v)}\n    if type(v) is list:return {'kind':'array','count':len(v)}\n    if v is None:return {'kind':'null','value':None}\n    if type(v) is bool:return {'kind':'boolean','value':v}\n    if type(v) is int:return {'kind':'integer','value':v}\n    if type(v) is float:return {'kind':'number','value':v}\n    if type(v) is str:return {'kind':'string','utf8_bytes':len(v.encode()),'sha256':hashlib.sha256(v.encode()).hexdigest()}\n    raise TypeError('non-JSON value')\ndef count(v,n,label):\n    need(type(v) is list,label+' array')\n    need(len(v)==n,label+' exact count')\ndef scalar(doc,key,value):\n    need(key in doc and type(doc[key]) is type(value) and doc[key]==value,'scalar '+key)\ndef main():\n    activation=load(R/'root-activation.json')\n    need(activation['read_slot']=={'authorized':1,'used':1,'remaining':0,'state':'RESERVED_BY_ROOT'},'single reserved normal metadata read')\n    need(Path.cwd()==ROOT and sys.argv==['-'],'actual stdin argv/cwd')\n    plan=json.loads(read_pin(activation['plan']));need(type(plan) is dict,'pinned plan object')\n    for record in plan['inputs']:read_pin(record)\n    report['phases']['inputs']='PASS'\n    prepared=load(I/'prepared-text-values.json');step=load(I/'step-report.json');index=load(I/'source-index.json');change=load(I/'change-report.json')\n    native=load(I/'actual-patch-tool-return.json');actual=load(I/'actual-metadata-tool-return.json');gate=load(D/'root-activation.json')\n    report['documents']={name:{'pin':pin(path,Path(path).read_bytes()),'fields':{k:shape(v) for k,v in doc.items()}} for name,path,doc in (('step',I/'step-report.json',step),('index',I/'source-index.json',index),('change',I/'change-report.json',change),('native',I/'actual-patch-tool-return.json',native),('actual',I/'actual-metadata-tool-return.json',actual))}\n    report['normatives']={'step':{k:v for k,v in step.items() if k not in ('checks','outputs')},'index':{k:v for k,v in index.items() if k not in ('sources','unaffected_manifest_records','protected')},'change':{k:v for k,v in change.items() if k not in ('before_after','edit_units','function_regions','checks','actual_apply_receipt')},'native':{k:v for k,v in native.items() if k!='tool_arguments'},'actual':actual}\n    for k,v in {'round':'R222','command':'metadata_readback','exit_code':0,'attempt':1,'retry':0,'source_changes':3,'qualified_function_regions':7,'edit_units':9,'unaffected_records':22,'protected_count':211,'test_execution':False,'product_commands':0,'runtime_evidence':None,'timeout_seconds':120,'cwd':str(ROOT)}.items():scalar(step,k,v)\n    count(step['checks'],673,'step checks')\n    for item in step['checks']:need(type(item) is dict and item.get('passed') is True,'existing readback check PASS')\n    report['complete_readback_checks']=step['checks']\n    count(step['outputs'],6,'step outputs');count(index['sources'],3,'index sources');count(index['unaffected_manifest_records'],22,'unaffected entries');count(index['protected'],211,'protected entries')\n    count(change['edit_units'],9,'change edit units');count(change['function_regions'],7,'change function regions');count(change['checks'],673,'change checks')\n    scalar(index,'round','R222');scalar(change,'round','R222');scalar(native,'round','R222')\n    scalar(change,'status','SOURCE_TEXT_SCOPE_ONLY');scalar(change,'product_execution',False);scalar(change,'runtime_evidence',None)\n    need(change['checks']==step['checks'],'same complete673 checks')\n    need(change['edit_units']==prepared['edit_units'] and change['function_regions']==prepared['function_regions'],'exact9units/7regions structures')\n    need(change['GREEN']=={'used':0,'remaining':1,'state':'HELD'},'GREEN held')\n    need(native['actual_tool_return']=={} and type(native['actual_tool_return']) is dict and native['numeric_exit'] is None,'native actual object and unknown numeric exit')\n    scalar(native,'attempt',1);scalar(native,'retry',0)\n    patch=(I/'corrected-patch.txt').read_bytes()\n    need(native['tool_arguments']['input'].encode()==patch,'full native argument equals frozen patch')\n    need(native['patch']==pin(I/'corrected-patch.txt',patch),'native patch pin')\n    need(change['actual_apply_receipt']==native,'change retains full actual native receipt')\n    for k,path in (('actual_apply_pin',I/'actual-patch-tool-return.json'),('prepared_values_pin',I/'prepared-text-values.json'),('corrected_patch_pin',I/'corrected-patch.txt')):\n        need(change[k]==pin(path,path.read_bytes()),'change '+k)\n    scalar(actual,'attempt',1);scalar(actual,'retry',0)\n    raw=actual['actual_tool_return'];need(type(raw) is dict and raw.get('chunk_id')=='5d3d62' and type(raw.get('exit_code')) is int and raw['exit_code']==0,'actual readback5d3d62 exit0')\n    need(actual['initial']==raw and actual['completion'] is None and actual['combined_tool_output']==raw['output'],'exact completed initial return')\n    need(not raw['output'].startswith('Warning: truncated output'),'complete actual summary')\n    summary=json.loads(raw['output']);need(type(summary) is dict,'actual summary object')\n    for k,v in {'status':'SOURCE_TEXT_SCOPE_ONLY','source_changes':3,'functions':7,'edit_units':9,'protected':211,'product_execution':False}.items():scalar(summary,k,v)\n    for k,path in (('step_result',I/'step-report.json'),('source_index',I/'source-index.json'),('limited_diff',I/'limited.diff')):need(summary[k]==pin(path,path.read_bytes()),'actual summary '+k)\n    rg=gate['metadata_readback_gate'];need(rg['state']=='RESERVED_BY_ROOT' and rg['used']==1 and rg['remaining']==0,'original readback spent reservation')\n    need(step['argv']==rg['argv'] and step['cwd']==rg['cwd'] and step['finite_env']==rg['finite_env'] and step['timeout_seconds']==rg['timeout_seconds'],'exact launch declaration')\n    need(shlex.split(actual['exec_command_arguments']['cmd'])==rg['transport_argv'] and actual['exec_command_arguments']['workdir']==str(ROOT),'actual exact finite-env transport')\n    need(actual['finite_env']==step['finite_env'] and actual['source_pin']==step['source_pin']==rg['source_pin'],'actual frozen reader identity')\n    read_pin(step['source_pin']);read_pin(step['activation_pin'])\n    need(actual['independent_stdout'] is None and actual['independent_stderr'] is None,'honest unavailable independent streams')\n    report['phases']['normatives']='PASS'\n    mappings=plan['exact_historical_mapping'];count(mappings,3,'historical mapping')\n    need(index['sources']==change['before_after'],'index/change exact source records')\n    need(type(prepared['expected']) is dict and len(prepared['expected'])==3,'three prepared expected objects')\n    for item in index['sources']:\n        path=item['source']['path'];expected=prepared['expected'][path];m=[x for x in mappings if x['current_after_pin']['path']==path]\n        need(len(m)==1,'one designated mapping');m=m[0]\n        need(identity(item['source'])==identity(m['current_after_pin']) and identity(item['archive'])==identity(m['after_archive_pin']),'exact designated after source/archive')\n        current=read_pin(item['source']);archive=read_pin(item['archive'])\n        need(current==archive==expected['after_text'].encode() and len(current)==expected['after_bytes'] and hashlib.sha256(current).hexdigest()==expected['after_sha256'],'complete current after bytes')\n        need(identity(item['before'])==identity(m['historical_live_pin'])==identity(expected['before']) and identity(item['before_archive'])==identity(m['historical_read_target'])==identity(expected['before_archive']),'exact historical identity/archive mapping')\n        read_pin(item['before_archive']);need(Path(path).stat().st_mode==expected['before_mode'],'current mode unchanged')\n    for record in step['outputs']:read_pin(record)\n    desired=[x['archive'] for x in index['sources']]+[pin(p,p.read_bytes()) for p in (I/'limited.diff',I/'change-report.json',I/'source-index.json')]\n    need(step['outputs']==desired,'six exact ordered output pins')\n    report['source_records']=index['sources'];report['output_records']=step['outputs']\n    report['phases']['outputs_sources']='PASS'\n    mapping_tallies={'original18':0,'prior285':0}\n    def historical(record,group=None):\n        ident=identity(record)\n        matches=[m for m in mappings if ident==identity(m['historical_live_pin'])]\n        need(len(matches)<=1,'unambiguous exact historical mapping')\n        if matches and group is not None:mapping_tallies[group]+=1\n        return read_pin(matches[0]['historical_read_target'],record) if matches else read_pin(record)\n    count(prepared['manifest_pairs'],25,'original manifest pairs')\n    unaffected=[x for x in prepared['manifest_pairs'] if x['source']['path'] not in prepared['expected']]\n    need(index['unaffected_manifest_records']==unaffected,'exact22 unaffected manifest entries')\n    for pair in prepared['manifest_pairs']:need(historical(pair['source'])==read_pin(pair['archive']),'actual25 source/archive relation')\n    need(index['protected']==prepared['protected'],'protected metadata retained')\n    source_gate=json.loads(read_pin(prepared['r226_gate_pin']));authority=json.loads(read_pin(source_gate['metadata_generation']['protected_manifest_pin']))\n    need(index['protected']==authority['protected'],'exact original protected authority and retained metadata')\n    for record in index['protected']:read_pin(record)\n    p204=load(A/'round204-p6-t2-preparation-runner-applicability-20261015/plan.json')\n    need(type(p204['inputs']) is list and len(p204['inputs'])>=6,'R204 input array')\n    extras=p204['inputs'][-6:]\n    for record in extras:read_pin(record)\n    p225=load(A/'round225-p6-t2-patch-preparer-class-scope-20261015/plan.json')\n    count(prepared['r225_inputs'],18,'original18 inputs');need(prepared['r225_inputs']==p225['inputs'],'exact original18 reader input structures')\n    for record in prepared['r225_inputs']:historical(record,'original18')\n    accepted=load(A/'round224-p6-t2-root-pin-record-comparison-20261015/root-acceptance.json')\n    prior=json.loads(read_pin(accepted['report']));need(type(prior) is dict,'prior authority object');count(prior['records'],285,'prior285 authority')\n    for record in prior['records']:historical(record['expected'],'prior285')\n    need(mapping_tallies=={'original18':3,'prior285':3},'only3 precise historical mappings in18/285')\n    report['historical_mapping_counts']=mapping_tallies\n    frozen=[x['source'] for x in unaffected if x['source']['path'] in (str(ROOT/'tests/test_operational_runtime_closure.py'),str(A/'round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py'))]\n    count(frozen,2,'frozen original test and runner')\n    report['unaffected_manifest_records']=unaffected;report['protected_records']=index['protected'];report['extra_six']=extras;report['original18']=prepared['r225_inputs'];report['historical_mapping']=mappings;report['frozen_test_runner']=frozen\n    report['phases']['protected_history']='PASS'\n    need(type(prepared['role_pins']) is dict and set(prepared['role_pins'])=={'author','root'},'both role pins')\n    report['roles']={}\n    for role,record in prepared['role_pins'].items():\n        ledger=json.loads(read_pin(record));need(type(ledger) is dict and type(ledger['commands']) is dict,'role commands object')\n        red=ledger['commands']['t2_red'];green=ledger['commands']['t2_green']\n        need(type(red['used']) is int and red['used']==1 and type(red['remaining']) is int and red['remaining']==0,'RED permanently spent')\n        need(type(green['used']) is int and green['used']==0 and type(green['remaining']) is int and green['remaining']==1 and type(green['state']) is str and green['state'].startswith('HELD'),'GREEN held in '+role)\n        report['roles'][role]={'pin':record,'RED':{k:red[k] for k in ('used','remaining','state')},'GREEN':{k:green[k] for k in ('used','remaining','state')}}\n    report['phases']['roles']='PASS'\n    report['large_fields']={'native_tool_arguments':{'file':str(I/'actual-patch-tool-return.json'),'field':'tool_arguments','exact_frozen_patch':True},'edit_units_and_function_regions':{'file':str(I/'prepared-text-values.json'),'fields':['edit_units','function_regions'],'exact_change_structures':True}}\n    report['status']='PASS_SOURCE_METADATA_ONLY'\ntry:\n    main()\nexcept BaseException as error:\n    report['status']='FAILED_STOP_NO_RETRY';report['error']={'type':type(error).__name__,'message':str(error),'location':location,'traceback':traceback.format_exc()}\ndata=(json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+'\\n').encode()\nwith REPORT.open('xb') as f:f.write(data)\nsummary={'status':report['status'],'report':pin(REPORT,data),'checks':len(checks),'failed_checks':sum(x['passed'] is not True for x in checks),'pin_records':len(pins),'phases':report['phases'],'product_execution':False}\ntext=json.dumps(summary,ensure_ascii=False)\nif len((text+'\\n').encode())>6000:raise RuntimeError('bounded summary exceeded')\nprint(text)\nraise SystemExit(0 if report['status']=='PASS_SOURCE_METADATA_ONLY' else 1)\n",
+  "stdin_utf8_bytes": 14762,
+  "stdin_sha256": "972aa21847ceaa8eb5d4ffbb8c0dde20dc0045d5b162ed360827b987b553ff3b",
+  "argv": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+    "-I",
+    "-B",
+    "-"
+  ],
+  "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+  "environment": {
+    "inherit": true,
+    "overrides": {
+      "PYTHONDONTWRITEBYTECODE": "1"
+    }
+  },
+  "timeout_seconds": 120,
+  "stdout_max_utf8_bytes": 6000,
+  "exec_command_arguments": {
+    "cmd": "PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=5s 120s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' -I -B - <<'R228_READER_STDIN'\nfrom pathlib import Path\nimport hashlib,json,sys,traceback,shlex\nROOT=Path('/home/ningyd/文档/ChatGPT/BIGsmall')\nA=ROOT/'artifacts/research/process/20261004-ced-development/astra-rounds'\nR=A/'round228-p6-t2-root-report-scalar-reader-20261015'\nD=A/'round222-p6-t2-local-lease-dispatch-patch-recovery-20261015'\nI=D/'implementation'\nREPORT=R/'root-report-validation.json'\nchecks=[];pins=[];location='startup'\nreport={'schema_version':'bigsmall.r228.type-safe-validation.v1','status':'INCOMPLETE','checks':checks,'pin_records':pins,'phases':{k:'NOT_COMPLETED' for k in ('inputs','normatives','outputs_sources','protected_history','roles')},'product_execution':False,'T2_complete':False}\ndef need(ok,label):\n    checks.append({'check':label,'passed':ok is True})\n    if ok is not True:raise ValueError(label)\ndef identity(v):\n    need(type(v) is dict,'identity object')\n    need(type(v.get('path')) is str and type(v.get('bytes')) is int and type(v.get('sha256')) is str,'identity field types')\n    return {k:v[k] for k in ('path','bytes','sha256')}\ndef pin(path,data):\n    return {'path':str(path),'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}\ndef read_pin(record,original=None):\n    global location\n    v=identity(record);p=Path(v['path']);location=str(p)\n    need(not p.is_symlink(),'not symlink: '+str(p))\n    data=p.read_bytes();observed=pin(p,data)\n    pins.append({'expected':record,'original_historical':original,'observed':observed,'matches':observed==v})\n    need(observed==v,'exact bytes: '+str(p))\n    return data\ndef load(path):\n    global location\n    location=str(path);v=json.loads(Path(path).read_bytes())\n    need(type(v) is dict,'JSON root object: '+str(path))\n    return v\ndef shape(v):\n    if type(v) is dict:return {'kind':'object','count':len(v),'keys':list(v)}\n    if type(v) is list:return {'kind':'array','count':len(v)}\n    if v is None:return {'kind':'null','value':None}\n    if type(v) is bool:return {'kind':'boolean','value':v}\n    if type(v) is int:return {'kind':'integer','value':v}\n    if type(v) is float:return {'kind':'number','value':v}\n    if type(v) is str:return {'kind':'string','utf8_bytes':len(v.encode()),'sha256':hashlib.sha256(v.encode()).hexdigest()}\n    raise TypeError('non-JSON value')\ndef count(v,n,label):\n    need(type(v) is list,label+' array')\n    need(len(v)==n,label+' exact count')\ndef scalar(doc,key,value):\n    need(key in doc and type(doc[key]) is type(value) and doc[key]==value,'scalar '+key)\ndef main():\n    activation=load(R/'root-activation.json')\n    need(activation['read_slot']=={'authorized':1,'used':1,'remaining':0,'state':'RESERVED_BY_ROOT'},'single reserved normal metadata read')\n    need(Path.cwd()==ROOT and sys.argv==['-'],'actual stdin argv/cwd')\n    plan=json.loads(read_pin(activation['plan']));need(type(plan) is dict,'pinned plan object')\n    for record in plan['inputs']:read_pin(record)\n    report['phases']['inputs']='PASS'\n    prepared=load(I/'prepared-text-values.json');step=load(I/'step-report.json');index=load(I/'source-index.json');change=load(I/'change-report.json')\n    native=load(I/'actual-patch-tool-return.json');actual=load(I/'actual-metadata-tool-return.json');gate=load(D/'root-activation.json')\n    report['documents']={name:{'pin':pin(path,Path(path).read_bytes()),'fields':{k:shape(v) for k,v in doc.items()}} for name,path,doc in (('step',I/'step-report.json',step),('index',I/'source-index.json',index),('change',I/'change-report.json',change),('native',I/'actual-patch-tool-return.json',native),('actual',I/'actual-metadata-tool-return.json',actual))}\n    report['normatives']={'step':{k:v for k,v in step.items() if k not in ('checks','outputs')},'index':{k:v for k,v in index.items() if k not in ('sources','unaffected_manifest_records','protected')},'change':{k:v for k,v in change.items() if k not in ('before_after','edit_units','function_regions','checks','actual_apply_receipt')},'native':{k:v for k,v in native.items() if k!='tool_arguments'},'actual':actual}\n    for k,v in {'round':'R222','command':'metadata_readback','exit_code':0,'attempt':1,'retry':0,'source_changes':3,'qualified_function_regions':7,'edit_units':9,'unaffected_records':22,'protected_count':211,'test_execution':False,'product_commands':0,'runtime_evidence':None,'timeout_seconds':120,'cwd':str(ROOT)}.items():scalar(step,k,v)\n    count(step['checks'],673,'step checks')\n    for item in step['checks']:need(type(item) is dict and item.get('passed') is True,'existing readback check PASS')\n    report['complete_readback_checks']=step['checks']\n    count(step['outputs'],6,'step outputs');count(index['sources'],3,'index sources');count(index['unaffected_manifest_records'],22,'unaffected entries');count(index['protected'],211,'protected entries')\n    count(change['edit_units'],9,'change edit units');count(change['function_regions'],7,'change function regions');count(change['checks'],673,'change checks')\n    scalar(index,'round','R222');scalar(change,'round','R222');scalar(native,'round','R222')\n    scalar(change,'status','SOURCE_TEXT_SCOPE_ONLY');scalar(change,'product_execution',False);scalar(change,'runtime_evidence',None)\n    need(change['checks']==step['checks'],'same complete673 checks')\n    need(change['edit_units']==prepared['edit_units'] and change['function_regions']==prepared['function_regions'],'exact9units/7regions structures')\n    need(change['GREEN']=={'used':0,'remaining':1,'state':'HELD'},'GREEN held')\n    need(native['actual_tool_return']=={} and type(native['actual_tool_return']) is dict and native['numeric_exit'] is None,'native actual object and unknown numeric exit')\n    scalar(native,'attempt',1);scalar(native,'retry',0)\n    patch=(I/'corrected-patch.txt').read_bytes()\n    need(native['tool_arguments']['input'].encode()==patch,'full native argument equals frozen patch')\n    need(native['patch']==pin(I/'corrected-patch.txt',patch),'native patch pin')\n    need(change['actual_apply_receipt']==native,'change retains full actual native receipt')\n    for k,path in (('actual_apply_pin',I/'actual-patch-tool-return.json'),('prepared_values_pin',I/'prepared-text-values.json'),('corrected_patch_pin',I/'corrected-patch.txt')):\n        need(change[k]==pin(path,path.read_bytes()),'change '+k)\n    scalar(actual,'attempt',1);scalar(actual,'retry',0)\n    raw=actual['actual_tool_return'];need(type(raw) is dict and raw.get('chunk_id')=='5d3d62' and type(raw.get('exit_code')) is int and raw['exit_code']==0,'actual readback5d3d62 exit0')\n    need(actual['initial']==raw and actual['completion'] is None and actual['combined_tool_output']==raw['output'],'exact completed initial return')\n    need(not raw['output'].startswith('Warning: truncated output'),'complete actual summary')\n    summary=json.loads(raw['output']);need(type(summary) is dict,'actual summary object')\n    for k,v in {'status':'SOURCE_TEXT_SCOPE_ONLY','source_changes':3,'functions':7,'edit_units':9,'protected':211,'product_execution':False}.items():scalar(summary,k,v)\n    for k,path in (('step_result',I/'step-report.json'),('source_index',I/'source-index.json'),('limited_diff',I/'limited.diff')):need(summary[k]==pin(path,path.read_bytes()),'actual summary '+k)\n    rg=gate['metadata_readback_gate'];need(rg['state']=='RESERVED_BY_ROOT' and rg['used']==1 and rg['remaining']==0,'original readback spent reservation')\n    need(step['argv']==rg['argv'] and step['cwd']==rg['cwd'] and step['finite_env']==rg['finite_env'] and step['timeout_seconds']==rg['timeout_seconds'],'exact launch declaration')\n    need(shlex.split(actual['exec_command_arguments']['cmd'])==rg['transport_argv'] and actual['exec_command_arguments']['workdir']==str(ROOT),'actual exact finite-env transport')\n    need(actual['finite_env']==step['finite_env'] and actual['source_pin']==step['source_pin']==rg['source_pin'],'actual frozen reader identity')\n    read_pin(step['source_pin']);read_pin(step['activation_pin'])\n    need(actual['independent_stdout'] is None and actual['independent_stderr'] is None,'honest unavailable independent streams')\n    report['phases']['normatives']='PASS'\n    mappings=plan['exact_historical_mapping'];count(mappings,3,'historical mapping')\n    need(index['sources']==change['before_after'],'index/change exact source records')\n    need(type(prepared['expected']) is dict and len(prepared['expected'])==3,'three prepared expected objects')\n    for item in index['sources']:\n        path=item['source']['path'];expected=prepared['expected'][path];m=[x for x in mappings if x['current_after_pin']['path']==path]\n        need(len(m)==1,'one designated mapping');m=m[0]\n        need(identity(item['source'])==identity(m['current_after_pin']) and identity(item['archive'])==identity(m['after_archive_pin']),'exact designated after source/archive')\n        current=read_pin(item['source']);archive=read_pin(item['archive'])\n        need(current==archive==expected['after_text'].encode() and len(current)==expected['after_bytes'] and hashlib.sha256(current).hexdigest()==expected['after_sha256'],'complete current after bytes')\n        need(identity(item['before'])==identity(m['historical_live_pin'])==identity(expected['before']) and identity(item['before_archive'])==identity(m['historical_read_target'])==identity(expected['before_archive']),'exact historical identity/archive mapping')\n        read_pin(item['before_archive']);need(Path(path).stat().st_mode==expected['before_mode'],'current mode unchanged')\n    for record in step['outputs']:read_pin(record)\n    desired=[x['archive'] for x in index['sources']]+[pin(p,p.read_bytes()) for p in (I/'limited.diff',I/'change-report.json',I/'source-index.json')]\n    need(step['outputs']==desired,'six exact ordered output pins')\n    report['source_records']=index['sources'];report['output_records']=step['outputs']\n    report['phases']['outputs_sources']='PASS'\n    mapping_tallies={'original18':0,'prior285':0}\n    def historical(record,group=None):\n        ident=identity(record)\n        matches=[m for m in mappings if ident==identity(m['historical_live_pin'])]\n        need(len(matches)<=1,'unambiguous exact historical mapping')\n        if matches and group is not None:mapping_tallies[group]+=1\n        return read_pin(matches[0]['historical_read_target'],record) if matches else read_pin(record)\n    count(prepared['manifest_pairs'],25,'original manifest pairs')\n    unaffected=[x for x in prepared['manifest_pairs'] if x['source']['path'] not in prepared['expected']]\n    need(index['unaffected_manifest_records']==unaffected,'exact22 unaffected manifest entries')\n    for pair in prepared['manifest_pairs']:need(historical(pair['source'])==read_pin(pair['archive']),'actual25 source/archive relation')\n    need(index['protected']==prepared['protected'],'protected metadata retained')\n    source_gate=json.loads(read_pin(prepared['r226_gate_pin']));authority=json.loads(read_pin(source_gate['metadata_generation']['protected_manifest_pin']))\n    need(index['protected']==authority['protected'],'exact original protected authority and retained metadata')\n    for record in index['protected']:read_pin(record)\n    p204=load(A/'round204-p6-t2-preparation-runner-applicability-20261015/plan.json')\n    need(type(p204['inputs']) is list and len(p204['inputs'])>=6,'R204 input array')\n    extras=p204['inputs'][-6:]\n    for record in extras:read_pin(record)\n    p225=load(A/'round225-p6-t2-patch-preparer-class-scope-20261015/plan.json')\n    count(prepared['r225_inputs'],18,'original18 inputs');need(prepared['r225_inputs']==p225['inputs'],'exact original18 reader input structures')\n    for record in prepared['r225_inputs']:historical(record,'original18')\n    accepted=load(A/'round224-p6-t2-root-pin-record-comparison-20261015/root-acceptance.json')\n    prior=json.loads(read_pin(accepted['report']));need(type(prior) is dict,'prior authority object');count(prior['records'],285,'prior285 authority')\n    for record in prior['records']:historical(record['expected'],'prior285')\n    need(mapping_tallies=={'original18':3,'prior285':3},'only3 precise historical mappings in18/285')\n    report['historical_mapping_counts']=mapping_tallies\n    frozen=[x['source'] for x in unaffected if x['source']['path'] in (str(ROOT/'tests/test_operational_runtime_closure.py'),str(A/'round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py'))]\n    count(frozen,2,'frozen original test and runner')\n    report['unaffected_manifest_records']=unaffected;report['protected_records']=index['protected'];report['extra_six']=extras;report['original18']=prepared['r225_inputs'];report['historical_mapping']=mappings;report['frozen_test_runner']=frozen\n    report['phases']['protected_history']='PASS'\n    need(type(prepared['role_pins']) is dict and set(prepared['role_pins'])=={'author','root'},'both role pins')\n    report['roles']={}\n    for role,record in prepared['role_pins'].items():\n        ledger=json.loads(read_pin(record));need(type(ledger) is dict and type(ledger['commands']) is dict,'role commands object')\n        red=ledger['commands']['t2_red'];green=ledger['commands']['t2_green']\n        need(type(red['used']) is int and red['used']==1 and type(red['remaining']) is int and red['remaining']==0,'RED permanently spent')\n        need(type(green['used']) is int and green['used']==0 and type(green['remaining']) is int and green['remaining']==1 and type(green['state']) is str and green['state'].startswith('HELD'),'GREEN held in '+role)\n        report['roles'][role]={'pin':record,'RED':{k:red[k] for k in ('used','remaining','state')},'GREEN':{k:green[k] for k in ('used','remaining','state')}}\n    report['phases']['roles']='PASS'\n    report['large_fields']={'native_tool_arguments':{'file':str(I/'actual-patch-tool-return.json'),'field':'tool_arguments','exact_frozen_patch':True},'edit_units_and_function_regions':{'file':str(I/'prepared-text-values.json'),'fields':['edit_units','function_regions'],'exact_change_structures':True}}\n    report['status']='PASS_SOURCE_METADATA_ONLY'\ntry:\n    main()\nexcept BaseException as error:\n    report['status']='FAILED_STOP_NO_RETRY';report['error']={'type':type(error).__name__,'message':str(error),'location':location,'traceback':traceback.format_exc()}\ndata=(json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+'\\n').encode()\nwith REPORT.open('xb') as f:f.write(data)\nsummary={'status':report['status'],'report':pin(REPORT,data),'checks':len(checks),'failed_checks':sum(x['passed'] is not True for x in checks),'pin_records':len(pins),'phases':report['phases'],'product_execution':False}\ntext=json.dumps(summary,ensure_ascii=False)\nif len((text+'\\n').encode())>6000:raise RuntimeError('bounded summary exceeded')\nprint(text)\nraise SystemExit(0 if report['status']=='PASS_SOURCE_METADATA_ONLY' else 1)\nR228_READER_STDIN",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "login": false,
+    "yield_time_ms": 1000,
+    "max_output_tokens": 2000
+  },
+  "inputs": [
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round228-p6-t2-root-report-scalar-reader-20261015/original-root-reader-source.py",
+        "bytes": 918,
+        "sha256": "aea806358ef21263c6f4027c4a5e6b3635fbe66880d8073236bac25d7b53af31"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round228-p6-t2-root-report-scalar-reader-20261015/original-root-reader-source.py",
+        "bytes": 918,
+        "sha256": "aea806358ef21263c6f4027c4a5e6b3635fbe66880d8073236bac25d7b53af31"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round228-p6-t2-root-report-scalar-reader-20261015/original-invocation.json",
+        "bytes": 1710,
+        "sha256": "2760f3a24f1c68df1219e30d5cec118ea52e17d4cd5e48d918f4b413c537493b"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round228-p6-t2-root-report-scalar-reader-20261015/original-invocation.json",
+        "bytes": 1710,
+        "sha256": "2760f3a24f1c68df1219e30d5cec118ea52e17d4cd5e48d918f4b413c537493b"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round228-p6-t2-root-report-scalar-reader-20261015/original-tool-return.json",
+        "bytes": 9657,
+        "sha256": "ffa10cf064d7a7c1fec0b4d34f029b13e67a2f404176cba41e7e2b3b7017c9e5"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round228-p6-t2-root-report-scalar-reader-20261015/original-tool-return.json",
+        "bytes": 9657,
+        "sha256": "ffa10cf064d7a7c1fec0b4d34f029b13e67a2f404176cba41e7e2b3b7017c9e5"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round228-p6-t2-root-report-scalar-reader-20261015/input-observation.json",
+        "bytes": 3675,
+        "sha256": "5f4234abc8367803822719a32ac1ea2a18549097d67f76ab15869a8d939faaab"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round228-p6-t2-root-report-scalar-reader-20261015/input-observation.json",
+        "bytes": 3675,
+        "sha256": "5f4234abc8367803822719a32ac1ea2a18549097d67f76ab15869a8d939faaab"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/actual-patch-tool-return.json",
+        "bytes": 16854,
+        "sha256": "f29f63d1bbe816d2ef439b3408ca8d396d756223e5416f4b356e83e2b44aba62"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/actual-patch-tool-return.json",
+        "bytes": 16854,
+        "sha256": "f29f63d1bbe816d2ef439b3408ca8d396d756223e5416f4b356e83e2b44aba62"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/actual-metadata-tool-return.json",
+        "bytes": 5104,
+        "sha256": "e610c5609b0a6c8c082459aefa08fd28e32a79966a84248c7f739359f3744e7b"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/actual-metadata-tool-return.json",
+        "bytes": 5104,
+        "sha256": "e610c5609b0a6c8c082459aefa08fd28e32a79966a84248c7f739359f3744e7b"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/step-report.json",
+        "bytes": 123684,
+        "sha256": "0ec4e71dc900b70fdd447f2762c62d939f1fc2ff8e6f8a11cfbab714209faf9b"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/step-report.json",
+        "bytes": 123684,
+        "sha256": "0ec4e71dc900b70fdd447f2762c62d939f1fc2ff8e6f8a11cfbab714209faf9b"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/source-index.json",
+        "bytes": 84613,
+        "sha256": "8e945d5f6e984bc7433d897de1acafbe5e94bf142e6427e7e90fb649769f2c4e"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/source-index.json",
+        "bytes": 84613,
+        "sha256": "8e945d5f6e984bc7433d897de1acafbe5e94bf142e6427e7e90fb649769f2c4e"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/change-report.json",
+        "bytes": 230788,
+        "sha256": "adeaf0b2c6c209b9889218780df4f6c39c24180f30e52b55579ed05affc4461b"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/change-report.json",
+        "bytes": 230788,
+        "sha256": "adeaf0b2c6c209b9889218780df4f6c39c24180f30e52b55579ed05affc4461b"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/limited.diff",
+        "bytes": 7625,
+        "sha256": "ded701440278019f0e26cb2d2b8691d902fe603cb6ec925e8559bcc3d9a289b2"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/limited.diff",
+        "bytes": 7625,
+        "sha256": "ded701440278019f0e26cb2d2b8691d902fe603cb6ec925e8559bcc3d9a289b2"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/corrected-patch.txt",
+        "bytes": 15727,
+        "sha256": "07b2c7cb27dc8a49d455bd562699e06a0dcaccbfabedbe9e9e1c666e19266175"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/corrected-patch.txt",
+        "bytes": 15727,
+        "sha256": "07b2c7cb27dc8a49d455bd562699e06a0dcaccbfabedbe9e9e1c666e19266175"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/prepared-text-values.json",
+        "bytes": 727195,
+        "sha256": "8cff0146be6dab23e5cf7a5f4b7224fc578aa7a3e5ee2c7ba2823c9d2c2be159"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/prepared-text-values.json",
+        "bytes": 727195,
+        "sha256": "8cff0146be6dab23e5cf7a5f4b7224fc578aa7a3e5ee2c7ba2823c9d2c2be159"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/metadata-readback.py",
+        "bytes": 10383,
+        "sha256": "7ba515e39160613cad817664dc8ab5005d2710b425ce972fcad8e73e9be766f2"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/metadata-readback.py",
+        "bytes": 10383,
+        "sha256": "7ba515e39160613cad817664dc8ab5005d2710b425ce972fcad8e73e9be766f2"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/plan.json",
+        "bytes": 40588,
+        "sha256": "499a6cdd34efd3af6b81f3216555b488579a00834f750f52bc3fe1ddb411cdec"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/plan.json",
+        "bytes": 40588,
+        "sha256": "499a6cdd34efd3af6b81f3216555b488579a00834f750f52bc3fe1ddb411cdec"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/plan.md",
+        "bytes": 2305,
+        "sha256": "373ad37b138eb2d32fe45a1a23a90eef8c745891ad0fc808e5f802a1f40552b0"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/plan.md",
+        "bytes": 2305,
+        "sha256": "373ad37b138eb2d32fe45a1a23a90eef8c745891ad0fc808e5f802a1f40552b0"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/manifest.json",
+        "bytes": 19606,
+        "sha256": "95f0f301c45aeaa07864ddffc1676cf290c08167b33fba80ec5d6143b0fb3d60"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/manifest.json",
+        "bytes": 19606,
+        "sha256": "95f0f301c45aeaa07864ddffc1676cf290c08167b33fba80ec5d6143b0fb3d60"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/root-activation.json",
+        "bytes": 8225,
+        "sha256": "2c591bc054149574b66936cc332ec938f3755cd8c0545a410ec9d600b5be5a9d"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/root-activation.json",
+        "bytes": 8225,
+        "sha256": "2c591bc054149574b66936cc332ec938f3755cd8c0545a410ec9d600b5be5a9d"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round224-p6-t2-root-pin-record-comparison-20261015/plan.json",
+        "bytes": 114712,
+        "sha256": "226351d6129a3dbd5e52115fad8ee2054569cb4a466ee3929c2b66c2969d307e"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round224-p6-t2-root-pin-record-comparison-20261015/plan.json",
+        "bytes": 114712,
+        "sha256": "226351d6129a3dbd5e52115fad8ee2054569cb4a466ee3929c2b66c2969d307e"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round224-p6-t2-root-pin-record-comparison-20261015/root-acceptance.json",
+        "bytes": 1893,
+        "sha256": "abd7a589ac5bfbd7da175b914d6725114aff1db8e0345ed6242d9f6a771e4323"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round224-p6-t2-root-pin-record-comparison-20261015/root-acceptance.json",
+        "bytes": 1893,
+        "sha256": "abd7a589ac5bfbd7da175b914d6725114aff1db8e0345ed6242d9f6a771e4323"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round225-p6-t2-patch-preparer-class-scope-20261015/plan.json",
+        "bytes": 15256,
+        "sha256": "e4072c2b53b000cdc780e21d34cb04252a7c0f37035b5f8006a90931c817a9c2"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round225-p6-t2-patch-preparer-class-scope-20261015/plan.json",
+        "bytes": 15256,
+        "sha256": "e4072c2b53b000cdc780e21d34cb04252a7c0f37035b5f8006a90931c817a9c2"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/plan.json",
+        "bytes": 40042,
+        "sha256": "d22d065d712f1be0eee9badf9d4233c13b269b5fa6a5ed47a1af847144026a02"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/plan.json",
+        "bytes": 40042,
+        "sha256": "d22d065d712f1be0eee9badf9d4233c13b269b5fa6a5ed47a1af847144026a02"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+        "bytes": 40648,
+        "sha256": "1e5a35b3075dad9225f879535880e5e5a5b67bceaa3071d47c2ecd1f2ab4e128"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+        "bytes": 40648,
+        "sha256": "1e5a35b3075dad9225f879535880e5e5a5b67bceaa3071d47c2ecd1f2ab4e128"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/after/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+        "bytes": 40648,
+        "sha256": "1e5a35b3075dad9225f879535880e5e5a5b67bceaa3071d47c2ecd1f2ab4e128"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/after/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+        "bytes": 40648,
+        "sha256": "1e5a35b3075dad9225f879535880e5e5a5b67bceaa3071d47c2ecd1f2ab4e128"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+        "bytes": 40472,
+        "sha256": "524bce7ee480fc7f9757e23a8360257900d3600c3b6842c46b80d0771201ec90"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+        "bytes": 40472,
+        "sha256": "524bce7ee480fc7f9757e23a8360257900d3600c3b6842c46b80d0771201ec90"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+        "bytes": 111011,
+        "sha256": "9d99438829c345a08c8f3719be6c34182539c839a692e0b8d26044a6ef52f43d"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+        "bytes": 111011,
+        "sha256": "9d99438829c345a08c8f3719be6c34182539c839a692e0b8d26044a6ef52f43d"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/after/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+        "bytes": 111011,
+        "sha256": "9d99438829c345a08c8f3719be6c34182539c839a692e0b8d26044a6ef52f43d"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/after/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+        "bytes": 111011,
+        "sha256": "9d99438829c345a08c8f3719be6c34182539c839a692e0b8d26044a6ef52f43d"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+        "bytes": 109497,
+        "sha256": "0997e39448b06a616ff2e75206ef34a71cc5b8c40657e8235766ad3b17ce4fd6"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+        "bytes": 109497,
+        "sha256": "0997e39448b06a616ff2e75206ef34a71cc5b8c40657e8235766ad3b17ce4fd6"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+        "bytes": 93315,
+        "sha256": "ece6b7547e9e582cbb0137cc2a15adf082a15a1bbbf310edf4e7fd2baf46c3d9"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+        "bytes": 93315,
+        "sha256": "ece6b7547e9e582cbb0137cc2a15adf082a15a1bbbf310edf4e7fd2baf46c3d9"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/after/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+        "bytes": 93315,
+        "sha256": "ece6b7547e9e582cbb0137cc2a15adf082a15a1bbbf310edf4e7fd2baf46c3d9"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/implementation/after/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+        "bytes": 93315,
+        "sha256": "ece6b7547e9e582cbb0137cc2a15adf082a15a1bbbf310edf4e7fd2baf46c3d9"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+        "bytes": 91634,
+        "sha256": "b670d66886a3966d468d23839d9434de1d4920963938810c5af7bbc266afa9c4"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+        "bytes": 91634,
+        "sha256": "b670d66886a3966d468d23839d9434de1d4920963938810c5af7bbc266afa9c4"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json",
+        "bytes": 33161,
+        "sha256": "902b7e59ee8bebd9f1453e9dc4f9b58efd1b9bdfd32a0204e15a65dcd20b7d70"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json",
+        "bytes": 33161,
+        "sha256": "902b7e59ee8bebd9f1453e9dc4f9b58efd1b9bdfd32a0204e15a65dcd20b7d70"
+      }
+    },
+    {
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json",
+        "bytes": 76862,
+        "sha256": "475ebe8b47fec9539b24fd19f7431b2803e45ecf3340964c3645c18f7fda1516"
+      },
+      "observed": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json",
+        "bytes": 76862,
+        "sha256": "475ebe8b47fec9539b24fd19f7431b2803e45ecf3340964c3645c18f7fda1516"
+      }
+    }
+  ],
+  "read_slot": {
+    "authorized": 1,
+    "used": 1,
+    "remaining": 0,
+    "state": "RESERVED_BY_ROOT"
+  },
+  "R222_native_readback": "SPENT1/0 actual1 each NO_RETRY",
+  "GREEN": "HELD0/1",
+  "R223_six_slots": "HELD0/1 each",
+  "product_execution": false,
+  "T2_complete": false
+}

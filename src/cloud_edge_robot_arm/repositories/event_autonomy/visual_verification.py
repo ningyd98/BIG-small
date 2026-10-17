@@ -50,6 +50,13 @@ from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
 )
 from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
+from cloud_edge_robot_arm.vision.local_temporal import (
+    LocalDomainEnvelope,
+    _integer as local_integer,
+    _model as local_model,
+    _object as local_object,
+    _sha as local_sha,
+)
 from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding, VisualOriginalPlan
 from cloud_edge_robot_arm.vision.worker_owner import grounded_worker_execution_effect_conditions
 
@@ -355,6 +362,8 @@ class VisualEffectCompletion(_FrozenJSON):
 
     @classmethod
     def from_payload(cls, raw: dict[str, Any]) -> VisualEffectCompletion:
+        if raw.get("schema_version") == "visual.verification.effect-completion.local.v1":
+            return LocalVisualEffectCompletion.from_payload(raw)
         result = object.__new__(cls)
         result._store(_plain(raw))
         return result
@@ -460,12 +469,17 @@ class VisualVerificationRouteInput(_FrozenJSON):
 
     @classmethod
     def from_json(cls, raw: str) -> VisualVerificationRouteInput:
+        payload = _load(raw)
+        if payload.get("schema_version") == "visual.verification.route-input.local.v1":
+            return LocalVisualVerificationRouteInput.from_payload(payload)
         result = object.__new__(cls)
-        result._store(_load(raw))
+        result._store(payload)
         return result
 
     @classmethod
     def from_payload(cls, raw: dict[str, Any]) -> VisualVerificationRouteInput:
+        if raw.get("schema_version") == "visual.verification.route-input.local.v1":
+            return LocalVisualVerificationRouteInput.from_payload(raw)
         return cls.from_json(canonical(_plain(raw)))
 
     @property
@@ -529,6 +543,11 @@ class VisualVerificationRouteInput(_FrozenJSON):
 
 
 class VisualVerificationRouteRecord(_FrozenJSON):
+    def __new__(cls, raw: dict[str, Any]) -> VisualVerificationRouteRecord:
+        if cls is VisualVerificationRouteRecord and raw.get("schema_version") == "visual.verification.route.local.v1":
+            return LocalVisualVerificationRouteRecord.from_payload(raw)
+        return object.__new__(cls)
+
     def __init__(self, raw: dict[str, Any]) -> None:
         fields = {
             "schema_version",
@@ -671,6 +690,79 @@ class VisualVerificationRouteRecord(_FrozenJSON):
     @property
     def reasons(self) -> tuple[str, ...]:
         return tuple(self.to_payload()["reasons"])
+
+
+class LocalVisualEffectCompletion(LocalDomainEnvelope, VisualEffectCompletion):
+    _tag = "visual.verification.effect-completion.local.v1"
+
+    @property
+    def result(self) -> SkillExecutionResult:
+        return self.model("result", SkillExecutionResult)
+
+    @property
+    def task_id(self) -> str:
+        return self.string("task_id")
+
+    @property
+    def step_id(self) -> str:
+        return self.string("step_id")
+
+    @property
+    def plan_id(self) -> str:
+        return self.string("plan_id")
+
+    @property
+    def robot_id(self) -> str:
+        return self.string("robot_id")
+
+    @property
+    def attempt(self) -> int:
+        return self.counter("attempt")
+
+
+class LocalVisualVerificationRouteInput(LocalDomainEnvelope, VisualVerificationRouteInput):
+    _tag = "visual.verification.route-input.local.v1"
+
+    @property
+    def task_id(self) -> str:
+        return original_from_payload(self.object("original")).identity.task_id
+
+    @property
+    def event_key(self) -> str:
+        return self.string("event_key")
+
+    def source_key(self) -> str:
+        from cloud_edge_robot_arm.vision.local_temporal import route_source_key
+
+        return route_source_key(self.to_payload())
+
+    def semantic_hash(self) -> str:
+        from cloud_edge_robot_arm.vision.local_temporal import route_semantic_hash
+
+        return route_semantic_hash(self.to_payload())
+
+    def online(self) -> OnlineEvidenceSnapshot:
+        body = self.object("online")
+        return OnlineEvidenceSnapshot(
+            local_model(body["observation"], RGBDObservation),
+            local_model(body["robot_state"], RobotState),
+            local_object(body["visual_facts"]),
+            local_integer(body["plan_version"]),
+            local_integer(body["command_seq"]),
+            local_sha(body["context_hash"]),
+        )
+
+
+class LocalVisualVerificationRouteRecord(LocalDomainEnvelope, VisualVerificationRouteRecord):
+    _tag = "visual.verification.route.local.v1"
+
+    @property
+    def route(self) -> str:
+        return self.string("route")
+
+    @property
+    def reasons(self) -> tuple[str, ...]:
+        return self.strings("reasons")
 
 
 class VisualVerificationRouteWriteResult:

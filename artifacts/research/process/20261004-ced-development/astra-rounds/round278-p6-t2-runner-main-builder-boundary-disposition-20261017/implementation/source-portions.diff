@@ -1,0 +1,161 @@
+--- original/common-prefix
++++ new/common-prefix
+@@ -485,7 +485,7 @@
+             else:
+                 sides.append({"path": str(side), "exists": False, "is_symlink": False, "pin": None})
+         records.append({"pin": bytes_pin(path, raw), "archive": archive, "sidecars": sides,
+-                        "provenance": "This genuine new R268 diagnostic run only; old bytes not recovered"})
++                        "provenance": "This genuine new R276 diagnostic run only; old bytes not recovered"})
+     return records
+ 
+ 
+--- original/session-consumer
++++ new/session-consumer
+@@ -95,7 +95,7 @@
+         if sid in resource_map:
+             resource, side_pin = resource_map[sid]
+             require(resource["kind"] == "lease_session", "traced session ID resolves to wrong actual resource")
+-            worker = snapshot.get("worker_id")
++            worker = snapshot.get("worker_object_id")
+             observed_worker = resource.get("worker_resource_id")
+             if worker is not None and observed_worker is not None:
+                 require(worker == observed_worker, "traced and sidecar actual worker IDs differ")
+--- original/main
++++ new/main
+@@ -1,7 +1,7 @@
+ def main():
+     context = preconditions()
+     name, command, reservation = context["name"], context["command"], context["reservation"]
+-    paths = {key: Path(value) for key, value in command["outputs"].items()}
++    paths = context["paths"]
+     require(sys.argv == command["runner_argv"][1:], "exact runner argv required")
+     basetemps = [a.split("=", 1)[1] for a in command["child_argv"] if a.startswith("--basetemp=")]
+     require(basetemps == [str(paths["directory"] / "persistent-basetemp")],
+@@ -11,7 +11,7 @@
+     author = copy.deepcopy(context["author_before"])
+     entry = author["commands"][name]
+     entry.update(state="RESERVED", used=1, remaining=0, reservation_id=reservation["reservation_id"])
+-    entry.setdefault("continuation", {})["R268"] = context["continuation"]
++    entry.setdefault("continuation", {})["R276"] = context["continuation"]
+     reserved_raw = author_bytes(author)
+     spent = copy.deepcopy(author)
+     spent["commands"][name].update(state="SPENT", result_path=str(paths["result"]))
+@@ -22,7 +22,7 @@
+     process, previous_term, handler_installed = None, signal.getsignal(signal.SIGTERM), False
+     started, captured = time.monotonic(), {}
+     outcome = {
+-        "round": "R268", "command_id": name, "budget_identity": command["budget_identity"],
++        "round": "R276", "command_id": name, "budget_identity": command["budget_identity"],
+         "reservation_id": reservation["reservation_id"], "attempt": 1, "retry": 0,
+         "started": False, "pid": None, "child_exit": None, "wrapper_exit": 2,
+         "timed_out": False, "interrupted": False, "output_limited": False,
+@@ -30,7 +30,8 @@
+         "errors": [], "cleanup": None, "JUnit": None, "resources": None, "cases": None,
+         "passive": None, "index": None, "before": before_pin, "after": None,
+         "prerequisite": None, "new_retained_databases": None,
+-        "diagnostic_complete": False, "evidence_may_be_partial": True,
++        "kind": command["kind"], "capture_integrity_complete": False,
++        "behavior_accepted": False, "diagnostic_complete": False, "evidence_may_be_partial": True,
+         "legal_RED": False, "GREEN": False, "T2_complete": False,
+         "author_reserved": None, "author_spent": None, "author_generation_observations": [],
+         "reservation_progress": progress, "spent_progress": spent_progress,
+@@ -84,7 +85,7 @@
+         outcome["author_reserved"] = bytes_pin(context["author_path"], reserved_raw)
+         write_bytes(paths["directory"] / "before/author-reserved.json", reserved_raw, mode)
+         invocation = {
+-            "round": "R268", "command_id": name, "budget_identity": command["budget_identity"],
++            "round": "R276", "command_id": name, "budget_identity": command["budget_identity"],
+             "reservation_id": reservation["reservation_id"], "command": command,
+             "argv": command["child_argv"], "cwd": command["cwd"],
+             "actual_environment": command["child_env"], "shell": False, "start_new_session": True,
+@@ -145,15 +146,17 @@
+             if captured["resources"] is not None:
+                 outcome["resources"] = capture("resource summary persistence", lambda: write_json(
+                     paths["resources"], captured["resources"]))
+-            captured["passive"] = capture("bounded passive evidence", lambda: passive_observations(
+-                paths["passive"], outcome["pid"], name, command["node"], outcome["timed_out"]))
+-            outcome["passive"] = captured["passive"]
++            if command["kind"] == "diagnostic_only":
++                captured["passive"] = capture("bounded session evidence", lambda: session_observations(
++                    paths["passive"], outcome["pid"], command["node"], outcome["timed_out"],
++                    captured.get("resources"), context))
++                outcome["passive"] = captured["passive"]
+             index = capture("new persistent nofollow index", lambda: strict_index(temp))
+             if index is not None:
+                 outcome["new_retained_databases"] = capture("new raw DB/sidecar retention",
+                     lambda: retained_new_databases(index, paths["directory"]))
+                 outcome["index"] = capture("new persistent index persistence", lambda: write_json(
+-                    paths["index"], {"round": "R268", "command_id": name, "root": str(temp),
++                    paths["index"], {"round": "R276", "command_id": name, "root": str(temp),
+                                      "records": index, "new_retained_databases": outcome["new_retained_databases"],
+                                      "SQL_executed": False, "old_missing_recovered": False}))
+             outcome["cases"] = capture("available actual cases persistence", lambda: write_json(
+@@ -209,34 +212,49 @@
+                 resource = captured.get("resources") or {}
+                 passive = captured.get("passive") or {}
+                 junit = outcome["JUnit"] or {}
+-                outcome["diagnostic_complete"] = bool(
++                dual = command["kind"] == "diagnostic_only"
++                integrity = bool(
+                     outcome["started"] and not outcome["errors"] and not outcome["interrupted"]
+                     and not outcome["output_limited"] and outcome["author_spent"] is not None
+                     and cleanup is not None and cleanup["leader_reaped"]
+                     and cleanup["group_remaining"] is False and not cleanup["cleanup_errors"]
+                     and (outcome["timed_out"] or outcome["child_exit"] in {0, 1})
+                     and resource.get("all_records_valid") is True
+-                    and not passive.get("observer_errors") and passive.get("records")
+                     and (outcome["timed_out"] or junit.get("available") is True)
+                     and (outcome["prerequisite"] or {}).get("accepted") is True
+                     and outcome["before"] is not None and outcome["after"] is not None
+                     and outcome["index"] is not None and outcome["cases"] is not None
+-                    and outcome["streams"]["stdout"] is not None and outcome["streams"]["stderr"] is not None)
++                    and outcome.get("streams", {}).get("stdout") is not None
++                    and outcome.get("streams", {}).get("stderr") is not None)
++                if dual and (captured.get("passive") is None or passive.get("observer_errors")):
++                    integrity = False
++                outcome["capture_integrity_complete"] = integrity
++                outcome["diagnostic_complete"] = bool(dual and integrity and passive.get("complete") is True)
++                outcome["behavior_accepted"] = bool(
++                    not dual and integrity and not outcome["timed_out"] and outcome["child_exit"] == 0
++                    and junit.get("available") is True and junit.get("tests") == 1
++                    and junit.get("failures") == junit.get("errors") == junit.get("skips") == 0
++                    and behavior_resources_complete(captured.get("resources")))
+                 outcome["evidence_may_be_partial"] = bool(
+                     outcome["timed_out"] or not resource.get("complete_sidecar_set")
+-                    or not passive.get("normal_finish_observed"))
+-                outcome["wrapper_exit"] = 0 if outcome["diagnostic_complete"] else 2
++                    or (dual and passive.get("complete") is not True))
++                outcome["wrapper_exit"] = (
++                    2 if not integrity else 0 if dual or outcome["behavior_accepted"] else 1)
+                 outcome["elapsed_seconds"] = time.monotonic() - started
+                 outcome["classification"] = (
+-                    "DIAGNOSTIC_FACTS_ONLY_REQUIRES_ROOT_INTEGRITY_REVIEW"
+-                    if outcome["diagnostic_complete"] else "EVIDENCE_OR_INFRASTRUCTURE_FAILURE_STOP_NEXT_ASTRA")
++                    "EVIDENCE_OR_INFRASTRUCTURE_FAILURE_STOP_NEXT_ASTRA" if not integrity else
++                    "DIAGNOSTIC_FACTS_ONLY_REQUIRES_ROOT_INTEGRITY_REVIEW" if dual else
++                    "SELECTED_WAIT_BEHAVIOR_ACCEPTED_PENDING_ROOT_REVIEW" if outcome["behavior_accepted"] else
++                    "SELECTED_WAIT_UNEXPECTED_OUTCOME_STOP_NEXT_ASTRA")
+                 result_pin = capture("best-available result persistence", lambda: write_json(paths["result"], outcome))
+                 if result_pin is None:
+                     outcome["wrapper_exit"] = 2
+-                display = {"round": "R268", "command_id": name, "child_exit": outcome["child_exit"],
++                display = {"round": "R276", "command_id": name, "child_exit": outcome["child_exit"],
+                            "wrapper_exit": outcome["wrapper_exit"], "timed_out": outcome["timed_out"],
+                            "output_limited": outcome["output_limited"],
+                            "diagnostic_complete": outcome["diagnostic_complete"] if result_pin else False,
++                           "capture_integrity_complete": outcome["capture_integrity_complete"] if result_pin else False,
++                           "behavior_accepted": outcome["behavior_accepted"] if result_pin else False,
+                            "result": result_pin, "legal_RED": False, "GREEN": False}
+                 rendered = json.dumps(display, ensure_ascii=False)
+                 require(len((rendered + "\n").encode()) <= 6000, "bounded diagnostic console exceeded")
+--- original/verify-JUnit-cases
++++ new/verify-JUnit-cases
+@@ -42,7 +42,7 @@
+                       "relative_path": str(path.relative_to(root)), "witnesses": witnesses,
+                       "actual_owner": ({"nodeid": node, "pid": pid} if witnesses else None),
+                       "unavailable_reason": None if witnesses else "No completed matching actual sidecar witness"})
+-    return {"round": "R268", "expected_node": node, "actual_sidecars": sidecars, "scenario_files": files,
++    return {"round": "R276", "expected_node": node, "actual_sidecars": sidecars, "scenario_files": files,
+             "whole_run_resource_completeness": None if summary is None else summary["complete_sidecar_set"],
+             "interpretation": "Partial timeout files are actual bytes; no missing owner or resource record is invented."}
+ 

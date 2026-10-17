@@ -30,9 +30,12 @@ class VisualEvidence:
     identity_status: Literal["CONFIRMED", "UNKNOWN", "INVALID"]
     sensor_status: Literal["VALID", "UNKNOWN", "INVALID"]
     available_sensors: tuple[str, ...] = ("rgbd", "rgb", "depth")
+    operational_reference: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "available_sensors", tuple(self.available_sensors))
+        if self.operational_reference is not None:
+            object.__setattr__(self, "operational_reference", _freeze(self.operational_reference))
 
 
 @dataclass(frozen=True)

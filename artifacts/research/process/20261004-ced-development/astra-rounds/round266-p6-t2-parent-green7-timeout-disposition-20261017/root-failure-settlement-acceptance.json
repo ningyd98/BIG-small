@@ -1,0 +1,39 @@
+{
+  "round": "R266",
+  "status": "ROOT_ACCEPTED_ORIGINAL_KEY_FAILURE_SETTLEMENT",
+  "actual_bookkeeping": {
+    "invocation": {
+      "cmd": "/usr/bin/env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=5s 120s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/root-parent-green7-failure-settlement-gate.py'",
+      "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "yield_time_ms": 1000,
+      "max_output_tokens": 2000
+    },
+    "actual": {
+      "chunk_id": "80eb08",
+      "wall_time_seconds": 0.00001011,
+      "exit_code": 0,
+      "original_token_count": 246,
+      "output": "{\"status\": \"SPENT_UNEXPECTED_FAILURE\", \"receipt\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round258-p6-t2-parent-green7-continuation-20261017/root-parent-green7-failure-settlement.json\", \"bytes\": 123661, \"sha256\": \"74f6fac117c69342a9954be5ffe668387467b3bd32f74fd89c6abd75af29772e\"}, \"root_after\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json\", \"bytes\": 91691, \"sha256\": \"5013b4328d6d651de7b760d69773e49821d5b88bb87cb55b392d163d296199e7\"}, \"author_after\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json\", \"bytes\": 47274, \"sha256\": \"a0622a2011ee44f6ea2299db8e9e6ed4d2c31b9964818168e7a003b6a3a822a1\"}, \"T2_complete\": false}\n"
+    },
+    "authority": "R266/R258 existing post_run",
+    "source_sha256": "34da62aafb833023f2828bde338144734987e7614e7f4e9480d40fb01f5e5ece"
+  },
+  "independent_readback": {
+    "invocation": {
+      "cmd": "/usr/bin/python3 - <<'PY'\nfrom pathlib import Path\nimport json,hashlib,base64,copy,stat\nb=Path('artifacts/research/process/20261004-ced-development/astra-rounds');d=b/'round258-p6-t2-parent-green7-continuation-20261017';d266=b/'round266-p6-t2-parent-green7-timeout-disposition-20261017'\ndef checked(p):\n q=Path(p['path']);s=q.lstat()\n if not stat.S_ISREG(s.st_mode):raise ValueError('own regular input')\n raw=q.read_bytes()\n if len(raw)!=p['bytes'] or hashlib.sha256(raw).hexdigest()!=p['sha256']:raise ValueError('exact byte pin differs: '+str(q))\n return raw\nsettle=json.loads((d/'root-parent-green7-failure-settlement.json').read_bytes());old=checked(settle['root_before']['archive']);assert old==base64.b64decode(settle['root_before']['base64'],validate=True)\nassert len(old)==settle['root_before']['original']['bytes'] and hashlib.sha256(old).hexdigest()==settle['root_before']['original']['sha256']\nexpected=json.loads(old);expected['commands']['t2_green'].update(state='SPENT_UNEXPECTED_FAILURE',used=1,remaining=0,result_path=settle['result']['path'],failure_result=settle['result'],failure_tool_return=settle['transport'])\nnew=checked(settle['root_after']);assert new==(json.dumps(expected,ensure_ascii=False,indent=2)+'\\n').encode()\nassert Path(settle['root_after']['path']).lstat().st_mode==settle['root_before']['mode']\nchecked(settle['author_after']);checks=0\nplan=json.loads((d266/'plan.json').read_bytes())\nfor p in plan['inputs']:\n if p==settle['root_before']['original']:assert checked(settle['root_before']['archive'])==old\n else:checked(p)\n checks+=1\noutcome=json.loads(checked(settle['result']));before=json.loads(checked(outcome['source_before']));after=json.loads(checked(outcome['source_after']));assert before['preconditions']==after\nfor p in before['sources']:\n raw=checked(p);assert raw==checked(p['physical'])==base64.b64decode(p['base64'],validate=True);assert Path(p['path']).lstat().st_mode==p['mode']\nfor p in before['protected']:checked(p)\npresent=absent=0\nfor db in outcome['new_retained_databases']:\n assert checked(db['pin'])==checked(db['archive'])\n for side in db['sidecars']:\n  q=Path(side['path'])\n  if side['exists']:assert not side['is_symlink'] and checked(side['pin'])==checked(side['archive']);present+=1\n  else:assert not q.exists() and not q.is_symlink() and side['pin'] is None;absent+=1\nprint(json.dumps({'root_full_failure_transition_exact':True,'all_other_original_entries_and_mode_unchanged':True,'author_current_SPENT_unchanged':True,'R266_inputs':checks,'historical_ROOT_input_exactly_resolved_to_physical_before':True,'source_before_after_full_equal':True,'full_current_sources_and_physical_base64':len(before['sources']),'current_protected':len(before['protected']),'new_DB_full_original_archive_pairs':len(outcome['new_retained_databases']),'new_DB_sidecars_present':present,'new_DB_sidecars_absent':absent,'SQL':False,'full_resource_acceptance':False,'T2_complete':False},ensure_ascii=False))\nPY",
+      "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "yield_time_ms": 1000,
+      "max_output_tokens": 2000
+    },
+    "actual": {
+      "chunk_id": "7458fa",
+      "wall_time_seconds": 0.090548359,
+      "exit_code": 0,
+      "original_token_count": 129,
+      "output": "{\"root_full_failure_transition_exact\": true, \"all_other_original_entries_and_mode_unchanged\": true, \"author_current_SPENT_unchanged\": true, \"R266_inputs\": 29, \"historical_ROOT_input_exactly_resolved_to_physical_before\": true, \"source_before_after_full_equal\": true, \"full_current_sources_and_physical_base64\": 27, \"current_protected\": 211, \"new_DB_full_original_archive_pairs\": 10, \"new_DB_sidecars_present\": 2, \"new_DB_sidecars_absent\": 28, \"SQL\": false, \"full_resource_acceptance\": false, \"T2_complete\": false}\n"
+    }
+  },
+  "scope": "Exact full reserved->SPENT_UNEXPECTED_FAILURE1/0 original ROOT key, authorSPENT unchanged; allotherentries/mode unchanged. All29R266inputs resolved exactly including nowhistorical ROOTreserved through full physicalbefore. 27current source/fullbase64/physical and211protected preserved. 10newactualDBfulloriginal/archive bytepairs preserved;2existing/28absent actualsidecars retained withoutSQL.",
+  "boundary": "Only failure disposition/bookkeeping/preservation. Two real wait failures,600s timeout, noJUnit; no software/whole-object resource/T2/T12/native/formal acceptance. No repair/diagnostic/Git or fresh reviewer.",
+  "next": "Actual Astra finite observational plan required for missing failure traceback/live lease state and pre-timeout dual-node stack."
+}

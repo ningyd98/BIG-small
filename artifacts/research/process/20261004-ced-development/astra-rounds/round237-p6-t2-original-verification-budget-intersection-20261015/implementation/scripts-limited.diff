@@ -1,0 +1,474 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation/prepare-evidence.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round237-p6-t2-original-verification-budget-intersection-20261015/implementation/prepare-evidence.py
+@@ -1,4 +1,4 @@
+-"""R235 one-shot stdlib source baseline; no product/prerequisite import."""
++"""R237/R238 one-shot source baseline; never executes the product projection."""
+ from pathlib import Path
+ import base64
+ import difflib
+@@ -10,21 +10,8 @@
+ import traceback
+ 
+ ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
+-D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015'
++D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round237-p6-t2-original-verification-budget-intersection-20261015'
+ CHECKS, WRITES = [], []
+-CHANGES = {
+-    'worker_runtime.py': (
+-        ('        self._local_original = {\n', '        self._local_original = _descriptor_plain({\n'),
+-        ('        }\n        owner._local_original = self._local_original\n',
+-         '        })\n        owner._local_original = self._local_original\n'),
+-    ),
+-    'operational_windows.py': (
+-        ('        return LocalAuthorityDecision.from_payload({\n',
+-         '        return LocalAuthorityDecision.from_payload(_descriptor_plain({\n'),
+-        ('            "disposition": "VALID", "reasons": [],\n        })\n',
+-         '            "disposition": "VALID", "reasons": [],\n        }))\n'),
+-    ),
+-}
+ 
+ 
+ def encoded(value):
+@@ -46,7 +33,7 @@
+     path = Path(row['path'])
+     check(not path.is_symlink(), 'regular fixed input', str(path))
+     raw = path.read_bytes()
+-    check(pin(path, raw) == {k: row[k] for k in ('path', 'bytes', 'sha256')}, 'fixed input bytes/hash', str(path))
++    check(pin(path, raw) == {k: row[k] for k in ('path', 'bytes', 'sha256')}, 'fixed identity tuple', str(path))
+     return raw
+ 
+ 
+@@ -54,27 +41,38 @@
+     path.parent.mkdir(parents=True, exist_ok=True)
+     WRITES.append({'path': str(path), 'status': 'ATTEMPTED_PARTIAL_UNKNOWN'})
+     with path.open('xb') as handle:
+-        check(handle.write(raw) == len(raw), 'full exclusive write', str(path))
+-    check(path.read_bytes() == raw, 'artifact exact byte readback', str(path))
++        check(handle.write(raw) == len(raw), 'complete exclusive write', str(path))
++    check(path.read_bytes() == raw, 'artifact byte readback', str(path))
+     WRITES[-1]['status'] = 'COMPLETE_EXACT'
+ 
+ 
+-def histories(observed):
+-    rows = observed['inputs'] + observed['trace_pins'] + observed['old_role_pins']
+-    rows += observed['additional_source_evidence'] + observed['protected_current_pins']
+-    rows += [db['pin'] for db in observed['old_databases']]
+-    for row in rows:
+-        fixed(row)
+-    absent = [item for db in observed['old_databases'] for item in db['sidecars']]
+-    check(len(absent) == 18, '18 exact old DB sidecar absences')
+-    for row in absent:
+-        path = Path(row['path'])
+-        check(row['exists'] is False and not path.exists() and not path.is_symlink(), 'old sidecar remains absent', str(path))
+-    return rows, absent
++def history(plan, gate):
++    observed = json.loads(fixed(plan['inputs']['index']))
++    resolved = json.loads(fixed(gate['resolved_history_pin']))
++    check(resolved['status'] == 'RESOLVED_FOR_ROOT_GATE' and not resolved['unresolved'], 'explicit complete history resolution')
++    for row in resolved['documents']:
++        fixed(row)
++    records = []
++    for item in resolved['entries']:
++        original, archive = item['original'], item['resolution']['pin']
++        check((archive['bytes'], archive['sha256']) == (original['bytes'], original['sha256']), 'historical original byte identity')
++        check(item['resolution']['kind'] in {'EXACT_PHYSICAL_BEFORE', 'CURRENT_EXACT_BYTES'}, 'exact resolution kind')
++        fixed(archive)
++        records.append(archive)
++    check(len(observed['retained_databases']) == 18, '18 retained old databases')
++    absent = []
++    for database in observed['retained_databases']:
++        fixed(database['pin'])
++        for row in database['sidecars']:
++            path = Path(row['path'])
++            check(row['exists'] is False and not path.exists() and not path.is_symlink(), 'old database sidecar absent', str(path))
++            absent.append(row)
++    check(len(absent) == 54, '54 retained sidecar absences')
++    return observed, resolved, records, absent
+ 
+ 
+ def main():
+-    signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError('R235 baseline 120s')))
++    signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError('R237 baseline 120s')))
+     signal.alarm(120)
+     key = 'baseline'
+     plan = json.loads((D / 'plan.json').read_bytes())
+@@ -86,103 +84,107 @@
+     entry, reservation = author['commands'][key], root['commands'][key]
+     check(gate['state'] == 'APPROVED' and gate['full_source_reviewed'] is True, 'ROOT full source review')
+     check(entry['state'] == 'HELD' and entry['used'] == 0 and entry['remaining'] == 1, 'unused author slot')
+-    check(reservation['state'] == 'RESERVED_BY_ROOT' and reservation['used'] == 1 and reservation['remaining'] == 0, 'one ROOT reservation')
+-    check(gate['reservation_id'] == reservation['reservation_id'], 'same reservation id')
+-    check(gate['argv'] == gate['launcher_argv'] == command['launcher_argv'] == entry['argv'], 'exact baseline argv')
+-    check(sys.argv == command['launcher_argv'][1:] and Path.cwd() == ROOT and gate['cwd'] == str(ROOT), 'actual source argv/cwd')
+-    check(gate['finite_env'] == command['finite_env'] and gate['timeout_seconds'] == command['timeout_seconds'] == 120, 'finite env and cap')
++    check(reservation['state'] == 'RESERVED_BY_ROOT' and reservation['used'] == 1 and reservation['remaining'] == 0, 'single ROOT reservation')
++    check(gate['reservation_id'] == reservation['reservation_id'], 'same reservation identity')
++    check(gate['argv'] == gate['launcher_argv'] == command['launcher_argv'] == entry['launcher_argv'], 'exact baseline launcher')
++    check(sys.argv == command['launcher_argv'][1:] and Path.cwd() == ROOT and gate['cwd'] == str(ROOT), 'actual argv/cwd')
++    check(gate['finite_env'] == command['finite_env'] and gate['timeout_seconds'] == command['timeout_seconds'] == 120, 'finite environment/cap')
+     check(all(os.environ.get(k) == v for k, v in command['finite_env'].items()), 'actual declared environment')
+     fixed(gate['source'])
+-    check(gate['source']['path'] == str(Path(__file__)), 'exact source identity')
+-    mutable = {str(D / name) for name in ('command-ledger.json', 'root-command-ledger.json', 'script-gate.json', 'source-gate.json', 'root-activation.json')}
++    check(gate['source']['path'] == str(Path(__file__)), 'baseline source identity')
++    mutable = {str(D / name) for name in ('script-gate.json', 'source-gate.json', 'root-activation.json', 'command-ledger.json', 'root-command-ledger.json')}
+     for row in gate['input_records']:
+-        check(row['path'] not in mutable, 'no mutable control in fixed loop')
+-        fixed(row)
+-    observed = json.loads(fixed(plan['inputs']['index']))
++        check(row['path'] not in mutable, 'no live mutable control in fixed loop')
++        fixed(row)
++    observed, resolved, records, absent = history(plan, gate)
+     before = json.loads(fixed(gate['before_manifest_pin']))
+-    for pair in before['controls']:
+-        fixed(pair['archive'])
+-    original_products = {row['current']['path']: row for row in before['before_products']}
+-    scope = {row['path']: row for row in plan['scope']['product_changes']}
+-    check(set(scope) == set(original_products) and len(scope) == 2, 'exact two producer regions')
+-    history, absent = histories(observed)
+-    sources, physical, diffs, proofs = [], {}, [], []
++    scope = json.loads(fixed(gate['scope_contract_pin']))
++    old = fixed(scope['before'])
++    current_path = Path(scope['after']['path'])
++    raw = fixed(scope['after'])
++    text = raw.decode()
++    helper = base64.b64decode(scope['helper'], validate=True).decode()
++    check(text.count(helper) == 1, 'one complete static helper insertion')
++    text = text.replace(helper, '', 1)
++    for region in scope['regions']:
++        old_region = base64.b64decode(region['before'], validate=True).decode()
++        new_region = base64.b64decode(region['after'], validate=True).decode()
++        check(text.count(new_region) == 1, 'one exact approved function region', region['name'])
++        text = text.replace(new_region, old_region, 1)
++    for line in scope['added_imports']:
++        check(text.count(line) == 1, 'one required new import', line)
++        text = text.replace(line, '', 1)
++    check(text.encode() == old, 'all bytes outside five regions/helper/imports identical')
++    check(pin(current_path, old) == scope['original_identity'], 'whole original runtime identity')
++    check(len(scope['regions']) == 5 and scope['initial_export_count'] == 1, 'five regions and single original export')
++    source_rows, physical = [], {}
++    archives = {row['original']['path']: row for row in before['source_archives27']}
++    check(len(observed['current_sources']) == len(archives) == 27 and len(observed['protected']) == 211, 'current27/protected211 coverage')
+     out = D / 'implementation/baseline'
+-    check(len(observed['source_pairs']) == 27, 'exact27 source pairs')
+-    for pair in observed['source_pairs']:
+-        path = Path(pair['current']['path'])
+-        old = fixed(pair['archive'])
+-        check(pin(path, old) == {k: pair['current'][k] for k in ('path', 'bytes', 'sha256')}, 'historical27 identity via exact physical archive', str(path))
+-        raw = path.read_bytes()
+-        if str(path) in scope:
+-            original = original_products[str(path)]
+-            check(fixed(original['physical_before']) == old, 'exclusive before equals accepted historical generation')
+-            expected = old.decode()
+-            for old_text, new_text in CHANGES[path.name]:
+-                check(expected.count(old_text) == 1, 'unique exact producer boundary', [str(path), old_text])
+-                expected = expected.replace(old_text, new_text, 1)
+-            check(raw == expected.encode(), 'full file exact approved wrapping only', str(path))
+-            check(path.stat().st_mode == original['mode'], 'product mode unchanged', str(path))
+-            proofs.append({'function': scope[str(path)]['function'], 'before': pair['current'],
+-                           'physical_before': original['physical_before'], 'after': pin(path, raw),
+-                           'full_file_equals_exact_boundary_replacement': True,
+-                           'all_other_function_prefix_suffix_bytes_identical': True})
+-            diffs.extend(difflib.unified_diff(old.decode().splitlines(keepends=True), raw.decode().splitlines(keepends=True),
+-                                            fromfile=str(path) + ' (before)', tofile=str(path) + ' (after)'))
++    for row in observed['current_sources']:
++        path = Path(row['path'])
++        original = archives[str(path)]
++        previous = fixed(original['archive'])
++        check(pin(path, previous) == original['original'], 'actual complete original27 generation')
++        data = path.read_bytes()
++        if path == current_path:
++            check(data == raw, 'approved new runtime generation')
+         else:
+-            check(raw == old, 'all25 non-product source bytes unchanged', str(path))
+-        check(not path.is_symlink(), 'no source symlink')
+-        sources.append({**pin(path, raw), 'mode': path.stat().st_mode, 'base64': base64.b64encode(raw).decode(),
+-                        'original_generation': pair})
+-        physical[out / 'sources' / path.relative_to(ROOT)] = raw
++            check(data == previous, 'other26 source full bytes unchanged', str(path))
++        check(path.stat().st_mode == original['mode'] and not path.is_symlink(), 'source mode/regular file unchanged')
++        source_rows.append({**pin(path, data), 'mode': path.stat().st_mode, 'base64': base64.b64encode(data).decode(),
++                            'physical_original': original})
++        physical[out / 'sources' / path.relative_to(ROOT)] = data
++    for row in observed['protected']:
++        fixed(row)
++    check(len(gate['scripts']) == 2 and {row['path'] for row in gate['scripts']} == set(plan['scope']['new_author_scripts']), 'exact two new author scripts')
+     scripts = []
+-    check(len(gate['scripts']) == 3 and {row['path'] for row in gate['scripts']} == set(plan['scope']['new_sources']), 'exact three scripts')
+-    for row in gate['scripts']:
+-        raw = fixed(row)
+-        scripts.append({**row, 'base64': base64.b64encode(raw).decode()})
++    for row in gate['scripts'] + [gate['prerequisite_source']]:
++        scripts.append({**row, 'base64': base64.b64encode(fixed(row)).decode()})
+     controls = []
+-    for name, raw in (('command-ledger.json', author_raw), ('root-command-ledger.json', root_raw), ('script-gate.json', gate_raw)):
+-        controls.append({**pin(D / name, raw), 'base64': base64.b64encode(raw).decode()})
++    for name, data in (('command-ledger.json', author_raw), ('root-command-ledger.json', root_raw), ('script-gate.json', gate_raw)):
++        controls.append({**pin(D / name, data), 'base64': base64.b64encode(data).decode()})
+     for name in ('root-activation.json', 'source-gate.json'):
+-        raw = (D / name).read_bytes()
+-        controls.append({**pin(D / name, raw), 'base64': base64.b64encode(raw).decode()})
+-    invocation = {'round': 'R235', 'command': key, 'argv': command['launcher_argv'], 'launcher_argv': command['launcher_argv'],
+-                  'cwd': str(ROOT), 'finite_env': command['finite_env'], 'timeout_seconds': 120,
+-                  'attempt': 1, 'retry': 0, 'reservation_id': gate['reservation_id'], 'source': gate['source'],
+-                  'outer_capture': gate['transport'], 'controls_before': controls, 'independent_tool_streams': None}
+-    index = {'round': 'R235', 'sources': sources, 'protected': observed['protected_current_pins'],
+-             'scripts': scripts, 'history': history, 'absent_sidecars': absent,
+-             'input_records': gate['input_records'], 'scope_proofs': proofs}
++        data = (D / name).read_bytes()
++        controls.append({**pin(D / name, data), 'base64': base64.b64encode(data).decode()})
++    invocation = {'round': 'R237', 'continuation': 'R238', 'command': key, 'argv': command['launcher_argv'],
++                  'launcher_argv': command['launcher_argv'], 'cwd': str(ROOT), 'finite_env': command['finite_env'],
++                  'timeout_seconds': 120, 'attempt': 1, 'retry': 0, 'reservation_id': gate['reservation_id'],
++                  'source': gate['source'], 'controls_before': controls, 'outer_capture': gate['transport'],
++                  'independent_tool_streams': None}
++    index = {'round': 'R237', 'sources': source_rows, 'protected': observed['protected'], 'scripts': scripts,
++             'history': records, 'resolved_history': resolved, 'absent_sidecars': absent,
++             'scope_contract': scope, 'input_records': gate['input_records']}
+     index_raw = encoded(index)
+-    artifacts = {**physical, out / 'source-index.json': index_raw, out / 'invocation.json': encoded(invocation),
+-                 out / 'scope-proof.json': encoded({'round': 'R235', 'checks': CHECKS, 'proofs': proofs,
++    diff = ''.join(difflib.unified_diff(old.decode().splitlines(keepends=True), raw.decode().splitlines(keepends=True),
++                                     fromfile=str(current_path) + ' (before)', tofile=str(current_path) + ' (after)')).encode()
++    artifacts = {**physical, out / 'source-index.json': index_raw, out / 'limited.diff': diff,
++                 out / 'scope-proof.json': encoded({'round': 'R237', 'checks': CHECKS, 'scope_contract': scope,
+                                                    'product_execution': False}),
+-                 out / 'limited.diff': ''.join(diffs).encode()}
+-    check(all(not path.exists() for path in [*artifacts, out / 'result.json']), 'all new baseline outputs absent')
+-    for row in gate['input_records'] + sources + gate['scripts']:
+-        fixed(row)
+-    histories(observed)
++                 out / 'invocation.json': encoded(invocation)}
++    check(all(not path.exists() for path in [*artifacts, out / 'result.json']), 'all baseline outputs absent')
++    for row in gate['input_records'] + source_rows + scripts + controls:
++        fixed(row)
++    history(plan, gate)
+     check((D / 'command-ledger.json').read_bytes() == author_raw and (D / 'root-command-ledger.json').read_bytes() == root_raw
+-          and (D / 'script-gate.json').read_bytes() == gate_raw, 'roles/gate immediate full-byte CAS')
+-    for row in controls:
+-        fixed(row)
++          and (D / 'script-gate.json').read_bytes() == gate_raw, 'roles/gate immediate full CAS')
+     entry.update(state='SPENT', used=1, remaining=0, reservation_id=gate['reservation_id'])
+     temporary = D / '.author-baseline.tmp'
+     save(temporary, encoded(author))
+     os.replace(temporary, D / 'command-ledger.json')
+-    for path, raw in artifacts.items():
+-        save(path, raw)
+-    for row in gate['input_records'] + sources + gate['scripts']:
+-        fixed(row)
+-    histories(observed)
+-    check((D / 'command-ledger.json').read_bytes() == encoded(author), 'author exact single-slot generation after write')
++    for path, data in artifacts.items():
++        save(path, data)
++    for row in gate['input_records'] + source_rows + scripts:
++        fixed(row)
++    history(plan, gate)
++    check((D / 'command-ledger.json').read_bytes() == encoded(author), 'exact author slot consumption')
+     for row in controls:
+         if row['path'] != str(D / 'command-ledger.json'):
+             fixed(row)
+-    result = {'round': 'R235', 'command': key, 'exit_code': 0, 'attempt': 1, 'retry': 0,
++    result = {'round': 'R237', 'command': key, 'exit_code': 0, 'attempt': 1, 'retry': 0,
+               'test_execution': False, 'product_commands': 0, 'input_records': gate['input_records'],
+-              'candidate': pin(out / 'source-index.json', index_raw), 'outputs': [pin(path, raw) for path, raw in artifacts.items()],
+-              'checks': CHECKS, 'runtime_evidence': None, 'actual_resources': None, 'invocation': invocation}
++              'candidate': pin(out / 'source-index.json', index_raw), 'outputs': [pin(path, data) for path, data in artifacts.items()],
++              'checks': CHECKS, 'invocation': invocation, 'runtime_evidence': None, 'actual_resources': None}
+     save(out / 'result.json', encoded(result))
+     signal.alarm(0)
+     print(json.dumps({'command': key, 'exit_code': 0, 'candidate': result['candidate'], 'result': pin(out / 'result.json')}, ensure_ascii=False))
+@@ -191,14 +193,14 @@
+ if __name__ == '__main__':
+     try:
+         if sys.argv != [str(D / 'implementation/prepare-evidence.py'), 'baseline']:
+-            raise ValueError('exact R235 baseline launcher required')
++            raise ValueError('exact R237 baseline launcher required')
+         main()
+     except BaseException as error:
+         signal.alarm(0)
+         out = D / 'implementation/baseline'
+         out.mkdir(parents=True, exist_ok=True)
+         if not (out / 'result.json').exists():
+-            save(out / 'result.json', encoded({'round': 'R235', 'command': 'baseline', 'exit_code': 1,
++            save(out / 'result.json', encoded({'round': 'R237', 'command': 'baseline', 'exit_code': 1,
+                  'attempt': 1, 'retry': 0, 'checks': CHECKS, 'writes': WRITES,
+                  'exception': {'type': type(error).__name__, 'message': str(error), 'traceback': traceback.format_exc()}}))
+         print(json.dumps({'command': 'baseline', 'exit_code': 1, 'result': str(out / 'result.json')}))
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation/run-command.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round237-p6-t2-original-verification-budget-intersection-20261015/implementation/run-command.py
+@@ -1,4 +1,4 @@
+-"""R235 once-only prerequisite-conditioned recovery runner. Raw outcome precedes acceptance classification."""
++"""R237/R238 once-only budget-intersection recovery. Raw evidence precedes classification."""
+ from pathlib import Path
+ import base64
+ import hashlib
+@@ -13,7 +13,7 @@
+ import xml.etree.ElementTree as ET
+ 
+ ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
+-D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015'
++D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round237-p6-t2-original-verification-budget-intersection-20261015'
+ 
+ 
+ def read_json(path):
+@@ -347,7 +347,31 @@
+         path = Path(row['path'])
+         if row['exists'] is not False or path.exists() or path.is_symlink():
+             raise ValueError('old exact DB sidecar is no longer absent')
++    observed = json.loads(Path(plan['inputs']['index']['path']).read_bytes())
+     fixed(plan['inputs']['index'])
++    resolved = json.loads(Path(gate['resolved_history_pin']['path']).read_bytes())
++    fixed(gate['resolved_history_pin'])
++    if resolved != baseline['resolved_history'] or resolved['unresolved']:
++        raise ValueError('explicit frozen historical generations differ')
++    for row in resolved['documents']:
++        fixed(row)
++    expected_history = []
++    for item in resolved['entries']:
++        original, resolution = item['original'], item['resolution']
++        row = resolution['pin']
++        if (resolution['kind'] not in {'EXACT_PHYSICAL_BEFORE', 'CURRENT_EXACT_BYTES'}
++                or (row['bytes'], row['sha256']) != (original['bytes'], original['sha256'])):
++            raise ValueError('historical original identity differs')
++        fixed(row)
++        expected_history.append(row)
++    if expected_history != baseline['history'] or len(observed['retained_databases']) != 18:
++        raise ValueError('finite history/18 retained databases differ')
++    absences = []
++    for row in observed['retained_databases']:
++        fixed(row['pin'])
++        absences.extend(row['sidecars'])
++    if absences != baseline['absent_sidecars'] or len(absences) != 54:
++        raise ValueError('exact 54 retained database sidecar absences required')
+     return baseline
+ 
+ 
+@@ -368,19 +392,27 @@
+         raise ValueError('exact one-use ROOT reservation/author gate required')
+     launcher = command['launcher_argv']
+     if (sys.argv != launcher[1:] or Path.cwd() != ROOT or gate['launcher_argv'] != launcher
+-            or gate['argv'] != command['argv'] or entry['argv'] != command['argv']
++            or gate['argv'] != command['argv'] or entry['child_argv'] != command['argv'] or entry['launcher_argv'] != launcher
+             or gate['finite_env'] != command['finite_env'] or gate['cwd'] != str(ROOT)
+             or gate['timeout_seconds'] != command['timeout_seconds']
+             or gate['source']['path'] != str(Path(__file__))):
+         raise ValueError('exact command/launcher/environment/cap mismatch')
+     fixed(gate['source'])
+     fixed(gate['prerequisite_source'])
++    if gate['prerequisite_source'] != {'path': str(ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation/r235_startup_prerequisite.py'),
++                                      'bytes': 5022, 'sha256': 'e46122f6ce00f9c5d0e13be33301b8861b567cb3f25c33d41447f1ea68880e0d'}:
++        raise ValueError('exact unchanged import-only prerequisite plugin required')
+     mutable = {str(D / name) for name in ('script-gate.json', 'source-gate.json', 'root-activation.json', 'command-ledger.json', 'root-command-ledger.json')}
+     for record in gate['input_records']:
+         if record['path'] in mutable:
+             raise ValueError('mutable role/gate cannot enter current-fixed input loop')
+         fixed(record)
+     baseline = verify_baseline(plan, gate)
++    controls_before = []
++    for name in ('command-ledger.json', 'root-command-ledger.json', 'script-gate.json', 'root-activation.json', 'source-gate.json'):
++        path = D / name
++        raw = path.read_bytes()
++        controls_before.append({**file_pin(path), 'base64': base64.b64encode(raw).decode()})
+     out = Path(command['evidence_directory'])
+     out.mkdir(parents=True, exist_ok=False)
+     expected = [arg for arg in command['argv'] if '::' in arg]
+@@ -390,7 +422,7 @@
+     for name in ('BIGSMALL_R223_RESOURCE_ROOT', 'BIGSMALL_R223_CASE_ROOT'):
+         if name in command['finite_env']:
+             Path(command['finite_env'][name]).mkdir(parents=True, exist_ok=False)
+-    invocation = {'round': 'R235', 'command': key, 'argv': command['argv'], 'launcher_argv': launcher,
++    invocation = {'round': 'R237', 'command': key, 'argv': command['argv'], 'launcher_argv': launcher,
+                   'cwd': str(ROOT), 'finite_env': command['finite_env'], 'timeout_seconds': command['timeout_seconds'],
+                   'cleanup_seconds': 15, 'attempt': 1, 'retry': 0, 'reservation_id': gate['reservation_id'],
+                   'source': gate['source'], 'script_gate': file_pin(D / 'script-gate.json'),
+@@ -398,12 +430,15 @@
+                   'author_ledger_before_base64': base64.b64encode(author_data).decode(),
+                   'root_ledger_before_base64': base64.b64encode(root_data).decode(),
+                   'outer_capture': gate['transport'], 'independent_tool_streams': None,
+-                  'baseline': gate['source_index_pin'], 'prerequisite_source': gate['prerequisite_source']}
++                  'baseline': gate['source_index_pin'], 'prerequisite_source': gate['prerequisite_source'],
++                  'resolved_history_pin': gate['resolved_history_pin'], 'controls_before': controls_before}
+     save(out / 'invocation.json', invocation)
+     if ((D / 'command-ledger.json').read_bytes() != author_data
+             or (D / 'root-command-ledger.json').read_bytes() != root_data
+             or (D / 'script-gate.json').read_bytes() != gate_data):
+         raise ValueError('immediate role/gate CAS failed')
++    for row in controls_before:
++        fixed(row)
+     entry.update(state='SPENT', used=1, remaining=0, reservation_id=gate['reservation_id'])
+     temporary = D / ('.author-' + key + '.tmp')
+     save(temporary, author)
+@@ -452,14 +487,17 @@
+             observation_errors.append({'stage': 'cases', 'type': type(error).__name__, 'message': str(error)})
+     if key == 'red':
+         try:
++            prerequisite_file = {'path': str(ROOT / 'tests/test_operational_time_v1.py'), 'bytes': 24211,
++                                 'sha256': 'ff226e9a616462c67d74d29931f8f9a7d21548f4f13f93ced64901b263229c0f'}
++            fixed(prerequisite_file)
+             path = Path(command['finite_env']['BIGSMALL_R235_PREREQUISITE_RECORD'])
+             prerequisite = {'pin': file_pin(path), 'data': read_json(path)}
+             value = prerequisite['data']
+             if (value['schema_version'] != 'bigsmall.r235.startup-prerequisite.v1'
+                     or value['pid'] != (None if process is None else process.pid)
+-                    or value['module_name'] != plan['prerequisite']['module']
+-                    or value['expected_pin'] != plan['prerequisite']['expected_file']
+-                    or value['actual_file_pin'] != plan['prerequisite']['expected_file']
++                    or value['module_name'] != 'tests.test_operational_time_v1'
++                    or value['expected_pin'] != prerequisite_file
++                    or value['actual_file_pin'] != prerequisite_file
+                     or value['accepted_prerequisite'] is not True or value['exception'] is not None
+                     or value['same_sys_modules_object_after'] is not True
+                     or value['pre_import_hooks_empty'] is not True
+@@ -484,6 +522,15 @@
+             fixed(record)
+         except BaseException as error:
+             observation_errors.append({'stage': 'post-input', 'path': record['path'], 'type': type(error).__name__, 'message': str(error)})
++    for row in controls_before:
++        try:
++            if row['path'] == str(D / 'command-ledger.json'):
++                if Path(row['path']).read_bytes() != encoded(author):
++                    raise ValueError('exact author single-slot transition differs')
++            else:
++                fixed(row)
++        except BaseException as error:
++            observation_errors.append({'stage': 'post-control', 'path': row['path'], 'type': type(error).__name__, 'message': str(error)})
+     accepted = (failure is None and not observation_errors and not timed_out
+                 and cleaned['leader_reaped'] is True and cleaned['group_remaining'] is False
+                 and source_after is not None and source_after['all_unchanged'] is True)
+@@ -499,14 +546,10 @@
+                             and item['data']['writer']['exception'] is None
+                             and item['data']['legacy_after'] != item['data']['legacy_before'] for item in case_records)
+                     and resources is not None and resources['all_records_valid'])
+-    else:
+-        accepted = (accepted and child_exit == 0 and xml is not None and xml['names_exact']
+-                    and (xml['tests'], xml['passes'], xml['failures'], xml['errors'], xml['skips']) == (9, 9, 0, 0, 0)
+-                    and resources is not None and resources['all_records_valid'])
+     wrapper_exit = child_exit if accepted else 1
+     streams = {name: file_pin(out / (name + '.txt')) if (out / (name + '.txt')).is_file() else None
+                for name in ('stdout', 'stderr')}
+-    result = {'round': 'R235', 'command': key, 'attempt': 1, 'retry': 0, 'child_pid': None if process is None else process.pid,
++    result = {'round': 'R237', 'command': key, 'attempt': 1, 'retry': 0, 'child_pid': None if process is None else process.pid,
+               'child_exit': child_exit, 'wrapper_exit': wrapper_exit, 'accepted_command_outcome': bool(accepted),
+               'timed_out': timed_out, 'cleanup': cleaned, 'JUnit': xml, 'resource_summary': resources,
+               'cases': case_records, 'streams': streams, 'input_records': gate['input_records'],
+@@ -527,13 +570,13 @@
+ 
+ if __name__ == '__main__':
+     if len(sys.argv) != 2 or sys.argv[1] not in {'ruff', 'red'}:
+-        raise SystemExit('exact R235 ruff|red launcher required')
++        raise SystemExit('exact R237 ruff|red launcher required')
+     try:
+         raise SystemExit(main(sys.argv[1]))
+     except Exception as error:
+         out = D / 'implementation' / sys.argv[1]
+         out.mkdir(parents=True, exist_ok=True)
+-        failure = {'round': 'R235', 'command': sys.argv[1], 'attempt': 1, 'retry': 0,
++        failure = {'round': 'R237', 'command': sys.argv[1], 'attempt': 1, 'retry': 0,
+                    'wrapper_exit': 1, 'child_exit': None, 'accepted_command_outcome': False,
+                    'runner_exception': {'type': type(error).__name__, 'message': str(error),
+                                         'traceback': traceback.format_exc()}, 'file_index': index(out)}
+@@ -542,3 +585,4 @@
+         print(json.dumps({'command': sys.argv[1], 'wrapper_exit': 1,
+                           'result_pin': file_pin(out / 'result.json')}, ensure_ascii=False))
+         raise SystemExit(1)
++

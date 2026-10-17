@@ -1,0 +1,125 @@
+{
+  "round": "R268",
+  "scope": "Independent read-only installed pytest contracts and frozen counter/lock helper source",
+  "records": [
+    {
+      "name": "native_faulthandler_source",
+      "record": {
+        "status": "fulfilled",
+        "value": {
+          "key": "native_faulthandler_source",
+          "args": {
+            "cmd": "sed -n '1,130p' .venv/lib/python3.12/site-packages/_pytest/faulthandler.py",
+            "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+            "max_output_tokens": 3500,
+            "yield_time_ms": 10000
+          },
+          "actual": {
+            "chunk_id": "6bd1d3",
+            "wall_time_seconds": 0.00001028,
+            "exit_code": 0,
+            "original_token_count": 921,
+            "output": "from __future__ import annotations\n\nfrom collections.abc import Generator\nimport os\nimport sys\n\nfrom _pytest.config import Config\nfrom _pytest.config.argparsing import Parser\nfrom _pytest.nodes import Item\nfrom _pytest.stash import StashKey\nimport pytest\n\n\nfault_handler_original_stderr_fd_key = StashKey[int]()\nfault_handler_stderr_fd_key = StashKey[int]()\n\n\ndef pytest_addoption(parser: Parser) -> None:\n    help = (\n        \"Dump the traceback of all threads if a test takes \"\n        \"more than TIMEOUT seconds to finish\"\n    )\n    parser.addini(\"faulthandler_timeout\", help, default=0.0)\n\n\ndef pytest_configure(config: Config) -> None:\n    import faulthandler\n\n    # at teardown we want to restore the original faulthandler fileno\n    # but faulthandler has no api to return the original fileno\n    # so here we stash the stderr fileno to be used at teardown\n    # sys.stderr and sys.__stderr__ may be closed or patched during the session\n    # so we can't rely on their values being good at that point (#11572).\n    stderr_fileno = get_stderr_fileno()\n    if faulthandler.is_enabled():\n        config.stash[fault_handler_original_stderr_fd_key] = stderr_fileno\n    config.stash[fault_handler_stderr_fd_key] = os.dup(stderr_fileno)\n    faulthandler.enable(file=config.stash[fault_handler_stderr_fd_key])\n\n\ndef pytest_unconfigure(config: Config) -> None:\n    import faulthandler\n\n    faulthandler.disable()\n    # Close the dup file installed during pytest_configure.\n    if fault_handler_stderr_fd_key in config.stash:\n        os.close(config.stash[fault_handler_stderr_fd_key])\n        del config.stash[fault_handler_stderr_fd_key]\n    # Re-enable the faulthandler if it was originally enabled.\n    if fault_handler_original_stderr_fd_key in config.stash:\n        faulthandler.enable(config.stash[fault_handler_original_stderr_fd_key])\n        del config.stash[fault_handler_original_stderr_fd_key]\n\n\ndef get_stderr_fileno() -> int:\n    try:\n        fileno = sys.stderr.fileno()\n        # The Twisted Logger will return an invalid file descriptor since it is not backed\n        # by an FD. So, let's also forward this to the same code path as with pytest-xdist.\n        if fileno == -1:\n            raise AttributeError()\n        return fileno\n    except (AttributeError, ValueError):\n        # pytest-xdist monkeypatches sys.stderr with an object that is not an actual file.\n        # https://docs.python.org/3/library/faulthandler.html#issue-with-file-descriptors\n        # This is potentially dangerous, but the best we can do.\n        assert sys.__stderr__ is not None\n        return sys.__stderr__.fileno()\n\n\ndef get_timeout_config_value(config: Config) -> float:\n    return float(config.getini(\"faulthandler_timeout\") or 0.0)\n\n\n@pytest.hookimpl(wrapper=True, trylast=True)\ndef pytest_runtest_protocol(item: Item) -> Generator[None, object, object]:\n    timeout = get_timeout_config_value(item.config)\n    if timeout > 0:\n        import faulthandler\n\n        stderr = item.config.stash[fault_handler_stderr_fd_key]\n        faulthandler.dump_traceback_later(timeout, file=stderr)\n        try:\n            return (yield)\n        finally:\n            faulthandler.cancel_dump_traceback_later()\n    else:\n        return (yield)\n\n\n@pytest.hookimpl(tryfirst=True)\ndef pytest_enter_pdb() -> None:\n    \"\"\"Cancel any traceback dumping due to timeout before entering pdb.\"\"\"\n    import faulthandler\n\n    faulthandler.cancel_dump_traceback_later()\n\n\n@pytest.hookimpl(tryfirst=True)\ndef pytest_exception_interact() -> None:\n    \"\"\"Cancel any traceback dumping due to an interactive exception being\n    raised.\"\"\"\n    import faulthandler\n\n    faulthandler.cancel_dump_traceback_later()\n"
+          }
+        }
+      }
+    },
+    {
+      "name": "native_callinfo_source",
+      "record": {
+        "status": "fulfilled",
+        "value": {
+          "key": "native_callinfo_source",
+          "args": {
+            "cmd": "sed -n '230,372p' .venv/lib/python3.12/site-packages/_pytest/runner.py",
+            "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+            "max_output_tokens": 4500,
+            "yield_time_ms": 10000
+          },
+          "actual": {
+            "chunk_id": "fab6e0",
+            "wall_time_seconds": 0.00001011,
+            "exit_code": 0,
+            "original_token_count": 1249,
+            "output": "def call_and_report(\n    item: Item, when: Literal[\"setup\", \"call\", \"teardown\"], log: bool = True, **kwds\n) -> TestReport:\n    ihook = item.ihook\n    if when == \"setup\":\n        runtest_hook: Callable[..., None] = ihook.pytest_runtest_setup\n    elif when == \"call\":\n        runtest_hook = ihook.pytest_runtest_call\n    elif when == \"teardown\":\n        runtest_hook = ihook.pytest_runtest_teardown\n    else:\n        assert False, f\"Unhandled runtest hook case: {when}\"\n    reraise: tuple[type[BaseException], ...] = (Exit,)\n    if not item.config.getoption(\"usepdb\", False):\n        reraise += (KeyboardInterrupt,)\n    call = CallInfo.from_call(\n        lambda: runtest_hook(item=item, **kwds), when=when, reraise=reraise\n    )\n    report: TestReport = ihook.pytest_runtest_makereport(item=item, call=call)\n    if log:\n        ihook.pytest_runtest_logreport(report=report)\n    if check_interactive_exception(call, report):\n        ihook.pytest_exception_interact(node=item, call=call, report=report)\n    return report\n\n\ndef check_interactive_exception(call: CallInfo[object], report: BaseReport) -> bool:\n    \"\"\"Check whether the call raised an exception that should be reported as\n    interactive.\"\"\"\n    if call.excinfo is None:\n        # Didn't raise.\n        return False\n    if hasattr(report, \"wasxfail\"):\n        # Exception was expected.\n        return False\n    if isinstance(call.excinfo.value, (Skipped, bdb.BdbQuit)):\n        # Special control flow exception.\n        return False\n    return True\n\n\nTResult = TypeVar(\"TResult\", covariant=True)\n\n\n@final\n@dataclasses.dataclass\nclass CallInfo(Generic[TResult]):\n    \"\"\"Result/Exception info of a function invocation.\"\"\"\n\n    _result: TResult | None\n    #: The captured exception of the call, if it raised.\n    excinfo: ExceptionInfo[BaseException] | None\n    #: The system time when the call started, in seconds since the epoch.\n    start: float\n    #: The system time when the call ended, in seconds since the epoch.\n    stop: float\n    #: The call duration, in seconds.\n    duration: float\n    #: The context of invocation: \"collect\", \"setup\", \"call\" or \"teardown\".\n    when: Literal[\"collect\", \"setup\", \"call\", \"teardown\"]\n\n    def __init__(\n        self,\n        result: TResult | None,\n        excinfo: ExceptionInfo[BaseException] | None,\n        start: float,\n        stop: float,\n        duration: float,\n        when: Literal[\"collect\", \"setup\", \"call\", \"teardown\"],\n        *,\n        _ispytest: bool = False,\n    ) -> None:\n        check_ispytest(_ispytest)\n        self._result = result\n        self.excinfo = excinfo\n        self.start = start\n        self.stop = stop\n        self.duration = duration\n        self.when = when\n\n    @property\n    def result(self) -> TResult:\n        \"\"\"The return value of the call, if it didn't raise.\n\n        Can only be accessed if excinfo is None.\n        \"\"\"\n        if self.excinfo is not None:\n            raise AttributeError(f\"{self!r} has no valid result\")\n        # The cast is safe because an exception wasn't raised, hence\n        # _result has the expected function return type (which may be\n        #  None, that's why a cast and not an assert).\n        return cast(TResult, self._result)\n\n    @classmethod\n    def from_call(\n        cls,\n        func: Callable[[], TResult],\n        when: Literal[\"collect\", \"setup\", \"call\", \"teardown\"],\n        reraise: type[BaseException] | tuple[type[BaseException], ...] | None = None,\n    ) -> CallInfo[TResult]:\n        \"\"\"Call func, wrapping the result in a CallInfo.\n\n        :param func:\n            The function to call. Called without arguments.\n        :type func: Callable[[], _pytest.runner.TResult]\n        :param when:\n            The phase in which the function is called.\n        :param reraise:\n            Exception or exceptions that shall propagate if raised by the\n            function, instead of being wrapped in the CallInfo.\n        \"\"\"\n        excinfo = None\n        instant = timing.Instant()\n        try:\n            result: TResult | None = func()\n        except BaseException:\n            excinfo = ExceptionInfo.from_current()\n            if reraise is not None and isinstance(excinfo.value, reraise):\n                raise\n            result = None\n        duration = instant.elapsed()\n        return cls(\n            start=duration.start.time,\n            stop=duration.stop.time,\n            duration=duration.seconds,\n            when=when,\n            result=result,\n            excinfo=excinfo,\n            _ispytest=True,\n        )\n\n    def __repr__(self) -> str:\n        if self.excinfo is None:\n            return f\"<CallInfo when={self.when!r} result: {self._result!r}>\"\n        return f\"<CallInfo when={self.when!r} excinfo={self.excinfo!r}>\"\n\n\ndef pytest_runtest_makereport(item: Item, call: CallInfo[None]) -> TestReport:\n    return TestReport.from_item_and_call(item, call)\n\n\ndef pytest_make_collect_report(collector: Collector) -> CollectReport:\n    def collect() -> list[Item | Collector]:\n"
+          }
+        }
+      }
+    },
+    {
+      "name": "native_hook_contract_source",
+      "record": {
+        "status": "fulfilled",
+        "value": {
+          "key": "native_hook_contract_source",
+          "args": {
+            "cmd": "sed -n '786,830p' .venv/lib/python3.12/site-packages/_pytest/hookspec.py",
+            "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+            "max_output_tokens": 1800,
+            "yield_time_ms": 10000
+          },
+          "actual": {
+            "chunk_id": "fa55d4",
+            "wall_time_seconds": 0.000012039,
+            "exit_code": 0,
+            "original_token_count": 397,
+            "output": "    Any conftest file can implement this hook. For a given item, only conftest\n    files in the item's directory and its parent directories are consulted.\n    \"\"\"\n\n\n@hookspec(firstresult=True)\ndef pytest_runtest_makereport(item: Item, call: CallInfo[None]) -> TestReport | None:\n    \"\"\"Called to create a :class:`~pytest.TestReport` for each of\n    the setup, call and teardown runtest phases of a test item.\n\n    See :hook:`pytest_runtest_protocol` for a description of the runtest protocol.\n\n    :param item: The item.\n    :param call: The :class:`~pytest.CallInfo` for the phase.\n\n    Stops at first non-None result, see :ref:`firstresult`.\n\n    Use in conftest plugins\n    =======================\n\n    Any conftest file can implement this hook. For a given item, only conftest\n    files in the item's directory and its parent directories are consulted.\n    \"\"\"\n\n\ndef pytest_runtest_logreport(report: TestReport) -> None:\n    \"\"\"Process the :class:`~pytest.TestReport` produced for each\n    of the setup, call and teardown runtest phases of an item.\n\n    See :hook:`pytest_runtest_protocol` for a description of the runtest protocol.\n\n    Use in conftest plugins\n    =======================\n\n    Any conftest file can implement this hook. For a given item, only conftest\n    files in the item's directory and its parent directories are consulted.\n    \"\"\"\n\n\n@hookspec(firstresult=True)\ndef pytest_report_to_serializable(\n    config: Config,\n    report: CollectReport | TestReport,\n) -> dict[str, Any] | None:\n    \"\"\"Serialize the given report object into a data structure suitable for\n"
+          }
+        }
+      }
+    },
+    {
+      "name": "frozen_counter_source",
+      "record": {
+        "status": "fulfilled",
+        "value": {
+          "key": "frozen_counter_source",
+          "args": {
+            "cmd": "sed -n '45,58p;3750,3785p;4090,4170p' tests/test_operational_runtime_closure.py",
+            "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+            "max_output_tokens": 4500,
+            "yield_time_ms": 10000
+          },
+          "actual": {
+            "chunk_id": "0de418",
+            "wall_time_seconds": 0.00001134,
+            "exit_code": 0,
+            "original_token_count": 1614,
+            "output": "class _Counter:\n    resolution_seconds = 1e-9\n\n    def __init__(self):\n        from tests.test_operational_time_v1 import _identity\n\n        self.current_identity = _identity()\n        self.now = 0\n\n    def identity(self):\n        return self.current_identity\n\n    def read_ns(self):\n        return self.now\n    def clock_factory(destination):\n        raw = _Counter()\n        marker = SimpleNamespace()\n        record = add(marker, \"OC1_clock\", domain_kind=destination)\n        try:\n            clock = _open_clock_for_test(raw)\n        except BaseException as error:\n            record[\"initialization_error\"] = {\"type\": type(error).__name__, \"message\": str(error)}\n            raise\n        del objects[id(marker)]\n        objects[id(clock)] = (clock, record)\n        record.update(resource_id=id(clock), class_module=type(clock).__module__,\n                      class_name=type(clock).__qualname__, initialized=True,\n                      issuer_thread=threading.get_ident(), issuer_native_thread=threading.get_native_id())\n        clocks.append((clock, raw, destination))\n        if (type(clock), \"close\") not in methods:\n            patch(type(clock), \"close\", close_wrapper(type(clock).close, \"OC1_clock\"))\n        return clock\n\n    session_code = lease_module.OperationalLeaseSession.__init__.__code__\n\n    def profile(frame, event, arg):\n        if frame.f_code is poll_code and event == \"call\":\n            call = getattr(poll_context, \"call\", None)\n            if call is not None and frame.f_locals.get(\"self\") is objects[call[\"worker_resource_id\"]][0]:\n                call[\"entered\"] = True\n                call[\"entry_sequence\"] = tick()\n                call[\"thread_id\"] = threading.get_ident()\n                call[\"native_thread_id\"] = threading.get_native_id()\n        for worker in tuple(worker_refs):\n            sample_runtime(worker)\n        if frame.f_code is session_code and event == \"call\":\n            session = frame.f_locals[\"self\"]\n            add(session, \"lease_session\")\n            session_refs.append(session)\n        elif frame.f_code is session_code and event == \"return\":\n            for event in observed.release_events:\n                event.set()\n            session = getattr(worker, \"_operational_lease_session\", None)\n            if session is not None and not session._closed:\n                operational_lease._close_worker_lease_session(session, reason=\"T2-exercise-finally\")\n            events.close()\n            for connection in reads.values():\n                connection.close()\n\n\ndef _b_t2_wait_for_event_lock(runtime, session, repo, events, observed, counter_kind):\n    import queue\n    import sys\n    import time\n    from cloud_edge_robot_arm.simulation_runtime.operational_lease import LockedLeaseView, _view_record\n\n    event_lock = events._lock if hasattr(events, \"_lock\") else events._write_lock\n    entered, held, emergency = queue.Queue(), threading.Event(), threading.Event()\n    observed.release_events.append(emergency)\n    main_ident, main_native = threading.get_ident(), threading.get_native_id()\n    function = type(runtime)._local_publication_scope\n    coordinator = function.__wrapped__.__code__\n    history, holder_errors = [], []\n    state = {\"returned\": False, \"callsite\": None, \"offset\": None, \"view\": None}\n    original = runtime.bootstrap.to_payload()[\"original_time\"]\n    if counter_kind == \"D_app\":\n        deadline = original[\"task_reference\"][\"deadline_ns\"]\n    else:\n        deadline = session.ttl_ns\n\n    def observer(frame, event, arg):\n        if threading.get_ident() != main_ident:\n            return\n        if getattr(arg, \"__self__\", None) is not event_lock or getattr(arg, \"__name__\", None) != \"acquire\":\n            return\n        if event == \"c_call\":\n            assert frame.f_code is coordinator\n            view = frame.f_locals[\"view\"]\n            assert type(view) is LockedLeaseView\n            binding = _view_record(view)\n            assert binding.repository is repo and binding.session is session\n            assert binding.connection.in_transaction is True\n            assert binding.thread_id == main_ident and binding.native_thread_id == main_native\n            assert event_lock.locked() and held.is_set()\n            state.update(callsite=frame, offset=frame.f_lasti, view=view)\n            packet = {\n                \"event\": \"real_lock_acquire_c_call\", \"builtin_self_id\": id(arg.__self__),\n                \"lock_id\": id(event_lock), \"job_view_id\": id(view), \"connection_id\": id(binding.connection),\n                \"connection_in_transaction\": binding.connection.in_transaction,\n                \"main_ident\": main_ident, \"main_native\": main_native, \"call_offset\": frame.f_lasti,\n                \"coordinator_code\": frame.f_code.co_qualname,\n            }\n            history.append(packet)\n            entered.put(packet)\n        elif event == \"c_return\":\n            state[\"returned\"] = True\n            history.append({\"event\": \"real_lock_acquire_c_return\", \"main_ident\": main_ident})\n\n    def holder():\n        try:\n            with event_lock:\n                held.set()\n                history.append({\"event\": \"holder_owns_real_lock\", \"ident\": threading.get_ident(),\n                                \"native\": threading.get_native_id(), \"lock_id\": id(event_lock)})\n                entered.get(timeout=4)\n                limit = time.monotonic() + 4\n                while time.monotonic() < limit and not emergency.is_set():\n                    top = sys._current_frames().get(main_ident)\n                    if (top is state[\"callsite\"] and top.f_code is coordinator\n                            and top.f_lasti == state[\"offset\"] and not state[\"returned\"]):\n                        assert event_lock.locked()\n                        history.append({\"event\": \"main_returned_from_profile_inside_real_acquire\",\n                                        \"frame_id\": id(top), \"offset\": top.f_lasti,\n                                        \"no_c_return_yet\": True, \"holder_still_owns_lock\": True})\n                        matching = [item for item in observed.clocks if item[2] == counter_kind]\n                        assert len(matching) == 1\n                        clock, raw, _ = matching[0]\n                        assert clock._closed is False\n                        before = raw.now\n                        raw.now = max(raw.now, deadline)\n                        history.append({\"event\": \"advance_original_counter\", \"kind\": counter_kind,\n"
+          }
+        }
+      }
+    },
+    {
+      "name": "pytest_hook_definitions",
+      "record": {
+        "status": "fulfilled",
+        "value": {
+          "key": "pytest_hook_definitions",
+          "args": {
+            "cmd": "rg -n '^(def pytest_runtest|class CallInfo|def call_and_report|    def from_call|    def excinfo|    def result)' .venv/lib/python3.12/site-packages/_pytest/runner.py .venv/lib/python3.12/site-packages/_pytest/faulthandler.py .venv/lib/python3.12/site-packages/_pytest/hookspec.py",
+            "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+            "max_output_tokens": 2000,
+            "yield_time_ms": 10000
+          },
+          "actual": {
+            "chunk_id": "c06723",
+            "wall_time_seconds": 0.00001099,
+            "exit_code": 0,
+            "original_token_count": 543,
+            "output": ".venv/lib/python3.12/site-packages/_pytest/hookspec.py:628:def pytest_runtestloop(session: Session) -> object | None:\n.venv/lib/python3.12/site-packages/_pytest/hookspec.py:654:def pytest_runtest_protocol(item: Item, nextitem: Item | None) -> object | None:\n.venv/lib/python3.12/site-packages/_pytest/hookspec.py:694:def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) -> None:\n.venv/lib/python3.12/site-packages/_pytest/hookspec.py:712:def pytest_runtest_logfinish(\n.venv/lib/python3.12/site-packages/_pytest/hookspec.py:732:def pytest_runtest_setup(item: Item) -> None:\n.venv/lib/python3.12/site-packages/_pytest/hookspec.py:751:def pytest_runtest_call(item: Item) -> None:\n.venv/lib/python3.12/site-packages/_pytest/hookspec.py:767:def pytest_runtest_teardown(item: Item, nextitem: Item | None) -> None:\n.venv/lib/python3.12/site-packages/_pytest/hookspec.py:792:def pytest_runtest_makereport(item: Item, call: CallInfo[None]) -> TestReport | None:\n.venv/lib/python3.12/site-packages/_pytest/hookspec.py:811:def pytest_runtest_logreport(report: TestReport) -> None:\n.venv/lib/python3.12/site-packages/_pytest/faulthandler.py:76:def pytest_runtest_protocol(item: Item) -> Generator[None, object, object]:\n.venv/lib/python3.12/site-packages/_pytest/runner.py:114:def pytest_runtest_protocol(item: Item, nextitem: Item | None) -> bool:\n.venv/lib/python3.12/site-packages/_pytest/runner.py:162:def pytest_runtest_setup(item: Item) -> None:\n.venv/lib/python3.12/site-packages/_pytest/runner.py:167:def pytest_runtest_call(item: Item) -> None:\n.venv/lib/python3.12/site-packages/_pytest/runner.py:191:def pytest_runtest_teardown(item: Item, nextitem: Item | None) -> None:\n.venv/lib/python3.12/site-packages/_pytest/runner.py:230:def call_and_report(\n.venv/lib/python3.12/site-packages/_pytest/runner.py:276:class CallInfo(Generic[TResult]):\n.venv/lib/python3.12/site-packages/_pytest/runner.py:311:    def result(self) -> TResult:\n.venv/lib/python3.12/site-packages/_pytest/runner.py:324:    def from_call(\n.venv/lib/python3.12/site-packages/_pytest/runner.py:367:def pytest_runtest_makereport(item: Item, call: CallInfo[None]) -> TestReport:\n"
+          }
+        }
+      }
+    }
+  ],
+  "observations": {
+    "native_faulthandler": "dump_traceback_later(timeout,file=stderr) defaults one-shot; finally cancel_dump_traceback_later; pytest unconfigure closes owned duplicate fd",
+    "callinfo": "CallInfo retains excinfo after runtest hook returns/unwinds; makereport firstresult hook stops first non-None; passive hook must return None",
+    "counter": "frozen _Counter stores now on its ordinary instance; observe clock tuple stores (clock,raw,destination)",
+    "helper": "actual frozen helper definition is _b_t2_wait_for_event_lock; mismatched R268 name remains blocked pending Astra R269"
+  },
+  "execution": "No product imports, tests, AST, SQL or Git",
+  "independent_stdout": null,
+  "independent_stderr": null
+}

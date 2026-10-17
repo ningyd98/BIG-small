@@ -1,0 +1,123 @@
+--- R79-activated/src/cloud_edge_robot_arm/research/operational_prefix_v1.py
++++ R82-final/src/cloud_edge_robot_arm/research/operational_prefix_v1.py
+@@ -166,6 +166,7 @@
+     source: _ApplicationSourceV1 | None = None
+     exact_handles: tuple[Any, ...] | None = None
+     preregistration_bytes: bytes | None = None
++    preregistration_primary: tuple[BaseException, int] | None = None
+     failures: list[dict[str, Any]] = field(default_factory=list)
+     recorder: OperationalPrefixRecorderV1 | None = None
+     issuing: bool = False
+@@ -569,12 +570,23 @@
+         _check_source_v1(application)
+         return context
+     except BaseException as error:
+-        record.failures.append(
+-            {"phase": "preregistration", "error_type": type(error).__name__, "error": str(error)}
+-        )
+-        _write_exclusive_v1(
+-            record.output / "startup-failures.json", canonical_bytes_v1(record.failures)
+-        )
++        row = _failure_row_v1(record, "preregistration", error, primary_id=None)
++        primary_id = row["failure_id"]
++        record.preregistration_primary = (error, primary_id)
++        if not _failure_write_v1(
++            record,
++            record.output / "startup-failures.json",
++            record.failures,
++            phase="startup_failure_persistence",
++            primary_id=primary_id,
++        ):
++            try:
++                _persist_failure_stage_v1(record, record.output, primary_id=primary_id)
++            except BaseException as secondary:
++                record.durable_failure_evidence_complete = False
++                _failure_row_v1(
++                    record, "startup_failure_fallback", secondary, primary_id=primary_id
++                )
+         raise
+ 
+ 
+@@ -675,6 +687,45 @@
+     if type(value) is not int or value < 0:
+         raise ValueError("original nonnegative integer ns required")
+     return cast(int, value)
++
++
++def _current_source_event_v1(
++    current: dict[str, Any], frames: list[dict[str, Any]], captures: list[dict[str, Any]]
++) -> dict[str, Any]:
++    returned_id = current.get("returned_acquisition_id")
++    source_id = current.get("source_acquisition_id")
++    if (
++        not isinstance(returned_id, str)
++        or not returned_id
++        or not isinstance(source_id, str)
++        or not source_id
++    ):
++        raise ValueError("original returned/source acquisition identity missing")
++    returned = [frame for frame in frames if frame.get("acquisition_id") == returned_id]
++    if len(returned) != 1:
++        raise ValueError("exact original returned frame required")
++    returned_frame = returned[0]
++    original_source = (
++        returned_frame.get("source_acquisition_id") or returned_frame["acquisition_id"]
++    )
++    if original_source != source_id:
++        raise ValueError("original returned frame/source acquisition relation differs")
++    sources = [frame for frame in frames if frame.get("acquisition_id") == original_source]
++    events = [
++        event
++        for event in captures
++        if event.get("kind") == "CAPTURE" and event.get("acquisition_id") == original_source
++    ]
++    if len(sources) != 1 or len(events) != 1:
++        raise ValueError("exact original source frame/CAPTURE event required")
++    source_event = events[0]
++    interval_id = f"operation-{source_event['operation_id']}"
++    if (
++        sources[0].get("interval_id") != interval_id
++        or returned_frame.get("interval_id") != interval_id
++    ):
++        raise ValueError("original returned/source frame operation interval differs")
++    return source_event
+ 
+ 
+ def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) -> dict[str, Any]:
+@@ -1057,9 +1108,7 @@
+         current = d["current"]
+         if current is None:
+             raise ValueError("original capture/current causal pair missing")
+-        source = next(
+-            r for r in captures if r["acquisition_id"] == current["source_acquisition_id"]
+-        )
++        source = _current_source_event_v1(current, frames, captures)
+         if (
+             current["after_token_identity"] != source["token_identity"]
+             or current["domain_sha256"] != domain_sha
+@@ -1319,13 +1368,21 @@
+         if primary is not None:
+             _failure_row_v1(record, phase, error, primary_id=primary_id)
+             return
+-        primary = error
+-        primary_traceback = error.__traceback__
+-        primary_id = _failure_row_v1(record, phase, error, primary_id=None)["failure_id"]
++        pending = record.preregistration_primary
++        record.preregistration_primary = None
++        if pending is None:
++            primary = error
++            primary_traceback = error.__traceback__
++            primary_id = _failure_row_v1(record, phase, error, primary_id=None)["failure_id"]
++        else:
++            primary, primary_id = pending
++            primary_traceback = primary.__traceback__
++            if error is not primary:
++                _failure_row_v1(record, phase, error, primary_id=primary_id)
+         record.catalog_json = None
+         directory = source.directory if source is not None else record.output
+         try:
+-            _archive_primary_failure_v1(record, recorder, directory, error, primary_id=primary_id)
++            _archive_primary_failure_v1(record, recorder, directory, primary, primary_id=primary_id)
+         except BaseException as archive_error:
+             record.durable_failure_evidence_complete = False
+             _failure_row_v1(record, "failure_archival", archive_error, primary_id=primary_id)

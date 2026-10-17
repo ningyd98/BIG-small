@@ -192,10 +192,15 @@ class RGBDPlannerAdapter:
         frozen = os.environ.get("BIGSMALL_VLM_FROZEN_DIR")
         if frozen:
             return load_frozen_planner(Path(frozen))
-        if frozen is None and not any(name in os.environ for name in (
-            "BIGSMALL_VLM_PROVIDER", "BIGSMALL_VLM_MODEL", "BIGSMALL_VLM_BASE_URL",
-            "BIGSMALL_VLM_API_KEY",
-        )):
+        if frozen is None and not any(
+            name in os.environ
+            for name in (
+                "BIGSMALL_VLM_PROVIDER",
+                "BIGSMALL_VLM_MODEL",
+                "BIGSMALL_VLM_BASE_URL",
+                "BIGSMALL_VLM_API_KEY",
+            )
+        ):
             return load_frozen_planner(DEFAULT_FROZEN_DIR)
         provider = os.environ.get("BIGSMALL_VLM_PROVIDER", "ollama")
         if provider not in {"ollama", "openai_compatible"}:
@@ -215,8 +220,10 @@ class RGBDPlannerAdapter:
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         payload = json.dumps(body).encode()
-        request = urllib.request.Request(self.base_url + path, data=payload,
-                                         headers=headers, method="POST")
+        request = urllib.request.Request(
+            self.base_url + path, data=payload, headers=headers, method="POST"
+        )
+
         def observe(phase: Literal["REQUEST", "RESPONSE"], data: bytes) -> None:
             if self.raw_transport_observer is not None:
                 try:
@@ -238,12 +245,20 @@ class RGBDPlannerAdapter:
 
             local = urlparse(self.base_url).hostname in {"localhost", "127.0.0.1", "::1"}
             request_cost = RequestCost(
-                request_id=uuid.uuid4().hex, sent_at=sent_at, finished_at=None,
-                is_cloud_model=True, model_role=self.model_role, deployment="CLOUD",
+                request_id=uuid.uuid4().hex,
+                sent_at=sent_at,
+                finished_at=None,
+                is_cloud_model=True,
+                model_role=self.model_role,
+                deployment="CLOUD",
                 provider_location="LOCAL_HOST" if local else "REMOTE_SERVICE",
-                provider_version=self.model_snapshot.digest() if self.model_snapshot
-                else self.model_name, status="IN_FLIGHT", serialized_sent_bytes=len(payload),
-                serialized_received_bytes=0, monetary_cost=0 if local else None,
+                provider_version=self.model_snapshot.digest()
+                if self.model_snapshot
+                else self.model_name,
+                status="IN_FLIGHT",
+                serialized_sent_bytes=len(payload),
+                serialized_received_bytes=0,
+                monetary_cost=0 if local else None,
             )
             self.cost_ledger.record_request(request_cost)
         raw = b""
@@ -282,10 +297,15 @@ class RGBDPlannerAdapter:
                 raw = exc.read(2_000_001)
                 observe("RESPONSE", raw)
             # Do not expose endpoint credentials or remote response bodies.
-            exception_type = RGBDModelCallFailed if is_model and (
-                isinstance(exc, (TimeoutError, ValueError)) or
-                isinstance(getattr(exc, "reason", None), TimeoutError)
-            ) else RGBDModelUnavailable
+            exception_type = (
+                RGBDModelCallFailed
+                if is_model
+                and (
+                    isinstance(exc, (TimeoutError, ValueError))
+                    or isinstance(getattr(exc, "reason", None), TimeoutError)
+                )
+                else RGBDModelUnavailable
+            )
             raise exception_type(
                 f"RGBD_MODEL_UNAVAILABLE: {type(exc).__name__}; "
                 "check vision service and installed model"
@@ -295,12 +315,19 @@ class RGBDPlannerAdapter:
             if ledger is not None:
                 if is_model:
                     assert request_cost is not None
-                    ledger.record_request(request_cost.model_copy(update={
-                        "finished_at": datetime.now(UTC), "status": status,
-                        "serialized_received_bytes": len(raw),
-                    }))
-                    ledger.record_timing(network_s=network_s,
-                        provider_roundtrip_s=max(0., time.monotonic()-started-network_s))
+                    ledger.record_request(
+                        request_cost.model_copy(
+                            update={
+                                "finished_at": datetime.now(UTC),
+                                "status": status,
+                                "serialized_received_bytes": len(raw),
+                            }
+                        )
+                    )
+                    ledger.record_timing(
+                        network_s=network_s,
+                        provider_roundtrip_s=max(0.0, time.monotonic() - started - network_s),
+                    )
                 else:
                     ledger.record_telemetry(len(payload), len(raw))
 
@@ -334,9 +361,7 @@ class RGBDPlannerAdapter:
         coordinate_system = (
             self.model_snapshot.coordinate_system if self.model_snapshot else "pixel"
         )
-        grasp_profile = (
-            self.model_snapshot.grasp_profile if self.model_snapshot else "unconfigured"
-        )
+        grasp_profile = self.model_snapshot.grasp_profile if self.model_snapshot else "unconfigured"
         messages = build_visual_messages(
             request.user_instruction,
             observation,
@@ -347,11 +372,20 @@ class RGBDPlannerAdapter:
         started = time.monotonic()
         response = self._request_visual(messages, VisualDecision.model_json_schema())
         latency_ms = round((time.monotonic() - started) * 1000)
-        return self._ground_response(request, response, latency_ms, observation, messages,
-                                     image_size, coordinate_system, grasp_profile)
+        return self._ground_response(
+            request,
+            response,
+            latency_ms,
+            observation,
+            messages,
+            image_size,
+            coordinate_system,
+            grasp_profile,
+        )
 
-    def _request_visual(self, messages: list[dict[str, Any]],
-                        decision_schema: dict[str, Any]) -> dict[str, Any]:
+    def _request_visual(
+        self, messages: list[dict[str, Any]], decision_schema: dict[str, Any]
+    ) -> dict[str, Any]:
         if self.provider == "ollama":
             info = self._post("/api/show", {"model": self.model_name})
             if "vision" not in info.get("capabilities", []):
@@ -407,6 +441,8 @@ class RGBDPlannerAdapter:
                 "max_tokens": generation.get("num_predict", 512),
                 "response_format": {"type": "json_object"},
             }
+            if "think" in generation:
+                body["enable_thinking"] = generation["think"]
             path = self.chat_path
         return self._post(path, body)
 
@@ -415,14 +451,18 @@ class RGBDPlannerAdapter:
 
         context = SupervisionContext.model_validate(context)
         if (context.observation_id, context.episode_id) != (
-            observation.observation_id, observation.episode_id
+            observation.observation_id,
+            observation.episode_id,
         ):
             raise ValueError("supervision context does not bind its RGB-D observation")
         messages = build_visual_messages(
-            "Inspect the current task and robot state. " + context.model_dump_json(), observation,
+            "Inspect the current task and robot state. " + context.model_dump_json(),
+            observation,
             image_size=self.model_snapshot.image_size if self.model_snapshot else None,
-            coordinate_system=self.model_snapshot.coordinate_system if self.model_snapshot
-            else "pixel", decision_schema=SupervisionDecision.model_json_schema(),
+            coordinate_system=self.model_snapshot.coordinate_system
+            if self.model_snapshot
+            else "pixel",
+            decision_schema=SupervisionDecision.model_json_schema(),
         )
         messages[0]["content"] = (
             "You supervise a running robot using only the paired current RGB and depth images "
@@ -432,15 +472,24 @@ class RGBDPlannerAdapter:
             "change; STOP means unsafe. Never declare task completion or emit a replacement plan."
         )
         response = self._request_visual(messages, SupervisionDecision.model_json_schema())
-        raw = (response["message"]["content"] if self.provider == "ollama"
-               else response["choices"][0]["message"]["content"])
+        raw = (
+            response["message"]["content"]
+            if self.provider == "ollama"
+            else response["choices"][0]["message"]["content"]
+        )
         return SupervisionDecision.model_validate_json(raw, strict=True)
 
-    def _ground_response(self, request: InitialPlanningRequest,
-                         response: dict[str, Any], latency_ms: int,
-                         observation: RGBDObservation, messages: list[dict[str, Any]],
-                         image_size: tuple[int, int] | None, coordinate_system: str,
-                         grasp_profile: str) -> PlannerDraft:
+    def _ground_response(
+        self,
+        request: InitialPlanningRequest,
+        response: dict[str, Any],
+        latency_ms: int,
+        observation: RGBDObservation,
+        messages: list[dict[str, Any]],
+        image_size: tuple[int, int] | None,
+        coordinate_system: str,
+        grasp_profile: str,
+    ) -> PlannerDraft:
         try:
             raw = (
                 response["message"]["content"]
@@ -471,8 +520,7 @@ class RGBDPlannerAdapter:
             evidence["model_snapshot"] = self.model_snapshot.evidence()
             evidence["model_snapshot_hash"] = self.model_snapshot.digest()
         if min(observation.width, observation.height) >= 64 and (
-            calibration_asset_sha256(grasp_profile) is None
-            or observation.source != "mujoco_camera"
+            calibration_asset_sha256(grasp_profile) is None or observation.source != "mujoco_camera"
         ):
             evidence["top_grasp_offset_from_surface_m"] = None
             evidence["top_grasp_offset_status"] = "NOT_CONFIGURED"

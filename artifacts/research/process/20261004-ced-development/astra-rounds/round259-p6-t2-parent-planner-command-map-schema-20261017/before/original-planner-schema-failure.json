@@ -1,0 +1,31 @@
+{
+  "schema_version": "r258-planner-metadata-failure-v1",
+  "actual_author": "/root/astra_status_plan",
+  "actual_model": "gpt-6-astra",
+  "status": "STOP_NEW_METADATA_SCHEMA_FAILURE_NO_RETRY",
+  "problem": "The planning reader assumed plan.commands iterated dictionaries and called x.get; actual iteration yielded a string. Exact container schema beyond this observation is not established by this failed call.",
+  "invocation": {
+    "cmd": ".venv/bin/python - <<'PY'\nfrom pathlib import Path\nimport json\nA=Path('artifacts/research/process/20261004-ced-development/astra-rounds');D=next(A.glob('round158-*'));P=json.loads((D/'plan.json').read_bytes())\nfor k in ['commands','fixture','review_budget','metadata_paths']:\n v=P[k]\n print(k,json.dumps([x for x in v if 't2' in str(x.get('id',''))] if k=='commands' else v,ensure_ascii=False))\nfor n in ['command-ledger.json','root-command-ledger.json']:\n j=json.loads((D/n).read_bytes());print(n,'KEYS',list(j));print('t2 values',json.dumps(j.get('commands',{}),ensure_ascii=False)[:200] if False else '')\n def walk(x,path=''):\n  if isinstance(x,dict):\n   for k,v in x.items():\n    if k in ['t2_green','t2_red']:print(path+'/'+k,json.dumps(v,ensure_ascii=False))\n    else:walk(v,path+'/'+k)\n  elif isinstance(x,list):\n   for i,v in enumerate(x):\n    if isinstance(v,dict) and v.get('id') in ['t2_green','t2_red']:print(path+'/'+str(i),json.dumps(v,ensure_ascii=False))\n walk(j)\nD=next(A.glob('round251-*'))\nfor rel in ['root-final-control-and-capture-receipt.json','implementation/root_settlement/settlement.json','implementation/root_settlement/result.json','implementation/prepare_green/source-index.json']:\n p=D/rel\n print('FILE',rel,p.exists())\n if p.exists():\n  j=json.loads(p.read_bytes());print('KEYS',list(j))\nPY",
+    "max_output_tokens": 8000,
+    "cwd_explicit": null
+  },
+  "actual_tool_return": {
+    "chunk_id": "cce39b",
+    "wall_time_seconds": 0.0000081,
+    "exit_code": 1,
+    "original_token_count": 32,
+    "output": "Traceback (most recent call last):\n  File \"<stdin>\", line 6, in <module>\nAttributeError: 'str' object has no attribute 'get'\n"
+  },
+  "independent_stdout": null,
+  "independent_stderr": null,
+  "boundary": {
+    "failed_before_first_print": true,
+    "downstream_ledger_and_settlement_reads_not_reached": true,
+    "product_execution": false,
+    "source_write": false,
+    "role_write": false,
+    "validation_slot_consumption": 0,
+    "plan_generated": false
+  },
+  "preservation": "Original actual tool object preserved without parsing rendered output; no failed reader replay."
+}

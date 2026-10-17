@@ -1,0 +1,1787 @@
+# R158：P6 Stage B 本地时间与确认发布实施计划
+
+> 实际规划者：gpt-6-astra（`/root/astra_status_plan`）。ROOT 核对并激活后，沿既定 subagent-driven-development 方法由唯一 Sol 作者执行；先 T1，再经独立审阅依次激活 T2、T3。
+
+**目标：** 完整覆盖原 B9 的五个函数、九个参数节点，以及十四个必要补充节点。完成后最多形成 Stage B 有界软件结论，不能代表 P6/T12 全部闭合、native、物理、真实运行或正式研究验收。
+
+**架构：** 复用 P5 原始 D_app 与私有 owner，独立处理当前 D_lease；版本化 detached 数据不授予 live 权限。通过真实 job/event repository 锁、持久 pending/completion 及真实 broker 确认区分 SQL 历史和已确认发布。
+
+**技术范围：** Python、现有 SQLite/Memory event repositories、既有 SQLite job repository；24 条精确 owned 路径。原 A40 与旧命令额度不重跑、不重置。本轮无 Git 额度。
+
+三个任务分别包含 7、7、9 个新节点。以下各节逐项呈现 plan.json 的同一合同，保留精确字段、签名、绝对路径和 argv，JSON 对象的 command ID 是键，不是数组索引。每项步骤遵循测试先行：先保存测试与审阅夹具，再执行一次已批准 RED，再最小实现及 GREEN；新的计划外问题必须先进入下一轮 Astra 计划。
+
+## 问题与原始证据
+
+```json
+{
+  "kind": "Previously approved deferred B scope and explicit R151 public-publication distinction; not a newly executed product failure",
+  "evidence": [
+    "R113 design.md lines102–122 and cpu-matrix five functions/nine exact nodes.",
+    "Current P5 _prepare_startup/_check_live still call read_visual_worker_lease; actual WorkerLeaseObservation enforces UTC.",
+    "Actual runtime/bootstrap/owner/route/budget paths contain current UTC/effective_deadline checks, event repositories lock only their own state and have no job/event completion protocol.",
+    "Service forwards SQL status/artifact paths; batch counts SUCCEEDED directly. R151 final COMMIT-success confirmation faults were explicitly not executed under A.",
+    "R157 one actual reader fd567a exit0: 108 checks true. This locates authorities, not software validation."
+  ],
+  "original_history": "All A failures, 40 unique terminal pass mapping across four separate historical runs and R155/R156 delivery records remain immutable. No claim that B tests have run."
+}
+```
+
+## 设计合同与阶段边界
+
+```json
+{
+  "design": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round113-p6-operational-runtime-closure-20261008/design.md",
+  "matrix": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round113-p6-operational-runtime-closure-20261008/cpu-matrix.json",
+  "handoff": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round151-p6-terminal-ackloss-contract-disposition-20261012/next-b9-inputs.json",
+  "route": "A -> B -> C -> P7/P8 -> D"
+}
+```
+
+## 冻结输入
+
+```json
+[
+  {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/input-pins.json",
+    "bytes": 157886,
+    "sha256": "94454311381670c81874abbdfb31d8239ad6e14d7316a9e1888df9ea3e9bedb9"
+  },
+  {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/callsite-inventory.json",
+    "bytes": 81908,
+    "sha256": "7849c52ca959cfa089c9b4fbb4622f0804b222a02fb56d3f992877f215c48c3d"
+  }
+]
+```
+
+## 完整输入清单
+
+```json
+{
+  "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/input-pins.json",
+  "unique_existing_inputs": 245,
+  "owned_existing": 23,
+  "owned_new": 1,
+  "protected": 211,
+  "source_dependency_method": "Finite literal local-import closure and specified contract/fixture sources, SHA only; dynamic runtime closure is not claimed.",
+  "source_authority_rule": "Use current input pins for implementation. Old R113/old53 P5 pins retain historical provenance; exactly B-owned members now explicitly change under this new scope. All other protected source/history remains byte-identical."
+}
+```
+
+## 精确文件范围与角色
+
+```json
+{
+  "owned_paths": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/service.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/models.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_workbench/models.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/execution.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py"
+  ],
+  "production_paths": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/service.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/models.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_workbench/models.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/execution.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py"
+  ],
+  "test_paths": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py"
+  ],
+  "new_paths": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py"
+  ],
+  "implementation_author": "One actual GPT-6.1-sol writer per inherited user method; ROOT records its real agent identity. Reuse the sole replacement author if available; never claim it is the original historical agent.",
+  "root_role": "Metadata applicability, activation, exact ledger/evidence review and future delivery only. ROOT does not edit product/test files.",
+  "stage_activation": "T1 alone initially; T2 after T1 fresh review, T3 after T2 fresh review. Explicit phase gate receipts bind the then-current authorized source snapshots; no old pin rewriting.",
+  "out_of_scope": [
+    "A40 reruns or body edits",
+    "OC1 implementation/identity weakening",
+    "backend ctrl/physics/sole executor/raw recorder C",
+    "native/P7/P8/D",
+    "cloud/edge model choice or external calls",
+    "Git or permissions escalation",
+    "legacy row migration",
+    "new environment dependencies"
+  ]
+}
+```
+
+## 版本化 schema、字段与兼容合同
+
+```json
+{
+  "outer": {
+    "exact_fields": [
+      "schema_version",
+      "payload",
+      "original_time",
+      "decision",
+      "transaction",
+      "diagnostics"
+    ],
+    "rules": "All keys required; unknown/missing/duplicate/nonfinite values reject. Original/definition records have decision=null and transaction=null. Transition request decision/transaction are null until the private coordinator evaluates under both locks; result/history/publication records require detached decision and matching transaction. No public decoder registers a live handle.",
+    "payload_fields_by_tag": {
+      "visual.bootstrap.definition.local.v1": [
+        "scope",
+        "episode_id",
+        "user_instruction",
+        "task_timeout_s",
+        "verification_limits",
+        "role_bundle_hash",
+        "model_snapshot_hash",
+        "source_hashes"
+      ],
+      "visual.bootstrap.record.local.v1": [
+        "scope",
+        "definition",
+        "revision",
+        "state",
+        "initial_capture_claimed",
+        "pending",
+        "observation",
+        "camera_descriptor_hash",
+        "draft",
+        "planning_source_usable",
+        "proposal_hash",
+        "terminal_reason",
+        "adopted_original_hash",
+        "history"
+      ],
+      "visual.bootstrap.transition.local.v1": [
+        "scope",
+        "bootstrap_id",
+        "definition_hash",
+        "expected_record_hash",
+        "kind",
+        "event_key",
+        "robot_state",
+        "claim_id",
+        "observation",
+        "draft"
+      ],
+      "visual.bootstrap.promotion.local.v1": [
+        "scope",
+        "bootstrap_id",
+        "definition_hash",
+        "expected_record_hash",
+        "event_key",
+        "original",
+        "robot_state"
+      ],
+      "visual.supervision.definition.local.v1": [
+        "scope",
+        "original",
+        "publication",
+        "task_timeout_s",
+        "supervision_period_s",
+        "model_snapshot_hash",
+        "role_bundle",
+        "job_configuration_hash"
+      ],
+      "visual.supervision.record.local.v1": [
+        "scope",
+        "definition",
+        "revision",
+        "max_periodic_captures",
+        "max_supervisor_calls",
+        "captures_reserved",
+        "supervisor_calls_reserved",
+        "last_capture_cursor",
+        "last_wait_cursor",
+        "wait_seconds_reserved",
+        "claims",
+        "history"
+      ],
+      "visual.supervision.transition.local.v1": [
+        "scope",
+        "task_id",
+        "definition_hash",
+        "expected_revision",
+        "expected_record_hash",
+        "original",
+        "publication",
+        "robot_state",
+        "step_id",
+        "cursor",
+        "kind",
+        "event_key",
+        "model_snapshot_hash",
+        "role_bundle",
+        "claim_id",
+        "observation",
+        "context",
+        "decision",
+        "wait_duration_s",
+        "wait_elapsed_s"
+      ],
+      "visual.owner.original.local.v1": [
+        "binding_scope",
+        "identity",
+        "contract",
+        "contract_provenance",
+        "proposal_hash",
+        "role_bundle_hash",
+        "compiler_source_hashes",
+        "source_hashes",
+        "requirements",
+        "dependencies"
+      ],
+      "visual.owner.grounding.local.v1": [
+        "binding_scope",
+        "original_plan_hash",
+        "current_identity",
+        "original_requirements",
+        "owner_revision",
+        "state_generation",
+        "source_checkpoint_hash",
+        "observation_id",
+        "observation_checksum_sha256",
+        "calibration_version",
+        "plan_version",
+        "command_seq",
+        "grounding_policy_hash",
+        "grounding_inputs_hash",
+        "duration_check_hash",
+        "grounding_source_hashes",
+        "grounded_step",
+        "expected_duration_s"
+      ],
+      "visual.owner.publication.local.v1": [
+        "binding_scope",
+        "mode_scope",
+        "identity",
+        "original_plan_hash",
+        "contract_hash",
+        "owner_revision",
+        "state_generation",
+        "checkpoint",
+        "verification_budget",
+        "retry_budget",
+        "grounding",
+        "operation_hash",
+        "source_owner_revision",
+        "publication_hash"
+      ],
+      "visual.verification.route-input.local.v1": [
+        "scope",
+        "original",
+        "publication",
+        "online",
+        "step_id",
+        "attempt",
+        "phase",
+        "event_key",
+        "execution_contract",
+        "completion",
+        "grounding_receipt"
+      ],
+      "visual.verification.route.local.v1": [
+        "scope",
+        "input",
+        "input_hash",
+        "semantic_hash",
+        "source_key",
+        "route",
+        "reasons",
+        "verdicts",
+        "before_verification_budget",
+        "after_verification_budget",
+        "produced_publication",
+        "produced_publication_hash",
+        "source_context_hash",
+        "native_context_hash",
+        "evidence_content_hash",
+        "context_domains",
+        "capture_claim_id",
+        "camera_source_descriptor_sha256"
+      ],
+      "visual.verification.effect-completion.local.v1": [
+        "scope",
+        "result",
+        "task_id",
+        "plan_id",
+        "robot_id",
+        "step_id",
+        "attempt",
+        "plan_version",
+        "command_seq",
+        "before_observation_id",
+        "execution_payload_hash",
+        "source_checkpoint_hash",
+        "source_hashes"
+      ],
+      "recovery.verification-budget.local.v1": [
+        "task_id",
+        "state",
+        "revision",
+        "content_hash"
+      ],
+      "recovery.retry-budget.local.v1": [
+        "budget_id",
+        "task_id",
+        "per_step_retry_limit",
+        "per_skill_retry_limit",
+        "task_total_retry_limit",
+        "retry_count_used",
+        "task_retry_count",
+        "step_retry_counts",
+        "skill_retry_counts",
+        "event_retry_counts",
+        "retry_cooldown_ms",
+        "retry_backoff_policy",
+        "effective_retry_limit",
+        "remaining_retries",
+        "scene_version"
+      ]
+    }
+  },
+  "original_time": {
+    "schema_version": "visual.local-original-time.v1",
+    "fields": [
+      "schema_version",
+      "app_domain",
+      "task_origin_event_id",
+      "task_reference",
+      "verification_reference",
+      "recovery_reference",
+      "lease_identity",
+      "source_hashes",
+      "contract_provenance"
+    ],
+    "lease_identity_fields": [
+      "job_id",
+      "run_id",
+      "worker_id",
+      "lease_id",
+      "attempt",
+      "epoch",
+      "source_identity",
+      "original_acquisition"
+    ],
+    "rules": "Actual original P5 app window descriptors only, same app owner/domain; original acquisition/epoch stays fixed. No renewable generation/current segment in immutable original. recovery_reference aliases the already issued original verification/task obligation, or a pre-existing original recovery window; never creates a fresh origin. contract_provenance is a private-producer-bound LOCAL_APP_PRODUCED or EXTERNAL_UTC tagged record with content SHA; external values cannot be relabelled by callers."
+  },
+  "app_reference": {
+    "schema_version": "simulation.operational-window.local.v1",
+    "fields": "Exact frozen P5 operational-window.v1 field set from operational_windows.py:_validate_references, replacing schema_version and lease_deadline_domain='SEPARATE_D_LEASE_DECISION'. Every deadline/effective_upper is expressly D_app only; no D_lease number enters them. The producer retains original live OC1 tokens and owner; decoder validates detached causality only."
+  },
+  "decision": {
+    "schema_version": "visual.local-two-authority-decision.v1",
+    "fields": [
+      "schema_version",
+      "operation_id",
+      "operation_sha256",
+      "original_time_hash",
+      "app_domain",
+      "app_current",
+      "app_verdict",
+      "app_references",
+      "lease_observation",
+      "lease_epoch",
+      "lease_generation",
+      "lease_row_revision",
+      "lease_row_digest",
+      "source_identity",
+      "job_id",
+      "run_id",
+      "worker_id",
+      "lease_id",
+      "attempt",
+      "disposition",
+      "reasons"
+    ],
+    "rules": "app_current and app_references are actual OC1 descriptors read by original main thread; lease_observation is actual registered broker evaluate_locked output. Positive iff app VALID AND lease VALID AND exact source/job/fence/CAS. Identical numeric ns in different domains never compare or clamp. disposition VALID/REJECTED/UNKNOWN is detached evidence, never effect permission."
+  },
+  "transaction": {
+    "schema_version": "visual.local-publication-transaction.v1",
+    "fields": [
+      "schema_version",
+      "operation_id",
+      "operation_sha256",
+      "job_id",
+      "attempt",
+      "lease_id",
+      "epoch",
+      "generation",
+      "row_revision",
+      "job_database_id",
+      "event_repository_id",
+      "event_kind",
+      "event_key",
+      "expected_event_revision",
+      "event_revision",
+      "event_record_hash",
+      "job_receipt_hash",
+      "event_receipt_hash",
+      "phase",
+      "failure_reason"
+    ],
+    "phases": [
+      "PENDING",
+      "EVENT_COMMITTED",
+      "COMPLETE",
+      "REJECTED",
+      "UNKNOWN"
+    ],
+    "rules": "Canonical hashes exclude only self-hash; receipt hashes form an acyclic chain: event pending receipt → job receipt → event completion receipt → job completion record. No circular hashes, no durable broker ACTIVE."
+  },
+  "diagnostics": {
+    "fields": [
+      "utc",
+      "monotonic"
+    ],
+    "rules": "utc is a typed mapping of original timestamp field names to ISO-8601/null; monotonic is elapsed/logging values or null. Neither map participates in local permission/order. Legacy fields remain verbatim in legacy schemas; new local representations move temporal wall fields here, preserve external contracts/observations original values and validate them on their external route."
+  },
+  "budget_state": {
+    "fields": [
+      "remaining_reobservations",
+      "remaining_retries",
+      "consecutive_no_progress",
+      "limits",
+      "previous_conditions",
+      "exhausted_reason",
+      "verification_rounds",
+      "original_budget_reference"
+    ],
+    "limits_fields": [
+      "max_reobservations",
+      "max_retries",
+      "max_no_progress",
+      "deadline_s"
+    ],
+    "rules": "Reference bound to original_time verification obligation; no new VerificationBudgetState.start on restore, retry, heartbeat or replay. Same original policies may tighten, never refill or extend. Counters integral not bool. Debit real CAS once before issuing one-shot result."
+  },
+  "history": {
+    "fields": [
+      "request",
+      "decision",
+      "transaction",
+      "resulting_record_hash"
+    ],
+    "rules": "For bootstrap/supervision/route history record each true operation and immutable pre/post state links; historical decoding derives using recorded D causality, no current wall call/no live issuer. Promotion includes actual state and retry record in its request payload. Effects additionally bind original acquisition/started/returned D app event descriptors through decision.app_references; late cost remains recorded."
+  },
+  "public_summary": {
+    "schema_version": "simulation.publication-status.v1",
+    "fields": [
+      "schema_version",
+      "recorded_sql_status",
+      "confirmation_state",
+      "accepted",
+      "operation_id",
+      "attempt",
+      "epoch",
+      "generation",
+      "job_receipt_hash",
+      "event_receipt_hash",
+      "artifact_manifest_sha256",
+      "confirmed_artifact_paths",
+      "historical_artifact_paths",
+      "reasons"
+    ],
+    "states": [
+      "NOT_APPLICABLE",
+      "PENDING",
+      "CONFIRMED",
+      "UNCONFIRMED",
+      "UNKNOWN"
+    ],
+    "rules": "Historical SQL success is never rewritten to a failure because confirmation was lost. CONFIRMED is durable proof of a completed publication, not current lease authority. Only verified receipt/file joins can set accepted=true. Missing proof for old operational rows is UNKNOWN. Plain legacy non-operational behavior remains NOT_APPLICABLE."
+  }
+}
+```
+
+## 三项顺序实施任务
+
+```json
+[
+  {
+    "id": "T1",
+    "title": "Detached local temporal schemas, immutable originals and compatible budget codecs",
+    "owned_paths": [
+      "src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+      "src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+      "src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+      "src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "tests/test_operational_runtime_closure.py"
+    ],
+    "deliverable": "Strict detached typed histories and original budget references, with unchanged legacy v1/v2 serialization. This task does not expose a usable B runtime mode by itself.",
+    "interfaces": [
+      "vision/local_temporal.py: type JSONValue = None | bool | int | float | str | list[JSONValue] | dict[str, JSONValue]; frozen LocalEnvelope.from_payload(payload: Mapping[str, JSONValue]) -> LocalEnvelope; to_payload() -> dict[str, JSONValue]; digest() -> str. LocalOriginalTime, LocalAuthorityDecision, LocalTransactionReceipt and LocalVerificationBudgetState are typed immutable detached values except the explicitly consumed budget state. No module registry or live capability constructors in this module.",
+      "Keep legacy VisualBootstrapDefinition/Record/TransitionInput/PromotionInput, VisualSupervisionDefinition/Record/TransitionInput, VisualOriginalPlan/StepGroundingBinding/VisualOwnerPublicationRecord and verification codecs. Add explicit keyword-only local_time: LocalOriginalTime | None = None and local decision/transaction inputs only where the new-schema route consumes them. Decoders choose by exact new tag, not by timestamp presence or a bool. Do not route new payloads through a fabricated valid UTC legacy instance.",
+      "edge/recovery/verification_router.py: add LocalVerificationBudgetState codec/reference-aware branch to route_verification; local branch receives a private validated decision through the actual owner scope, not caller-provided validity. Legacy VerificationBudgetState.start/counters/router path remain unchanged. The local state can only be initialized once from the original actual P5 verification obligation and frozen limits.",
+      "edge/recovery/lifecycle.py: LocalVerificationBudgetRecord is a distinct strict new-schema history; copy_budget/record dispatch retain old bytes for legacy. Local retry envelope wraps actual RecoveryBudget semantic counts/policies with original recovery reference, removing UTC authority only on this new route. No changes to protected contracts/models.py.",
+      "Local semantic body field sets are exactly plan.schemas.outer.payload_fields_by_tag. Existing domain-specific types may expose the new envelope while retaining their semantic accessors. Shared strict temporal codec lives in the one new module; do not create duplicate v1 algorithms or silently weaken type guards."
+    ],
+    "steps": [
+      "Write the seven exact T1 tests, with new imports inside new test/helper functions so collection of the preserved A module remains valid; snapshot old module and representative legacy golden payloads before production changes.",
+      "ROOT text-reviews test assertions and runner. Run new mypy_baseline once before production edits; record actual exit/diagnostics and immutable baseline definition slices.",
+      "Run T1_red once. The six new-contract cases must show the specific missing schema/private-consumption contracts, not unrelated fixture/API errors. Legacy compatibility control is expected to pass and writes immutable baseline goldens.",
+      "Implement only T1 scoped branches/typed values; no live runtime activation or product run outside exact new nodes.",
+      "Run T1_green once, freeze sources, actual JUnit, before/after/diffs and golden joins. Fresh task reviewer must clear T1 before T2."
+    ],
+    "checks": "All 15 tags; immutable original/current decision separation; detached codecs cannot install permissions; legacy byte identity. Baseline errors in modified definitions are not exemptions."
+  },
+  {
+    "id": "T2",
+    "title": "Private two-authority publication, event writer closure and durable reconciliation",
+    "owned_paths": [
+      "src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+      "src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "tests/test_operational_runtime_closure.py"
+    ],
+    "deliverable": "Actual private local publication and budget CAS across the concrete SQLite job repository and Memory/SQLite event repositories, with fail-closed pending/completion receipts.",
+    "interfaces": [
+      "SimulationWorker.operational_time_mode adds the exact explicit value LOCAL_TEMPORAL_PUBLICATION_V1; existing default UTC_LEGACY_VETO and OPERATIONAL_LEASE_FOUNDATION_V1 routes remain. Freeze mode at poll entry and reuse the same real private session/start_attempt/P5 startup, no fresh task origin or alternate worker.",
+      "OperationalWindowOwner._check_app_live(*, require_origin: bool = True) -> None validates exact process/thread/startup/source and original OC1 obligations only; _check_local_locked(view: LockedLeaseView, *, purpose: str, operation_sha256: str) -> LocalAuthorityDecision combines that app check with the actual broker and genuine current row binding. Public exported descriptors never satisfy the view parameter.",
+      "Adapt _prepare_startup/_check_live/_new_handoff/_consume_handoff by registered mode. Before original issuance, startup may check only exact current bound lease/source and OC1 identity; after issuance it must retain/check the original token/hard windows. Existing _begin_origin/_mark_origin/_seal_origin locations and single issuance remain unchanged. A paths retain their legacy UTC veto.",
+      "SQLiteSimulationJobRepository._local_read_scope(session, *, job_id: str, purpose: str, operation_sha256: str) -> ContextManager[LockedLeaseView] is restricted to the actual registered worker/owner/runtime/coordinator. It joins an already current exact view rather than nesting a job write; otherwise uses a fresh genuine private read transaction. It never mints authority for arbitrary helper callers.",
+      "VisualWorkerRuntime._local_publication_scope(*, operation_id: str, operation_sha256: str) -> ContextManager[LocalPublicationScope]; private scope holds actual job guard/txn and actual event lock/txn in that order. Existing event repository APIs dispatch internally to scoped unlocked local implementations, not recursive acquisition of nonreentrant locks.",
+      "EventAutonomyRepository defines the detached read/reconciliation support; actual Memory/SQLite implement local operation/private-scope guards. Every initial/transition/bootstrap/supervision/owner/verification/checkpoint/contract/budget/recovery mutation which can address an operational task either uses the exact private coordinator or rejects. Only exact negative cancellation/revocation is exempt, never positive success/retry/refill.",
+      "SQLite job repository adds narrowly registered publication-receipt writers and read_local_publication(run_id: str) -> detached summary; reconcile_local_publications() -> list[detached result] may conservatively mark incomplete orphan evidence UNKNOWN/REJECTED, never activate/reissue. Protocol and ArtifactRecoveryService call it without executing jobs.",
+      "Additive tables simulation_local_publications_v1 in job DB and visual_local_publications_v1 plus visual_local_tasks_v1 in event SQLite; Memory stores equivalent protected records under its actual lock. Exact transaction fields and phases are plan.schemas.transaction. No migration of original A/legacy row content or existing SQL status."
+    ],
+    "steps": [
+      "Append exact seven T2 nodes/helpers; no changes to T1 or any A test bodies. Prepare secondary repo/DB connections before taking the tested transaction lock; finally close every test-owned connection.",
+      "ROOT text-reviews fixture threads/queues/real SQL failure seams and source scope; run T2_red once against completed T1 and unimplemented T2.",
+      "Implement actual after-both-lock checks, app-only adapter, current D_lease reads, writer registration and original budget CAS. Wire minimum genuine bootstrap/runtime entry needed by the tests; leave full local execution/public consumer integration to T3.",
+      "Implement the acyclic pending/completion protocol below and actual negative reconciliation. Never acquire job from event lock or hold locks across model/native calls.",
+      "Run T2_green once. Freeze real DB/Memory before/after records, original counters and every allocated lifecycle, with no skips/xfails. Fresh reviewer must clear full writer map and cross-DB seams before T3."
+    ],
+    "checks": "No public flag/token/decoded receipt creates NEW_COMMIT; event duplicate returns HISTORICAL only. Two independent D verdicts required. Both backend variants refer to EVENT repository; job repo is always exact real SQLite."
+  },
+  {
+    "id": "T3",
+    "title": "Complete local runtime migration and public confirmed-publication distinction",
+    "owned_paths": [
+      "src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/models.py",
+      "src/cloud_edge_robot_arm/simulation_workbench/models.py",
+      "src/cloud_edge_robot_arm/vision/execution.py",
+      "src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+      "src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "tests/test_operational_runtime_closure.py"
+    ],
+    "deliverable": "All B callsites migrated/classified, full nine-node contract and terminal fault controls, separately reported historical SQL and confirmed artifacts/counts; still no C/native qualification.",
+    "interfaces": [
+      "VisualWorkerRuntime.remaining_app_seconds() -> float is computed only from the already issued original D_app obligations on the main thread, with <=0 rejected. It is a conservative caller/model timeout cap, never a new origin, UTC conversion or future completion guarantee.",
+      "Local branches of check_active/_check_optional_sources/_read_lease, capture/plan/supervision completion, route/publish_grounding consume current private two-authority decisions. Snapshot checks before locks are advisory only. Return/capture late costs remain in history even when publication is denied.",
+      "worker.py and vision/execution.py use remaining_app_seconds and the original app authority for local startup elapsed, original task timeout/model-return budgets and B PRE_SAFETY/PRE_SKILL source-time checks. Existing external/native evidence/safety validation remains in place; no backend queue/ctrl/step/observer change and no C/D admission claim.",
+      "simulation_runtime.repository/SQLite: get_publication_summary(run_id: str, *, attempt: int | None = None) -> immutable publication-status.v1. Only the concrete owner can record a successful final confirmation using a one-use private proof bound to the exact real commit, consumed broker response, original app check and artifact manifest hashes. This audit write does not renew a lease or change SQL success/failure.",
+      "simulation_workbench.models adds strict PublicationStatusView and publication: PublicationStatusView | None to run/artifact/metrics/events responses; simulation_runtime.models adds it to AttemptView. Preserve recorded_sql_status/status/result. For operational rows expose confirmed_artifact_paths only when accepted; historical_artifact_paths retain exact SQL paths. Legacy non-operational outputs remain NOT_APPLICABLE and retain their old path/count interpretation.",
+      "BatchProgress retains historical succeeded and adds confirmed_succeeded and unconfirmed_terminal; BatchRecord adds publication_state=NOT_APPLICABLE|COMPLETE|INCOMPLETE. Aggregate status stays truthful SQL history, never presented as confirmed success without the new counters/state. Service artifacts_for returns only confirmed operational paths in artifacts, with historical paths separately; events retain raw stored payload as historical_payload and expose confirmed references separately for operational artifact events. Metrics remain true original values, accompanied by publication status rather than rewritten task_success.",
+      "Worker finalization preserves actual SQL terminal success on post-COMMIT loss, withdraws unconfirmed promoted files as today, and records an independent UNCONFIRMED/UNKNOWN publication receipt. Missing/partial receipt/file joins and restarted serialized broker evidence cannot become CONFIRMED. A historical CONFIRMED receipt is archival evidence only and cannot authorize another effect."
+    ],
+    "steps": [
+      "Append exact nine T3 tests; freeze all previous bodies. Tests must inspect actual public service constructors, real job/event records, actual existing file schemas and dataclass fields before RED; no unsupported fixture attributes.",
+      "ROOT reviews new source/fixture/error seams, run T3_red once. Expected gaps are full local schema/time route and absent confirmed-public API; unrelated exceptions stop.",
+      "Complete each B target listed in migration matrix and public consumers; preserve local provenance vs external UTC checks and actual source-hash inventory including the new module.",
+      "Run T3_green once. Complete all late-response, terminal-commit fault and normal control receipts and ensure genuine lifecycle/resource closure.",
+      "Fresh task review, then semantic snapshot → exact import_sort → formatter → source proof → Ruff → format_check → final mypy → mypy delta gate. ROOT reads every script/fixture/proof before execution.",
+      "ROOT releases final_new23 once only after source/proof/static gates. Freeze final bytes, exact raw/JUnit and bounded fixture index. A fresh final independent reviewer checks all B requirements before ROOT may decide bounded B software acceptance."
+    ]
+  }
+]
+```
+
+## 调用点迁移与 UTC 分类
+
+```json
+[
+  {
+    "file": "vision/operational_windows.py",
+    "task": "T2",
+    "targets": "four P5 adapters, _worker_scope/_current_owner/_transition_scope/_consume_transition and local reference export",
+    "disposition": "LOCAL adapter uses exact existing owner/current view; UTC_LEGACY_VETO and A remain intact."
+  },
+  {
+    "file": "vision/worker_owner.py",
+    "task": "T1/T2/T3",
+    "targets": "WorkerLeaseObservation/read_visual_worker_lease, compile_worker_original_plan and grounded effect-condition relations",
+    "disposition": "Legacy WorkerLeaseObservation unchanged; separate OperationalLeaseObservation/LocalOriginalTime route, original lease epoch and app identity, no invented acquired/expires UTC."
+  },
+  {
+    "file": "vision/worker_runtime.py",
+    "task": "T2/T3",
+    "targets": "__init__/_read_lease/check_active/_check_optional_sources, all capture/plan/wait/supervision completion, adopt_plan/route/publish_grounding",
+    "disposition": "One local producer/consumer chain; after-both-lock current decisions, original counters/origins survive heartbeat and late returns."
+  },
+  {
+    "file": "repositories/event_autonomy/visual_bootstrap.py",
+    "task": "T1/T2",
+    "targets": "definition/start/_derive/_proposal_usable/bootstrap_contract/compile_bootstrap_original_plan/_promote/retry",
+    "disposition": "New exact local schemas/D causal history. Only actual bootstrap producer can bind LOCAL_APP_PRODUCED contract. External TaskContract valid_until stays UTC."
+  },
+  {
+    "file": "repositories/event_autonomy/visual_supervision.py",
+    "task": "T1/T2",
+    "targets": "definition/_apply/current_supervision_publication/validate_initial_supervision/derive_supervision",
+    "disposition": "Original period/cursor/acquired-frame TTL; late replies charged; recorded local D replaces local wall ordering."
+  },
+  {
+    "file": "vision/owner_registration.py",
+    "task": "T1/T3",
+    "targets": "original construction/freeze/effective_deadline/bind_step_grounding",
+    "disposition": "No renewable segment in original hash, local grounding consumes true acquisition-D lineage; external contracts/time not relabelled."
+  },
+  {
+    "file": "repositories/event_autonomy/visual_owner.py",
+    "task": "T1/T2",
+    "targets": "strict_checkpoint/validate_group/publication/current_publication/initial_inputs/validate_grounding/pools",
+    "disposition": "Typed local decisions and budget references; legacy effective_deadline_at strict UTC unchanged."
+  },
+  {
+    "file": "repositories/event_autonomy/visual_verification.py",
+    "task": "T1/T2/T3",
+    "targets": "_execution_grounding/_computed_route/derive_route, route-input/route/effect completion",
+    "disposition": "Local source and effect-completion causality; external native evidence validators preserved, no constant VALID."
+  },
+  {
+    "file": "repositories/event_autonomy/memory.py",
+    "task": "T2",
+    "targets": "all named local initialization/transitions plus generic task-affecting writers",
+    "disposition": "Actual nonreentrant lock, registered private unlocked scope, immutable originals and one CAS/debit."
+  },
+  {
+    "file": "repositories/event_autonomy/sqlite.py",
+    "task": "T2",
+    "targets": "same mutation surface plus actual BEGIN/COMMIT and completion tables",
+    "disposition": "Actual persistent connection and nonreentrant lock; event-first pending, no distributed atomicity claim."
+  },
+  {
+    "file": "edge/recovery/verification_router.py",
+    "task": "T1/T2",
+    "targets": "local state construction/decoding and route_verification",
+    "disposition": "Original hard reference/policies/no-progress/spend retained; no start() on restore."
+  },
+  {
+    "file": "edge/recovery/lifecycle.py",
+    "task": "T1/T2",
+    "targets": "local budget codec and copy dispatch only",
+    "disposition": "Legacy recovery service semantic functions stay legacy; generic operational callers reject at repo unless actual private local path exists."
+  },
+  {
+    "file": "simulation_runtime/worker.py",
+    "task": "T2/T3",
+    "targets": "_owns_artifact_publication/_active_job_cancelled/_raise_if_cancelled_or_timed_out/_run_visual_closed_loop/model timeout/original tuple/finalize",
+    "disposition": "Original tuple diagnostic unchanged; no fresh local origin; local D_app plus D_lease; finite filesystem publication only under guard."
+  },
+  {
+    "file": "vision/execution.py",
+    "task": "T3",
+    "targets": "startup elapsed/check_active/model timeout/caller return and existing PRE_SAFETY/PRE_SKILL/worker_dispatch_guard timing handoff",
+    "disposition": "B source-time adaptation only. Native/effect validators remain strict and cannot be bypassed. C sole executor/backend/recorder mechanism is not implemented."
+  },
+  {
+    "file": "vision/supervision.py",
+    "task": "READONLY",
+    "targets": "decide_supervision/_check_context",
+    "disposition": "Existing P5 local reference adapter already chooses local checks; external fallback remains UTC. Do not edit unless a separately planned genuine gap is found."
+  },
+  {
+    "file": "research/clock.py,vision/raw_recorder_v3.py,edge/runtime/skill_executor.py,simulation/mujoco/backend.py",
+    "task": "C_ONLY_READONLY",
+    "targets": "S/D complete segment and final mutation hooks",
+    "disposition": "Preserve bytes; C later owns these. B must not claim physical action/queue/control-loop closure."
+  }
+]
+```
+
+## 两个数据库的持久化协议
+
+```json
+{
+  "lock_order": "job publication guard -> job BEGIN/private txn owner -> event lock/BEGIN (Memory lock with equivalent pending record) -> registry brief lock -> broker queue/read -> original main-thread app check. Broker never queries DB or calls back into locks; registry locks released before waits.",
+  "steps": [
+    "Bind operation_id and hash to exact task/job/attempt/epoch, original_time hash, expected event revision and intended semantic/debit payload. Under BOTH actual locks, reread rows, current D_lease and D_app; reject absent/mixed/current mismatch before mutation.",
+    "Create durable event PENDING receipt and semantic record/budget debit, then commit event while holding job guard/transaction. PENDING is never returned as usable publication. Insert matching job publication receipt in the real job transaction; where a lease/job generation changes, use the existing one CAS/COMMIT + actual broker confirmation. No second lease activation transaction.",
+    "Complete only after the actual first job commit and successful original-domain response consumption. Under the same outer job guard, use bounded fresh transactions for completion markers: event COMPLETE receipt then matching job COMPLETE record. Completion audit writes are narrowly owner/receipt-bound and do not renew the lease. Hash chain is acyclic. A failed second marker leaves a mismatch which consumers reject.",
+    "For nonterminal effect admission, the caller needs both exact COMPLETE records plus a NEW current private view/app check; durable receipts never dispatch by themselves. For terminal confirmation, use only the one-use privately issued proof of that exact already committed and response-consumed terminal operation and original app check, not a fresh ACTIVE lease after TERMINAL. Store archival confirmation without reopening/reassigning status or attempt.",
+    "Crash/rollback/close/timeout at any seam keeps actual committed history and original spends; reconcile never silently promotes a pending record from serialized descriptors. Same live private owner may finish the exact still-valid operation after fresh matching checks; dead/restarted/unknown owner only yields nonauthorizing UNKNOWN/REJECTED and no refund/retry origin.",
+    "Keep original errors and late costs. Release every lock/txn/registry/TLS/handle in finally; session invalidation must not wait for a blocked broker. Close each OC1 clock only on its issuer thread and join using existing bounded lifecycle."
+  ],
+  "new_tables": {
+    "job": "simulation_local_publications_v1",
+    "event": [
+      "visual_local_publications_v1",
+      "visual_local_tasks_v1"
+    ]
+  },
+  "forbidden": "No distributed atomicity claim, no event->job lock inversion, no external callback/model/physical loop under repository locks, no public assume-valid bool."
+}
+```
+
+## 公共状态与确认发布
+
+```json
+{
+  "status_is_history": true,
+  "confirmed_is_archive_not_live_authority": true,
+  "missing_or_mismatched_proof": "UNKNOWN or UNCONFIRMED; accepted=false; confirmed paths empty; confirmed_succeeded excludes it",
+  "preserve": "Raw SQL SUCCEEDED/attempt result and original artifact paths/metrics/events remain history, including commit-success ack loss. Never negative-overwrite a terminal row solely to make status look consistent.",
+  "cpu_control": "Six success flags may be explicitly controlled in CPU episode seam; actual worker/SQL/broker/file/public API pipeline remains real. Zero model invocations, physical measurements and actions retained. No native or physics qualification."
+}
+```
+
+## 精确节点、断言与 RED 预期
+
+```json
+{
+  "base_B_count": 9,
+  "additional_count": 14,
+  "total_unique": 23,
+  "variants": "memory/sqlite always mean concrete EVENT repository; job is real exact SQLiteSimulationJobRepository in both.",
+  "cases": [
+    {
+      "task": "T1",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[bootstrap]",
+      "name": "test_b_local_temporal_schema_roundtrip",
+      "variant": "bootstrap",
+      "assertion": "All exact schemas roundtrip canonical bytes/history; reject extra/missing/bool-as-ns/nonfinite/mixed-domain/tampered parents; exports cannot contain live objects. Original/action/source semantics remain complete.",
+      "red_reason": "Missing new detached codec contract; exact assertion on schema/API absence, not generic exception.",
+      "max_worker_lifecycles": 0
+    },
+    {
+      "task": "T1",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[supervision]",
+      "name": "test_b_local_temporal_schema_roundtrip",
+      "variant": "supervision",
+      "assertion": "All exact schemas roundtrip canonical bytes/history; reject extra/missing/bool-as-ns/nonfinite/mixed-domain/tampered parents; exports cannot contain live objects. Original/action/source semantics remain complete.",
+      "red_reason": "Missing new detached codec contract; exact assertion on schema/API absence, not generic exception.",
+      "max_worker_lifecycles": 0
+    },
+    {
+      "task": "T1",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[owner_grounding]",
+      "name": "test_b_local_temporal_schema_roundtrip",
+      "variant": "owner_grounding",
+      "assertion": "All exact schemas roundtrip canonical bytes/history; reject extra/missing/bool-as-ns/nonfinite/mixed-domain/tampered parents; exports cannot contain live objects. Original/action/source semantics remain complete.",
+      "red_reason": "Missing new detached codec contract; exact assertion on schema/API absence, not generic exception.",
+      "max_worker_lifecycles": 0
+    },
+    {
+      "task": "T1",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[route_completion_budget]",
+      "name": "test_b_local_temporal_schema_roundtrip",
+      "variant": "route_completion_budget",
+      "assertion": "All exact schemas roundtrip canonical bytes/history; reject extra/missing/bool-as-ns/nonfinite/mixed-domain/tampered parents; exports cannot contain live objects. Original/action/source semantics remain complete.",
+      "red_reason": "Missing new detached codec contract; exact assertion on schema/API absence, not generic exception.",
+      "max_worker_lifecycles": 0
+    },
+    {
+      "task": "T1",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_local_codec_cannot_mint_live_authority",
+      "name": "test_b_local_codec_cannot_mint_live_authority",
+      "variant": null,
+      "assertion": "Caller-created/replayed local descriptors and correctly hashed dictionaries do not install owner/view/session or produce NEW_COMMIT; actual registries unchanged.",
+      "red_reason": "No complete new local schema/private consuming contract exists.",
+      "max_worker_lifecycles": 0
+    },
+    {
+      "task": "T1",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_local_original_hash_stable_across_lease_renewal",
+      "name": "test_b_local_original_hash_stable_across_lease_renewal",
+      "variant": null,
+      "assertion": "Changing detached current decision generation/segment leaves immutable original digest unchanged; altered task/verification origin/source/limits rejects, same-valued foreign domain rejects.",
+      "red_reason": "No immutable-local-original/current-decision separation exists.",
+      "max_worker_lifecycles": 0
+    },
+    {
+      "task": "T1",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_legacy_v1_v2_codec_bytes_and_utc_rules",
+      "name": "test_b_legacy_v1_v2_codec_bytes_and_utc_rules",
+      "variant": null,
+      "assertion": "Construct representative legacy bootstrap/supervision/owner/route(v1,v2)/completion/budget using existing test fixture builders, serialize golden bytes in RED evidence, compare GREEN byte-exact and retain strict future/age/deadline behavior; no A test invocation.",
+      "red_reason": "Expected PASS on unchanged baseline; compatibility control, not claimed missing behavior RED.",
+      "max_worker_lifecycles": 0
+    },
+    {
+      "task": "T2",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_memory_sqlite_publication_wait_requires_current_d[memory]",
+      "name": "test_memory_sqlite_publication_wait_requires_current_d",
+      "variant": "memory",
+      "assertion": "Hold real event lock/BEGIN with barrier after job scope entered; advance each original D_app or broker D_lease to hard-open expiry while waiting; after both acquired reject with no new completed publication/action grant, no budget refund. Record precise SQL/history before/after and true identities.",
+      "red_reason": "Existing event operations read only their own lock/UTC snapshot; no two-authority after-both-lock admission.",
+      "max_worker_lifecycles": 2
+    },
+    {
+      "task": "T2",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_memory_sqlite_publication_wait_requires_current_d[sqlite]",
+      "name": "test_memory_sqlite_publication_wait_requires_current_d",
+      "variant": "sqlite",
+      "assertion": "Hold real event lock/BEGIN with barrier after job scope entered; advance each original D_app or broker D_lease to hard-open expiry while waiting; after both acquired reject with no new completed publication/action grant, no budget refund. Record precise SQL/history before/after and true identities.",
+      "red_reason": "Existing event operations read only their own lock/UTC snapshot; no two-authority after-both-lock admission.",
+      "max_worker_lifecycles": 2
+    },
+    {
+      "task": "T2",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_dual_database_order_and_partial_commit",
+      "name": "test_dual_database_order_and_partial_commit",
+      "variant": null,
+      "assertion": "Real SQLite job+event DBs, barriers/real COMMIT fault at event PENDING, job receipt, event COMPLETE and job COMPLETE seams; durable remaining states reconcile conservatively, no decoded/live replay/dispatch. Same-process private valid continuation completes only exact operation; restarted/absent authority rejects without budget refill. No distributed-atomic claim.",
+      "red_reason": "No durable cross-DB protocol or matching completion gate.",
+      "max_worker_lifecycles": 6
+    },
+    {
+      "task": "T2",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_original_budget_debit_not_refilled_by_retry[memory]",
+      "name": "test_original_budget_debit_not_refilled_by_retry",
+      "variant": "memory",
+      "assertion": "Actual local pool CAS consumes once; same event duplicate historical only; lost response/retry/reobserve/renewal retain exact origins, hard bounds, spent counters and tighter policy. Unknown generic writers cannot restore counts.",
+      "red_reason": "UTC pool/start route lacks full local original reference and guarded CAS separation.",
+      "max_worker_lifecycles": 2
+    },
+    {
+      "task": "T2",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_original_budget_debit_not_refilled_by_retry[sqlite]",
+      "name": "test_original_budget_debit_not_refilled_by_retry",
+      "variant": "sqlite",
+      "assertion": "Actual local pool CAS consumes once; same event duplicate historical only; lost response/retry/reobserve/renewal retain exact origins, hard bounds, spent counters and tighter policy. Unknown generic writers cannot restore counts.",
+      "red_reason": "UTC pool/start route lacks full local original reference and guarded CAS separation.",
+      "max_worker_lifecycles": 2
+    },
+    {
+      "task": "T2",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope[memory]",
+      "name": "test_b_local_writer_requires_private_scope",
+      "variant": "memory",
+      "assertion": "Exercise every generic checkpoint/budget/recovery/contract path touching operational task through captured exact public APIs: no caller dictionary/mode/decoded receipt may mutate; real private coordinator positive control, allowed terminal cancellation only negative. Assert same row hashes for rejects.",
+      "red_reason": "Generic event paths lack complete operational ownership gate.",
+      "max_worker_lifecycles": 2
+    },
+    {
+      "task": "T2",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope[sqlite]",
+      "name": "test_b_local_writer_requires_private_scope",
+      "variant": "sqlite",
+      "assertion": "Exercise every generic checkpoint/budget/recovery/contract path touching operational task through captured exact public APIs: no caller dictionary/mode/decoded receipt may mutate; real private coordinator positive control, allowed terminal cancellation only negative. Assert same row hashes for rejects.",
+      "red_reason": "Generic event paths lack complete operational ownership gate.",
+      "max_worker_lifecycles": 2
+    },
+    {
+      "task": "T3",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_private_startup_to_transaction_grounding[memory]",
+      "name": "test_private_startup_to_transaction_grounding",
+      "variant": "memory",
+      "assertion": "Actual worker poll/start_attempt→P5 original startup/handoff→local bootstrap capture/plan→adopt original→real event publication→grounding and real verifier input. Check identity/domain clocks, all schema links and immutable original across genuine heartbeat. No constant native VALID or physical handler claim.",
+      "red_reason": "Current runtime/compiler enforces UTC-only schema and lacks new whole local route.",
+      "max_worker_lifecycles": 2
+    },
+    {
+      "task": "T3",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_private_startup_to_transaction_grounding[sqlite]",
+      "name": "test_private_startup_to_transaction_grounding",
+      "variant": "sqlite",
+      "assertion": "Actual worker poll/start_attempt→P5 original startup/handoff→local bootstrap capture/plan→adopt original→real event publication→grounding and real verifier input. Check identity/domain clocks, all schema links and immutable original across genuine heartbeat. No constant native VALID or physical handler claim.",
+      "red_reason": "Current runtime/compiler enforces UTC-only schema and lacks new whole local route.",
+      "max_worker_lifecycles": 2
+    },
+    {
+      "task": "T3",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_local_new_schema_ignores_utc_jump_but_external_does_not[memory]",
+      "name": "test_local_new_schema_ignores_utc_jump_but_external_does_not",
+      "variant": "memory",
+      "assertion": "Same original counters/rows under actual module UTC +/-1day changes: local startup/model return/supervision/grounding/publication/budget remain governed by D; D deadline exact-bound still rejects. External valid_until, future>1000ms and age>5000ms reject, same boundaries retain legacy semantics, unregistered mixed provenance UNKNOWN. Test all four P5 adapter entries and execution B timing seam.",
+      "red_reason": "Current P5/runtime/bootstrap/grounding UTC vetoes still decide local admission.",
+      "max_worker_lifecycles": 3
+    },
+    {
+      "task": "T3",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_local_new_schema_ignores_utc_jump_but_external_does_not[sqlite]",
+      "name": "test_local_new_schema_ignores_utc_jump_but_external_does_not",
+      "variant": "sqlite",
+      "assertion": "Same original counters/rows under actual module UTC +/-1day changes: local startup/model return/supervision/grounding/publication/budget remain governed by D; D deadline exact-bound still rejects. External valid_until, future>1000ms and age>5000ms reject, same boundaries retain legacy semantics, unregistered mixed provenance UNKNOWN. Test all four P5 adapter entries and execution B timing seam.",
+      "red_reason": "Current P5/runtime/bootstrap/grounding UTC vetoes still decide local admission.",
+      "max_worker_lifecycles": 3
+    },
+    {
+      "task": "T3",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[commit_close]",
+      "name": "test_b_terminal_publication_confirmation_fault",
+      "variant": "commit_close",
+      "assertion": "True terminal SQL COMMIT then same connection close; actual broker request/response queue timeout with late reply; current response crosses original prior bound. Preserve SQL SUCCEEDED/ended attempt/released lease and raw rejected previews; public run/attempt/events/metrics/batch/artifacts have unconfirmed/unknown accepted=false, no confirmed paths/counts. Cleanup releases all clocks/TLS/connections without negative terminal overwrite.",
+      "red_reason": "No explicit public confirmed-publication record/consumption gate and exact final fault controls were not executed in A.",
+      "max_worker_lifecycles": 1
+    },
+    {
+      "task": "T3",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[confirm_timeout]",
+      "name": "test_b_terminal_publication_confirmation_fault",
+      "variant": "confirm_timeout",
+      "assertion": "True terminal SQL COMMIT then same connection close; actual broker request/response queue timeout with late reply; current response crosses original prior bound. Preserve SQL SUCCEEDED/ended attempt/released lease and raw rejected previews; public run/attempt/events/metrics/batch/artifacts have unconfirmed/unknown accepted=false, no confirmed paths/counts. Cleanup releases all clocks/TLS/connections without negative terminal overwrite.",
+      "red_reason": "No explicit public confirmed-publication record/consumption gate and exact final fault controls were not executed in A.",
+      "max_worker_lifecycles": 1
+    },
+    {
+      "task": "T3",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[prior_bound]",
+      "name": "test_b_terminal_publication_confirmation_fault",
+      "variant": "prior_bound",
+      "assertion": "True terminal SQL COMMIT then same connection close; actual broker request/response queue timeout with late reply; current response crosses original prior bound. Preserve SQL SUCCEEDED/ended attempt/released lease and raw rejected previews; public run/attempt/events/metrics/batch/artifacts have unconfirmed/unknown accepted=false, no confirmed paths/counts. Cleanup releases all clocks/TLS/connections without negative terminal overwrite.",
+      "red_reason": "No explicit public confirmed-publication record/consumption gate and exact final fault controls were not executed in A.",
+      "max_worker_lifecycles": 1
+    },
+    {
+      "task": "T3",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_public_confirmed_publication_control[memory]",
+      "name": "test_b_public_confirmed_publication_control",
+      "variant": "memory",
+      "assertion": "True worker, broker, job/event commits, normal file publication produce consistent confirmed receipts/path hashes across public run/attempt/batch/artifacts/events/metrics; preserve SQL status. Controlled CPU episode success flags explicitly injected, quantities/actions/model calls zero, no native/physics evidence.",
+      "red_reason": "Public API only exposes SQL history, no separate confirmed result contract.",
+      "max_worker_lifecycles": 1
+    },
+    {
+      "task": "T3",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_b_public_confirmed_publication_control[sqlite]",
+      "name": "test_b_public_confirmed_publication_control",
+      "variant": "sqlite",
+      "assertion": "True worker, broker, job/event commits, normal file publication produce consistent confirmed receipts/path hashes across public run/attempt/batch/artifacts/events/metrics; preserve SQL status. Controlled CPU episode success flags explicitly injected, quantities/actions/model calls zero, no native/physics evidence.",
+      "red_reason": "Public API only exposes SQL history, no separate confirmed result contract.",
+      "max_worker_lifecycles": 1
+    }
+  ],
+  "old_A": "Original 40 test nodes/helpers/body semantics are protected; append only new _b_ helpers/tests to existing module, avoid global fixture/MODE changes. Never select old tests."
+}
+```
+
+## 有限命令：精确 argv、原件和次数
+
+```json
+{
+  "mypy_baseline": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "mypy",
+      "--follow-imports=silent",
+      "--no-incremental",
+      "--show-column-numbers",
+      "--cache-dir=/tmp/bigsmall-p6-r158-mypy-baseline",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_workbench/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/execution.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/mypy_baseline",
+    "expected_exit": [
+      0,
+      1
+    ],
+    "phase": "before any production edit",
+    "meaning": "Diagnostic census only; actual exit retained. Existing diagnostic exemptions require exact original definition SHA/code/message/location expression and unchanged enclosing signature; no error in any new/modified definition can be waived."
+  },
+  "t1_red": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[bootstrap]",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[supervision]",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[owner_grounding]",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[route_completion_budget]",
+      "tests/test_operational_runtime_closure.py::test_b_local_codec_cannot_mint_live_authority",
+      "tests/test_operational_runtime_closure.py::test_b_local_original_hash_stable_across_lease_renewal",
+      "tests/test_operational_runtime_closure.py::test_b_legacy_v1_v2_codec_bytes_and_utc_rules",
+      "--basetemp=/tmp/bigsmall-p6-r158-t1_red",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_red/junit.xml"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_red",
+    "expected_exit": 1,
+    "nodes": 7,
+    "gate": "ROOT exact test/script text review; previous task fresh review cleared. GREEN held until implementation/source review."
+  },
+  "t1_green": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[bootstrap]",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[supervision]",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[owner_grounding]",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[route_completion_budget]",
+      "tests/test_operational_runtime_closure.py::test_b_local_codec_cannot_mint_live_authority",
+      "tests/test_operational_runtime_closure.py::test_b_local_original_hash_stable_across_lease_renewal",
+      "tests/test_operational_runtime_closure.py::test_b_legacy_v1_v2_codec_bytes_and_utc_rules",
+      "--basetemp=/tmp/bigsmall-p6-r158-t1_green",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/junit.xml"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green",
+    "expected_exit": 0,
+    "nodes": 7,
+    "gate": "ROOT exact test/script text review; previous task fresh review cleared. GREEN held until implementation/source review."
+  },
+  "t2_red": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_operational_runtime_closure.py::test_memory_sqlite_publication_wait_requires_current_d[memory]",
+      "tests/test_operational_runtime_closure.py::test_memory_sqlite_publication_wait_requires_current_d[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_dual_database_order_and_partial_commit",
+      "tests/test_operational_runtime_closure.py::test_original_budget_debit_not_refilled_by_retry[memory]",
+      "tests/test_operational_runtime_closure.py::test_original_budget_debit_not_refilled_by_retry[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope[memory]",
+      "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope[sqlite]",
+      "--basetemp=/tmp/bigsmall-p6-r158-t2_red",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t2_red/junit.xml"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t2_red",
+    "expected_exit": 1,
+    "nodes": 7,
+    "gate": "ROOT exact test/script text review; previous task fresh review cleared. GREEN held until implementation/source review."
+  },
+  "t2_green": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_operational_runtime_closure.py::test_memory_sqlite_publication_wait_requires_current_d[memory]",
+      "tests/test_operational_runtime_closure.py::test_memory_sqlite_publication_wait_requires_current_d[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_dual_database_order_and_partial_commit",
+      "tests/test_operational_runtime_closure.py::test_original_budget_debit_not_refilled_by_retry[memory]",
+      "tests/test_operational_runtime_closure.py::test_original_budget_debit_not_refilled_by_retry[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope[memory]",
+      "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope[sqlite]",
+      "--basetemp=/tmp/bigsmall-p6-r158-t2_green",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t2_green/junit.xml"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t2_green",
+    "expected_exit": 0,
+    "nodes": 7,
+    "gate": "ROOT exact test/script text review; previous task fresh review cleared. GREEN held until implementation/source review."
+  },
+  "t3_red": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_operational_runtime_closure.py::test_private_startup_to_transaction_grounding[memory]",
+      "tests/test_operational_runtime_closure.py::test_private_startup_to_transaction_grounding[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_local_new_schema_ignores_utc_jump_but_external_does_not[memory]",
+      "tests/test_operational_runtime_closure.py::test_local_new_schema_ignores_utc_jump_but_external_does_not[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[commit_close]",
+      "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[confirm_timeout]",
+      "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[prior_bound]",
+      "tests/test_operational_runtime_closure.py::test_b_public_confirmed_publication_control[memory]",
+      "tests/test_operational_runtime_closure.py::test_b_public_confirmed_publication_control[sqlite]",
+      "--basetemp=/tmp/bigsmall-p6-r158-t3_red",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t3_red/junit.xml"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t3_red",
+    "expected_exit": 1,
+    "nodes": 9,
+    "gate": "ROOT exact test/script text review; previous task fresh review cleared. GREEN held until implementation/source review."
+  },
+  "t3_green": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_operational_runtime_closure.py::test_private_startup_to_transaction_grounding[memory]",
+      "tests/test_operational_runtime_closure.py::test_private_startup_to_transaction_grounding[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_local_new_schema_ignores_utc_jump_but_external_does_not[memory]",
+      "tests/test_operational_runtime_closure.py::test_local_new_schema_ignores_utc_jump_but_external_does_not[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[commit_close]",
+      "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[confirm_timeout]",
+      "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[prior_bound]",
+      "tests/test_operational_runtime_closure.py::test_b_public_confirmed_publication_control[memory]",
+      "tests/test_operational_runtime_closure.py::test_b_public_confirmed_publication_control[sqlite]",
+      "--basetemp=/tmp/bigsmall-p6-r158-t3_green",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t3_green/junit.xml"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t3_green",
+    "expected_exit": 0,
+    "nodes": 9,
+    "gate": "ROOT exact test/script text review; previous task fresh review cleared. GREEN held until implementation/source review."
+  },
+  "import_sort": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "ruff",
+      "check",
+      "--select",
+      "I",
+      "--fix",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_workbench/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/execution.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/import_sort",
+    "expected_exit": 0
+  },
+  "formatter": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "ruff",
+      "format",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_workbench/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/execution.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/formatter",
+    "expected_exit": 0
+  },
+  "scope_proof": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/scope-proof.py"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/scope_proof",
+    "expected_exit": 0,
+    "meaning": "Single explicitly budgeted AST/source proof, no product imports/subprocess tests; ROOT reads and pins full script first."
+  },
+  "ruff": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "ruff",
+      "check",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_workbench/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/execution.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/ruff",
+    "expected_exit": 0
+  },
+  "format_check": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "ruff",
+      "format",
+      "--check",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_workbench/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/execution.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/format_check",
+    "expected_exit": 0
+  },
+  "mypy_final": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "mypy",
+      "--follow-imports=silent",
+      "--no-incremental",
+      "--show-column-numbers",
+      "--cache-dir=/tmp/bigsmall-p6-r158-mypy-final",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_workbench/models.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/execution.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/mypy_final",
+    "expected_exit": [
+      0,
+      1
+    ],
+    "meaning": "Actual numeric exit and full diagnostics reported, never relabelled exit0. Only subsequent delta gate can establish no new/changed-scope errors."
+  },
+  "mypy_delta": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/mypy-delta.py"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/mypy_delta",
+    "expected_exit": 0,
+    "meaning": "Compare saved baseline/final raw and immutable original/current definition hashes. No mypy subprocess or hidden retry. All new/modified definitions require zero diagnostics."
+  },
+  "final_new23": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "src:."
+    },
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "timeout_seconds": 600,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[bootstrap]",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[supervision]",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[owner_grounding]",
+      "tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[route_completion_budget]",
+      "tests/test_operational_runtime_closure.py::test_b_local_codec_cannot_mint_live_authority",
+      "tests/test_operational_runtime_closure.py::test_b_local_original_hash_stable_across_lease_renewal",
+      "tests/test_operational_runtime_closure.py::test_b_legacy_v1_v2_codec_bytes_and_utc_rules",
+      "tests/test_operational_runtime_closure.py::test_memory_sqlite_publication_wait_requires_current_d[memory]",
+      "tests/test_operational_runtime_closure.py::test_memory_sqlite_publication_wait_requires_current_d[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_dual_database_order_and_partial_commit",
+      "tests/test_operational_runtime_closure.py::test_original_budget_debit_not_refilled_by_retry[memory]",
+      "tests/test_operational_runtime_closure.py::test_original_budget_debit_not_refilled_by_retry[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope[memory]",
+      "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_private_startup_to_transaction_grounding[memory]",
+      "tests/test_operational_runtime_closure.py::test_private_startup_to_transaction_grounding[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_local_new_schema_ignores_utc_jump_but_external_does_not[memory]",
+      "tests/test_operational_runtime_closure.py::test_local_new_schema_ignores_utc_jump_but_external_does_not[sqlite]",
+      "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[commit_close]",
+      "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[confirm_timeout]",
+      "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[prior_bound]",
+      "tests/test_operational_runtime_closure.py::test_b_public_confirmed_publication_control[memory]",
+      "tests/test_operational_runtime_closure.py::test_b_public_confirmed_publication_control[sqlite]",
+      "--basetemp=/tmp/bigsmall-p6-r158-final-new23",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/final_new23/junit.xml"
+    ],
+    "evidence_dir": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/final_new23",
+    "expected_exit": 0,
+    "nodes": 23,
+    "gate": "HELD until ROOT script/source/fixture/proof/static review and three fresh task reviews; only final integration replay of NEW B nodes, never any A40."
+  }
+}
+```
+
+## 命令总数
+
+```json
+15
+```
+
+## 执行与审阅顺序
+
+```json
+[
+  "ROOT applicability/script+test gate",
+  "mypy_baseline",
+  "t1_red",
+  "T1 implementation",
+  "t1_green",
+  "fresh T1 review",
+  "t2_red",
+  "T2 implementation",
+  "t2_green",
+  "fresh T2 review",
+  "t3_red",
+  "T3 implementation",
+  "t3_green",
+  "fresh T3 review",
+  "freeze semantic-before-format",
+  "import_sort",
+  "formatter",
+  "scope_proof",
+  "ruff",
+  "format_check",
+  "mypy_final",
+  "mypy_delta",
+  "ROOT final source/fixture/proof gate",
+  "final_new23",
+  "fresh final independent B review",
+  "ROOT bounded B decision if eligible"
+]
+```
+
+## mypy 原始诊断与差分门
+
+```json
+{
+  "expected_mypy_baseline_exit": [
+    0,
+    1
+  ],
+  "baseline_nonzero_is": "Predeclared diagnostic census, not a successful static check. Capture complete actual diagnostics and definition slices before any production edits.",
+  "final_mypy_exit": [
+    0,
+    1
+  ],
+  "delta_gate_exit": 0,
+  "allowed_existing": "Only same error code/message/expression in an unchanged original qualified definition with exact baseline source bytes and unchanged signature; preserve actual baseline and final counts. Module-level errors or errors in new/modified definitions are never exempt. No edits to satisfy an unrelated pre-existing error outside scope.",
+  "forbidden": [
+    "type: ignore",
+    "noqa to suppress these changes",
+    "Any-wide escape or cast as substitute for actual contract",
+    "mypy configuration changes",
+    "turning off checks",
+    "claiming final numeric exit1 is fullscope zero errors"
+  ]
+}
+```
+
+## 源码差分证明
+
+```json
+{
+  "script": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/scope-proof.py",
+  "max_runs": 1,
+  "preexecution_gate": "ROOT full text+SHA review; no product import. Only this one approved AST proof runs after formatting.",
+  "obligations": [
+    "All 211 protected input bytes unchanged; 24 exact owned paths only.",
+    "Old A test definitions/parametrizations and helpers unchanged; exact five original B functions/nine nodes plus fourteen additional nodes, total23, no skipped/xfail or broad exception masking.",
+    "Semantic-before-format AST equals formatted AST after normal import ordering; SQL/string constants and required security comments unchanged by formatter.",
+    "New local schemas exact field/tag sets, frozen legacy canonical golden bytes preserved; immutable originals have no current renewable segment.",
+    "Every historical and current callsite inventory row mapped to local migration or exact external/diagnostic/C-only classification with actual source line; no unclassified local successful gate left on UTC/fresh monotonic origin.",
+    "Actual job/event writer map and SQL transaction ownership: arbitrary decoded/local-tag/generic-writer path cannot write operational task; precise cancellation only negative.",
+    "Record direct import/source inventory includes new module and changed producer/compiler paths; unrelated source hashes are not silently refreshed.",
+    "Proof is SOURCE/STRUCTURE only, not a substitute for transaction/runtime tests."
+  ]
+}
+```
+
+## 真实故障夹具与资源上限
+
+```json
+{
+  "factory": "Use protected tests/test_visual_worker_factory.py software_factory and real poll/start_attempt/startup/handoff; append B wrapper helpers in owned test file. Do not alter protected factory. Configure event Memory variant before poll, close superseded factory SQLite connection; same exact job SQLite type.",
+  "clocks": "Use existing explicit CPU counters from actual owning threads. Advance counters deterministically behind real barriers/queues. No fake verdict/confirm/transaction object/permission callback. No closing another thread's clock.",
+  "faults": "Real SQLite COMMIT then close / rowcount failure; real broker queue timeout or delayed response and current prior-bound read. Inject only fault/clock/CPU physical seams, never overwrite broker result or force successful SQL status.",
+  "caps": {
+    "max_worker_lifecycles_per_pytest": 64,
+    "max_workers_concurrent": 2,
+    "max_broker_threads_per_worker": 1,
+    "max_heartbeat_threads_per_worker": 1,
+    "max_test_wall_seconds": 600,
+    "external_model_calls": 0,
+    "network": 0,
+    "GPU_native_physics": 0
+  },
+  "cleanup": "Every allocated worker/clock/session/event repo/job fixture/connection has finally cleanup and observed lifecycle outcome. ROLLBACK/COMMIT context manager is not close(). Keep attempted/failed resource denominator; rejected-before-entry cases differ from entered episode exits.",
+  "raw": "Per exact command invocation/env/cwd, stdout/stderr/result/JUnit separate; preserve all failed raw and tmp fixture DB/symlink metadata without copying credentials. Never assert a selected manifest is complete remote reproduction."
+}
+```
+
+## 逐任务与最终独立审阅
+
+```json
+{
+  "T1": {
+    "fresh_reviewer": true,
+    "read_only_batches": 12,
+    "product_commands": 0
+  },
+  "T2": {
+    "fresh_reviewer": true,
+    "read_only_batches": 12,
+    "product_commands": 0
+  },
+  "T3": {
+    "fresh_reviewer": true,
+    "read_only_batches": 12,
+    "product_commands": 0
+  },
+  "final": {
+    "fresh_reviewer": true,
+    "read_only_batches": 24,
+    "product_commands": 0
+  },
+  "max_lines_per_source_batch": 600,
+  "old_review_allowances": "Not reused/reset. Each review reads actual new frozen sources, diffs, scripts/raw/JUnit/proof and remaining budget; independent STOP findings require actual Astra disposition."
+}
+```
+
+## 实际运行前置条件
+
+```json
+{
+  "root_initial": "Verify plan and all pinned input bytes, new module absent, .venv tools exist; preserve dirty main tree. Freeze before sources/old A body mapping. Root activation grants only T1 and its exact test/diagnostic commands after script/test review.",
+  "stage_gate": "Unchanged protected inputs and last accepted task snapshot; allow only explicitly authorized prior task changes. Bind new snapshot SHA, do not rewrite original pins. No stages share concurrent writers.",
+  "runner_gate": "Author may write new R158 finite runner/proof metadata only under explicit exact paths. ROOT fulltext reviews scripts and exact argv/working-directory/schema/resource fixture before run. Ledger reservation before each call; uncertain/failed command consumes once, no retry.",
+  "outputs": "R158-only execution/review metadata and current allowed source changes; no updates to historical round files or original failure/proof/index bytes."
+}
+```
+
+## 元数据产物范围
+
+```json
+{
+  "scripts": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/scope-proof.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/mypy-delta.py"
+  ],
+  "root": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/input-check.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-activation.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/executor-brief.md",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/dispatch.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/script-gate.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/step-report.md",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/step-report.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/acceptance.md",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/acceptance.json"
+  ],
+  "author": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/executor-report.md"
+  ],
+  "per_task_template": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/{t1,t2,t3}/{before,semantic,final-freeze,change-report,fixture-map,budget-report,step-report}.{json,md}",
+  "per_command": "Use commands[*].evidence_dir with exact invocation.json/stdout.txt/stderr.txt/result.json and junit.xml for pytest; actual allocated tmp fixtures retained.",
+  "reviews": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/review/{T1,T2,T3,final}/{final-review.md,final-review.json,input-pins.json,read-ledger.json}",
+  "phase_summary": "After each actual stage ROOT may append factual R158 step linkage to existing phase-summary.md and add/update planning.R158 only in active-t12-state.json, preserving before SHA/concurrent compare. Final current_P6_stage_B fields only after actual final independent pass. No old A budget/status rewrites; no other three-status/doc/Git update in this plan."
+}
+```
+
+## 验收边界
+
+```json
+{
+  "task": "Only that task's software behavior; no complete B claim.",
+  "stage_B": "LOCAL_TEMPORAL_PUBLICATION_SOFTWARE_ONLY requires all9 original nodes+14 controls, final23 actual pass0error0skip, three task fresh gates and final fresh independent review, no unwaived changed-scope type diagnostics, actual source/proof/legacy/source pin closure. ROOT alone records the bounded decision.",
+  "not": "Not full P6/T12, not C mutation-time closure, P7/P8 run authorization, native/physical/actual/formal evidence or Git delivered. Original A40 retained historical evidence does not become a new combined63-run.",
+  "delivery": "No Git commands authorized: all old28spent remain spent. A later genuine concrete delivery plan must bind reviewed B results, dependency/base compatibility and current network/outside-worktree permissions; no implicit escalation here."
+}
+```
+
+## 暂停与新轮规则
+
+```json
+[
+  "Any unexpected non-RED failure, new root cause, scope expansion, pin drift outside authorized task deltas, extra node or missing resource evidence: stop affected execution and ask actual Astra next plan; unaffected read-only work may continue.",
+  "RED only accepts the exact specified missing behavior; AttributeError/DB-lock/schema/path/fixture errors are not evidence of intended denial.",
+  "No spent command/static/test/review/Git budget reset or silent rerun; unused future gates remain held.",
+  "No changes to old raw/DB evidence to produce pass; no full suite, oldA40 or old75 regression run.",
+  "No actor re-promotes live authority from durable COMPLETE/CONFIRMED/history or external->local caller relabeling."
+]
+```
+
+## 交接
+
+本计划经 R159 纯元数据恢复后保存。R159 只授权此保存，不激活上述产品命令。ROOT 必须阅读全文、核验输入并记录真实单一作者身份；初始仅激活 T1。三个任务及最终独立审阅全部完成前不得声称 B9 已完成。后续有限 Git 交付必须另有基于实际可审结果的具体计划和权限。

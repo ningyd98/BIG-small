@@ -11,7 +11,12 @@ constraint errors.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
+from dataclasses import fields, is_dataclass
 from datetime import datetime
+from enum import Enum
+from functools import wraps
+import json
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from cloud_edge_robot_arm.contracts.models import (
@@ -69,6 +74,171 @@ if TYPE_CHECKING:
 
 class RepositoryConflictError(RuntimeError):
     """Base class for repository conflicts that must surface to callers."""
+
+
+_LOCAL_WRITERS = frozenset("initialize_visual_bootstrap_if_absent transition_visual_bootstrap_if_current initialize_visual_owner_if_absent publish_visual_boundary_if_current route_visual_verification_if_current initialize_visual_supervision_if_absent transition_visual_supervision_if_current save_event mark_event_handled save_retry_budget initialize_retry_budget_if_absent consume_retry_if_available initialize_verification_budget_if_absent initialize_recovery_if_absent advance_recovery_if_current reserve_reobservation_if_current consume_retry_and_authorize_recovery_if_current save_state save_state_transition save_failure_summary save_completion_summary save_replan_request save_replan_result save_active_contract advance_active_contract_if_current save_execution_checkpoint compare_and_set_checkpoint save_replan_apply_record update_replan_apply_record_if_current save_command_ack enqueue_outbox claim_outbox_message mark_outbox_sent mark_outbox_failed advance_plan_version_if_current record_audit_event".split())
+_LOCAL_READERS = frozenset("get_visual_bootstrap get_visual_original_plan get_visual_owner_publication get_visual_supervision_source_publication get_visual_supervision get_verification_budget get_retry_budget get_recovery get_event get_replan_request get_replan_apply_record get_state".split())
+_LOCAL_MISSING = object()
+
+
+def local_value(value):
+    """Exact data serialization for operation binding, with no default=str."""
+    from collections.abc import Mapping
+    from cloud_edge_robot_arm.vision.local_temporal import _copy
+
+    if callable(getattr(value, "to_payload", None)):
+        return _copy(local_value(value.to_payload()))
+    if callable(getattr(value, "model_dump", None)):
+        return _copy(value.model_dump(mode="json"))
+    if is_dataclass(value) and not isinstance(value, type):
+        return {field.name: local_value(getattr(value, field.name)) for field in fields(value)}
+    if isinstance(value, Mapping):
+        return {key: local_value(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [local_value(item) for item in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    return _copy(value)
+
+
+def local_get_unlocked(repository, category, key):
+    """Caller owns the actual event lock. Returned JSON is always detached."""
+    if hasattr(repository, "_conn"):
+        row = repository._conn.execute(
+            "SELECT value_json FROM visual_local_tasks_v1 WHERE category=? AND record_key=?",
+            (category, key),
+        ).fetchone()
+        return None if row is None else json.loads(row["value_json"])
+    stored = repository._local_tasks.get((category, key))
+    return None if stored is None else json.loads(stored)
+
+
+def local_put_unlocked(repository, category, key, value, task_id):
+    from cloud_edge_robot_arm.vision.local_temporal import _canonical, _copy
+    from cloud_edge_robot_arm.vision.worker_runtime import _local_scope_for
+
+    _local_scope_for(repository, required=True)
+    raw = _canonical(_copy(value))
+    if hasattr(repository, "_conn"):
+        repository._conn.execute(
+            "INSERT INTO visual_local_tasks_v1 (category,record_key,task_id,value_json) VALUES (?,?,?,?) "
+            "ON CONFLICT(category,record_key) DO UPDATE SET value_json=excluded.value_json",
+            (category, key, task_id, raw),
+        )
+    else:
+        repository._local_tasks[(category, key)] = raw
+
+
+def local_receipt_unlocked(repository, receipt):
+    from cloud_edge_robot_arm.vision.worker_runtime import _local_scope_for
+    from cloud_edge_robot_arm.vision.local_temporal import _canonical, _copy
+
+    _local_scope_for(repository, required=True)
+    if hasattr(repository, "_conn"):
+        keys = list(receipt)
+        repository._conn.execute(
+            "INSERT INTO visual_local_publications_v1 (" + ",".join(keys) + ") VALUES ("
+            + ",".join("?" for _ in keys) + ") ON CONFLICT(operation_id) DO UPDATE SET "
+            + ",".join(key + "=excluded." + key for key in keys if key != "operation_id"),
+            tuple(receipt[key] for key in keys),
+        )
+        repository._conn.execute("COMMIT")
+        repository._conn.execute("SELECT 1").fetchone()
+    else:
+        repository._local_publications[receipt["operation_id"]] = _canonical(_copy(receipt))
+
+
+def local_receipt_read_unlocked(repository, operation_id):
+    if hasattr(repository, "_conn"):
+        row = repository._conn.execute("SELECT * FROM visual_local_publications_v1 WHERE operation_id=?",
+                                       (operation_id,)).fetchone()
+        return None if row is None else dict(row)
+    raw = repository._local_publications.get(operation_id)
+    return None if raw is None else json.loads(raw)
+
+
+def _local_target(repository, name, args, kwargs):
+    """Resolve the actual addressed record, including key-only mutation APIs."""
+    values = list(args) + list(kwargs.values())
+    for value in values:
+        payload = value.to_payload() if callable(getattr(value, "to_payload", None)) else None
+        if isinstance(payload, dict) and str(payload.get("schema_version", "")).endswith(".local.v1"):
+            return True
+        task = getattr(value, "task_id", None)
+        if task and local_get_unlocked(repository, "binding", task) is not None:
+            return True
+        if isinstance(value, str) and local_get_unlocked(repository, "binding", value) is not None:
+            return True
+    key_sources = {
+        "mark_event_handled": "event", "advance_recovery_if_current": "recovery",
+        "reserve_reobservation_if_current": "recovery", "consume_retry_and_authorize_recovery_if_current": "recovery",
+        "save_replan_result": "replan", "compare_and_set_checkpoint": "checkpoint",
+        "update_replan_apply_record_if_current": "apply", "mark_outbox_sent": "outbox", "mark_outbox_failed": "outbox",
+    }
+    category = key_sources.get(name)
+    if category is not None:
+        for value in values:
+            key = value if isinstance(value, str) else getattr(value, "request_id", None)
+            if key and local_get_unlocked(repository, category, key) is not None:
+                return True
+    if name == "claim_outbox_message":
+        if hasattr(repository, "_conn"):
+            return repository._conn.execute("SELECT 1 FROM visual_local_tasks_v1 WHERE category='outbox' LIMIT 1").fetchone() is not None
+        return any(category == "outbox" for category, _ in repository._local_tasks)
+    return False
+
+
+def _local_legacy_write_guard_unlocked(repository, name, args, kwargs) -> None:
+    """Fence a public legacy writer while its actual storage lock is held."""
+    if _local_target(repository, name, args, kwargs):
+        raise ValueError("operational task mutation requires the registered private publication scope")
+
+
+def local_event_repository(cls):
+    """Close the complete public writer surface without replacing its real lock."""
+    def wrap(name, original):
+        @wraps(original)
+        def dispatch(self, *args, **kwargs):
+            from cloud_edge_robot_arm.vision.worker_runtime import _local_scope_for, _local_read_record
+
+            scope = _local_scope_for(self)
+            if scope is not None:
+                if name in _LOCAL_WRITERS:
+                    return scope.runtime._local_mutate(name, args, kwargs)
+                result = _local_read_record(self, name, args, kwargs)
+                if result is not _LOCAL_MISSING:
+                    return result
+                raise ValueError("private operational reader has no matching local source")
+            lock = self._write_lock if hasattr(self, "_write_lock") else self._lock
+            with lock:
+                if name in _LOCAL_READERS:
+                    result = _local_read_record(self, name, args, kwargs)
+                    if result is not _LOCAL_MISSING:
+                        return result
+                elif _local_target(self, name, args, kwargs):
+                    negative = (name == "save_state" and len(args) >= 2 and type(args[1]) is str
+                                and args[1] == "CANCELLED" and not kwargs)
+                    if not negative:
+                        raise ValueError("operational task mutation requires the registered private publication scope")
+                    if hasattr(self, "_conn"):
+                        with self._conn:
+                            self._conn.execute("BEGIN IMMEDIATE")
+                            self._conn.execute("INSERT INTO visual_local_tasks_v1 VALUES ('state',?,?,?) "
+                                               "ON CONFLICT(category,record_key) DO UPDATE SET value_json=excluded.value_json",
+                                               (args[0], args[0], json.dumps("CANCELLED")))
+                    else:
+                        self._local_tasks[("state", args[0])] = json.dumps("CANCELLED")
+                    return None
+            return original(self, *args, **kwargs)
+        return dispatch
+
+    for name in sorted(_LOCAL_WRITERS | _LOCAL_READERS):
+        original = getattr(cls, name, None)
+        if original is not None:
+            setattr(cls, name, wrap(name, original))
+    return cls
 
 
 class IdempotencyConflictError(RepositoryConflictError):

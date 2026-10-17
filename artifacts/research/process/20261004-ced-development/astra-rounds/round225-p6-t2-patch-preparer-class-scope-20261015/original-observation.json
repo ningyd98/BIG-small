@@ -1,0 +1,31 @@
+{
+  "schema_version": "bigsmall.r225.original-preparation-observation.v1",
+  "round": "R225",
+  "classification": "ACTUAL_METADATA_PREPARER_CLASS_SCOPE_ASSERTION_NOT_PRODUCT_EXECUTION",
+  "original_source_path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round225-p6-t2-patch-preparer-class-scope-20261015/original-preparation-source.py",
+  "original_tool_path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round225-p6-t2-patch-preparer-class-scope-20261015/original-tool-return.json",
+  "actual_exception": "AssertionError: ('__init__', 4)",
+  "actual_chunk": "083414",
+  "exact_command_capture": null,
+  "argv": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+    "-c",
+    "from pathlib import Path\nimport hashlib,json,difflib,collections\nroot=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall\")\nd=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015\")\nplan=json.loads((d/'plan.json').read_bytes())\nfailure=json.loads((d/'original-author-patch-failure.json').read_bytes())\npatch=failure['exact_patch']\nunits=[];current=None;part=[]\ndef flush():\n if part and any(x.startswith(('+','-')) for x in part):\n  units.append({'path':current,'old':''.join(x[1:] for x in part if not x.startswith('+')),'new':''.join(x[1:] for x in part if not x.startswith('-'))})\nfor line in patch.splitlines(keepends=True):\n if line.startswith('*** Update File: '):\n  flush();part=[];current=line[len('*** Update File: '):].strip()\n elif line.startswith('@@'):\n  flush();part=[]\n elif line.startswith('***'):\n  flush();part=[]\n elif current is not None and line[:1] in (' ','+','-'):part.append(line)\nmapping=['__init__','_check_ingress','_local_read_scope','_local_read_scope','_local_read_scope','heartbeat_lease','_owns_artifact_publication','_active_job_cancelled','_raise_if_cancelled_or_timed_out']\nassert len(units)==len(mapping)==9\npairs={v['source']['path']:v for v in plan['current_and_archive_pins']}\ndef region(text,name):\n lines=text.splitlines(keepends=True);starts=[i for i,x in enumerate(lines) if x.startswith('    def '+name+'(')]\n assert len(starts)==1,(name,len(starts))\n start=starts[0];end=len(lines)\n for i in range(start+1,len(lines)):\n  line=lines[i]\n  if line.startswith(('    def ','    @')) or (line.strip() and not line[0].isspace()):end=i;break\n return ''.join(lines[:start]),''.join(lines[start:end]),''.join(lines[end:])\noriginals={};afters={};changes=[]\nfor unit,name in zip(units,mapping):\n path=unit['path'];unit['function']=name\n if path not in originals:\n  pin=pairs[path]['archive'];b=Path(pin['path']).read_bytes();assert len(b)==pin['bytes'] and hashlib.sha256(b).hexdigest()==pin['sha256'];originals[path]=b.decode();afters[path]=b.decode()\n prefix,body,suffix=region(afters[path],name)\n assert body.count(unit['old'])==1,(name,unit['old'])\n body=body.replace(unit['old'],unit['new'],1);afters[path]=prefix+body+suffix\n changes.append(unit)\norder=[('operational_lease.py',['__init__','_check_ingress']),('sqlite_repository.py',['heartbeat_lease','_local_read_scope']),('worker.py',['_owns_artifact_publication','_active_job_cancelled','_raise_if_cancelled_or_timed_out'])]\ncorrected=['*** Begin Patch\\n']\nfor basename,names in order:\n matches=[p for p in originals if Path(p).name==basename];assert len(matches)==1;path=matches[0];corrected.append('*** Update File: '+path+'\\n')\n for name in names:\n  old=region(originals[path],name)[1].splitlines(keepends=True);new=region(afters[path],name)[1].splitlines(keepends=True);corrected.append('@@\\n')\n  for tag,i,j,a,b in difflib.SequenceMatcher(a=old,b=new,autojunk=False).get_opcodes():\n   if tag=='equal':corrected.extend(' '+s for s in old[i:j])\n   else:\n    corrected.extend('-'+s for s in old[i:j]);corrected.extend('+'+s for s in new[a:b])\ncorrected.append('*** End Patch');corrected=''.join(corrected)\nfor marker in ('+','-'):\n original_lines=collections.Counter(x for x in patch.splitlines() if x.startswith(marker))\n corrected_lines=collections.Counter(x for x in corrected.splitlines() if x.startswith(marker))\n assert original_lines==corrected_lines,marker\nexpected={path:{'before':pairs[path]['source'],'before_archive':pairs[path]['archive'],'after_text':text,'after_bytes':len(text.encode()),'after_sha256':hashlib.sha256(text.encode()).hexdigest()} for path,text in afters.items()}\nout=d/'implementation';out.mkdir(parents=True,exist_ok=True)\nwith (out/'corrected-patch.txt').open('xb') as f:f.write(corrected.encode())\nstate={'expected':expected,'edit_units':changes}\nwith (out/'prepared-text-values.json').open('xb') as f:f.write((json.dumps(state,ensure_ascii=False,indent=2)+'\\n').encode())\nprint(json.dumps({'corrected_patch':{'path':str(out/'corrected-patch.txt'),'bytes':len(corrected.encode()),'sha256':hashlib.sha256(corrected.encode()).hexdigest()},'prepared_values':{'path':str(out/'prepared-text-values.json'),'bytes':(out/'prepared-text-values.json').stat().st_size,'sha256':hashlib.sha256((out/'prepared-text-values.json').read_bytes()).hexdigest()},'edit_units':len(units),'function_regions':7,'live_product_writes':0,'patch_executions':0},ensure_ascii=False))\n"
+  ],
+  "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+  "finite_environment_capture": null,
+  "independent_stdout": null,
+  "independent_stderr": null,
+  "source_order_boundary": "The visible traceback identifies original source line 36 calling region and line 25 asserting len(starts)==1. The exact source places output directory creation and all open('xb') writes after this region loop. No file write statement was reached in this failed invocation. This is source-order evidence, not an added filesystem absence probe.",
+  "new_corrected_patch_written_by_failed_invocation": false,
+  "new_readback_source_written_by_failed_invocation": false,
+  "product_writes_by_failed_invocation": 0,
+  "native_application_attempts": 0,
+  "metadata_readback_attempts": 0,
+  "GREEN_attempts": 0,
+  "retry": 0,
+  "capture_gaps": [
+    "The shell command string was not separately stored; it is not reconstructed here.",
+    "No separate process environment or independent stdout/stderr capture was supplied."
+  ]
+}

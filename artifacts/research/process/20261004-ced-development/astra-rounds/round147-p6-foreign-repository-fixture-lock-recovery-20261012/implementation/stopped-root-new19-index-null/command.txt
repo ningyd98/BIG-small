@@ -1,0 +1,34 @@
+.venv/bin/python - <<'PY'
+from pathlib import Path
+import json,hashlib,os,copy,xml.etree.ElementTree as E,datetime
+root=Path.cwd();base=root/'artifacts/research/process/20261004-ced-development/astra-rounds';r=base/'round147-p6-foreign-repository-fixture-lock-recovery-20261012';ip=r/'implementation/new19-freeze/source-index.json';i=json.loads(ip.read_text());p=json.loads((r/'plan.json').read_text());checks=[]
+def pin(a):
+ a=Path(a);b=a.read_bytes();return {'path':str(a.resolve()),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}
+def ck(n,v,d=None):checks.append({'check':n,'match':bool(v),'detail':d})
+ck('authority SHA',pin(ip)['sha256']=='3db973746084304abe73cc2149c9f7b38f85dd98bb46a8cf863d5d3c2fd51063')
+for x in i['files']:
+ for k in ['source','snapshot']:
+  a=pin(x[k]);ck(k,a['sha256']==x['sha256'] and a['bytes']==x['bytes'],a)
+for x in i['protected']:
+ a=pin(x['path']);ck('protected',a['sha256']==x['sha256'] and a['bytes']==x['bytes'],a)
+for x in i['symlink_metadata']:
+ t=Path(x['path']);s=t.lstat();ck('symlink nofollow',t.is_symlink() and os.readlink(t)==x['target'] and s.st_size==x['size'] and s.st_mode==x['mode'] and s.st_mtime_ns==x['mtime_ns'])
+ev=base/'round127-p6-private-authority-lifecycle-repair-20261011/implementation/new_green';a=json.loads((ev/'result.json').read_text());c=p['inherited_new_green19']
+for k in ['argv','cwd','env','evidence_dir']:ck('new19 exact '+k,a[k]==c[k])
+ck('new19 actualexit0 spent',a['exit_code']==0 and a['used']==1 and a['remaining']==0)
+for k,v in a['raw_outputs'].items():
+ got=pin(ev/k);ck(k,got['bytes']==v['bytes'] and got['sha256']==v['sha256'])
+e=E.parse(ev/'junit.xml');suite=list(e.iter('testsuite'))[0].attrib;cases=list(e.iter('testcase'));actualnames={'tests/test_operational_runtime_closure.py::'+x.get('name') for x in cases};expected={s for s in c['argv'] if s.startswith('tests/')};ck('junit19 allpass/noerrornoskip',suite['tests']=='19' and all(suite[k]=='0' for k in ['failures','errors','skipped']) and len(cases)==19 and all(len(list(x))==0 for x in cases));ck('exact19 nodeids',actualnames==expected and len(actualnames)==19)
+old=base/'round113-p6-operational-runtime-closure-20261008/implementation/stage-a/green/junit.xml';oldcases=list(E.parse(old).iter('testcase'));oldpass={'tests/test_operational_runtime_closure.py::'+x.get('name') for x in oldcases if len(list(x))==0};foreign=list(E.parse(r/'implementation/foreign_repo/junit.xml').iter('testcase'));fp={'tests/test_operational_runtime_closure.py::'+x.get('name') for x in foreign if len(list(x))==0};posp=base/'round141-p6-positive-publication-control-20261012/implementation/positive_control/junit.xml';pos={'tests/test_operational_runtime_closure.py::'+x.get('name') for x in E.parse(posp).iter('testcase') if len(list(x))==0};proof=json.loads((r/'implementation/delta_proof/proof.json').read_text());union=oldpass|fp|actualnames|pos;ck('40unique terminalpass union exactsource40',union==set(proof['parameter_values_ids_and40_source_nodeids_unchanged']) and len(union)==40 and len(oldpass)==19 and len(fp)==1 and len(pos)==1)
+lives=[]
+for x in i['lifecycle_files']:
+ path=x.get('path',x.get('source'));life=json.loads(Path(path).read_text());lives.append({'path':path,'calls':life['calls'],'session_closed':life['session_closed']});ck('actual lifecycle closed',life['session_closed'],path);ck('actual raw_exit/shutdown1',life['calls'].count('raw_exit')==1 and life['calls'].count('shutdown')==1,path)
+ok=all(x['match'] for x in checks);out=r/'implementation/root-new19-final-reader';out.mkdir(exist_ok=False);receipt={'status':'ROOT_ACTUAL_NEW19_AND40_UNIQUE_TERMINAL_PASS_EVIDENCE_VERIFIED_FRESH_REVIEW_REQUIRED' if ok else 'STOP_MISMATCH','authority':pin(ip),'checks':checks,'actual_result':pin(ev/'result.json'),'fullraw':{k:(ev/k).read_text() for k in ['stdout.txt','stderr.txt']},'junit':pin(ev/'junit.xml'),'terminal_pass_mapping':{'old19':sorted(oldpass),'correctedforeign1':sorted(fp),'new19':sorted(actualnames),'priorCPUpositive1':sorted(pos)},'union':sorted(union),'single40run':False,'actual_lifecycle_records':lives,'missing_lifecycle_not_fabricated':True,'fixture_regular':1192,'new_product_executions':0,'acceptance':False,'boundary':'Only actual CPU software scope. Fresh source/fixture review required; B/C/D/native/robot/formal unaccepted.'}
+with (out/'reader.json').open('x') as f:json.dump(receipt,f,ensure_ascii=False,indent=2);f.write('\n')
+rec=pin(out/'reader.json')
+if ok:
+ lp=r/'root-command-ledger.json';(out/'before-root-command-ledger.json').write_bytes(lp.read_bytes());l=json.loads(lp.read_text());l['inherited_new_green19']=copy.deepcopy(a);l['inherited_gate']='ORIGINAL_NEW19_SPENT_ACTUAL0_ROOT_VERIFIED_FRESH_REVIEW_REQUIRED';l['new19_actual_reader']=rec;lp.write_text(json.dumps(l,ensure_ascii=False,indent=2)+'\n')
+ sp=base.parent/'t12-sol-handoff-20261007/active-t12-state.json';pp=base.parent/'t12-sol-handoff-20261007/phase-summary.md';(out/'before-state.json').write_bytes(sp.read_bytes());(out/'before-phase-summary.md').write_bytes(pp.read_bytes());s=json.loads(sp.read_text());st=s['current_P6_stage_A'];st['status']='ACTUAL40_UNIQUE_PASS_EVIDENCE_FROZEN_PENDING_FRESH_INDEPENDENT_REVIEW';st['remaining_validation_commands']=0;st['R147']['original_new19']='actualexit0/19PASS/spent1/0';st['R147']['ROOT_new19_reader']=rec;st['R148']={'status':'OPTIONAL_METADATA_PREFLIGHT_ABANDONED_NO_RETRY_OR_REPLACEMENT','new_product_budget':0,'software_accepted':False};st['terminal_unique_pass_evidence']={'nodes':40,'old19_retained':19,'correctedforeign1':1,'new19':19,'priorCPUpositive1':1,'single_run':False,'old_original19PASS1FAIL_preserved':True,'fresh_review_pending':True};s['time_utc']=datetime.datetime.now(datetime.UTC).isoformat();sp.write_text(json.dumps(s,ensure_ascii=False,indent=2)+'\n')
+ with pp.open('a') as f:f.write('\n\n原new19最终单次actualexit0/19PASS/0fail/error/skip，原预算spent1/0；ROOT'+str(len(checks))+'冻结字节/53保护/7symlinkmetadata/原exactcommand/独立streams/JUnit19exactIDs/18真实lifecycle检查全match。1192实际fixture regularbytes完整冻结，不重开SQL；18现存life均sessionclosed/raw_exit1/shutdown1，无缺失记录伪造。最终40unique通过证据明确四次映射：旧19retained+correctedforeign1+new19+priorCPUpositive1，不称single40run；旧19PASS1FAIL仍原件保留。余验证额度0，fresh独立终审尚待，A/P6/B/C/D/native/actual/formal未验收。ROOTreader '+str(rec['path'])+' SHA256 '+rec['sha256']+'。\n')
+print(json.dumps({'receipt':rec,'checks':len(checks),'mismatches':[x for x in checks if not x['match']]},ensure_ascii=False))
+PY

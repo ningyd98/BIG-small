@@ -1,0 +1,60 @@
+{
+  "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py": [
+    [
+      "import json\n",
+      "import json\nimport re\n"
+    ],
+    [
+      "def validate_inventory_v1(value: Any) -> None:",
+      "def validate_inventory_v1(value: Any, *, allow_empty_instances: bool = False) -> None:"
+    ],
+    [
+      "        _integer(row[\"bytes\"], minimum=1)",
+      "        minimum = (\n            0\n            if allow_empty_instances is True\n            and re.fullmatch(r\"frames/acquisition-[1-9][0-9]*/instances\\.i32\", path) is not None\n            else 1\n        )\n        _integer(row[\"bytes\"], minimum=minimum)"
+    ]
+  ],
+  "src/cloud_edge_robot_arm/research/operational_prefix_v1.py": [
+    [
+      "def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) -> dict[str, Any]:",
+      "def _validate_instance_original_v1(\n    aux: Any, source_result: Any, metadata: Any, *, width: int, height: int\n) -> None:\n    if type(aux) is not dict or type(source_result) is not dict or type(metadata) is not dict:\n        raise ValueError(\"instance original objects required\")\n    ids = aux.get(\"instance_ids\")\n    if type(ids) is not list or any(\n        type(value) is not int or not -(2**31) <= value < 2**31 for value in ids\n    ):\n        raise ValueError(\"instance signed32 original integer IDs required\")\n    pixels = width * height\n    if len(ids) not in {0, pixels}:\n        raise ValueError(\"instance original pixel count differs\")\n    _same_v1(source_result.get(\"instance_ids\"), ids, \"instance source/auxiliary IDs differ\")\n    count = metadata.get(\"instance_id_count\")\n    if type(count) is not int or count != len(ids):\n        raise ValueError(\"instance metadata count differs\")\n    available = metadata.get(\"instances_available\")\n    if type(available) is not bool or available is not (len(ids) == pixels):\n        raise ValueError(\"instance metadata availability differs\")\n    labels = aux.get(\"instance_labels\")\n    source_labels = source_result.get(\"instance_labels\")\n    metadata_labels = metadata.get(\"instance_labels\")\n    if any(type(value) is not dict for value in (labels, source_labels, metadata_labels)):\n        raise ValueError(\"instance original labels objects required\")\n    _same_v1(source_labels, labels, \"instance source/auxiliary labels differ\")\n    _same_v1(metadata_labels, labels, \"instance metadata labels differ\")\n    if not ids and labels:\n        raise ValueError(\"instance empty IDs require empty labels\")\n    passes = metadata.get(\"pass_state_hashes\")\n    if type(passes) is not list or len(passes) != (3 if ids else 2):\n        raise ValueError(\"instance metadata pass count differs\")\n    _same_v1(passes, source_result.get(\"pass_state_hashes\"), \"instance metadata passes differ\")\n\n\ndef verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) -> dict[str, Any]:"
+    ],
+    [
+      "        validate_inventory_v1(manifest)",
+      "        validate_inventory_v1(manifest, allow_empty_instances=True)"
+    ],
+    [
+      "            metadata = _read_original_v1(root, prefix + \"source-frame.json\")\n",
+      ""
+    ],
+    [
+      "            blobs = {",
+      "            metadata = _read_original_v1(root, prefix + \"source-frame.json\")\n            _validate_instance_original_v1(\n                frozen[\"frame_aux\"][frame[\"acquisition_id\"]],\n                source[\"end\"][\"result\"],\n                metadata,\n                width=obs[\"width\"],\n                height=obs[\"height\"],\n            )\n            blobs = {"
+    ]
+  ],
+  "tests/test_operational_capture_v1.py": [
+    [
+      "def cpu_components(monkeypatch, app, failure=None):",
+      "def cpu_components(monkeypatch, app, failure=None, *, production_cached=False):"
+    ],
+    [
+      "    def camera(data, **kwargs):",
+      "    def camera(data, include_instances=True, **kwargs):"
+    ],
+    [
+      "        return frame, (-1,) * count, {-1: \"background\"}, (digest,) * 3",
+      "        if not include_instances:\n            return frame, (), {}, (digest,) * 2\n        return frame, (-1,) * count, {-1: \"background\"}, (digest,) * 3"
+    ],
+    [
+      "    backend._camera = SimpleNamespace(capture_with_instances=camera)",
+      "    backend._camera = SimpleNamespace(_capture=camera, capture_with_instances=camera)"
+    ],
+    [
+      "    backend._update_sensor_frame = cached\n",
+      "    backend._update_sensor_frame = cached\n    if production_cached:\n        from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend\n\n        backend._update_sensor_frame = MuJoCoPhysicsBackend._update_sensor_frame.__get__(backend)\n"
+    ],
+    [
+      "            cached()",
+      "            backend._update_sensor_frame()"
+    ]
+  ]
+}

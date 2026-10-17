@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="4" time="47.260" timestamp="2026-10-07T21:46:59.787709+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_capture_v1" name="test_preregistration_primary_survives_startup_report_failure_cpu[direct]" time="3.403"><failure message="AssertionError: assert OSError('CPU startup report secondary') is ValueError('CPU preregistration primary')&#10; +  where OSError('CPU startup report secondary') = &lt;ExceptionInfo OSError('CPU startup report secondary') tblen=3&gt;.value">tmp_path = PosixPath('/tmp/bigsmall-oc2-round80-review_red/test_preregistration_primary_s0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7a90901a5f70&gt;
+entry = 'direct'
+
+    @pytest.mark.parametrize("entry", ["direct", "worker"])
+    def test_preregistration_primary_survives_startup_report_failure_cpu(
+        tmp_path, monkeypatch, entry
+    ):
+        from tests.test_operational_prefix_v1 import activate
+    
+        require_task2()
+        app = application(tmp_path)
+        _, calls = cpu_components(monkeypatch, app)
+        original = ValueError("CPU preregistration primary")
+        startup_writes = []
+        original_write = module._write_exclusive_v1
+    
+        def construct():
+            raise original
+    
+        def write(path, raw):
+            if path.name == "startup-failures.json":
+                startup_writes.append(path)
+                raise OSError("CPU startup report secondary")
+            original_write(path, raw)
+    
+        monkeypatch.setattr(module, "_new_prefix_backend_v1", construct)
+        monkeypatch.setattr(module, "_write_exclusive_v1", write)
+        if entry == "direct":
+            job, _, start = activate(app)
+            with pytest.raises(BaseException) as caught:
+                module._prepare_source_v1(app, app.worker, job, start_monotonic=start)
+&gt;           assert caught.value is original
+E           AssertionError: assert OSError('CPU startup report secondary') is ValueError('CPU preregistration primary')
+E            +  where OSError('CPU startup report secondary') = &lt;ExceptionInfo OSError('CPU startup report secondary') tblen=3&gt;.value
+
+tests/test_operational_capture_v1.py:519: AssertionError</failure></testcase><testcase classname="tests.test_operational_capture_v1" name="test_preregistration_primary_survives_startup_report_failure_cpu[worker]" time="3.067"><failure message="AssertionError: assert {'error': 'CP...e': 'OSError'} == {'error': 'CP... 'ValueError'}&#10;  &#10;  Differing items:&#10;  {'error_type': 'OSError'} != {'error_type': 'ValueError'}&#10;  {'error': 'CPU startup report secondary'} != {'error': 'CPU preregistration primary'}&#10;  Use -v to get more diff">tmp_path = PosixPath('/tmp/bigsmall-oc2-round80-review_red/test_preregistration_primary_s1')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7a9063f0c740&gt;
+entry = 'worker'
+
+    @pytest.mark.parametrize("entry", ["direct", "worker"])
+    def test_preregistration_primary_survives_startup_report_failure_cpu(
+        tmp_path, monkeypatch, entry
+    ):
+        from tests.test_operational_prefix_v1 import activate
+    
+        require_task2()
+        app = application(tmp_path)
+        _, calls = cpu_components(monkeypatch, app)
+        original = ValueError("CPU preregistration primary")
+        startup_writes = []
+        original_write = module._write_exclusive_v1
+    
+        def construct():
+            raise original
+    
+        def write(path, raw):
+            if path.name == "startup-failures.json":
+                startup_writes.append(path)
+                raise OSError("CPU startup report secondary")
+            original_write(path, raw)
+    
+        monkeypatch.setattr(module, "_new_prefix_backend_v1", construct)
+        monkeypatch.setattr(module, "_write_exclusive_v1", write)
+        if entry == "direct":
+            job, _, start = activate(app)
+            with pytest.raises(BaseException) as caught:
+                module._prepare_source_v1(app, app.worker, job, start_monotonic=start)
+            assert caught.value is original
+            failures = module._live(app).failures
+            with pytest.raises(RuntimeError, match="cannot be allocated twice"):
+                module._prepare_source_v1(app, app.worker, job, start_monotonic=start)
+        else:
+            receipt = app.execute_once()
+&gt;           assert receipt["primary_error"] == {
+                "error_type": "ValueError",
+                "error": "CPU preregistration primary",
+            }
+E           AssertionError: assert {'error': 'CP...e': 'OSError'} == {'error': 'CP... 'ValueError'}
+E             
+E             Differing items:
+E             {'error_type': 'OSError'} != {'error_type': 'ValueError'}
+E             {'error': 'CPU startup report secondary'} != {'error': 'CPU preregistration primary'}
+E             Use -v to get more diff
+
+tests/test_operational_capture_v1.py:525: AssertionError</failure></testcase><testcase classname="tests.test_operational_capture_v1" name="test_reader_rejects_broken_returned_acquisition_join_cpu[missing_returned]" time="20.147"><failure message="AssertionError: assert 'VERIFIED' == 'INVALID'&#10;  &#10;  - INVALID&#10;  + VERIFIED">tmp_path = PosixPath('/tmp/bigsmall-oc2-round80-review_red/test_reader_rejects_broken_ret0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7a9063ff69c0&gt;
+tamper = 'missing_returned'
+
+    @pytest.mark.parametrize("tamper", ["missing_returned", "wrong_source_relation"])
+    def test_reader_rejects_broken_returned_acquisition_join_cpu(tmp_path, monkeypatch, tamper):
+        require_task2()
+        app = application(tmp_path)
+        cpu_components(monkeypatch, app)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is True
+        root = app.output / "prefix-originals"
+        path = root / "operational-originals.json"
+        slab = json.loads(path.read_bytes())
+        if tamper == "missing_returned":
+            returned_id = "CPU-absent-returned-acquisition"
+        else:
+            frames = json.loads((root / "frozen-originals.json").read_bytes())["frames"]
+            frame = next(
+                row
+                for row in frames
+                if row["acquisition_id"] != slab["current"]["source_acquisition_id"]
+                and (row["source_acquisition_id"] or row["acquisition_id"])
+                != slab["current"]["source_acquisition_id"]
+            )
+            returned_id = frame["acquisition_id"]
+        slab["current"]["returned_acquisition_id"] = returned_id
+        raw = module.canonical_bytes_v1(slab)
+        path.write_bytes(raw)
+        receipt["original_files"][path.name] = {
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "bytes": len(raw),
+        }
+        monkeypatch.setattr(module, "_open_clock_v1", lambda: pytest.fail("reader minted live D"))
+        monkeypatch.setattr(
+            module, "_new_prefix_backend_v1", lambda: pytest.fail("reader initialized backend")
+        )
+        view = module.verify_operational_prefix_originals_v1(root, receipt)
+&gt;       assert view["original_integrity"] == "INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INVALID'
+E         
+E         - INVALID
+E         + VERIFIED
+
+tests/test_operational_capture_v1.py:599: AssertionError</failure></testcase><testcase classname="tests.test_operational_capture_v1" name="test_reader_rejects_broken_returned_acquisition_join_cpu[wrong_source_relation]" time="20.184"><failure message="AssertionError: assert 'VERIFIED' == 'INVALID'&#10;  &#10;  - INVALID&#10;  + VERIFIED">tmp_path = PosixPath('/tmp/bigsmall-oc2-round80-review_red/test_reader_rejects_broken_ret1')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7a90623b7d70&gt;
+tamper = 'wrong_source_relation'
+
+    @pytest.mark.parametrize("tamper", ["missing_returned", "wrong_source_relation"])
+    def test_reader_rejects_broken_returned_acquisition_join_cpu(tmp_path, monkeypatch, tamper):
+        require_task2()
+        app = application(tmp_path)
+        cpu_components(monkeypatch, app)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is True
+        root = app.output / "prefix-originals"
+        path = root / "operational-originals.json"
+        slab = json.loads(path.read_bytes())
+        if tamper == "missing_returned":
+            returned_id = "CPU-absent-returned-acquisition"
+        else:
+            frames = json.loads((root / "frozen-originals.json").read_bytes())["frames"]
+            frame = next(
+                row
+                for row in frames
+                if row["acquisition_id"] != slab["current"]["source_acquisition_id"]
+                and (row["source_acquisition_id"] or row["acquisition_id"])
+                != slab["current"]["source_acquisition_id"]
+            )
+            returned_id = frame["acquisition_id"]
+        slab["current"]["returned_acquisition_id"] = returned_id
+        raw = module.canonical_bytes_v1(slab)
+        path.write_bytes(raw)
+        receipt["original_files"][path.name] = {
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "bytes": len(raw),
+        }
+        monkeypatch.setattr(module, "_open_clock_v1", lambda: pytest.fail("reader minted live D"))
+        monkeypatch.setattr(
+            module, "_new_prefix_backend_v1", lambda: pytest.fail("reader initialized backend")
+        )
+        view = module.verify_operational_prefix_originals_v1(root, receipt)
+&gt;       assert view["original_integrity"] == "INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INVALID'
+E         
+E         - INVALID
+E         + VERIFIED
+
+tests/test_operational_capture_v1.py:599: AssertionError</failure></testcase></testsuite></testsuites>

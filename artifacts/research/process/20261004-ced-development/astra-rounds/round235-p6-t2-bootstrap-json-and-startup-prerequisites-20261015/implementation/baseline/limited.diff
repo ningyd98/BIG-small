@@ -1,0 +1,40 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py (before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py (after)
+@@ -457,7 +457,7 @@
+         self._check_app_live()
+         current = self._clock.read_current(after=self.task_origin_token)
+         row = dict(view.snapshot)
+-        return LocalAuthorityDecision.from_payload({
++        return LocalAuthorityDecision.from_payload(_descriptor_plain({
+             "schema_version": "visual.local-two-authority-decision.v1",
+             "operation_id": purpose, "operation_sha256": operation_sha256,
+             "original_time_hash": _hash(original), "app_domain": asdict(self._clock.domain),
+@@ -471,7 +471,7 @@
+             "source_identity": observed.source_identity, "job_id": s.job_id, "run_id": s.run_id,
+             "worker_id": s.worker.worker_id, "lease_id": s.lease_id, "attempt": s.attempt,
+             "disposition": "VALID", "reasons": [],
+-        })
++        }))
+ 
+     def issue(
+         self, kind: str, event: OperationalBracket, *, budget_ns: int, parent_ids: tuple[str, ...]
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py (before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py (after)
+@@ -432,7 +432,7 @@
+                            "verification_limits": asdict(limits), "role_bundle_hash": self._role_hash,
+                            "model_snapshot_hash": model_hash, "source_hashes": dict(self.source.source_hashes)}
+         reference = owner.export_record(owner.task_window)
+-        self._local_original = {
++        self._local_original = _descriptor_plain({
+             "schema_version": "visual.local-original-time.v1", "app_domain": asdict(owner._clock.domain),
+             "task_origin_event_id": owner.task_origin_token.event_identity,
+             "task_reference": reference, "verification_reference": reference, "recovery_reference": reference,
+@@ -444,7 +444,7 @@
+             "source_hashes": dict(self.source.source_hashes),
+             "contract_provenance": {"kind": "LOCAL_BOOTSTRAP_SOURCE_V1",
+                                     "content_sha256": bootstrap_source_commitment(definition_body)},
+-        }
++        })
+         owner._local_original = self._local_original
+         definition = VisualBootstrapDefinition.from_payload(self._local_envelope(
+             "visual.bootstrap.definition.local.v1", definition_body))

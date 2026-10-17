@@ -1,0 +1,137 @@
+{
+  "schema": "ced.independent-early-review.v1",
+  "reviewer": "/root/p6_a_review",
+  "provenance": "Fresh requesting-code-review subagent final report in this conversation; source-only review, not a runtime test.",
+  "classification": "PRELIMINARY_ONLY_IMPORTANT_BLOCKERS",
+  "reviewed_snapshot": "artifacts/research/process/20261004-ced-development/astra-rounds/round113-p6-operational-runtime-closure-20261008/implementation/stage-a/stopped-ruff/source",
+  "commands_executed": "Only text/hash reads, reported exit0; no Git, product import, AST/compile, pytest, probes, or static validation.",
+  "baseline_pins_verified_by_reviewer": {
+    "head_files": 6,
+    "base_files": 4
+  },
+  "findings": [
+    {
+      "id": "E1",
+      "severity": "Important",
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "lines": [
+        1391,
+        1402,
+        1418,
+        1422
+      ],
+      "claim": "Public reassignment/cleanup branch can produce positive success without a live session.",
+      "evidence": "Different worker_id/lease_id makes update_status_cas safe. Legacy transaction can perform legal RUNNING→FINALIZING→SUCCEEDED with no expected-owner condition; terminalize only revokes the broker. Cleanup does not constrain status/result arguments."
+    },
+    {
+      "id": "E2",
+      "severity": "Important",
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "lines": [
+        1016,
+        1036,
+        1360,
+        1361
+      ],
+      "claim": "Legacy transaction helper plus TLS connection bypasses operational writer authentication.",
+      "evidence": "Ordinary caller can enter _legacy_write_transaction without private owner/guard validation; _writer_call sees TLS connection and directly executes public writer, skipping operational row/session/broker. _require_active_writer only checks connection. This can durably start_attempt/save_metrics/status-CAS and invert txn/guard lock order."
+    },
+    {
+      "id": "E3",
+      "severity": "Important",
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "lines": [
+        256,
+        261,
+        220,
+        231
+      ],
+      "related_path": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "related_lines": [
+        902,
+        904,
+        1388,
+        1458,
+        1487
+      ],
+      "claim": "Committed attempt can remain open after lost/failed start-attempt acknowledgement.",
+      "evidence": "start_attempt is outside _execute try. poll finally releases operational row to REVOKED/TERMINAL without finishing actual open attempt. Orphan query only COMMITTED; ordinary recovery excludes every operational job. Old RUNNING attempt/job may remain; initial ACQUIRED heartbeat failure has related LEASED/CANCEL_REQUESTED residue."
+    },
+    {
+      "id": "E4",
+      "severity": "Important",
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "lines": [
+        112,
+        114,
+        280,
+        304,
+        346,
+        472,
+        495
+      ],
+      "claim": "Registered view purpose/operation digest are mutable after issuance.",
+      "evidence": "Directly assignable purpose/operation_sha256/state are not compared to immutable issued values; propose/decision reads current attributes. Real registry identity alone therefore does not enforce frozen purpose/digest."
+    },
+    {
+      "id": "E5",
+      "severity": "Important",
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "lines": [
+        423,
+        424,
+        449,
+        454,
+        324,
+        335
+      ],
+      "claim": "Heartbeat response consumption drops the prior segment bound.",
+      "evidence": "confirm verifies previous then clears _pending. Later consume only checks new _active segment. Confirm before old deadline then response-consume after old deadline can return VALID while new segment is live, contrary to original bound consumption requirement."
+    },
+    {
+      "id": "E6",
+      "severity": "Important",
+      "path": "tests/test_operational_runtime_closure.py",
+      "lines": [
+        489,
+        493
+      ],
+      "claim": "confirmation_lost does not exercise real broker RPC timeout/late reply.",
+      "evidence": "Test commits then manually invalidates session and confirms old ack synchronously. It does not block actual broker request, trigger wait cap, release late reply, or inspect late activation; no evidence for E5."
+    },
+    {
+      "id": "E7",
+      "severity": "Important",
+      "path": "tests/test_operational_runtime_closure.py",
+      "lines": [
+        522,
+        554,
+        137,
+        142
+      ],
+      "claim": "restart uses finished attempt and does not prove orphan termination.",
+      "evidence": "_exercise completes poll_once/finally before new repository. Assertion requires attempts unchanged; no unfinished old attempt is converted to INTERRUPTED/ended, so E3 is uncovered."
+    }
+  ],
+  "additional_review_notes": [
+    "scope-proof writer/SQL proof uses decorator/string presence and unified labels; structural PASS does not exclude E1/E2.",
+    "heartbeat-budget test calls repository directly from callback, rather than exercising actual _run delay-loop heartbeat producer; main-scope record alone does not prove that callsite ran."
+  ],
+  "strengths": [
+    "Broker owns real thread/OC1 D_lease; original D_app stays on main thread; no broker database/event/physics locks.",
+    "View issuance follows BEGIN; proposal/CAS/commit/same-connection reread ack/broker fresh confirmation separated; no durable ACTIVE permission.",
+    "ACQUIRED/null-attempt, actual attempt binding, heartbeat scopes, revoke-before-wait, legacy UTC veto implemented.",
+    "Public writer publication guard and same-connection internal event append present."
+  ],
+  "declined_to_judge": [
+    "B publication/grounding/dual DB/full local schemas: not activated.",
+    "C handler/queue/gripper/physics/observer/TEACHER_COLLECTION: not activated.",
+    "D Memory/SQLite native positives and P7/P8 source qualification: deferred dependencies.",
+    "Real hardware/suspend/actual/formal evidence: no such execution.",
+    "R125/R126 current bytes and remaining validations: not read; static reports do not imply runtime success.",
+    "Long-term performance/resource growth: no stress run.",
+    "Git integration/push/remote SHA: prohibited in review."
+  ],
+  "assessment": "Seven Important blockers; no confirmed Critical. PRELIMINARY_ONLY; no stage A acceptance. Original GREEN/format-check/mypy have not run. Claims require actual Astra independent verification and bounded plans, then final source/evidence review.",
+  "capture_limit": "This JSON is a faithful structured transcription of the completed review, not raw shell output or evidence of executed reproductions."
+}

@@ -1,0 +1,252 @@
+...F................                                                     [100%]
+=================================== FAILURES ===================================
+____________ test_caller_cannot_register_locked_view[foreign_repo] _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d7d0a97db50>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r113-a-green/test_caller_cannot_register_lo2')
+variant = 'foreign_repo'
+
+    @pytest.mark.parametrize(
+        "variant",
+        ["dict", "copy", "foreign_repo", "foreign_thread"],
+        ids=["dict", "copy", "foreign_repo", "foreign_thread"],
+    )
+    def test_caller_cannot_register_locked_view(monkeypatch, tmp_path, variant):
+        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+                SQLiteSimulationJobRepository,
+            )
+    
+            before = _all_sql(repo)
+            with repo.publication_guard():
+                with pytest.raises(module.OperationalLeaseError):
+                    session.evaluate_locked({"job_id": job.job_id})
+            with _tx(repo, session, job) as view:
+                if variant == "dict":
+                    with pytest.raises(module.OperationalLeaseError):
+                        session.propose_locked(dict(view.snapshot), ttl_ns=session.ttl_ns)
+                elif variant == "copy":
+                    with pytest.raises(module.OperationalLeaseError):
+                        copied = copy.copy(view)
+                        session.propose_locked(copied, ttl_ns=session.ttl_ns)
+                elif variant == "foreign_repo":
+                    other = SQLiteSimulationJobRepository(repo.database_path)
+                    with pytest.raises(module.OperationalLeaseError):
+                        with _tx(other, session, job) as foreign:
+                            session.propose_locked(foreign, ttl_ns=session.ttl_ns)
+                else:
+                    rejected = []
+    
+                    def foreign():
+                        try:
+                            session.propose_locked(view, ttl_ns=session.ttl_ns)
+                        except module.OperationalLeaseError as error:
+                            rejected.append(str(error))
+    
+                    thread = threading.Thread(target=foreign)
+                    thread.start()
+                    thread.join(timeout=1)
+                    assert rejected and not thread.is_alive()
+            assert _all_sql(repo) == before
+            return variant
+    
+>       _exercise(monkeypatch, tmp_path, check)
+
+tests/test_operational_runtime_closure.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:159: in _exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:296: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:751: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:796: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1152: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:145: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+tests/test_operational_runtime_closure.py:252: in check
+    other = SQLiteSimulationJobRepository(repo.database_path)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:120: in __init__
+    self._initialize()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x7d7d0a95ad80>
+
+    def _initialize(self) -> None:
+        if getattr(self._transactions, "connection", None) is not None:
+            return
+        with self.publication_guard(), self._connect() as conn:
+            conn.executescript(
+                "\n"
+                "                CREATE TABLE IF NOT EXISTS schema_migrations (\n"
+                "                    version INTEGER PRIMARY KEY,\n"
+                "                    applied_at TEXT NOT NULL\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_jobs (\n"
+                "                    job_id TEXT PRIMARY KEY,\n"
+                "                    run_id TEXT NOT NULL UNIQUE,\n"
+                "                    batch_id TEXT NOT NULL DEFAULT '',\n"
+                "                    backend TEXT NOT NULL,\n"
+                "                    scenario_id TEXT NOT NULL,\n"
+                "                    control_mode TEXT NOT NULL,\n"
+                "                    seed INTEGER NOT NULL,\n"
+                "                    manifest_id TEXT NOT NULL,\n"
+                "                    reproducibility_hash TEXT NOT NULL,\n"
+                "                    status TEXT NOT NULL,\n"
+                "                    draft_json TEXT NOT NULL,\n"
+                "                    manifest_json TEXT NOT NULL,\n"
+                "                    attempt INTEGER NOT NULL DEFAULT 0,\n"
+                "                    max_attempts INTEGER NOT NULL DEFAULT 1,\n"
+                "                    priority INTEGER NOT NULL DEFAULT 0,\n"
+                "                    created_at TEXT NOT NULL,\n"
+                "                    queued_at TEXT,\n"
+                "                    started_at TEXT,\n"
+                "                    completed_at TEXT,\n"
+                "                    updated_at TEXT NOT NULL,\n"
+                "                    timeout_seconds INTEGER NOT NULL,\n"
+                "                    cancel_requested INTEGER NOT NULL DEFAULT 0,"
+                "\n"
+                "                    worker_id TEXT NOT NULL DEFAULT '',\n"
+                "                    lease_id TEXT NOT NULL DEFAULT '',\n"
+                "                    lease_expires_at TEXT,\n"
+                "                    blocker_codes_json TEXT NOT NULL DEFAULT '[]"
+                "',\n"
+                "                    error_code TEXT NOT NULL DEFAULT '',\n"
+                "                    error_message TEXT NOT NULL DEFAULT '',\n"
+                "                    artifact_root TEXT NOT NULL DEFAULT '',\n"
+                "                    artifact_paths_json TEXT NOT NULL DEFAULT '{"
+                "}',\n"
+                "                    provenance_json TEXT NOT NULL DEFAULT '{}',\n"
+                "                    source_commit TEXT NOT NULL DEFAULT '',\n"
+                "                    source_tree_hash TEXT NOT NULL DEFAULT ''\n"
+                "                );\n"
+                "                CREATE INDEX IF NOT EXISTS idx_sim_jobs_status_b"
+                "ackend\n"
+                "                ON simulation_jobs(status, backend, priority, cr"
+                "eated_at);\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_job_events"
+                " (\n"
+                "                    event_id TEXT PRIMARY KEY,\n"
+                "                    job_id TEXT NOT NULL,\n"
+                "                    run_id TEXT NOT NULL,\n"
+                "                    sequence INTEGER NOT NULL,\n"
+                "                    stream_sequence INTEGER NOT NULL UNIQUE,\n"
+                "                    event_type TEXT NOT NULL,\n"
+                "                    previous_status TEXT NOT NULL DEFAULT '',\n"
+                "                    next_status TEXT NOT NULL DEFAULT '',\n"
+                "                    reason_code TEXT NOT NULL DEFAULT '',\n"
+                "                    timestamp TEXT NOT NULL,\n"
+                "                    source TEXT NOT NULL,\n"
+                "                    payload_json TEXT NOT NULL,\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE INDEX IF NOT EXISTS idx_sim_events_run_se"
+                "quence\n"
+                "                ON simulation_job_events(run_id, sequence);\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_job_leases"
+                " (\n"
+                "                    lease_id TEXT PRIMARY KEY,\n"
+                "                    job_id TEXT NOT NULL,\n"
+                "                    worker_id TEXT NOT NULL,\n"
+                "                    acquired_at TEXT NOT NULL,\n"
+                "                    expires_at TEXT NOT NULL,\n"
+                "                    heartbeat_at TEXT NOT NULL,\n"
+                "                    released_at TEXT NOT NULL DEFAULT '',\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_job_attemp"
+                "ts (\n"
+                "                    job_id TEXT NOT NULL,\n"
+                "                    run_id TEXT NOT NULL,\n"
+                "                    attempt INTEGER NOT NULL,\n"
+                "                    worker_id TEXT NOT NULL,\n"
+                "                    started_at TEXT NOT NULL,\n"
+                "                    ended_at TEXT NOT NULL DEFAULT '',\n"
+                "                    result TEXT NOT NULL,\n"
+                "                    error TEXT NOT NULL DEFAULT '',\n"
+                "                    artifact_paths_json TEXT NOT NULL DEFAULT '{"
+                "}',\n"
+                "                    PRIMARY KEY(job_id, attempt),\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_metrics (\n"
+                "                    job_id TEXT NOT NULL,\n"
+                "                    run_id TEXT NOT NULL,\n"
+                "                    metric_index INTEGER NOT NULL,\n"
+                "                    metric_json TEXT NOT NULL,\n"
+                "                    PRIMARY KEY(job_id, metric_index),\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_artifacts "
+                "(\n"
+                "                    job_id TEXT NOT NULL,\n"
+                "                    run_id TEXT NOT NULL,\n"
+                "                    name TEXT NOT NULL,\n"
+                "                    relative_path TEXT NOT NULL,\n"
+                "                    PRIMARY KEY(job_id, name),\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_operationa"
+                "l_leases_v1 (\n"
+                "                    lease_id TEXT PRIMARY KEY, schema TEXT NOT N"
+                "ULL,\n"
+                "                    job_id TEXT NOT NULL UNIQUE, run_id TEXT NOT"
+                " NULL, worker_id TEXT NOT NULL,\n"
+                "                    attempt INTEGER, lifecycle TEXT NOT NULL,\n"
+                "                    pid INTEGER NOT NULL, boot_id TEXT NOT NULL,"
+                " process_start_ticks INTEGER NOT NULL,\n"
+                "                    epoch TEXT NOT NULL, generation INTEGER NOT "
+                "NULL, row_revision INTEGER NOT NULL,\n"
+                "                    original_job_digest TEXT NOT NULL, original_"
+                "policy_digest TEXT NOT NULL,\n"
+                "                    original_acquisition_json TEXT NOT NULL, seg"
+                "ment_json TEXT NOT NULL,\n"
+                "                    proposal_id TEXT NOT NULL, operation_sha256 "
+                "TEXT NOT NULL,\n"
+                "                    job_snapshot_json TEXT NOT NULL, proposed_ro"
+                "w_digest TEXT NOT NULL,\n"
+                "                    durable_phase TEXT NOT NULL, terminal_reason"
+                " TEXT NOT NULL,\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_batches (\n"
+                "                    batch_id TEXT PRIMARY KEY,\n"
+                "                    manifest_json TEXT NOT NULL,\n"
+                "                    run_ids_json TEXT NOT NULL,\n"
+                "                    total INTEGER NOT NULL,\n"
+                "                    created_at TEXT NOT NULL,\n"
+                "                    completed_at TEXT NOT NULL DEFAULT ''\n"
+                "                );\n"
+                "                "
+            )
+>           conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (SCHEMA_VERSION, _dt(_now())),
+            )
+E           sqlite3.OperationalError: database is locked
+
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2297: OperationalError
+=============================== warnings summary ===============================
+tests/test_operational_runtime_closure.py::test_two_issuer_threads_keep_domains_distinct
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round113-p6-operational-runtime-closure-20261008/implementation/stage-a/green/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_operational_runtime_closure.py::test_caller_cannot_register_locked_view[foreign_repo]
+1 failed, 19 passed, 1 warning in 25.72s

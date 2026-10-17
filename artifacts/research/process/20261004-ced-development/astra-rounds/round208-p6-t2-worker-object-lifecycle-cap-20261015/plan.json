@@ -1,0 +1,215 @@
+{
+  "schema_version": "bigsmall.astra.repair-plan.v1",
+  "round": "R208",
+  "date": "2026-10-15",
+  "actual_author": {
+    "agent": "/root/astra_status_plan",
+    "model": "gpt-6-astra",
+    "mode": "planning only; no delegation"
+  },
+  "status": "FROZEN_PENDING_ROOT_REVIEW",
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/plan.json",
+      "bytes": 40042,
+      "sha256": "d22d065d712f1be0eee9badf9d4233c13b269b5fa6a5ed47a1af847144026a02"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/plan.json",
+      "bytes": 10859,
+      "sha256": "63a14e2f965aedb729fd1963c2b94d87247602570e2d25749f8e9b74bb508d40"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/source-gate.json",
+      "bytes": 1201,
+      "sha256": "c30f7948b78cc608d8183dcbdd23e4b4756cbc2e5fdaa747f5ebf764408de985"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/plan.json",
+      "bytes": 114866,
+      "sha256": "70f51381f8f401c5456304d9eb12f019e7f903a582407ab7819447b8cd1f871b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json",
+      "bytes": 32871,
+      "sha256": "0290f0e66648bf4e3251b5fec8552044cf0468fa663290ba693cfd0bf33fe63a"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json",
+      "bytes": 75684,
+      "sha256": "c161cb83a22ec9aefef972da94f15bec09f78defc253993aa02c14c550315974"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_visual_worker_factory.py",
+      "bytes": 15847,
+      "sha256": "5f99a6bf6e9850875423a5a9eca5f47bbe88e4ff12b97048f218de19b76c57f9"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_rgbd_lease_handoff.py",
+      "bytes": 23788,
+      "sha256": "2eea572c84097366671b22a9ca75e044a1a732ce45554dad252ae16d2fb13987"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "bytes": 91533,
+      "sha256": "d0833f98112ccac9b5e9b04163dfcbf2f7d1d053f72c9ab7a7a18398a5e6cdab"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/original-author-factory-read.json",
+      "bytes": 13348,
+      "sha256": "2a795668b8ef56e263435ed07c482cfb986ca3a0d88ea606150ee8563b3b2b99"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/original-root-read-observations.json",
+      "bytes": 18042,
+      "sha256": "463aef33a6dc08947523c382b6c1bf9fedb795aac4c0097169744f030d60c8f7"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py",
+      "bytes": 21878,
+      "sha256": "f4174559171c138d905a14f1ebcfc92304de0d315f3b82d50f916706fbd82939"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py",
+      "bytes": 197744,
+      "sha256": "ac723e195c77855a876c02fa6d4258cd50f2a6e63bd5982d6be372fdf90cc695"
+    }
+  ],
+  "problem": {
+    "classification": "static resource-accounting contract mismatch; no T2 execution or observed resource leak",
+    "facts": [
+      "The protected software factory calls _cpu_visual_worker, discards that returned worker and constructs the actual poll worker. Current source lines are 172 and 174; the earlier line169 description is not the current call location.",
+      "_cpu_visual_worker calls _queued_closed_loop_worker and returns its worker. The exact imported queued helper definition was not read by ROOT's failed lookup; no claim is made about its unread implementation.",
+      "Runner _t2_resources caps counts['kind:worker'] at18, although this count includes real initialized and partial-initialized construction records, including workers never polled.",
+      "The draft observer requires active_job_id is None for worker cleanup. Actual worker constructor and poll finally assign the empty string. Worker has no close API in this seam; an unpolled object must not be claimed to have run or closed."
+    ],
+    "cause": "Conflation of constructed resource identity, actual poll invocation/entry and cleanup state. Fix the observation and aggregate contract, retaining the full construction denominator.",
+    "evidence_boundary": "Source-only determination. R206 printing correction remains accepted and unchanged. T2 has no actual RED/GREEN result. ROOT f48b30 lookup exit2 and its partial output remain historical evidence, not a successful definition read; no replay."
+  },
+  "scope": {
+    "author": {
+      "agent": "/root/p6_stage_b_sol",
+      "model": "gpt-6.1-sol"
+    },
+    "runner": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py",
+    "runner_allowed": "Only _t2_resources worker identity/lifecycle schema validation and derived counters/caps. Preserve all other validation, files, raw/result writes, T2 bounded stdout, non-T2 behavior, argv, environment, timeout and cleanup.",
+    "test": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py",
+    "test_allowed": [
+      "Only new T2 resource-observation fields and pass-through observation code in _b_t2_attempt and _b_t2_observe; include the worker cleanup branch and observer restoration coverage.",
+      "Use the actual SimulationWorker.poll_once method at the observation seam; call the saved real method exactly once with original arguments, propagate the unchanged return/exception. A profile entry for that saved method may establish entered=true. No replacement of decisions/locks/worker work."
+    ],
+    "test_forbidden": "Do not add/change the seven T2 behavior bodies or their nodeids/decorators/assertions under R208 (they are not yet appended); no change to old168003-byte prefix, other helpers, product or test semantics. R204 authoring those bodies resumes separately after this gate.",
+    "protected": "All19 R158 T2 production inputs and211 protected files remain unchanged; no protected factory edit, no T1/A/helper/golden/raw changes. The authoritative baselines remain the R204/R158 accepted manifests and R206 gate.",
+    "non_targets": [
+      "Original R204/R206 reports and limited diffs",
+      "Original role ledgers and command definitions except later normal ROOT reservation as already authorized",
+      "All products, clocks, private authority and SQL semantics",
+      "Any existing test/static/Git budget"
+    ],
+    "test_state": "Whole current197744-byte test is now explicitly frozen by sole Sol and ROOT; previous as-of read was the same SHA. The seven T2 test bodies and fixture/report metadata have not yet been appended. R208 changes only the named observation helpers; subsequent seven bodies remain solely R204 preparation, with a separate current gate."
+  },
+  "resource_contract": {
+    "schema_version": "Keep bigsmall.r158-t2-resource.v1 and add the following explicit fields to the as-yet unexecuted T2 producer and consumer together. Missing fields are errors; do not silently accept an old incomplete T2 sidecar.",
+    "identity": {
+      "resource_key": "(command_id,nodeid,pid,resource_id). Retain the existing actual object identity as resource_id, retain strong object references through finally, reject duplicate resource IDs within a sidecar, and check each poll link resolves to the same worker. Do not merge objects by class/name/path or delete constructor-only objects.",
+      "poll_key": "(command_id,nodeid,pid,poll_id), monotonically assigned per actual call. Each links exactly one worker_resource_id that exists and has kind=worker; repeated polls of the same object get separate poll_id values.",
+      "resource_denominator": "Every attempted allocation including transitives and partial initialization remains in resources. allocation_attempts==len(resources). Count constructed workers separately; no18 cap on this object count, and no dropping unpolled objects."
+    },
+    "poll_records": {
+      "field": "worker_lifecycles",
+      "items": [
+        "poll_id",
+        "worker_resource_id",
+        "attempted",
+        "entered",
+        "returned_normally",
+        "return_value",
+        "exception",
+        "start_sequence",
+        "end_sequence",
+        "thread_id",
+        "native_thread_id"
+      ],
+      "rules": [
+        "attempted=true is recorded immediately before forwarding to the saved poll method. entered=true only at the real method entry; record thread/native IDs from that actual thread. No scene result or API guard is an entered poll.",
+        "returned_normally=true only after the saved call returns; preserve its actual bool as return_value. A true poll return does not establish successful job/publication. Exception records retain actual type/message; finally always records end_sequence. Unknown/not reached return is null, not success.",
+        "Sequence values are observation-only, ordered under the existing observer lock and shared across the sidecar; never substitute them for OC1/domain clocks.",
+        "The runner validates strict booleans, identifiers, links, order, no duplicate calls, returned<=entered<=attempted, and finished or explicitly failed states. It derives totals; it does not trust self-reported summary counts.",
+        "Cap aggregate actual attempted poll lifecycles at18 and at the unchanged parent64; count rejected/raising attempts too. Preserve per-scenario maxima 2/2/6/2/2/2/2. Actual entered and normal returns are separately reported and cannot exceed attempts.",
+        "Derive peak active poll intervals from actual entry/exit observations: <=2. Actual broker/heartbeat observations remain linked to their worker/session, at most1 concurrent of each per worker. Missing association or unfinished thread observation is not an accepted zero."
+      ]
+    },
+    "worker_cleanup": {
+      "fields": [
+        "poll_ids",
+        "initial_active_job_id",
+        "final_active_job_id",
+        "session_observed",
+        "heartbeat_observed",
+        "cleanup_basis",
+        "cleanup_observed"
+      ],
+      "unpolled": "Retain the constructor record. poll_ids=[] must correspond to no actual poll record; actual initialized idle state is empty-string active_job_id, session/heartbeat unallocated as observed. cleanup_basis='never_polled_no_owned_runtime'; close_attempts remains empty, not fabricated. Absence of runtime resources is a witnessed value, and unobserved OS handles remain null.",
+      "polled": "All linked calls ended; actual idle empty-string state, any observed session truly closed and broker/heartbeat truly terminated, clocks/SQLite/TLS and other allocated resources satisfy the existing real finally checks. cleanup_basis='poll_finished_runtime_released'; do not substitute a close method.",
+      "partial_init": "Keep initialization_error and partial allocations; cleanup may be accepted only from actual recorded released resources/no owned runtime, not initialized=false alone. Missing fields/unknown state cannot be converted to a fabricated successful cleanup.",
+      "preserved": "All current real close attempts/errors, issuer-thread constraints, observer restoration, allocation counts and raw sidecar records remain. No authority mock, no omission of constructor-only objects, no weakening of lock/DB/rollback requirements."
+    },
+    "red": "The original seven explicit missing-contract assertions occur before factory allocation. Resources and worker_lifecycles may then truly be empty, counts0, behavior=false. This is interface RED only.",
+    "green": "All original seven real behavior bodies must execute; exact per-node sidecars, actual denominator and cleanup, contract guard and assertions/restoration checks must pass. Resource caps alone are not resource observations.",
+    "output": "Retain full records in result/resource summary and files/temp index; R206 bounded stdout unchanged. Unobserved OS/model/GPU/network values remain null."
+  },
+  "workflow": [
+    "ROOT reads this plan, input-observation and exact frozen inputs. Any new cause or unexpected input drift stops; authorized earlier T2 partial growth is recorded, never reverted.",
+    "Before editing, sole Sol exclusively saves the complete frozen runner and test to the R208 implementation before paths. ROOT/author confirm their exact current bytes and SHA equal the frozen pins; preserve R204/R206 originals.",
+    "Same Sol applies only the two resource-observation/validation edits. No test/runner invocation and no product change. Save a new R208 limited diff and change report; do not overwrite historical reports.",
+    "ROOT performs normal bounded stdlib text/hash review, not AST or script execution: exact before/after diff limited to approved helper/function regions; original7 bodies/decorators and168003 prefix identical; runner outside _t2_resources identical;19products/211 protected/roles consistent with accepted manifests. Fulltext-review both amended producer and consumer together, including actual poll pass-through, constructor-only cleanup and restoration.",
+    "Only after ROOT's new source gate may existing R204 preparation continue. Original T2 RED/GREEN require their original separate full test/script/resource/role gates; R208 releases neither execution nor product implementation."
+  ],
+  "outputs": {
+    "before_runner": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/implementation/before-run-budgeted-command.py",
+    "before_test": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/implementation/before-test-operational-runtime-closure.py",
+    "diff": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/implementation/limited.diff",
+    "change_report": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/implementation/change-report.json",
+    "root_gate": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/source-gate.json",
+    "step": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/step-report.json"
+  },
+  "budget": {
+    "new_product_commands": 0,
+    "new_test_commands": 0,
+    "new_static_commands": 0,
+    "new_git_commands": 0,
+    "new_validation_slots": 0,
+    "original_t2_red": {
+      "used": 0,
+      "remaining": 1,
+      "release": "HELD"
+    },
+    "original_t2_green": {
+      "used": 0,
+      "remaining": 1,
+      "release": "HELD"
+    },
+    "resource_caps": {
+      "attempted_poll_lifecycles": 18,
+      "parent_actual_lifecycles": 64,
+      "concurrency": 2,
+      "broker_per_worker": 1,
+      "heartbeat_per_worker": 1
+    },
+    "no_reset": true
+  },
+  "acceptance": {
+    "this_round": "Source-contract correction only, after normal ROOT fulltext and exact-byte gate; no runtime success claim.",
+    "T2_pass": false,
+    "P6B_complete": false,
+    "T12_complete": false,
+    "native": false,
+    "formal": false,
+    "git_delivery": false
+  },
+  "stop_conditions": [
+    "Any unexpected tool/read/write failure: preserve actual return and stop, no retry.",
+    "Any required changes outside the two allowed resource regions, budget/node/cap changes, or unread APIs necessary for correctness: stop and return to actual Astra.",
+    "If candidate final cleanup/poll observation cannot prove the stated relationship without changing production permissions, do not fabricate success or relax the check."
+  ]
+}

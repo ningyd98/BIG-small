@@ -1,0 +1,27 @@
+{
+  "schema_version": "bigsmall.r219.actual-source-tools.v1",
+  "round": "R219",
+  "before_preservation": {
+    "chunk_id": "f54d15",
+    "wall_time_seconds": 0.00000934,
+    "exit_code": 0,
+    "original_token_count": 94,
+    "output": "{\"matched_inputs\": 15, \"before\": {\"path\": \"/home/ningyd/\\u6587\\u6863/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round219-p6-t2-writer-canonical-accuracy-field-20261015/implementation/before-test.py\", \"bytes\": 254022, \"sha256\": \"4d9bb9dc38ebaffd666054aeb00793b10e116f6b793527dd3461b3d22b6a8992\"}, \"CAS\": true, \"unique_offset\": 241879}\n"
+  },
+  "exact_native_patch": "*** Begin Patch\n*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py\n@@\n-        ordinary_ttl_s=requirement.ordinary_ttl_s, allowed_error_m=requirement.required_accuracy_m,\n+        ordinary_ttl_s=requirement.ordinary_ttl_s, allowed_error_m=requirement.allowed_error_m,\n*** End Patch",
+  "native_actual_return": {},
+  "native_numeric_exit": null,
+  "actual_tool_return": {
+    "chunk_id": "c65b72",
+    "wall_time_seconds": 0.00000892,
+    "exit_code": 0,
+    "original_token_count": 209,
+    "output": "{\"source\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py\", \"bytes\": 254018, \"sha256\": \"ed602dc9ba5c0b15af20fbe8ca4d9b58d2e4e45fac621dc6f5e5e2cd4a94e7d3\"}, \"diff\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round219-p6-t2-writer-canonical-accuracy-field-20261015/implementation/limited.diff\", \"bytes\": 997, \"sha256\": \"3ce4a2bf2ff647eb6b893f798e6e851d7e25497f791f24d0f327a14bb2b83b08\"}, \"report\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round219-p6-t2-writer-canonical-accuracy-field-20261015/implementation/change-report.json\", \"bytes\": 6560, \"sha256\": \"68cdb4592db72bebdac12a94d6c57b92f7aee5c2ff8ee798520f6ea88d2f36f9\"}, \"fixed_inputs_matched\": 14}\n"
+  },
+  "scope_metadata_source": "from pathlib import Path\nimport hashlib,json,difflib\nr=Path('/home/ningyd/文档/ChatGPT/BIGsmall'); d=r/'artifacts/research/process/20261004-ced-development/astra-rounds/round219-p6-t2-writer-canonical-accuracy-field-20261015'; p=json.loads((d/'plan.json').read_text())\ndef pin(path):\n raw=path.read_bytes(); return {'path':str(path),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}\nbp=Path(p['outputs']['before']); ap=Path(p['exact_change']['file']); before=bp.read_bytes(); after=ap.read_bytes(); old=p['exact_change']['old'].encode(); new=p['exact_change']['new'].encode()\nassert before.count(old)==1 and after==before.replace(old,new,1)\nassert len(after)==p['exact_change']['expected_after_bytes'] and hashlib.sha256(after).hexdigest()==p['exact_change']['expected_after_sha256']\nassert before[:168003]==after[:168003] and before[-1:]==after[-1:]\nfixed=[]\nfor item in p['inputs']:\n path=Path(item['path'])\n if path==ap: continue\n actual=pin(path); assert actual['bytes']==item['bytes'] and actual['sha256']==item['sha256']; fixed.append(actual)\nwith Path(p['outputs']['after']).open('xb') as f: assert f.write(after)==len(after)\ndiff=''.join(difflib.unified_diff(before.decode().splitlines(keepends=True),after.decode().splitlines(keepends=True),fromfile=str(bp),tofile=str(ap))).encode()\nwith Path(p['outputs']['diff']).open('xb') as f: assert f.write(diff)==len(diff)\nreport={'schema_version':'bigsmall.r219.author-field-change.v1','round':'R219','status':'SOURCE_READY_PENDING_ROOT_GATE','author':p['scope']['sole_author'],'before':pin(bp),'after':pin(ap),'physical_after':pin(Path(p['outputs']['after'])),'diff':pin(Path(p['outputs']['diff'])),'exact_change':p['exact_change'],'scope_proof':{'exact_unique_replacement':True,'all_other_bytes_equal':True,'old168003_prefix_equal':True,'EOF_equal':True,'seven_T2_bodies_decorators_unchanged':True},'fixed_input_pins_after':fixed,'native_actual_return':{},'before_CAS_actual_chunk':'f54d15','budgets':p['budgets'],'product_test_AST_import_compile_SQL_probe_static_Git_execution':0,'history':'R218 incorrect field instruction preserved; only this real canonical field mapping superseded. No behavioral claim.'}\nrp=Path(p['outputs']['report']); raw=(json.dumps(report,ensure_ascii=False,indent=2)+'\\n').encode()\nwith rp.open('xb') as f: assert f.write(raw)==len(raw)\nprint(json.dumps({'source':pin(ap),'diff':pin(Path(p['outputs']['diff'])),'report':pin(rp),'fixed_inputs_matched':len(fixed)},ensure_ascii=False))\n",
+  "independent_stdout": null,
+  "independent_stderr": null,
+  "retry": 0,
+  "product_execution": false,
+  "test_execution": false
+}

@@ -18,7 +18,7 @@ from tests.test_operational_time_v1 import _RawSource
 from tests.test_visual_raw_recorder_v3 import software_backend
 
 
-def cpu_components(monkeypatch, app, failure=None):
+def cpu_components(monkeypatch, app, failure=None, *, production_cached=False):
     """Replace raw CPU source and backend construction only, never verdicts."""
     backend = software_backend()
     backend._episode_id = None
@@ -45,7 +45,7 @@ def cpu_components(monkeypatch, app, failure=None):
     backend.shutdown = lambda: calls.append("shutdown")
     captures = 0
 
-    def camera(data, **kwargs):
+    def camera(data, include_instances=True, **kwargs):
         nonlocal captures
         captures += 1
         if failure == "capture" and captures == 3:
@@ -90,14 +90,20 @@ def cpu_components(monkeypatch, app, failure=None):
             valid_mask=bytes([1]) * count,
         )
         digest = MuJoCoRGBDCamera._physics_state_hash(data)
+        if not include_instances:
+            return frame, (), {}, (digest,) * 2
         return frame, (-1,) * count, {-1: "background"}, (digest,) * 3
 
-    backend._camera = SimpleNamespace(capture_with_instances=camera)
+    backend._camera = SimpleNamespace(_capture=camera, capture_with_instances=camera)
 
     def cached():
         backend._sensor_frame = backend.capture_sensor_frame_with_instances()[0]
 
     backend._update_sensor_frame = cached
+    if production_cached:
+        from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+
+        backend._update_sensor_frame = MuJoCoPhysicsBackend._update_sensor_frame.__get__(backend)
 
     def reset(scenario):
         calls.append("RESET")
@@ -108,7 +114,7 @@ def cpu_components(monkeypatch, app, failure=None):
             backend._scenario = scenario
             backend._total_physics_steps = 0
             backend._data.time = 0.0
-            cached()
+            backend._update_sensor_frame()
 
     backend.reset = reset
     app.worker.planner_factory = lambda: pytest.fail("planner/model/provider forbidden")
@@ -446,4 +452,317 @@ def test_reader_recomputes_and_never_mints_authority(tmp_path, monkeypatch, tamp
     )
     view = module.verify_operational_prefix_originals_v1(root, receipt)
     assert view["source_prefix_complete"] is (tamper == "flag")
+    assert view["live_authority"] == "UNAVAILABLE"
+
+
+@pytest.mark.parametrize("config_state", ["missing", "changed"])
+def test_recorder_rejects_missing_or_changed_backend_config_cpu(
+    tmp_path, monkeypatch, config_state
+):
+    require_task2()
+    app = application(tmp_path)
+    backend, calls = cpu_components(monkeypatch, app)
+    original_initialize = backend.initialize
+
+    def initialize(config):
+        original_initialize(config)
+        backend._config = (
+            None if config_state == "missing" else config.model_copy(update={"seed": 1})
+        )
+
+    monkeypatch.setattr(backend, "initialize", initialize)
+    receipt = app.execute_once()
+    assert receipt["source_prefix_complete"] is False
+    assert receipt["primary_error"] == {
+        "error_type": "ValueError",
+        "error": "original backend simulator configuration changed",
+    }
+    primary = [row for row in receipt["failures"] if row.get("role") == "PRIMARY"]
+    assert len(primary) == 1
+    assert primary[0]["error_type"] == "ValueError"
+    assert primary[0]["error"] == receipt["primary_error"]["error"]
+    job = app.repository.list_jobs()[0]
+    assert job.status == RuntimeJobStatus.FAILED
+    assert len(app.repository.list_attempts(job.run_id)) == 1
+    assert calls == ["initialize", "shutdown"]
+    assert not (app.output / "capture-catalog.json").exists()
+    assert not (app.output / "prefix-originals/prefix-receipt.json").exists()
+    with pytest.raises(RuntimeError, match="no live operational source-only publication"):
+        app.catalog_entry()
+    saved = json.loads((app.output / "runner-failure.json").read_bytes())
+    assert saved["primary_error"] == receipt["primary_error"]
+    assert saved["source_prefix_complete"] is False
+
+
+@pytest.mark.parametrize("entry", ["direct", "worker"])
+def test_preregistration_primary_survives_startup_report_failure_cpu(tmp_path, monkeypatch, entry):
+    from tests.test_operational_prefix_v1 import activate
+
+    require_task2()
+    app = application(tmp_path)
+    _, calls = cpu_components(monkeypatch, app)
+    original = ValueError("CPU preregistration primary")
+    startup_writes = []
+    original_write = module._write_exclusive_v1
+
+    def construct():
+        raise original
+
+    def write(path, raw):
+        if path.name == "startup-failures.json":
+            startup_writes.append(path)
+            raise OSError("CPU startup report secondary")
+        original_write(path, raw)
+
+    monkeypatch.setattr(module, "_new_prefix_backend_v1", construct)
+    monkeypatch.setattr(module, "_write_exclusive_v1", write)
+    if entry == "direct":
+        job, _, start = activate(app)
+        with pytest.raises(BaseException) as caught:
+            module._prepare_source_v1(app, app.worker, job, start_monotonic=start)
+        assert caught.value is original
+        failures = module._live(app).failures
+        with pytest.raises(RuntimeError, match="cannot be allocated twice"):
+            module._prepare_source_v1(app, app.worker, job, start_monotonic=start)
+    else:
+        receipt = app.execute_once()
+        assert receipt["primary_error"] == {
+            "error_type": "ValueError",
+            "error": "CPU preregistration primary",
+        }
+        failures = receipt["failures"]
+        job = app.repository.list_jobs()[0]
+        assert job.status == RuntimeJobStatus.FAILED
+        assert len(app.repository.list_attempts(job.run_id)) == 1
+        saved = json.loads((app.output / "runner-failure.json").read_bytes())
+        assert saved["primary_error"] == receipt["primary_error"]
+        assert saved["durable_failure_evidence_complete"] is False
+    primary = [row for row in failures if row["role"] == "PRIMARY"]
+    assert len(primary) == 1
+    assert primary[0]["error_type"] == "ValueError"
+    assert primary[0]["error"] == "CPU preregistration primary"
+    assert primary[0]["phase"] == "preregistration"
+    secondary = [row for row in failures if row["role"] == "SECONDARY"]
+    assert secondary
+    assert all(row["primary_failure_id"] == primary[0]["failure_id"] for row in secondary)
+    assert any(
+        row["error_type"] == "OSError"
+        and row["error"] == "CPU startup report secondary"
+        and row["phase"] == "startup_failure_persistence"
+        for row in secondary
+    )
+    assert len({row["failure_id"] for row in failures}) == len(failures)
+    assert module._live(app).durable_failure_evidence_complete is False
+    stages = sorted(app.output.glob("stage-failures-*.json"))
+    assert stages
+    stage = json.loads(stages[0].read_bytes())
+    assert stage["primary_failure_id"] == primary[0]["failure_id"]
+    assert stage["durable_failure_evidence_complete"] is False
+    assert stage["failures"][:2] == failures[:2]
+    assert len(startup_writes) == 1
+    assert calls == []
+    assert not (app.output / "capture-catalog.json").exists()
+    with pytest.raises(RuntimeError, match="no live operational source-only publication"):
+        app.catalog_entry()
+
+
+@pytest.mark.parametrize("tamper", ["missing_returned", "wrong_source_relation"])
+def test_reader_rejects_broken_returned_acquisition_join_cpu(tmp_path, monkeypatch, tamper):
+    require_task2()
+    app = application(tmp_path)
+    cpu_components(monkeypatch, app)
+    receipt = app.execute_once()
+    assert receipt["source_prefix_complete"] is True
+    root = app.output / "prefix-originals"
+    path = root / "operational-originals.json"
+    slab = json.loads(path.read_bytes())
+    if tamper == "missing_returned":
+        returned_id = "CPU-absent-returned-acquisition"
+    else:
+        frames = json.loads((root / "frozen-originals.json").read_bytes())["frames"]
+        frame = next(
+            row
+            for row in frames
+            if row["acquisition_id"] != slab["current"]["source_acquisition_id"]
+            and (row["source_acquisition_id"] or row["acquisition_id"])
+            != slab["current"]["source_acquisition_id"]
+        )
+        returned_id = frame["acquisition_id"]
+    slab["current"]["returned_acquisition_id"] = returned_id
+    raw = module.canonical_bytes_v1(slab)
+    path.write_bytes(raw)
+    receipt["original_files"][path.name] = {
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "bytes": len(raw),
+    }
+    monkeypatch.setattr(module, "_open_clock_v1", lambda: pytest.fail("reader minted live D"))
+    monkeypatch.setattr(
+        module, "_new_prefix_backend_v1", lambda: pytest.fail("reader initialized backend")
+    )
+    view = module.verify_operational_prefix_originals_v1(root, receipt)
+    assert view["original_integrity"] == "INVALID"
+    assert view["source_prefix_complete"] is False
+    assert view["live_authority"] == "UNAVAILABLE"
+
+
+@pytest.mark.parametrize("returned_kind", ["direct", "derived"])
+def test_current_source_event_join_accepts_direct_and_derived_ids(returned_kind):
+    source = {
+        "acquisition_id": "source-1",
+        "source_acquisition_id": None,
+        "interval_id": "operation-7",
+    }
+    event = {"kind": "CAPTURE", "acquisition_id": "source-1", "operation_id": 7}
+    frames = [source]
+    returned_id = "source-1"
+    if returned_kind == "derived":
+        returned_id = "returned-1"
+        frames.append(
+            {
+                "acquisition_id": returned_id,
+                "source_acquisition_id": "source-1",
+                "interval_id": "operation-7",
+            }
+        )
+    current = {"returned_acquisition_id": returned_id, "source_acquisition_id": "source-1"}
+    assert module._current_source_event_v1(current, frames, [event]) is event
+
+
+def _r93_repin_json(root, receipt, name, value):
+    raw = module.canonical_bytes_v1(value)
+    (root / name).write_bytes(raw)
+    receipt["original_files"][name] = {
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "bytes": len(raw),
+    }
+
+
+def test_cached_capture_preserves_empty_instance_sidecars_cpu(tmp_path, monkeypatch):
+    app = application(tmp_path)
+    backend, calls = cpu_components(monkeypatch, app, production_cached=True)
+    receipt = app.execute_once()
+    assert receipt["source_prefix_complete"] is True
+    root = app.output / "prefix-originals"
+    slab = json.loads((root / "operational-originals.json").read_bytes())
+    frozen = json.loads((root / "frozen-originals.json").read_bytes())
+    captures = [row for row in slab["events"] if row["kind"] == "CAPTURE"]
+    assert len(slab["events"]) == 244 and len(captures) == 3
+    assert backend.total_physics_steps == 120
+    assert receipt["actual_capture_allocations"] == 3
+    assert receipt["explicit_acquisitions"] == 1 and receipt["allocated_actions"] == 0
+    assert calls == ["initialize", "observer", "RESET", "shutdown"]
+    assert app.repository.list_jobs()[0].status == RuntimeJobStatus.SUCCEEDED
+    assert [len(row["end"]["result"]["instance_ids"]) for row in captures] == [0, 0, 76800]
+    for capture, size, count, available, passes in zip(
+        captures, [0, 0, 307200], [0, 0, 76800], [False, False, True], [2, 2, 3], strict=True
+    ):
+        acquisition = capture["acquisition_id"]
+        prefix = f"frames/{acquisition}/"
+        raw = (root / (prefix + "instances.i32")).read_bytes()
+        assert len(raw) == size
+        assert receipt["original_files"][prefix + "instances.i32"] == {
+            "bytes": size,
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        }
+        metadata = json.loads((root / (prefix + "source-frame.json")).read_bytes())
+        source = capture["end"]["result"]
+        aux = frozen["frame_aux"][acquisition]
+        assert metadata["instances_available"] is available
+        assert type(metadata["instance_id_count"]) is int
+        assert metadata["instance_id_count"] == count
+        assert aux["instance_ids"] == source["instance_ids"]
+        assert metadata["instance_labels"] == aux["instance_labels"] == source["instance_labels"]
+        assert metadata["pass_state_hashes"] == source["pass_state_hashes"]
+        assert len(metadata["pass_state_hashes"]) == passes
+        assert len(set(metadata["pass_state_hashes"])) == 1
+        assert capture["begin_seq"] < capture["mark_seq"] < capture["end_seq"]
+    assert (root / "prefix-receipt.json").is_file()
+    assert (app.output / "capture-catalog.json").is_file()
+    assert app.catalog_entry() == receipt
+    view = module.verify_operational_prefix_originals_v1(root, receipt)
+    assert view["original_integrity"] == "VERIFIED"
+    assert view["source_prefix_complete"] is True
+    assert view["formal_accepted"] is False and view["live_authority"] == "UNAVAILABLE"
+
+
+@pytest.mark.parametrize(
+    "byte_count",
+    [0, False, True, -1, "0", 0.0],
+    ids=["zero", "false", "true", "negative", "string", "float"],
+)
+def test_source_inventory_rejects_empty_and_noninteger_bytes_cpu(byte_count):
+    from cloud_edge_robot_arm.research.operational_prefix_schema_v1 import validate_inventory_v1
+
+    with pytest.raises(ValueError):
+        validate_inventory_v1({"x.py": {"sha256": "a" * 64, "bytes": byte_count}})
+    if type(byte_count) is int and byte_count == 0:
+        with pytest.raises(ValueError):
+            validate_inventory_v1(
+                {"frames/acquisition-1/instances.i32": {"sha256": "a" * 64, "bytes": 0}}
+            )
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ["bytes_bool", "bytes_string", "bytes_negative", "empty_rgb", "empty_depth", "empty_mask"],
+)
+def test_artifact_inventory_preserves_negative_and_geometry_guards_cpu(
+    tmp_path, monkeypatch, tamper
+):
+    app = application(tmp_path)
+    cpu_components(monkeypatch, app)
+    receipt = app.execute_once()
+    assert receipt["source_prefix_complete"] is True
+    root = app.output / "prefix-originals"
+    prefix = "frames/acquisition-1/"
+    if tamper.startswith("bytes_"):
+        receipt["original_files"][prefix + "instances.i32"]["bytes"] = {
+            "bytes_bool": True,
+            "bytes_string": "0",
+            "bytes_negative": -1,
+        }[tamper]
+    else:
+        name = (
+            prefix
+            + {"empty_rgb": "rgb.png", "empty_depth": "depth.f32", "empty_mask": "mask.u8"}[tamper]
+        )
+        (root / name).write_bytes(b"")
+        receipt["original_files"][name] = {"sha256": hashlib.sha256(b"").hexdigest(), "bytes": 0}
+    view = module.verify_operational_prefix_originals_v1(root, receipt)
+    assert view["original_integrity"] == "INVALID"
+    assert view["source_prefix_complete"] is False
+    assert view["live_authority"] == "UNAVAILABLE"
+
+
+@pytest.mark.parametrize("tamper", ["availability_false", "count_bool", "source_ids_changed"])
+def test_reader_rejects_instance_source_metadata_mismatch_cpu(tmp_path, monkeypatch, tamper):
+    app = application(tmp_path)
+    cpu_components(monkeypatch, app)
+    receipt = app.execute_once()
+    assert receipt["source_prefix_complete"] is True
+    root = app.output / "prefix-originals"
+    if tamper == "source_ids_changed":
+        slab = json.loads((root / "operational-originals.json").read_bytes())
+        capture = next(row for row in slab["events"] if row["kind"] == "CAPTURE")
+        capture["end"]["result"]["instance_ids"] = []
+        _r93_repin_json(root, receipt, "operational-originals.json", slab)
+    else:
+        name = "frames/acquisition-1/source-frame.json"
+        metadata = json.loads((root / name).read_bytes())
+        metadata[
+            "instances_available" if tamper == "availability_false" else "instance_id_count"
+        ] = False if tamper == "availability_false" else True
+        _r93_repin_json(root, receipt, name, metadata)
+        digest = receipt["original_files"][name]["sha256"]
+        frozen = json.loads((root / "frozen-originals.json").read_bytes())
+        persisted = json.loads((root / "persisted-frames.json").read_bytes())
+        frozen["frames"][0]["file_hashes"][name] = digest
+        persisted[0]["file_hashes"][name] = digest
+        _r93_repin_json(root, receipt, "frozen-originals.json", frozen)
+        _r93_repin_json(root, receipt, "unbound-frames.json", frozen["frames"])
+        _r93_repin_json(root, receipt, "persisted-frames.json", persisted)
+    view = module.verify_operational_prefix_originals_v1(root, receipt)
+    assert view["original_integrity"] == "INVALID"
+    assert view["source_prefix_complete"] is False
+    assert any("instance" in reason for reason in view["reasons"])
     assert view["live_authority"] == "UNAVAILABLE"

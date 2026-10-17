@@ -1,0 +1,43 @@
+--- P2/source-before/tests/test_native_references.py
++++ tests/test_native_references.py
+@@ -335,3 +335,40 @@
+     )
+     inputs["online"] = replace(inputs["online"], visual_facts=facts)
+     assert module.resolve_native_reference(**inputs) == reference
++
++
++def test_fixed_goal_zero_reference_velocity_is_not_zero_body_velocity(tmp_path):
++    module = api()
++    assert hasattr(module, "fixed_reference_motion_m_per_sim_s"), (
++        "P2 source-reconstructed fixed-coordinate motion description missing"
++    )
++    inputs = sample(tmp_path, "LIFT")
++    reference = module.resolve_native_reference(**inputs)
++    body_start = inputs["online"].robot_state.tcp_pose
++    body_travel = dist((body_start.x, body_start.y, body_start.z), reference.endpoint_xyz)
++    assert body_travel > 0.05
++    assert module.fixed_reference_motion_m_per_sim_s(reference, **inputs) == 0.0
++    assert inputs["resolved"].parameters["tcp_velocity"] > 0
++    with pytest.raises(ValueError):
++        module.fixed_reference_motion_m_per_sim_s(
++            replace(reference, execution_payload_digest="f" * 64), **inputs
++        )
++    contact_inputs = sample(tmp_path / "contact", "GRASP")
++    contact = module.resolve_native_reference(**contact_inputs)
++    with pytest.raises(ValueError):
++        module.fixed_reference_motion_m_per_sim_s(
++            replace(contact, fixed_goal_coordinate_invariant=True), **contact_inputs
++        )
++
++
++def test_mutable_grasp_reference_without_future_support_remains_unknown(tmp_path):
++    module = api()
++    assert hasattr(module, "fixed_reference_motion_m_per_sim_s"), (
++        "P2 mutable-contact reference motion description missing"
++    )
++    inputs = sample(tmp_path, "GRASP")
++    reference = module.resolve_native_reference(**inputs)
++    assert reference.kind == "OBJECT_CONTACT"
++    assert module.fixed_reference_motion_m_per_sim_s(reference, **inputs) is None
++    assert reference.fixed_goal_coordinate_invariant is False
++    assert not hasattr(reference, "future_wall_bound_ns")

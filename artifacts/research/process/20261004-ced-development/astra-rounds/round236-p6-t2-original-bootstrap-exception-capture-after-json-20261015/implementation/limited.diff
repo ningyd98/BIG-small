@@ -1,0 +1,304 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round234-p6-t2-original-bootstrap-exception-capture-20261015/implementation/run-capture.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round236-p6-t2-original-bootstrap-exception-capture-after-json-20261015/implementation/run-capture.py
+@@ -1,4 +1,4 @@
+-"""R234 once-only passive diagnostic runner. Raw outcome precedes acceptance classification."""
++"""R236 once-only passive diagnostic runner. Raw outcome precedes acceptance classification."""
+ from pathlib import Path
+ import base64
+ import hashlib
+@@ -13,7 +13,7 @@
+ import xml.etree.ElementTree as ET
+ 
+ ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
+-D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round234-p6-t2-original-bootstrap-exception-capture-20261015'
++D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round236-p6-t2-original-bootstrap-exception-capture-after-json-20261015'
+ 
+ 
+ def read_json(path):
+@@ -330,20 +330,64 @@
+             'failure_details': [{'nodeid': names[nodes.index(item)], 'text': ET.tostring(item, encoding='unicode')} for item in failures]}
+ 
+ 
++def resolved_evidence(plan, gate):
++    fixed(plan['inputs']['index'])
++    observed = read_json(Path(plan['inputs']['index']['path']))
++    fixed(gate['resolved_history_pin'])
++    resolved = read_json(Path(gate['resolved_history_pin']['path']))
++    if resolved['status'] != 'RESOLVED_FOR_ROOT_SOURCE_GATE' or resolved['unresolved']:
++        raise ValueError('full explicit historical resolution required')
++    for document in resolved['documents']:
++        fixed(document)
++    history = []
++    for item in resolved['entries']:
++        original, resolution = item['original'], item['resolution']
++        row = resolution['pin']
++        if (row['bytes'] != original['bytes'] or row['sha256'] != original['sha256']
++                or resolution['kind'] not in {'CURRENT_EXACT_ORIGINAL_BYTES',
++                                             'EXISTING_PHYSICAL_ARCHIVE', 'COMPLETE_ORIGINAL_BYTES'}):
++            raise ValueError('historical original/archive identity differs')
++        if resolution['kind'] == 'CURRENT_EXACT_ORIGINAL_BYTES' and row['path'] != original['path']:
++            raise ValueError('current resolution cannot rename an original')
++        fixed(row)
++        if 'source_document' in resolution:
++            fixed(resolution['source_document'])
++        history.append(row)
++    for row in observed['inputs'] + observed['case_pins']:
++        fixed(row)
++    if len(observed['retained_databases']) != 12:
++        raise ValueError('exact12 retained old databases required')
++    absent = []
++    for database in observed['retained_databases']:
++        fixed(database['pin'])
++        for row in database['sidecars']:
++            path = Path(row['path'])
++            if row['exists'] is not False or path.exists() or path.is_symlink():
++                raise ValueError('old exact sidecar state changed')
++            absent.append(row)
++    if len(absent) != 36:
++        raise ValueError('exact36 absent old database sidecars required')
++    return observed, resolved, history, absent
++
++
+ def capture_sources(plan, gate, out, author_data, root_data, gate_data):
+-    index_record = plan['inputs']['index']
+-    fixed(index_record)
+-    observed = read_json(Path(index_record['path']))
+-    rows, protected, history = [], [], []
+-    if len(observed['source_pairs']) != 27:
+-        raise ValueError('exact 27 source pairs required')
+-    for pair in observed['source_pairs']:
+-        fixed(pair['current'])
+-        fixed(pair['archive'])
+-        path = Path(pair['current']['path'])
++    observed, resolved, history, absent = resolved_evidence(plan, gate)
++    fixed(plan['inputs']['baseline_index'])
++    baseline = read_json(Path(plan['inputs']['baseline_index']['path']))
++    original = {row['path']: row for row in baseline['sources']}
++    if (len(observed['current_sources']) != 27 or len(original) != 27
++            or set(original) != {row['path'] for row in observed['current_sources']}
++            or len(observed['protected']) != 211):
++        raise ValueError('exact current27/protected211 source interval required')
++    rows = []
++    for current in observed['current_sources']:
++        fixed(current)
++        path = Path(current['path'])
+         raw = path.read_bytes()
+-        if raw != Path(pair['archive']['path']).read_bytes():
+-            raise ValueError('physical source/archive mismatch')
++        reference = original[str(path)]
++        if (raw != base64.b64decode(reference['base64'], validate=True)
++                or path.stat().st_mode != reference['mode']):
++            raise ValueError('current source differs from accepted R235 candidate')
+         target = out / 'before/sources' / path.relative_to(ROOT)
+         target.parent.mkdir(parents=True, exist_ok=True)
+         with target.open('xb') as handle:
+@@ -352,39 +396,37 @@
+         if target.read_bytes() != raw:
+             raise OSError('physical source archive readback mismatch')
+         rows.append({**file_pin(path), 'mode': path.stat().st_mode,
+-                     'base64': base64.b64encode(raw).decode(),
+-                     'physical_archive': file_pin(target)})
+-    fixed(observed['protected_manifest'])
+-    protected = read_json(Path(observed['protected_manifest']['path']))['protected']
+-    if len(protected) != 211:
+-        raise ValueError('exact 211 protected inputs required')
+-    for row in protected:
++                     'base64': base64.b64encode(raw).decode(), 'physical_archive': file_pin(target)})
++    for row in observed['protected']:
+         fixed(row)
+-    for row in observed['inputs'] + observed['current_old_roles']:
+-        fixed(row)
+-        history.append(row)
+     controls = []
+     for name in ('plan.json', 'input-observation.json', 'root-activation.json', 'source-gate.json'):
+         path = D / name
+         raw = path.read_bytes()
+         controls.append({**file_pin(path), 'base64': base64.b64encode(raw).decode()})
+-    for row in (gate['source'], gate['observer_source']):
++    for row in (gate['source'], gate['observer_source'], gate['prerequisite_source'], gate['resolved_history_pin']):
+         fixed(row)
+         raw = Path(row['path']).read_bytes()
+         controls.append({**file_pin(Path(row['path'])), 'base64': base64.b64encode(raw).decode()})
++    for field, source in (('trace', gate['observer_source']), ('prerequisite', gate['prerequisite_source'])):
++        if {k: source[k] for k in ('path', 'bytes', 'sha256')} != {
++                k: plan['reuse'][field][k] for k in ('path', 'bytes', 'sha256')}:
++            raise ValueError('frozen reused plugin identity differs')
+     for name, raw in (('command-ledger.json', author_data),
+                       ('root-command-ledger.json', root_data), ('script-gate.json', gate_data)):
+         controls.append({'path': str(D / name), 'bytes': len(raw),
+                          'sha256': hashlib.sha256(raw).hexdigest(),
+                          'base64': base64.b64encode(raw).decode()})
+-    result = {'round': 'R234', 'sources': rows, 'protected': protected,
+-              'history': history, 'controls': controls, 'product_execution': False}
++    result = {'round': 'R236', 'sources': rows, 'protected': observed['protected'],
++              'history': history, 'resolved_history': resolved, 'absent_sidecars': absent,
++              'controls': controls, 'product_execution': False}
+     path = out / 'before/source-index.json'
+     save(path, result)
+     return {**result, 'index_pin': file_pin(path)}
+ 
+ 
+-def check_sources_after(before):
++def check_sources_after(before, plan, gate):
++    resolved_evidence(plan, gate)
+     for row in before['sources'] + before['protected'] + before['history']:
+         fixed(row)
+         if 'mode' in row and Path(row['path']).stat().st_mode != row['mode']:
+@@ -396,16 +438,37 @@
+             original_gate = next(item for item in before['controls']
+                                  if item['path'] == str(D / 'script-gate.json'))
+             archived_gate = json.loads(base64.b64decode(original_gate['base64'], validate=True))
+-            expected['commands']['R234_exception_capture'].update(
++            expected['commands']['R236_exception_capture'].update(
+                 state='SPENT', used=1, remaining=0,
+-                reservation_id=archived_gate['commands']['R234_exception_capture']['reservation_id'])
++                reservation_id=archived_gate['commands']['R236_exception_capture']['reservation_id'])
+             if path.read_bytes() != encoded(expected):
+                 raise ValueError('author role differs beyond exact single-slot consumption')
+         else:
+             fixed(row)
+     return {'all_unchanged': True, 'sources': [{k: row[k] for k in ('path', 'bytes', 'sha256')}
+                                              for row in before['sources']],
+-            'protected_count': len(before['protected']), 'source_count': len(before['sources'])}
++            'protected_count': len(before['protected']), 'source_count': len(before['sources']),
++            'retained_database_count': 12, 'absent_sidecar_count': len(before['absent_sidecars'])}
++
++
++def prerequisite_record(plan, command, child_pid):
++    path = Path(command['finite_env']['BIGSMALL_R235_PREREQUISITE_RECORD'])
++    value = read_json(path)
++    expected = plan['reuse']['prerequisite']
++    if (value['schema_version'] != expected['raw_schema'] or value['pid'] != child_pid
++            or value['module_name'] != expected['module']
++            or value['expected_pin'] != expected['module_pin']
++            or value['actual_file_pin'] != expected['module_pin']
++            or value['accepted_prerequisite'] is not True or value['exception'] is not None
++            or value['same_sys_modules_object_after'] is not True
++            or value['pre_import_hooks_empty'] is not True
++            or value['profile_trace_before_after_equal'] is not True
++            or any(item is not None for item in value['profile_trace_before'])
++            or any(item is not None for item in value['profile_trace_after'])
++            or value['pre_observer_resource_measurement'] is not None
++            or (value['already_loaded_before'] and value['same_previously_loaded_object'] is not True)):
++        raise ValueError('startup prerequisite evidence incomplete or different')
++    return {'pin': file_pin(path), 'data': value}
+ 
+ 
+ def trace_records(directory, expected, child_pid, targets, resources):
+@@ -476,7 +539,7 @@
+             or gate['reservation_id'] != reservation['reservation_id']):
+         raise ValueError('exact one-use ROOT reservation/author gate required')
+     launcher = execution['launcher_argv']
+-    if (key != 'R234_exception_capture' or sys.argv != launcher[1:] or Path.cwd() != ROOT or gate['launcher_argv'] != launcher
++    if (key != 'R236_exception_capture' or sys.argv != launcher[1:] or Path.cwd() != ROOT or gate['launcher_argv'] != launcher
+             or gate['argv'] != command['argv'] or entry['argv'] != command['argv']
+             or gate['finite_env'] != command['finite_env'] or gate['cwd'] != str(ROOT)
+             or gate['timeout_seconds'] != command['timeout_seconds']
+@@ -484,7 +547,8 @@
+         raise ValueError('exact command/launcher/environment/cap mismatch')
+     fixed(gate['source'])
+     fixed(gate['observer_source'])
+-    mutable = {str(directory / name) for directory in (D, D.parent / 'round223-p6-t2-public-writer-binding-race-20261015') for name in ('script-gate.json', 'source-gate.json', 'root-activation.json', 'command-ledger.json', 'root-command-ledger.json')}
++    fixed(gate['prerequisite_source'])
++    mutable = {str(D / name) for name in ('script-gate.json', 'source-gate.json', 'root-activation.json', 'command-ledger.json', 'root-command-ledger.json')}
+     for record in gate['input_records']:
+         if record['path'] in mutable:
+             raise ValueError('mutable role/gate cannot enter current-fixed input loop')
+@@ -500,7 +564,7 @@
+             Path(command['finite_env'][name]).mkdir(parents=True, exist_ok=False)
+     # This is part of the single diagnostic action, never a separate baseline command.
+     before = capture_sources(plan, gate, out, author_data, root_data, gate_data)
+-    invocation = {'round': 'R234', 'command': key, 'argv': command['argv'], 'launcher_argv': launcher,
++    invocation = {'round': 'R236', 'command': key, 'argv': command['argv'], 'launcher_argv': launcher,
+                   'cwd': str(ROOT), 'finite_env': command['finite_env'], 'timeout_seconds': command['timeout_seconds'],
+                   'cleanup_seconds': 15, 'attempt': 1, 'retry': 0, 'reservation_id': gate['reservation_id'],
+                   'source': gate['source'], 'script_gate': file_pin(D / 'script-gate.json'),
+@@ -508,7 +572,9 @@
+                   'author_ledger_before_base64': base64.b64encode(author_data).decode(),
+                   'root_ledger_before_base64': base64.b64encode(root_data).decode(),
+                   'outer_capture': gate['transport'], 'independent_tool_streams': None,
+-                  'source_before_pin': before['index_pin'], 'observer_source': gate['observer_source']}
++                  'source_before_pin': before['index_pin'], 'observer_source': gate['observer_source'],
++                  'prerequisite_source': gate['prerequisite_source'],
++                  'resolved_history_pin': gate['resolved_history_pin'], 'reused_plugins': plan['reuse']}
+     save(out / 'invocation.json', invocation)
+     if ((D / 'command-ledger.json').read_bytes() != author_data
+             or (D / 'root-command-ledger.json').read_bytes() != root_data
+@@ -537,7 +603,7 @@
+         failure = {'type': type(error).__name__, 'message': str(error), 'traceback': traceback.format_exc()}
+     xml, resources, case_records, observation_errors = None, None, [], []
+     traces = []
+-    source_after = None
++    source_after, prerequisite = None, None
+     if key != 'ruff':
+         try:
+             xml = junit(out / 'junit.xml', expected)
+@@ -564,12 +630,19 @@
+     try:
+         traces = trace_records(Path(command['finite_env']['BIGSMALL_R234_TRACE_ROOT']),
+                                expected, None if process is None else process.pid,
+-                               plan['observer_contract']['targets'], resources)
++                               [{'path': str(ROOT / row[0]), 'qualname': row[1], 'first_line': row[2],
++                                 'line_events': plan['reuse']['trace']['serve_first_line_milestones']
++                                 if row[1] == 'OperationalLeaseSession._serve' else []}
++                                for row in plan['reuse']['trace']['targets']], resources)
+         save(out / 'trace-summary.json', {'records': traces, 'diagnostic_only': True})
+     except BaseException as error:
+         observation_errors.append({'stage': 'trace', 'type': type(error).__name__, 'message': str(error)})
+     try:
+-        source_after = check_sources_after(before)
++        prerequisite = prerequisite_record(plan, command, None if process is None else process.pid)
++    except BaseException as error:
++        observation_errors.append({'stage': 'prerequisite', 'type': type(error).__name__, 'message': str(error)})
++    try:
++        source_after = check_sources_after(before, plan, gate)
+         save(out / 'source-after.json', source_after)
+     except BaseException as error:
+         observation_errors.append({'stage': 'source-after', 'type': type(error).__name__, 'message': str(error)})
+@@ -584,17 +657,19 @@
+                 and xml['names_exact'] and xml['tests'] == 3
+                 and resources is not None and resources['all_records_valid']
+                 and len(traces) == 3 and all(row['data']['capture_complete'] for row in traces)
++                and prerequisite is not None and prerequisite['data']['accepted_prerequisite'] is True
+                 and source_after is not None and source_after['all_unchanged'] is True)
+     # Diagnostic success never means the underlying tests or product passed.
+     wrapper_exit = 0 if accepted else 1
+     streams = {name: file_pin(out / (name + '.txt')) if (out / (name + '.txt')).is_file() else None
+                for name in ('stdout', 'stderr')}
+-    result = {'round': 'R234', 'command': key, 'attempt': 1, 'retry': 0, 'child_pid': None if process is None else process.pid,
++    result = {'round': 'R236', 'command': key, 'attempt': 1, 'retry': 0, 'child_pid': None if process is None else process.pid,
+               'child_exit': child_exit, 'wrapper_exit': wrapper_exit, 'accepted_command_outcome': bool(accepted),
+               'timed_out': timed_out, 'cleanup': cleaned, 'JUnit': xml, 'resource_summary': resources,
+               'cases': case_records, 'streams': streams, 'input_records': gate['input_records'],
+               'invocation': invocation, 'source_index_pin': before['index_pin'],
+               'source_before': before, 'source_after': source_after, 'traces': traces,
++              'prerequisite': prerequisite, 'reused_plugins': plan['reuse'],
+               'diagnostic_capture_complete': bool(accepted), 'legal_RED': False,
+               'GREEN': False, 'product_acceptance': False,
+               'file_index': index(out), 'temp_index': [] if base is None else index(base),
+@@ -611,13 +686,13 @@
+ 
+ if __name__ == '__main__':
+     if sys.argv != [str(D / 'implementation/run-capture.py'), 'capture']:
+-        raise SystemExit('exact R234 capture launcher required')
++        raise SystemExit('exact R236 capture launcher required')
+     try:
+-        raise SystemExit(main('R234_exception_capture'))
++        raise SystemExit(main('R236_exception_capture'))
+     except Exception as error:
+         out = D / 'implementation/capture'
+         out.mkdir(parents=True, exist_ok=True)
+-        failure = {'round': 'R234', 'command': 'R234_exception_capture',
++        failure = {'round': 'R236', 'command': 'R236_exception_capture',
+                    'attempt': 1, 'retry': 0, 'wrapper_exit': 1, 'child_exit': None,
+                    'diagnostic_capture_complete': False, 'legal_RED': False,
+                    'GREEN': False, 'product_acceptance': False,
+@@ -626,7 +701,7 @@
+                    'file_index': index(out)}
+         if not (out / 'result.json').exists():
+             save(out / 'result.json', failure)
+-        print(json.dumps({'command': 'R234_exception_capture', 'wrapper_exit': 1,
++        print(json.dumps({'command': 'R236_exception_capture', 'wrapper_exit': 1,
+                           'diagnostic_capture_complete': False,
+                           'result_pin': file_pin(out / 'result.json')}, ensure_ascii=False))
+         raise SystemExit(1)

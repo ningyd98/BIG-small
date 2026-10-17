@@ -1,0 +1,59 @@
+    def _request_visual(self, messages: list[dict[str, Any]],
+                        decision_schema: dict[str, Any]) -> dict[str, Any]:
+        if self.provider == "ollama":
+            info = self._post("/api/show", {"model": self.model_name})
+            if "vision" not in info.get("capabilities", []):
+                raise RGBDModelUnavailable(
+                    "RGBD_MODEL_UNAVAILABLE: selected model does not advertise vision capability"
+                )
+            if self.model_snapshot and self.model_snapshot.weight_digest:
+                matches = [
+                    item
+                    for item in self._get("/api/tags").get("models", [])
+                    if isinstance(item, dict) and item.get("name") == self.model_name
+                ]
+                if (
+                    len(matches) != 1
+                    or matches[0].get("digest") != self.model_snapshot.weight_digest
+                ):
+                    raise RGBDModelUnavailable(
+                        "RGBD_MODEL_UNAVAILABLE: model digest differs from frozen snapshot"
+                    )
+                quantization = info.get("details", {}).get("quantization_level")
+                if quantization != self.model_snapshot.quantization:
+                    raise RGBDModelUnavailable(
+                        "RGBD_MODEL_UNAVAILABLE: quantization differs from frozen snapshot"
+                    )
+            generation = (
+                dict(self.model_snapshot.generation_parameters)
+                if self.model_snapshot
+                else {"temperature": 0, "num_ctx": 4096, "num_predict": 512}
+            )
+            body = {
+                "model": self.model_name,
+                "messages": messages,
+                "stream": False,
+                "format": decision_schema,
+                "think": generation.pop("think", False),
+                "keep_alive": "10m",
+                "options": generation,
+            }
+            path = "/api/chat"
+        else:
+            if not self.allow_paid:
+                raise RGBDModelUnavailable(
+                    "RGBD_MODEL_UNAVAILABLE: compatible provider requires "
+                    "BIGSMALL_VLM_ALLOW_PAID_CALL=true"
+                )
+            generation = (
+                dict(self.model_snapshot.generation_parameters) if self.model_snapshot else {}
+            )
+            body = {
+                "model": self.model_name,
+                "messages": compatible_messages(messages),
+                "temperature": generation.get("temperature", 0),
+                "max_tokens": generation.get("num_predict", 512),
+                "response_format": {"type": "json_object"},
+            }
+            path = self.chat_path
+        return self._post(path, body)

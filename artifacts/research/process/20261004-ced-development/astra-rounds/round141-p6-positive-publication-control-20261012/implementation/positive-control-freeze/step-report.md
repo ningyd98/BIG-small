@@ -1,0 +1,1 @@
+R141 positive_control 单次实际 exit0，JUnit 1 passed，无failure/error/skip。完整冻结65实际fixture文件与1 symlink元数据、六源及原始输出。实际public记录为SUCCEEDED、attempt已结束、lease已释放，consistency=true；软件控制标志不是物理证据。原四终门保持HELD，等待ROOT独立核对。

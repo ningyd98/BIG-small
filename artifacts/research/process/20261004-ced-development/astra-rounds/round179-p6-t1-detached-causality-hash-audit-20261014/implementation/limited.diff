@@ -1,0 +1,635 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py.R175
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -2813,3 +2813,632 @@
+         with destination.open("xb") as out:
+             out.write(_b_canonical(goldens) + b"\n")
+     (tmp_path / "legacy-golden-control.json").write_bytes(_b_canonical({"tags": sorted(goldens), "golden_byte_match": True}) + b"\n")
++
++
++# R179 caller-created detached audit regressions; no builder installs authority.
++def _r179_hash(value):
++    import hashlib
++    import json
++
++    return hashlib.sha256(json.dumps(
++        value, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("utf-8")).hexdigest()
++
++
++def _r179_projection(value):
++    if isinstance(value, list):
++        return [_r179_projection(item) for item in value]
++    if isinstance(value, dict):
++        if (value.get("schema_version") in _b_fields()
++                and set(value) == {"schema_version", "payload", "original_time",
++                                   "decision", "transaction", "diagnostics"}):
++            return {
++                "schema_version": value["schema_version"],
++                "payload": _r179_projection(value["payload"]),
++                "original_time": copy.deepcopy(value["original_time"]),
++            }
++        return {key: _r179_projection(item) for key, item in value.items()}
++    return value
++
++
++def _r179_state_hash(record):
++    body = copy.deepcopy(record["payload"])
++    body.pop("history")
++    return _r179_hash({
++        "schema_version": record["schema_version"],
++        "payload": _r179_projection(body),
++        "original_time": record["original_time"],
++    })
++
++
++def _r179_publication_hash(record):
++    body = copy.deepcopy(record["payload"])
++    body.pop("publication_hash")
++    return _r179_hash({
++        "schema_version": "visual.owner.publication.local.v1",
++        "payload": _r179_projection(body),
++        "original_time": record["original_time"],
++    })
++
++
++def _r179_envelope(tag, body, original, current):
++    request = tag.endswith((".definition.local.v1", ".transition.local.v1",
++                            ".promotion.local.v1", ".route-input.local.v1"))
++    decision = None if request else _b_decision(original, current)
++    return {
++        "schema_version": tag, "payload": copy.deepcopy(body),
++        "original_time": copy.deepcopy(original), "decision": decision,
++        "transaction": None if request else _b_transaction(decision),
++        "diagnostics": {"utc": {}, "monotonic": None},
++    }
++
++
++def _r179_pool(raw, original, current):
++    import json
++
++    raw = json.loads(json.dumps(raw, allow_nan=False))
++    body = {key: copy.deepcopy(raw[key]) for key in _b_fields()[
++        "recovery.verification-budget.local.v1"]}
++    body["state"].pop("deadline_at", None)
++    body["state"]["original_budget_reference"] = copy.deepcopy(
++        original["verification_reference"])
++    body["content_hash"] = _r179_hash({
++        "schema_version": "recovery.verification-budget.local.v1",
++        "task_id": body["task_id"], "state": body["state"], "revision": body["revision"],
++    })
++    return _r179_envelope("recovery.verification-budget.local.v1", body, original, current)
++
++
++def _r179_retry(raw, original, current):
++    body = {key: copy.deepcopy(raw[key]) for key in _b_fields()[
++        "recovery.retry-budget.local.v1"]}
++    return _r179_envelope("recovery.retry-budget.local.v1", body, original, current)
++
++
++def _r179_publication(raw, original, current, verification=None, retry=None):
++    body = {key: copy.deepcopy(raw[key]) for key in _b_fields()[
++        "visual.owner.publication.local.v1"]}
++    body["verification_budget"] = (verification if verification is not None else
++        _r179_pool(raw["verification_budget"], original, current))
++    body["retry_budget"] = (retry if retry is not None else
++        _r179_retry(raw["retry_budget"], original, current))
++    record = _r179_envelope("visual.owner.publication.local.v1", body, original, current)
++    record["payload"]["publication_hash"] = _r179_publication_hash(record)
++    return record
++
++
++def _r179_fixture(monkeypatch):
++    legacy = _b_legacy_sources(monkeypatch)
++    original, current = _b_detached_original(legacy)
++    cases = _b_local_cases(legacy, original, current)
++    publication = _r179_publication(
++        legacy["data"]["publication"].to_payload(), original, current)
++    route = copy.deepcopy(cases["visual.verification.route.local.v1"])
++    body = route["payload"]
++    before = _r179_pool(body["before_verification_budget"], original, current)
++    after = _r179_pool(body["after_verification_budget"], original, current)
++    request = copy.deepcopy(cases["visual.verification.route-input.local.v1"])
++    request["diagnostics"] = {"utc": {}, "monotonic": None}
++    request["payload"]["publication"] = _r179_publication(
++        body["input"]["publication"], original, current, verification=before)
++    body["input"] = request
++    body["input_hash"] = _r179_hash(request)
++    body["semantic_hash"] = _r179_route_semantic(request)
++    source = legacy["sources"]["visual.verification.route-input.v2"]
++    prior = legacy["data"]["original"]
++    observation = source.online().observation
++    body["source_key"] = _r179_hash({
++        "schema_version": "visual.verification.source-key.local.v1",
++        "original_time_hash": _r179_hash(original), "original_plan_hash": prior.digest(),
++        "task_id": prior.identity.task_id, "step_id": request["payload"]["step_id"],
++        "attempt": request["payload"]["attempt"], "phase": request["payload"]["phase"],
++        "frame_id": observation.observation_id, "frame_checksum": observation.checksum_sha256,
++        "plan_version": prior.contract.plan_version, "command_seq": prior.contract.command_seq,
++        "requirements_hash": prior.requirements[request["payload"]["step_id"]].digest(),
++    })
++    body["before_verification_budget"], body["after_verification_budget"] = before, after
++    if body["produced_publication"] is not None:
++        body["produced_publication"] = _r179_publication(
++            body["produced_publication"], original, current, verification=after)
++        body["produced_publication_hash"] = body["produced_publication"]["payload"]["publication_hash"]
++    route["diagnostics"] = {"utc": {}, "monotonic": None}
++    return {"legacy": legacy, "original": original, "current": current,
++            "cases": cases, "publication": publication, "route": route}
++
++
++def _r179_route_semantic(request):
++    body = copy.deepcopy(request["payload"])
++    body.pop("event_key")
++    return _r179_hash({
++        "schema_version": "visual.verification.route-input.local.v1",
++        "payload": _r179_projection(body), "original_time": request["original_time"],
++    })
++
++
++def _r179_accepted(record):
++    from cloud_edge_robot_arm.vision.local_temporal import LocalEnvelope
++
++    decoded = LocalEnvelope.from_payload(record)
++    assert decoded.to_payload() == record, "R179 complete baseline must decode before mutation"
++    domain = _b_decode_domain(record["schema_version"], record)
++    assert domain.to_payload() == record
++    return domain
++
++
++def _r179_evidence(tmp_path, seed, changed, target):
++    import json
++
++    with (tmp_path / "r179-case.json").open("x") as stream:
++        json.dump({"target": target, "seed": seed, "mutation": changed,
++                   "seed_sha256": _r179_hash(seed),
++                   "mutation_sha256": _r179_hash(changed),
++                   "claim": "Caller-created detached data; no issuer/NEW_COMMIT proof."},
++                  stream, allow_nan=False, sort_keys=True, indent=2)
++
++
++def _r179_initial(fixture, family):
++    tag = "visual." + family + ".record.local.v1"
++    record = copy.deepcopy(fixture["cases"][tag])
++    body = record["payload"]
++    body["revision"], body["history"] = 0, []
++    record["diagnostics"] = {"utc": {}, "monotonic": None}
++    if family == "bootstrap":
++        limits = body["definition"]["verification_limits"]
++        body["state"].update(
++            remaining_reobservations=limits["max_reobservations"],
++            remaining_retries=limits["max_retries"], consecutive_no_progress=0,
++            previous_conditions={}, exhausted_reason=None, verification_rounds=0)
++        body.update(initial_capture_claimed=False, pending=None, observation=None,
++                    camera_descriptor_hash=None, draft=None, planning_source_usable=False,
++                    proposal_hash=None, terminal_reason=None, adopted_original_hash=None)
++    else:
++        body.update(captures_reserved=0, supervisor_calls_reserved=0,
++                    last_capture_cursor=0, last_wait_cursor=0, wait_seconds_reserved=0.0,
++                    claims={})
++    return record
++
++
++def _r179_history_request(fixture, record, family, kind, event_key):
++    tag = "visual." + family + ".transition.local.v1"
++    request = copy.deepcopy(fixture["cases"][tag])
++    request["original_time"] = copy.deepcopy(record["original_time"])
++    request["diagnostics"] = {"utc": {}, "monotonic": None}
++    body = request["payload"]
++    body.update(kind=kind, event_key=event_key,
++                definition_hash=_r179_hash(record["payload"]["definition"]),
++                expected_record_hash=_r179_state_hash(record), claim_id=None,
++                observation=None)
++    if family == "bootstrap":
++        definition = record["payload"]["definition"]
++        lease = definition["lease"]
++        body["bootstrap_id"] = _r179_hash([
++            "visual.bootstrap.job-run.v1", lease["job_id"], lease["run_id"]])
++        body["draft"] = None
++    else:
++        body.update(expected_revision=record["payload"]["revision"], cursor=1,
++                    context=None, decision=None, wait_duration_s=None, wait_elapsed_s=None)
++        if kind == "RESERVE_WAIT":
++            body["wait_duration_s"] = 0.1
++    return request
++
++
++def _r179_history_event(record, request, post):
++    operation = _r179_hash({
++        "schema_version": "visual.local-history-operation.v1",
++        "request": _r179_projection(request),
++    })
++    decision = copy.deepcopy(record["decision"])
++    decision.update(operation_id=request["payload"]["event_key"],
++                    operation_sha256=operation)
++    transaction = _b_transaction(decision)
++    transaction.update(event_key=request["payload"]["event_key"],
++                       event_kind=request["schema_version"],
++                       expected_event_revision=record["payload"]["revision"],
++                       event_revision=post["payload"]["revision"],
++                       event_record_hash=_r179_state_hash(post))
++    return {"request": request, "decision": decision, "transaction": transaction,
++            "resulting_record_hash": _r179_state_hash(post)}
++
++
++def _r179_reserved(fixture, family="bootstrap"):
++    initial = _r179_initial(fixture, family)
++    kind = "RESERVE_INITIAL_CAPTURE" if family == "bootstrap" else "RESERVE_WAIT"
++    request = _r179_history_request(fixture, initial, family, kind, "r179-reserve-" + family)
++    post = copy.deepcopy(initial)
++    body = post["payload"]
++    body["revision"] = 1
++    if family == "bootstrap":
++        claim_id = _r179_hash([
++            request["payload"]["bootstrap_id"], _r179_state_hash(initial), kind])
++        body.update(initial_capture_claimed=True,
++                    pending={"claim_id": claim_id, "effect": "CAPTURE"})
++    else:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import _bundle
++
++        source = request["payload"]
++        definition = body["definition"]
++        publication = source["publication"]
++        claim_id = _r179_hash([
++            "visual.supervision.claim.v1", source["definition_hash"], "WAIT", source["cursor"]])
++        body.update(last_wait_cursor=1, wait_seconds_reserved=0.1)
++        # Preserve semantic claim fields; no caller-created current UTC timestamp.
++        body["claims"][claim_id] = {
++            "kind": "WAIT", "cursor": 1, "step_id": source["step_id"],
++            "publication_hash": publication["publication_hash"],
++            "checkpoint_hash": publication["checkpoint"]["checkpoint_hash"],
++            "state_generation": publication["state_generation"],
++            "observation": None, "context": None, "decision": None,
++            "model_snapshot_hash": source["model_snapshot_hash"],
++            "cloud_snapshot": copy.deepcopy(definition["role_bundle"]["cloud_snapshot"]),
++            "cloud_snapshot_hash": _bundle(definition["role_bundle"]).cloud_snapshot.digest(),
++            "source_hashes": copy.deepcopy(source["original"]["source_hashes"]),
++            "wait_duration_s": 0.1, "wait_elapsed_s": None, "status": "WAIT_PENDING",
++        }
++    event = _r179_history_event(initial, request, post)
++    body["history"] = [event]
++    post["decision"], post["transaction"] = copy.deepcopy(event["decision"]), copy.deepcopy(event["transaction"])
++    return initial, post, claim_id
++
++
++def _r179_completed(fixture, family):
++    initial, reserved, claim_id = _r179_reserved(fixture, family)
++    kind = "COMPLETE_CAPTURE" if family == "bootstrap" else "COMPLETE_WAIT"
++    request = _r179_history_request(fixture, reserved, family, kind, "r179-complete-" + family)
++    request["payload"]["claim_id"] = claim_id
++    post = copy.deepcopy(reserved)
++    post["payload"]["revision"] = 2
++    if family == "bootstrap":
++        observation = copy.deepcopy(fixture["cases"][
++            "visual.bootstrap.record.local.v1"]["payload"]["observation"])
++        assert observation is not None
++        request["payload"]["observation"] = observation
++        camera = {"schema_version": "visual.rgbd.camera-source-descriptor.v1",
++                  **{key: observation[key] for key in (
++                      "source", "width", "height", "intrinsics", "camera_to_world",
++                      "depth_convention", "calibration_version")}}
++        post["payload"].update(observation=observation,
++                               camera_descriptor_hash=_r179_hash(camera), pending=None)
++    else:
++        request["payload"]["wait_elapsed_s"] = 0.05
++        post["payload"]["claims"][claim_id].update(
++            status="WAIT_COMPLETE", wait_elapsed_s=0.05)
++    event = _r179_history_event(reserved, request, post)
++    post["payload"]["history"].append(event)
++    post["decision"], post["transaction"] = copy.deepcopy(event["decision"]), copy.deepcopy(event["transaction"])
++    return initial, reserved, post
++
++
++@pytest.mark.parametrize("mutation", [
++    "request_event", "operation", "request_kind", "result_hash",
++    "cas_prestate", "transaction_event", "final_state",
++])
++def test_r179_history_binding_rejects(monkeypatch, tmp_path, mutation):
++    fixture = _r179_fixture(monkeypatch)
++    initial, seed, _ = _r179_reserved(fixture)
++    _r179_accepted(initial)
++    _r179_accepted(seed)
++    changed = copy.deepcopy(seed)
++    event = changed["payload"]["history"][0]
++    if mutation == "request_event":
++        event["request"]["payload"]["event_key"] = "r179-unbound-request-event"
++    elif mutation == "operation":
++        event["decision"]["operation_sha256"] = "d" * 64
++        event["transaction"]["operation_sha256"] = "d" * 64
++        changed["decision"]["operation_sha256"] = "d" * 64
++        changed["transaction"]["operation_sha256"] = "d" * 64
++    elif mutation == "request_kind":
++        wrong = _r179_history_request(
++            fixture, initial, "supervision", "RESERVE_WAIT",
++            event["request"]["payload"]["event_key"])
++        event["request"] = wrong
++    elif mutation == "result_hash":
++        event["resulting_record_hash"] = "e" * 64
++        event["transaction"]["event_record_hash"] = "e" * 64
++        changed["transaction"]["event_record_hash"] = "e" * 64
++    elif mutation == "cas_prestate":
++        event["request"]["payload"]["expected_record_hash"] = "f" * 64
++        operation = _r179_hash({
++            "schema_version": "visual.local-history-operation.v1",
++            "request": _r179_projection(event["request"])})
++        for decision in (event["decision"], changed["decision"]):
++            decision["operation_sha256"] = operation
++        for transaction in (event["transaction"], changed["transaction"]):
++            transaction["operation_sha256"] = operation
++    elif mutation == "transaction_event":
++        event["transaction"]["event_key"] = "r179-foreign-transaction-event"
++        changed["transaction"]["event_key"] = "r179-foreign-transaction-event"
++    else:
++        changed["payload"]["initial_capture_claimed"] = False
++        result = _r179_state_hash(changed)
++        event["resulting_record_hash"] = result
++        event["transaction"]["event_record_hash"] = result
++        changed["transaction"]["event_record_hash"] = result
++    _r179_evidence(tmp_path, seed, changed, "I1:" + mutation)
++    with pytest.raises(ValueError, match="history|request|operation|event|state|CAS|claim|bootstrap|supervision|result"):
++        _r179_accepted(changed)
++
++
++@pytest.mark.parametrize("utc_mode", ["without_utc", "with_utc", "partial_utc"])
++def test_r179_publication_hash_rejects(monkeypatch, tmp_path, utc_mode):
++    fixture = _r179_fixture(monkeypatch)
++    seed = copy.deepcopy(fixture["publication"])
++    raw = fixture["legacy"]["data"]["publication"].to_payload()
++    if utc_mode != "without_utc":
++        seed["diagnostics"]["utc"]["published_at"] = raw["published_at"]
++    if utc_mode == "with_utc":
++        seed["diagnostics"]["utc"]["effective_deadline_at"] = raw["effective_deadline_at"]
++    _r179_accepted(seed)
++    changed = copy.deepcopy(seed)
++    changed["payload"]["operation_hash"] = "d" * 64
++    assert _r179_publication_hash(changed) != seed["payload"]["publication_hash"]
++    _r179_evidence(tmp_path, seed, changed, "I2:" + utc_mode)
++    with pytest.raises(ValueError, match="publication|content|hash"):
++        _r179_accepted(changed)
++
++
++@pytest.mark.parametrize("label", ["semantic_hash", "source_key"])
++def test_r179_route_labels_recomputed(monkeypatch, tmp_path, label):
++    seed = _r179_fixture(monkeypatch)["route"]
++    _r179_accepted(seed)
++    changed = copy.deepcopy(seed)
++    changed["payload"][label] = "d" * 64
++    assert changed["payload"][label] != seed["payload"][label]
++    _r179_evidence(tmp_path, seed, changed, "I3:" + label)
++    with pytest.raises(ValueError, match="semantic|source|hash|label"):
++        _r179_accepted(changed)
++
++
++@pytest.mark.parametrize("location", [
++    "publication_verification", "publication_retry", "route_before", "route_after",
++])
++def test_r179_nested_original_rejects(monkeypatch, tmp_path, location):
++    fixture = _r179_fixture(monkeypatch)
++    seed = fixture["publication"] if location.startswith("publication") else fixture["route"]
++    _r179_accepted(seed)
++    changed = copy.deepcopy(seed)
++    key = {"publication_verification": "verification_budget", "publication_retry": "retry_budget",
++           "route_before": "before_verification_budget", "route_after": "after_verification_budget"}[location]
++    nested = changed["payload"][key]
++    alternate = copy.deepcopy(nested["original_time"])
++    alternate["verification_reference"]["window_id"] += "-same-task-other-original"
++    nested["original_time"] = alternate
++    nested["decision"]["original_time_hash"] = _r179_hash(alternate)
++    if key != "retry_budget":
++        nested["payload"]["state"]["original_budget_reference"] = copy.deepcopy(
++            alternate["verification_reference"])
++        body = nested["payload"]
++        body["content_hash"] = _r179_hash({
++            "schema_version": nested["schema_version"], "task_id": body["task_id"],
++            "state": body["state"], "revision": body["revision"]})
++    _r179_accepted(nested)
++    if location.startswith("publication"):
++        changed["payload"]["publication_hash"] = _r179_publication_hash(changed)
++    _r179_evidence(tmp_path, seed, changed, "I4:" + location)
++    with pytest.raises(ValueError, match="original|reference|causal|budget"):
++        _r179_accepted(changed)
++
++
++def _r179_causal_seed(fixture, case):
++    original = copy.deepcopy(fixture["original"])
++    if case in {"app_hard", "lease_acquisition"}:
++        if case == "app_hard":
++            for name in ("task_reference", "verification_reference", "recovery_reference"):
++                ref = original[name]
++                for hard in ref["hard_deadlines"]:
++                    hard["deadline_ns"] += 100
++                ref["deadline_ns"] += 100
++                ref["effective_upper"]["value_ns"] += 100
++        else:
++            acquisition = original["lease_identity"]["original_acquisition"]
++            acquisition.update(lower_ns=100, upper_ns=110,
++                               deadline_ns=100 + acquisition["budget_ns"])
++    current = {**copy.deepcopy(fixture["current"]), "lower_ns": 90, "upper_ns": 120}
++    decision = _b_decision(original, current)
++    decision.update(disposition="VALID", reasons=[],
++                    app_verdict={"status": "VALID", "reasons": []})
++    observation = decision["lease_observation"]
++    observation.update(status="VALID", reasons=[])
++    observation["current"].update(lower_ns=120, upper_ns=120)
++    if case == "lease_acquisition":
++        observation["segment"].update(lower_ns=0, upper_ns=120,
++                                     deadline_ns=observation["segment"]["budget_ns"])
++    if case == "lease_segment":
++        observation["segment"].update(event_id="r179-renewed-segment",
++            lower_ns=100, upper_ns=110, deadline_ns=100 + observation["segment"]["budget_ns"])
++        observation["generation"] = decision["lease_generation"] = decision["lease_row_revision"] = 2
++    if case == "app_age":
++        ref = copy.deepcopy(original["task_reference"])
++        ref.update(window_id="r179-capture-age", kind="capture", kind_policy="AGE_CLOSED",
++                   budget_semantics="AGE_CLOSED", budget_ns=1000,
++                   event_id="r179-capture-event", parents=[original["task_reference"]["window_id"]],
++                   age_constraints=[{
++                       "event_id": "r179-capture-event", "source_id": "r179-capture-age",
++                       "lower_ns": 100, "upper_ns": 110, "max_age_ns": 1000,
++                       "upper_age_inclusive": True, "expiry_upper_ns": 1100}],
++                   effective_upper={"value_ns": 1100, "inclusive": True})
++        decision["app_references"].append(ref)
++    return decision
++
++
++@pytest.mark.parametrize("case", ["app_hard", "app_age", "lease_acquisition", "lease_segment"])
++def test_r179_valid_causal_lower_bound(monkeypatch, tmp_path, case):
++    from cloud_edge_robot_arm.vision.local_temporal import LocalAuthorityDecision
++
++    fixture = _r179_fixture(monkeypatch)
++    seed = _r179_causal_seed(fixture, case)
++    assert LocalAuthorityDecision.from_payload(seed).to_payload() == seed
++    changed = copy.deepcopy(seed)
++    bracket = changed["app_current"] if case.startswith("app") else changed["lease_observation"]["current"]
++    bracket.update(lower_ns=99, upper_ns=99)
++    _r179_evidence(tmp_path, seed, changed, "I5:" + case)
++    with pytest.raises(ValueError, match="causal|origin|lower|source|acquisition|segment"):
++        LocalAuthorityDecision.from_payload(changed)
++
++
++def test_r179_scope_null_rejected(monkeypatch, tmp_path):
++    fixture = _r179_fixture(monkeypatch)
++    seeds = fixture["cases"]
++    for tag, seed in seeds.items():
++        if "scope" not in _b_fields()[tag]:
++            continue
++        _r179_accepted(seed)
++        changed = copy.deepcopy(seed)
++        changed["payload"]["scope"] = None
++        with pytest.raises(ValueError, match="scope"):
++            _r179_accepted(changed)
++    _r179_evidence(tmp_path, sorted(seeds), None, "M1:exact-required-scope")
++
++
++def _r179_registries():
++    from cloud_edge_robot_arm.simulation_runtime import operational_lease
++    from cloud_edge_robot_arm.vision import operational_windows
++
++    return [
++        operational_windows._OWNERS, operational_windows._PENDING,
++        operational_windows._HANDOFFS, operational_windows._SCOPES,
++        operational_windows._TRANSITIONS, operational_lease._SESSIONS,
++        operational_lease._VIEWS, operational_lease._PROPOSALS, operational_lease._ACKS,
++    ]
++
++
++@pytest.mark.parametrize("family", ["bootstrap", "supervision"])
++def test_r179_history_replay_positive(monkeypatch, tmp_path, family):
++    registries = _r179_registries()
++    before = [dict(registry) for registry in registries]
++    fixture = _r179_fixture(monkeypatch)
++    initial, reserved, complete = _r179_completed(fixture, family)
++    for record in (initial, reserved, complete):
++        _r179_accepted(record)
++    assert complete["payload"]["revision"] == 2
++    events = complete["payload"]["history"]
++    for index, event in enumerate(events):
++        assert set(event) == {"request", "decision", "transaction", "resulting_record_hash"}
++        assert event["transaction"]["event_revision"] == index + 1
++        assert event["transaction"]["event_record_hash"] == event["resulting_record_hash"]
++        if index:
++            assert event["request"]["payload"]["expected_record_hash"] == events[index - 1]["resulting_record_hash"]
++    assert events[0]["request"]["payload"]["expected_record_hash"] == _r179_state_hash(initial)
++    assert events[-1]["resulting_record_hash"] == _r179_state_hash(complete)
++    assert [dict(registry) for registry in registries] == before
++    _r179_evidence(tmp_path, initial, complete, "I1:legal-two-phase-" + family)
++
++
++@pytest.mark.parametrize("mutation", ["outer_diagnostics", "nested_diagnostics", "nested_renewal"])
++def test_r179_semantic_projection_invariant(monkeypatch, tmp_path, mutation):
++    fixture = _r179_fixture(monkeypatch)
++    seed = fixture["route"]["payload"]["input"]
++    decoded = _r179_accepted(seed)
++    changed = copy.deepcopy(seed)
++    nested = changed["payload"]["publication"]
++    if mutation == "outer_diagnostics":
++        changed["diagnostics"]["monotonic"] = 123.0
++    elif mutation == "nested_diagnostics":
++        nested["payload"]["verification_budget"]["diagnostics"]["monotonic"] = 123.0
++    else:
++        pool = nested["payload"]["verification_budget"]
++        pool["decision"] = _b_decision(pool["original_time"], fixture["current"], 2)
++        pool["transaction"] = _b_transaction(pool["decision"])
++    changed_domain = _r179_accepted(changed)
++    assert _r179_route_semantic(seed) == _r179_route_semantic(changed)
++    assert decoded.semantic_hash() == changed_domain.semantic_hash()
++    assert decoded.source_key() == changed_domain.source_key()
++    assert _r179_publication_hash(seed["payload"]["publication"]) == _r179_publication_hash(nested)
++    assert _r179_hash(seed) != _r179_hash(changed)
++    assert decoded.digest() != changed_domain.digest()
++    substantive = copy.deepcopy(changed)
++    substantive["payload"]["publication"]["payload"]["operation_hash"] = "d" * 64
++    substantive["payload"]["publication"]["payload"]["publication_hash"] = _r179_publication_hash(
++        substantive["payload"]["publication"])
++    substantive_domain = _r179_accepted(substantive)
++    assert substantive_domain.semantic_hash() != changed_domain.semantic_hash()
++    _r179_evidence(tmp_path, seed, changed, "I3:permitted-" + mutation)
++
++
++def test_r179_causal_overlap_positive(monkeypatch, tmp_path):
++    from cloud_edge_robot_arm.vision.local_temporal import LocalAuthorityDecision
++
++    seed = _r179_causal_seed(_r179_fixture(monkeypatch), "app_age")
++    assert seed["app_current"]["lower_ns"] < seed["app_references"][-1]["age_constraints"][0]["upper_ns"]
++    assert LocalAuthorityDecision.from_payload(seed).to_payload() == seed
++    _r179_evidence(tmp_path, seed, None, "I5:overlap-allowed")
++
++
++def test_r179_cross_domain_causality_rejected(monkeypatch, tmp_path):
++    from cloud_edge_robot_arm.vision.local_temporal import LocalAuthorityDecision
++
++    seed = _r179_causal_seed(_r179_fixture(monkeypatch), "app_age")
++    assert LocalAuthorityDecision.from_payload(seed).to_payload() == seed
++    changed = copy.deepcopy(seed)
++    changed["app_references"][-1]["domain"]["startup_nonce"] = "r179-foreign-same-numeric-bracket"
++    with pytest.raises(ValueError, match="domain|same original"):
++        LocalAuthorityDecision.from_payload(changed)
++    _r179_evidence(tmp_path, seed, changed, "I5:foreign-domain")
++
++
++@pytest.mark.parametrize("variant", ["local", "legacy"])
++def test_r179_publication_history_getters(monkeypatch, tmp_path, variant):
++    from cloud_edge_robot_arm.contracts.models import RecoveryBudget
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++        LocalRetryBudgetRecord, LocalVerificationBudgetRecord, VerificationBudgetRecord,
++    )
++
++    registries = _r179_registries()
++    before = [dict(registry) for registry in registries]
++    fixture = _r179_fixture(monkeypatch)
++    seed = copy.deepcopy(fixture["publication"])
++    if variant == "legacy":
++        source = fixture["legacy"]["data"]["publication"].to_payload()
++        seed["payload"]["verification_budget"] = copy.deepcopy(source["verification_budget"])
++        seed["payload"]["retry_budget"] = copy.deepcopy(source["retry_budget"])
++        seed["payload"]["publication_hash"] = _r179_publication_hash(seed)
++    domain = _r179_accepted(seed)
++    verification = domain.verification_budget_history
++    retry = domain.retry_budget_history
++    if variant == "local":
++        assert type(verification) is LocalVerificationBudgetRecord
++        assert type(retry) is LocalRetryBudgetRecord
++        assert verification.state.original_budget_reference == seed["original_time"]["verification_reference"]
++        assert retry.original_recovery_reference == seed["original_time"]["recovery_reference"]
++        for name, value in seed["payload"]["retry_budget"]["payload"].items():
++            assert getattr(retry, name) == value, name
++        with pytest.raises(ValueError, match="history"):
++            _ = domain.verification_budget
++        with pytest.raises(ValueError, match="history"):
++            _ = domain.retry_budget
++        exported = retry.to_payload()
++        exported["payload"]["event_retry_counts"]["caller"] = 1
++        assert retry.to_payload() == seed["payload"]["retry_budget"]
++        derived = retry.original_recovery_reference
++        derived["window_id"] = "caller"
++        assert retry.original_recovery_reference == seed["original_time"]["recovery_reference"]
++    else:
++        assert type(verification) is VerificationBudgetRecord
++        assert type(retry) is RecoveryBudget
++        assert domain.verification_budget.to_payload() == verification.to_payload()
++        assert domain.retry_budget.model_dump(mode="json") == retry.model_dump(mode="json")
++    for key in ("verification_budget", "retry_budget"):
++        changed = copy.deepcopy(seed)
++        changed["payload"][key]["schema_version"] = "unsupported.r179.v1"
++        changed["payload"]["publication_hash"] = _r179_publication_hash(changed)
++        with pytest.raises(ValueError, match="tag|schema|source|publication|budget|field|semantic"):
++            _r179_accepted(changed)
++    assert [dict(registry) for registry in registries] == before
++    _r179_evidence(tmp_path, seed, None, "M2:direct-history-getters-" + variant)
++
++
++def test_r179_local_publication_positive(monkeypatch, tmp_path):
++    registries = _r179_registries()
++    before = [dict(registry) for registry in registries]
++    fixture = _r179_fixture(monkeypatch)
++    seed = fixture["publication"]
++    raw = fixture["legacy"]["data"]["publication"].to_payload()
++    for utc in ({}, {"published_at": raw["published_at"],
++                    "effective_deadline_at": raw["effective_deadline_at"]}):
++        candidate = copy.deepcopy(seed)
++        candidate["diagnostics"]["utc"] = utc
++        _r179_accepted(candidate)
++        assert candidate["payload"]["publication_hash"] == _r179_publication_hash(candidate)
++        assert candidate["payload"]["verification_budget"]["original_time"] == candidate["original_time"]
++        assert candidate["payload"]["retry_budget"]["original_time"] == candidate["original_time"]
++    assert [dict(registry) for registry in registries] == before
++    _r179_evidence(tmp_path, seed, None, "I2/I4:local-publication-positive")

@@ -1,0 +1,132 @@
+# R205 — 规划资料格式分类修正计划
+
+实际作者：gpt-6-astra（/root/astra_status_plan）。仅计划，未实施恢复。
+
+原 ebdfd8 真实退出 1：代码用 `p.suffix == "md"`，首个 AGENTS.md 被送入 JSON 解析。聚合打印未到达；不得声称其余账本/接受记录已核验。原件和完整实际返回保持不变。
+
+只授权 ROOT 审核后的一次新、显式文件类型读取：两份 Markdown 仅按文本读取，四份明确 JSON 按 JSON 读取。120 秒、无写入、不扫描、不重放旧命令。零产品/测试/静态/Git/审查额度，原 T2 RED/GREEN 仍 HELD。成功后仅恢复 R204 规划；新失败保全并 STOP。
+
+完整合同（含精确源/argv/环境、四输入 pin）如下。
+
+```json
+{
+  "schema_version": "astra.r205.plan.v1",
+  "round": "R205",
+  "actual_author": {
+    "agent": "/root/astra_status_plan",
+    "model": "gpt-6-astra"
+  },
+  "status": "FROZEN_PLAN_ONLY_PENDING_ROOT_GATE",
+  "problem": "Planner-only reader misclassified AGENTS.md as JSON because it compared Path.suffix to md rather than .md.",
+  "original_failure": {
+    "pin": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/planning-reader-failure.json",
+      "bytes": 4063,
+      "sha256": "7297f0d5bfbfedd6e7610acc9aa2e58574152a55ac1b622d5ad5702dab932bed"
+    },
+    "actual_chunk": "ebdfd8",
+    "exit_code": 1,
+    "exception": "json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)",
+    "independent_stdout": null,
+    "independent_stderr": null,
+    "aggregate_print_reached": false,
+    "product_failure": false,
+    "writes": 0
+  },
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/planning-reader-failure.json",
+      "bytes": 4063,
+      "sha256": "7297f0d5bfbfedd6e7610acc9aa2e58574152a55ac1b622d5ad5702dab932bed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/original-static-observations.json",
+      "bytes": 25604,
+      "sha256": "da23a4c20fd4d818f5523c15941f7a12271b1b57a3842e02a079a063492ec602"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/plan.json",
+      "bytes": 114866,
+      "sha256": "70f51381f8f401c5456304d9eb12f019e7f903a582407ab7819447b8cd1f871b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py",
+      "bytes": 9998,
+      "sha256": "a455c05a8794b72e2fb24b72d09a8234b31e86d917512ac21c73d417256bd944"
+    }
+  ],
+  "cause": {
+    "classification": "CONFIRMED_STATIC_CLASSIFICATION_DEFECT",
+    "basis": "Exact saved source starts with AGENTS.md and compares p.suffix == \"md\"; a Markdown suffix includes the leading dot, so the first text file reaches json.loads. Actual traceback confirms JSON decoding failed. Later files/pins were not printed and are not claimed observed."
+  },
+  "scope": {
+    "actor": "same actual gpt-6-astra planner /root/astra_status_plan",
+    "action": "Use two explicit path lists: named Markdown as bytes/hash/UTF-8 text only, exact named JSON files as JSON. No scan, generalized parser, or original failed cell replay.",
+    "source_or_test_changes": [],
+    "historical_changes": [],
+    "R204_contract": "The two successful R204 original-observation and T2 contract reads remain evidence; R204 plan remains ungenerated/unfrozen pending this recovery and author observations."
+  },
+  "execution": {
+    "new_metadata_read": {
+      "authorized": 1,
+      "used": 0,
+      "remaining": 1,
+      "state": "HELD_PENDING_ROOT_GATE",
+      "timeout_seconds": 120,
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-c",
+        "from pathlib import Path\nimport hashlib, json, signal\nsignal.alarm(120)\nROOT = Path(\"/home/ningyd/文档/ChatGPT/BIGsmall\")\ntext_paths = [ROOT / 'AGENTS.md', Path('/home/ningyd/.codex/plugins/cache/openai-curated-remote/superpowers/6.4.2/skills/writing-plans/SKILL.md')]\njson_paths = [\n    ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json',\n    ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json',\n    ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/script-gate.json',\n    ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round196-p6-t1-local-promotion-original-task-bindings-20261014/implementation/root-bounded-t1-acceptance.json',\n]\nresult = {'classification': 'METADATA_READ_ONLY', 'files': [], 'product_commands': 0}\ndef read(path):\n    data = path.read_bytes()\n    return data, {'path': str(path), 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}\nfor path in text_paths:\n    data, pin = read(path)\n    value = data.decode('utf-8')\n    result['files'].append({'pin': pin, 'format': 'text', 'text': value[:10000], 'text_complete': len(value) <= 10000})\nfor path in json_paths:\n    data, pin = read(path)\n    obj = json.loads(data)\n    assert isinstance(obj, dict), 'expected JSON object at exact named JSON file'\n    item = {'pin': pin, 'format': 'json', 'keys': list(obj), 'command_summary': {}}\n    commands = obj.get('commands')\n    if isinstance(commands, dict):\n        for name in ('t2_red', 't2_green'):\n            entry = commands.get(name)\n            if isinstance(entry, dict):\n                item['command_summary'][name] = {key: entry[key] for key in ('state', 'authorized', 'used', 'remaining') if key in entry}\n            else:\n                item['command_summary'][name] = {'entry_present': name in commands, 'type': type(entry).__name__}\n    item['scalar_facts'] = {key: obj[key] for key in ('status', 'T1_complete', 'T2_complete', 'T12_complete') if key in obj and isinstance(obj[key], (str, bool, int, type(None)))}\n    result['files'].append(item)\noutput = json.dumps(result, ensure_ascii=False)\nassert len(output.encode('utf-8')) <= 32000, 'metadata display bound exceeded; STOP without replay'\nprint(output)\nsignal.alarm(0)\n"
+      ],
+      "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "finite_env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "allowed_reads": 6,
+      "writes": 0,
+      "max_output_utf8_bytes": 32000,
+      "tool_max_output_tokens": 12000,
+      "source": "from pathlib import Path\nimport hashlib, json, signal\nsignal.alarm(120)\nROOT = Path(\"/home/ningyd/文档/ChatGPT/BIGsmall\")\ntext_paths = [ROOT / 'AGENTS.md', Path('/home/ningyd/.codex/plugins/cache/openai-curated-remote/superpowers/6.4.2/skills/writing-plans/SKILL.md')]\njson_paths = [\n    ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json',\n    ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json',\n    ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/script-gate.json',\n    ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round196-p6-t1-local-promotion-original-task-bindings-20261014/implementation/root-bounded-t1-acceptance.json',\n]\nresult = {'classification': 'METADATA_READ_ONLY', 'files': [], 'product_commands': 0}\ndef read(path):\n    data = path.read_bytes()\n    return data, {'path': str(path), 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}\nfor path in text_paths:\n    data, pin = read(path)\n    value = data.decode('utf-8')\n    result['files'].append({'pin': pin, 'format': 'text', 'text': value[:10000], 'text_complete': len(value) <= 10000})\nfor path in json_paths:\n    data, pin = read(path)\n    obj = json.loads(data)\n    assert isinstance(obj, dict), 'expected JSON object at exact named JSON file'\n    item = {'pin': pin, 'format': 'json', 'keys': list(obj), 'command_summary': {}}\n    commands = obj.get('commands')\n    if isinstance(commands, dict):\n        for name in ('t2_red', 't2_green'):\n            entry = commands.get(name)\n            if isinstance(entry, dict):\n                item['command_summary'][name] = {key: entry[key] for key in ('state', 'authorized', 'used', 'remaining') if key in entry}\n            else:\n                item['command_summary'][name] = {'entry_present': name in commands, 'type': type(entry).__name__}\n    item['scalar_facts'] = {key: obj[key] for key in ('status', 'T1_complete', 'T2_complete', 'T12_complete') if key in obj and isinstance(obj[key], (str, bool, int, type(None)))}\n    result['files'].append(item)\noutput = json.dumps(result, ensure_ascii=False)\nassert len(output.encode('utf-8')) <= 32000, 'metadata display bound exceeded; STOP without replay'\nprint(output)\nsignal.alarm(0)\n",
+      "receipt": "Immediately store the actual exec_command object before display. Do not parse rendered/tool Warning-prefixed output. Independent streams remain null when unavailable. No retry; if a process session exists only await that same process."
+    },
+    "new_product_slots": 0,
+    "new_review_slots": 0,
+    "new_test_static_Git_slots": 0
+  },
+  "preconditions": [
+    "ROOT full-read plan and exact recovery source/argv; match four inputs; original failure preserved.",
+    "ROOT explicitly reserve this one metadata read before invocation. No R158 command reservation/release is implied.",
+    "No changes to source, tests, runner, R158 roles, STATE/PHASE, or historical evidence; all T2 execution gates remain HELD."
+  ],
+  "steps": [
+    "ROOT normal plan/input gate and native R205 activation/reservation metadata.",
+    "Planner invokes exactly the new explicit-format bounded read once; never replays ebdfd8.",
+    "Preserve actual result and truthful observed file pins in R205 local step report, with text_complete flags honored; no inferred content for omitted/truncated text.",
+    "ROOT evaluates actual result. Only on success may planner resume R204 plan composition and its authorized normal metadata/source-contract work; this plan does not activate T2 implementation or execution."
+  ],
+  "allowed_metadata_outputs": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round205-p6-t2-planner-markdown-suffix-reader-20261015/input-check.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round205-p6-t2-planner-markdown-suffix-reader-20261015/root-activation.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round205-p6-t2-planner-markdown-suffix-reader-20261015/actual-tool-return.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round205-p6-t2-planner-markdown-suffix-reader-20261015/step-report.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round205-p6-t2-planner-markdown-suffix-reader-20261015/step-report.md"
+  ],
+  "validation": "No dedicated validation pipeline or script file. This one read checks exact formats and returns real byte/hash observations. Normal native save and ordinary plan pin checks are not product validation.",
+  "stop": [
+    "Any new exception, unknown schema affecting the bounded read, or unexpected input drift: preserve actual evidence and STOP for genuine Astra planning.",
+    "Output-size failure or truncation must not be treated as complete output; do not reconstruct missing output or retry."
+  ],
+  "acceptance": {
+    "metadata_recovery_only": true,
+    "R204_ready": false,
+    "T2_complete": false,
+    "T12_complete": false,
+    "native": false,
+    "formal": false,
+    "old_budget_reset": false
+  }
+}
+```
+

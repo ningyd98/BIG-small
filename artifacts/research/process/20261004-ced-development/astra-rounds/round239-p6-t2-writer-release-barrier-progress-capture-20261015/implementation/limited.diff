@@ -1,0 +1,1006 @@
+--- /dev/null
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round239-p6-t2-writer-release-barrier-progress-capture-20261015/implementation/r239_barrier_observer.py
+@@ -0,0 +1,335 @@
++"""R239 read-only bystander sampling; never changes product barriers or hooks."""
++from pathlib import Path
++import hashlib
++import json
++import os
++import sys
++import threading
++import time
++import pytest
++
++ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
++D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round239-p6-t2-writer-release-barrier-progress-capture-20261015'
++FIXTURE = str(ROOT / 'tests/test_local_public_writer_binding_race.py')
++EVENT_TYPE = threading.Event
++CODES = {
++    '_r223_run': 89,
++    '_r223_run.<locals>.writer_body': 116,
++    '_r223_run.<locals>.observe_entry': 139,
++    '_r223_run.<locals>.during_episode': 168,
++}
++NODES = {
++    'tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]': 'memory.json',
++    'tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[sqlite]': 'sqlite.json',
++    'tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer_second_connection': 'sqlite-second-connection.json',
++}
++PINS = [
++    {'path': FIXTURE, 'bytes': 16529, 'sha256': '84e771641c669c5d67d8c19fa51e8df759e32fd480c6c0762c2a98bcb8de2093'},
++    {'path': str(ROOT / 'tests/test_operational_runtime_closure.py'), 'bytes': 254018,
++     'sha256': 'ed602dc9ba5c0b15af20fbe8ca4d9b58d2e4e45fac621dc6f5e5e2cd4a94e7d3'},
++]
++TOTAL_TICKS = 0
++PLUGIN_ERRORS = []
++
++
++def hook_identity(value):
++    return None if value is None else {'id': id(value), 'type': type(value).__name__}
++
++
++def hooks():
++    return {'sys_profile': hook_identity(sys.getprofile()), 'sys_trace': hook_identity(sys.gettrace()),
++            'threading_profile': hook_identity(threading.getprofile()),
++            'threading_trace': hook_identity(threading.gettrace())}
++
++
++def code_matches(frame):
++    code = frame.f_code
++    return code.co_filename == FIXTURE and CODES.get(code.co_qualname) == code.co_firstlineno
++
++
++def stack(head):
++    output, frame = [], head
++    try:
++        for _ in range(12):
++            if frame is None:
++                break
++            code = frame.f_code
++            output.append({'filename': code.co_filename[:512], 'qualname': code.co_qualname[:256],
++                           'lineno': frame.f_lineno,
++                           'filename_truncated': len(code.co_filename) > 512,
++                           'qualname_truncated': len(code.co_qualname) > 256})
++            frame = frame.f_back
++        return output, frame is not None
++    finally:
++        frame = None
++
++
++def event_flag(value, label, flags, unavailable):
++    if type(value) is EVENT_TYPE:
++        flag = value.__dict__.get('_flag')
++        if type(flag) is bool:
++            flags[label] = flag
++        else:
++            unavailable.append({'field': label, 'reason': 'native flag unavailable', 'type': type(flag).__name__})
++    else:
++        unavailable.append({'field': label, 'reason': 'exact original Event unavailable', 'type': type(value).__name__})
++
++
++def primitives(frame, output, flags, unavailable):
++    local = frame.f_locals
++    label = frame.f_code.co_qualname
++    state = {'frame': label}
++    try:
++        case = local.get('case')
++        if type(case) is dict:
++            for key in ('bootstrap_complete', 'writer_attempted', 'writer_returned', 'writer_joined'):
++                value = case.get(key)
++                if type(value) is bool:
++                    state[key] = value
++            writer = case.get('writer')
++            if type(writer) is dict:
++                for key in ('attempted', 'returned', 'joined'):
++                    if type(writer.get(key)) is bool:
++                        state['writer_' + key] = writer[key]
++                error = writer.get('exception')
++                if error is None:
++                    state['writer_exception'] = None
++                elif type(error) is dict:
++                    state['writer_exception'] = {
++                        key: error[key][:512] if type(error.get(key)) is str else None
++                        for key in ('type', 'message')}
++            order = case.get('order')
++            if type(order) is list:
++                state['order_length'] = len(order)
++                state['order_last8'] = []
++                for item in order[-8:]:
++                    if type(item) is dict:
++                        state['order_last8'].append({
++                            'sequence': item.get('sequence') if type(item.get('sequence')) is int else None,
++                            'kind': item.get('kind')[:256] if type(item.get('kind')) is str else None})
++        else:
++            unavailable.append({'field': label + '.case', 'reason': 'exact dict unavailable'})
++        for key in ('release', 'entered', 'ready'):
++            if key in local:
++                event_flag(local[key], label + '.' + key, flags, unavailable)
++        data = local.get('data')
++        if type(data) is dict:
++            for key in ('start', 'finished'):
++                if key in data:
++                    event_flag(data[key], label + '.data.' + key, flags, unavailable)
++        output.append(state)
++    finally:
++        local = case = writer = error = order = data = None
++
++
++def locate_writer(frames, main_id):
++    candidate = None
++    for ident, head in frames.items():
++        if ident == main_id:
++            continue
++        frame = head
++        try:
++            for _ in range(64):
++                if frame is None:
++                    break
++                if (code_matches(frame)
++                        and frame.f_code.co_qualname == '_r223_run.<locals>.writer_body'):
++                    if candidate is not None:
++                        return None, 'multiple original writer frames'
++                    candidate = ident
++                    break
++                frame = frame.f_back
++        finally:
++            frame = head = None
++    return candidate, None
++
++
++def sample(main_id, started, ordinal):
++    frames = sys._current_frames()
++    head = frame = None
++    try:
++        writer_id, writer_problem = locate_writer(frames, main_id)
++        result = {'ordinal': ordinal, 'host_offset_ns': time.perf_counter_ns() - started,
++                  'main_stack': [], 'writer_stack': [], 'primitive_state': [], 'barrier_flags': {},
++                  'unavailable': [], 'truncation': {}, 'writer_ident': writer_id,
++                  'writer_native_id': None, 'non_atomic': True}
++        if writer_problem:
++            result['unavailable'].append({'field': 'writer', 'reason': writer_problem})
++        for label, ident in (('main', main_id), ('writer', writer_id)):
++            head = frames.get(ident) if ident is not None else None
++            if head is None:
++                result['unavailable'].append({'field': label + '_stack', 'reason': 'frame missing'})
++                continue
++            result[label + '_stack'], truncated = stack(head)
++            result['truncation'][label + '_stack'] = truncated
++            frame = head
++            for _ in range(64):
++                if frame is None:
++                    break
++                if code_matches(frame):
++                    primitives(frame, result['primitive_state'], result['barrier_flags'], result['unavailable'])
++                frame = frame.f_back
++            if frame is not None:
++                result['unavailable'].append({'field': label + '_fixture_lookup', 'reason': '64 frame search bound'})
++            frame = head = None
++        return result
++    finally:
++        frame = head = None
++        frames.clear()
++        frames = None
++
++
++def observe(stop, value, main_id, started, initial_hooks):
++    global TOTAL_TICKS
++    resource = value['sampler_resources']
++    resource['thread']['target_entered'] = True
++    resource['thread']['ident'] = threading.get_ident()
++    resource['thread']['native_id'] = threading.get_native_id()
++    value['inherited_hooks']['sampler_start'] = hooks()
++    value['inherited_hooks']['sys_hooks_match_original_thread_hooks'] = {
++        'profile': hook_identity(sys.getprofile()) == initial_hooks['threading_profile'],
++        'trace': hook_identity(sys.gettrace()) == initial_hooks['threading_trace']}
++    previous, last_kept, used = None, -1000000000, 0
++    last = None
++    try:
++        while not stop.is_set():
++            if TOTAL_TICKS >= 2401:
++                value['observation_errors'].append({'type': 'GlobalTickCap', 'message': '2401 total ticks exhausted'})
++                value['counters']['bound_reached'] = True
++                break
++            TOTAL_TICKS += 1
++            value['counters']['ticks'] += 1
++            current = sample(main_id, started, value['counters']['ticks'])
++            last = current
++            signature = json.dumps({k: v for k, v in current.items() if k not in {'ordinal', 'host_offset_ns'}},
++                                   sort_keys=True, ensure_ascii=False, allow_nan=False)
++            changed = signature != previous
++            periodic = current['host_offset_ns'] - last_kept >= 1000000000
++            if changed or periodic:
++                raw_size = len(json.dumps(current, ensure_ascii=False, allow_nan=False).encode())
++                if len(value['samples']) < 1023 and used + raw_size < 8 * 1024 * 1024 - 65536:
++                    value['samples'].append(current)
++                    used += raw_size
++                    last_kept = current['host_offset_ns']
++                    previous = signature
++                else:
++                    value['counters']['dropped'] += 1
++                    value['counters']['bound_reached'] = True
++            stop.wait(0.25)
++    except BaseException as error:
++        value['observation_errors'].append({'type': type(error).__name__, 'message': str(error)[:512]})
++    finally:
++        if last is not None and (not value['samples'] or value['samples'][-1]['ordinal'] != last['ordinal']):
++            if len(value['samples']) < 1024 and used + len(json.dumps(last, ensure_ascii=False).encode()) < 8 * 1024 * 1024 - 65536:
++                value['samples'].append(last)
++            else:
++                value['counters']['dropped'] += 1
++                value['counters']['bound_reached'] = True
++        value['counters']['records'] = len(value['samples'])
++        value['counters']['total_ticks_after_node'] = TOTAL_TICKS
++        resource['thread']['target_finally_reached'] = True
++        value['inherited_hooks']['sampler_end'] = hooks()
++
++
++@pytest.hookimpl(hookwrapper=True, tryfirst=True)
++def pytest_runtest_protocol(item, nextitem):
++    if item.nodeid not in NODES:
++        yield
++        return
++    started = time.perf_counter_ns()
++    main_id = threading.get_ident()
++    initial_hooks = hooks()
++    value = {'schema_version': 'bigsmall.r239.barrier-progress.v1', 'exact_nodeid': item.nodeid,
++             'pinned_sources': PINS, 'host_start_ns': started, 'host_end_ns': None,
++             'main_thread': {'ident': main_id, 'native_id': threading.get_native_id()},
++             'inherited_hooks': {'main_before_setup': initial_hooks},
++             'samples': [], 'counters': {'ticks': 0, 'records': 0, 'dropped': 0, 'bound_reached': False},
++             'bounds': {'global_ticks': 2401, 'node_records': 1024, 'node_bytes': 8 * 1024 * 1024,
++                        'stack_frames_each': 12, 'lookup_frames_each': 64, 'interval_seconds': 0.25},
++             'observation_errors': [], 'sampler_resources': {
++                 'event': {'constructor_attempted': False, 'initialized': False, 'id': None,
++                           'stop_requested': False, 'exception': None},
++                 'thread': {'constructor_attempted': False, 'initialized': False, 'id': None,
++                            'start_attempted': False, 'started': False, 'target_entered': False,
++                            'ident': None, 'native_id': None, 'target_finally_reached': False,
++                            'join_attempted': False, 'joined': False, 'alive_after_join': None,
++                            'join_elapsed_ns': None, 'exception': None}},
++             'final_hook_comparison': None, 'complete': False,
++             'diagnostic_limits': 'Non-atomic samples may miss transitions and perturb scheduling; no OC1 time or root-cause proof.'}
++    stop = thread = None
++    stage = 'source pins'
++    try:
++        for pin in PINS:
++            path = Path(pin['path'])
++            raw = path.read_bytes()
++            if path.is_symlink() or len(raw) != pin['bytes'] or hashlib.sha256(raw).hexdigest() != pin['sha256']:
++                raise ValueError('pinned original fixture source differs')
++        stage = 'event constructor'
++        value['sampler_resources']['event']['constructor_attempted'] = True
++        stop = EVENT_TYPE()
++        value['sampler_resources']['event'].update(initialized=True, id=id(stop))
++        stage = 'thread constructor'
++        value['sampler_resources']['thread']['constructor_attempted'] = True
++        thread = threading.Thread(target=observe, args=(stop, value, main_id, started, initial_hooks),
++                                  name='R239-bystander-' + NODES[item.nodeid], daemon=False)
++        value['sampler_resources']['thread'].update(initialized=True, id=id(thread), start_attempted=True)
++        stage = 'thread start'
++        thread.start()
++        value['sampler_resources']['thread']['started'] = True
++    except BaseException as error:
++        detail = {'stage': stage, 'type': type(error).__name__, 'message': str(error)[:512]}
++        value['observation_errors'].append(detail)
++        resource = 'event' if stage == 'event constructor' else 'thread'
++        value['sampler_resources'][resource]['exception'] = detail
++    try:
++        yield
++    finally:
++        try:
++            if stop is not None:
++                value['sampler_resources']['event']['stop_requested'] = True
++                stop.set()
++            if thread is not None and thread.ident is not None:
++                began = time.perf_counter_ns()
++                value['sampler_resources']['thread']['join_attempted'] = True
++                thread.join(timeout=2.0)
++                alive = thread.is_alive()
++                value['sampler_resources']['thread'].update(joined=not alive, alive_after_join=alive,
++                                                          join_elapsed_ns=time.perf_counter_ns() - began)
++        except BaseException as error:
++            detail = {'stage': 'sampler cleanup', 'type': type(error).__name__, 'message': str(error)[:512]}
++            value['observation_errors'].append(detail)
++            value['sampler_resources']['thread']['exception'] = detail
++        value['host_end_ns'] = time.perf_counter_ns()
++        value['host_elapsed_ns'] = value['host_end_ns'] - started
++        final_hooks = hooks()
++        value['inherited_hooks']['main_after_teardown'] = final_hooks
++        value['final_hook_comparison'] = {'main_before_equals_after': initial_hooks == final_hooks,
++                                         'hooks_modified_by_plugin': False}
++        resource = value['sampler_resources']
++        value['complete'] = bool(not value['observation_errors'] and not value['counters']['bound_reached']
++                                 and value['samples'] and resource['event']['initialized']
++                                 and resource['event']['stop_requested'] and resource['thread']['started']
++                                 and resource['thread']['target_entered'] and resource['thread']['target_finally_reached']
++                                 and resource['thread']['joined'] and resource['thread']['alive_after_join'] is False
++                                 and initial_hooks == final_hooks)
++        waits = [row for row in value['samples'] if any(
++            name.endswith('.release') and flag is False for name, flag in row['barrier_flags'].items())]
++        value['decision_output'] = {'first_main_while_release_false': waits[0]['main_stack'] if waits else None,
++            'last_main_while_release_false': waits[-1]['main_stack'] if waits else None,
++            'first_sampled_wait_offset_ns': waits[0]['host_offset_ns'] if waits else None,
++            'last_sampled_wait_offset_ns': waits[-1]['host_offset_ns'] if waits else None,
++            'sampled_wait_span_ns': waits[-1]['host_offset_ns'] - waits[0]['host_offset_ns'] if waits else None,
++            'dominant_phase': 'unknown', 'missing_intervals': 'all between samples and unavailable frame intervals'}
++        try:
++            directory = Path(os.environ['BIGSMALL_R239_PROGRESS_ROOT'])
++            if directory != D / 'implementation/capture/progress':
++                raise ValueError('exact diagnostic output directory required')
++            raw = (json.dumps(value, ensure_ascii=False, allow_nan=False) + '\n').encode()
++            if len(raw) > 8 * 1024 * 1024:
++                raise ValueError('progress JSON byte cap exceeded')
++            with (directory / NODES[item.nodeid]).open('xb') as handle:
++                if handle.write(raw) != len(raw):
++                    raise OSError('partial progress sidecar write')
++        except BaseException as error:
++            PLUGIN_ERRORS.append({'nodeid': item.nodeid, 'type': type(error).__name__, 'message': str(error)[:512]})
++        stop = thread = None
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round237-p6-t2-original-verification-budget-intersection-20261015/implementation/run-command.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round239-p6-t2-writer-release-barrier-progress-capture-20261015/implementation/run-command.py
+@@ -1,4 +1,4 @@
+-"""R237/R238 once-only budget-intersection recovery. Raw evidence precedes classification."""
++"""R239 single bounded diagnostic; raw evidence precedes completeness classification."""
+ from pathlib import Path
+ import base64
+ import hashlib
+@@ -13,7 +13,7 @@
+ import xml.etree.ElementTree as ET
+ 
+ ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
+-D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round237-p6-t2-original-verification-budget-intersection-20261015'
++D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round239-p6-t2-writer-release-barrier-progress-capture-20261015'
+ 
+ 
+ def read_json(path):
+@@ -67,7 +67,7 @@
+ 
+ def cleanup(process):
+     notes = []
+-    deadline = time.monotonic() + 15
++    deadline = time.monotonic() + 9
+     try:
+         os.killpg(process.pid, 0)
+         remaining = True
+@@ -79,7 +79,7 @@
+         except ProcessLookupError:
+             pass
+         try:
+-            process.wait(timeout=max(0.01, min(7, deadline - time.monotonic())))
++            process.wait(timeout=max(0.01, min(4, deadline - time.monotonic())))
+         except subprocess.TimeoutExpired:
+             notes.append('leader remained after TERM')
+         try:
+@@ -330,259 +330,432 @@
+             'failure_details': [{'nodeid': names[nodes.index(item)], 'text': ET.tostring(item, encoding='unicode')} for item in failures]}
+ 
+ 
+-def verify_baseline(plan, gate):
+-    fixed(gate['source_index_pin'])
+-    baseline = read_json(Path(gate['source_index_pin']['path']))
++
++def canonical(row):
++    return {key: row[key] for key in ('path', 'bytes', 'sha256')}
++
++
++def verify_retained(plan, gate):
++    expected = next(row for row in plan['inputs'] if row['path'].endswith(
++        '/round237-p6-t2-original-verification-budget-intersection-20261015/implementation/baseline/source-index.json'))
++    if gate['source_index_pin'] != canonical(expected):
++        raise ValueError('exact accepted R237 baseline required')
++    fixed(expected)
++    baseline = read_json(Path(expected['path']))
+     if len(baseline['sources']) != 27 or len(baseline['protected']) != 211:
+-        raise ValueError('exact current27/protected211 required')
++        raise ValueError('exact accepted27/protected211 coverage required')
++    physical_current = []
+     for row in baseline['sources']:
+         fixed(row)
+         raw = base64.b64decode(row['base64'], validate=True)
+-        if (hashlib.sha256(raw).hexdigest() != row['sha256'] or len(raw) != row['bytes']
++        if (len(raw) != row['bytes'] or hashlib.sha256(raw).hexdigest() != row['sha256']
+                 or Path(row['path']).stat().st_mode != row['mode']):
+-            raise ValueError('baseline full source/mode differs')
++            raise ValueError('accepted complete current generation differs')
++        physical = Path(expected['path']).parent / 'sources' / Path(row['path']).relative_to(ROOT)
++        if physical.is_symlink() or physical.read_bytes() != raw:
++            raise ValueError('accepted current physical full source differs')
++        physical_current.append(file_pin(physical))
++        prior = row['physical_original']
++        old_raw = Path(prior['archive']['path']).read_bytes()
++        fixed(prior['archive'])
++        if (len(old_raw), hashlib.sha256(old_raw).hexdigest()) != (
++                prior['original']['bytes'], prior['original']['sha256']):
++            raise ValueError('older physical original generation differs')
++        if prior['original']['path'] != row['path']:
++            raise ValueError('historical logical source identity differs')
+     for row in baseline['protected'] + baseline['scripts'] + baseline['history']:
+         fixed(row)
+-    for row in baseline['absent_sidecars']:
+-        path = Path(row['path'])
+-        if row['exists'] is not False or path.exists() or path.is_symlink():
+-            raise ValueError('old exact DB sidecar is no longer absent')
+-    observed = json.loads(Path(plan['inputs']['index']['path']).read_bytes())
+-    fixed(plan['inputs']['index'])
+-    resolved = json.loads(Path(gate['resolved_history_pin']['path']).read_bytes())
+-    fixed(gate['resolved_history_pin'])
+-    if resolved != baseline['resolved_history'] or resolved['unresolved']:
+-        raise ValueError('explicit frozen historical generations differ')
++    resolved = baseline['resolved_history']
++    if len(resolved['entries']) != 321 or resolved['unresolved']:
++        raise ValueError('exact finite321 history resolution required')
+     for row in resolved['documents']:
+         fixed(row)
+-    expected_history = []
+-    for item in resolved['entries']:
+-        original, resolution = item['original'], item['resolution']
+-        row = resolution['pin']
+-        if (resolution['kind'] not in {'EXACT_PHYSICAL_BEFORE', 'CURRENT_EXACT_BYTES'}
+-                or (row['bytes'], row['sha256']) != (original['bytes'], original['sha256'])):
+-            raise ValueError('historical original identity differs')
++    records = []
++    for entry in resolved['entries']:
++        original, mapped = entry['original'], entry['resolution']
++        if (mapped['kind'] not in {'EXACT_PHYSICAL_BEFORE', 'CURRENT_EXACT_BYTES'}
++                or (original['bytes'], original['sha256']) != (
++                    mapped['pin']['bytes'], mapped['pin']['sha256'])):
++            raise ValueError('explicit original/archive identity differs')
++        fixed(mapped['pin'])
++        records.append(mapped['pin'])
++    if records != baseline['history']:
++        raise ValueError('accepted finite resolved history mapping differs')
++    old_observation = next(row for row in resolved['documents'] if row['path'].endswith(
++        '/round237-p6-t2-original-verification-budget-intersection-20261015/input-observation.json'))
++    observed = read_json(Path(old_observation['path']))
++    old_databases = observed['retained_databases']
++    new_databases = plan['input_generations']['new_retained_databases']
++    if len(old_databases) != 18 or len(new_databases) != 6:
++        raise ValueError('exact old18 plus R237 six databases required')
++    absences = []
++    for row in old_databases + new_databases:
++        fixed(row['pin'])
++        if len(row['sidecars']) != 3:
++            raise ValueError('exact three retained sidecar absences per DB required')
++        for sidecar in row['sidecars']:
++            path = Path(sidecar['path'])
++            if sidecar['exists'] is not False or path.exists() or path.is_symlink():
++                raise ValueError('retained DB sidecar became present')
++            absences.append(sidecar)
++    if len(absences) != 72 or absences[:54] != baseline['absent_sidecars']:
++        raise ValueError('exact retained24 DB/72 sidecar generations required')
++    return baseline, physical_current, old_databases + new_databases, absences
++
++
++def progress_records(plan, command, process_pid):
++    records, errors = [], []
++    attempted_threads = initialized_threads = started_threads = joined_threads = 0
++    attempted_events = initialized_events = 0
++    ticks = join_ns = 0
++    directory = Path(command['finite_env']['BIGSMALL_R239_PROGRESS_ROOT'])
++    expected = plan['observer_contract']['sidecar_names']
++    actual_paths = sorted(str(path) for path in directory.iterdir()) if directory.is_dir() else []
++    if actual_paths != sorted(row['path'] for row in expected):
++        errors.append({'stage': 'progress map', 'message': 'exact three expected sidecar paths required'})
++    for row in expected:
++        record = {'pin': None, 'data': None, 'error': None}
++        try:
++            path = Path(row['path'])
++            fixed_file = file_pin(path)
++            if path.is_symlink() or fixed_file['bytes'] > 8 * 1024 * 1024:
++                raise ValueError('regular bounded progress sidecar required')
++            value = read_json(path)
++            record.update(pin=fixed_file, data=value)
++            if (value['schema_version'] != 'bigsmall.r239.barrier-progress.v1'
++                    or value['exact_nodeid'] != row['nodeid']):
++                raise ValueError('progress exact node/schema differs')
++            for pin in value['pinned_sources']:
++                fixed(pin)
++            samples, counter = value['samples'], value['counters']
++            if (not 0 < len(samples) <= 1024 or counter['records'] != len(samples)
++                    or type(counter['ticks']) is not int or counter['ticks'] <= 0
++                    or counter['dropped'] != 0 or counter['bound_reached']
++                    or value['observation_errors'] or value['complete'] is not True):
++                raise ValueError('progress coverage incomplete or exceeded bound')
++            previous_ordinal, previous_offset = 0, -1
++            for sample in samples:
++                if (type(sample['ordinal']) is not int or sample['ordinal'] <= previous_ordinal
++                        or type(sample['host_offset_ns']) is not int
++                        or sample['host_offset_ns'] < previous_offset):
++                    raise ValueError('actual monotonic diagnostic sample coordinates required')
++                previous_ordinal, previous_offset = sample['ordinal'], sample['host_offset_ns']
++                if len(sample['main_stack']) > 12 or len(sample['writer_stack']) > 12:
++                    raise ValueError('bounded per-thread frame projection required')
++                for stack in (sample['main_stack'], sample['writer_stack']):
++                    for frame in stack:
++                        if (len(frame['filename']) > 512 or len(frame['qualname']) > 256
++                                or type(frame['lineno']) is not int):
++                            raise ValueError('bounded scalar stack metadata differs')
++                if any(type(flag) is not bool for flag in sample['barrier_flags'].values()):
++                    raise ValueError('only native boolean barrier flags permitted')
++            if not any(sample['primitive_state'] for sample in samples):
++                raise ValueError('no original fixture frame observed; obtained coverage retained')
++            inherited = value['inherited_hooks']
++            before, after = inherited['main_before_setup'], inherited['main_after_teardown']
++            if (before != after or value['final_hook_comparison']['main_before_equals_after'] is not True
++                    or value['final_hook_comparison']['hooks_modified_by_plugin'] is not False
++                    or not all(inherited['sys_hooks_match_original_thread_hooks'].values())
++                    or inherited['sampler_start']['sys_profile'] != before['threading_profile']
++                    or inherited['sampler_start']['sys_trace'] != before['threading_trace']):
++                raise ValueError('actual inherited/main hooks evidence differs')
++            resource = value['sampler_resources']
++            event, thread = resource['event'], resource['thread']
++            if (not event['constructor_attempted'] or not event['initialized']
++                    or not event['stop_requested'] or event['exception'] is not None
++                    or type(event['id']) is not int or not thread['constructor_attempted']
++                    or not thread['initialized'] or not thread['start_attempted']
++                    or not thread['started'] or not thread['target_entered']
++                    or not thread['target_finally_reached'] or not thread['join_attempted']
++                    or not thread['joined'] or thread['alive_after_join'] is not False
++                    or thread['exception'] is not None or type(thread['ident']) is not int
++                    or type(thread['native_id']) is not int or type(thread['id']) is not int
++                    or type(thread['join_elapsed_ns']) is not int
++                    or not 0 <= thread['join_elapsed_ns'] <= 2000000000):
++                raise ValueError('actual additional sampler Event/thread lifecycle incomplete')
++            if value['host_end_ns'] < value['host_start_ns']:
++                raise ValueError('host diagnostic time order differs')
++        except BaseException as error:
++            record['error'] = {'type': type(error).__name__, 'message': str(error)}
++            errors.append({'path': row['path'], **record['error']})
++        records.append(record)
++    captured = [row['data'] for row in records if type(row['data']) is dict]
++    def observed_sum(section, key, expected_type):
++        values = [row.get(section, {}).get(key) for row in captured]
++        return sum(int(value) for value in values) if all(type(value) is expected_type for value in values) else None
++    ticks = observed_sum('counters', 'ticks', int)
++    resource_rows = [row.get('sampler_resources') for row in captured]
++    def resource_sum(kind, key, expected_type):
++        values = [row.get(kind, {}).get(key) if type(row) is dict else None for row in resource_rows]
++        return sum(int(value) for value in values) if all(type(value) is expected_type for value in values) else None
++    attempted_events = resource_sum('event', 'constructor_attempted', bool)
++    initialized_events = resource_sum('event', 'initialized', bool)
++    attempted_threads = resource_sum('thread', 'constructor_attempted', bool)
++    initialized_threads = resource_sum('thread', 'initialized', bool)
++    started_threads = resource_sum('thread', 'started', bool)
++    joined_threads = resource_sum('thread', 'joined', bool)
++    join_ns = resource_sum('thread', 'join_elapsed_ns', int)
++    if ticks is not None and ticks > 2401:
++        errors.append({'stage': 'progress ticks', 'message': 'whole invocation tick cap exceeded'})
++    return {'schema_version': 'bigsmall.r239.progress-summary.v1', 'records': records,
++            'all_records_valid': not errors, 'validation_errors': errors,
++            'child_pid_from_runner': process_pid, 'sidecar_pid_field': None,
++            'ticks': ticks, 'sampler_join_ns': join_ns, 'captured_resource_record_denominator': len(captured),
++            'partial_records_included_in_counts': True,
++            'sampler_resources': {'event_constructor_attempts': attempted_events,
++                 'initialized_events': initialized_events, 'thread_constructor_attempts': attempted_threads,
++                 'initialized_threads': initialized_threads, 'started_threads': started_threads,
++                 'joined_threads': joined_threads},
++            'frozen_resource_denominator': 'Separate original sidecars; never add/relabel sampler objects as the same original identities.',
++            'root_cause': 'unknown; sampled stacks are non-atomic and perturb scheduling',
++            'unobserved': {'OS_handles': None, 'network_calls': None, 'native_models': None}}
++
++
++def main():
++    began = time.monotonic()
++    plan = read_json(D / 'plan.json')
++    command = plan['command']
++    key = 'capture'
++    gate_raw = (D / 'script-gate.json').read_bytes()
++    author_raw, root_raw = (D / 'command-ledger.json').read_bytes(), (D / 'root-command-ledger.json').read_bytes()
++    gate, author, root = json.loads(gate_raw)['commands'][key], json.loads(author_raw), json.loads(root_raw)
++    entry, reservation = author['commands'][key], root['commands'][key]
++    if (command['id'] != key or gate['state'] != 'APPROVED' or gate['full_source_reviewed'] is not True
++            or reservation['state'] != 'RESERVED_BY_ROOT' or reservation['used'] != 1
++            or reservation['remaining'] != 0 or entry['state'] != 'HELD' or entry['used'] != 0
++            or entry['remaining'] != 1 or gate['reservation_id'] != reservation['reservation_id']):
++        raise ValueError('exact one-use ROOT reservation and unused author slot required')
++    if (sys.argv != command['launcher_argv'][1:] or Path.cwd() != ROOT
++            or gate['argv'] != command['child_argv'] or gate['launcher_argv'] != command['launcher_argv']
++            or gate['cwd'] != command['cwd'] or gate['finite_env'] != command['finite_env']
++            or gate['timeout_seconds'] != command['timeout_seconds'] or command['timeout_seconds'] != 600
++            or gate['cleanup_seconds'] != command['cleanup_total_seconds'] or command['cleanup_total_seconds'] != 15
++            or gate['source']['path'] != str(Path(__file__))):
++        raise ValueError('exact launcher/child/environment/cap mismatch')
++    fixed(gate['source'])
++    fixed(gate['observer_source'])
++    fixed(gate['prerequisite_source'])
++    if gate['observer_source']['path'] != str(D / 'implementation/r239_barrier_observer.py'):
++        raise ValueError('exact new bystander source required')
++    prerequisite_pin = next(row for row in plan['inputs'] if row['path'].endswith('/implementation/r235_startup_prerequisite.py'))
++    if gate['prerequisite_source'] != canonical(prerequisite_pin):
++        raise ValueError('exact unchanged R235 import-only plugin required')
++    mutable = {str(D / name) for name in ('command-ledger.json', 'root-command-ledger.json',
++                                         'script-gate.json', 'source-gate.json', 'root-activation.json')}
++    for row in gate['input_records']:
++        if row['path'] in mutable:
++            raise ValueError('live own mutable controls cannot enter immutable fixed loop')
+         fixed(row)
+-        expected_history.append(row)
+-    if expected_history != baseline['history'] or len(observed['retained_databases']) != 18:
+-        raise ValueError('finite history/18 retained databases differ')
+-    absences = []
+-    for row in observed['retained_databases']:
+-        fixed(row['pin'])
+-        absences.extend(row['sidecars'])
+-    if absences != baseline['absent_sidecars'] or len(absences) != 54:
+-        raise ValueError('exact 54 retained database sidecar absences required')
+-    return baseline
+-
+-
+-def main(key):
+-    plan = read_json(D / 'plan.json')
+-    normative = next(item for item in plan['commands'] if item['id'] == key)
+-    command = {**normative, 'argv': normative['child_argv'], 'evidence_directory': str(D / 'implementation' / key)}
+-    gate_data = (D / 'script-gate.json').read_bytes()
+-    gate = json.loads(gate_data)['commands'][key]
+-    author_data, root_data = (D / 'command-ledger.json').read_bytes(), (D / 'root-command-ledger.json').read_bytes()
+-    author, root = json.loads(author_data), json.loads(root_data)
+-    entry, reservation = author['commands'][key], root['commands'][key]
+-    if (gate['state'] != 'APPROVED' or gate['full_source_reviewed'] is not True
+-            or reservation['state'] != 'RESERVED_BY_ROOT' or reservation['used'] != 1
+-            or reservation['remaining'] != 0 or entry['state'] != 'HELD'
+-            or entry['used'] != 0 or entry['remaining'] != 1
+-            or gate['reservation_id'] != reservation['reservation_id']):
+-        raise ValueError('exact one-use ROOT reservation/author gate required')
+-    launcher = command['launcher_argv']
+-    if (sys.argv != launcher[1:] or Path.cwd() != ROOT or gate['launcher_argv'] != launcher
+-            or gate['argv'] != command['argv'] or entry['child_argv'] != command['argv'] or entry['launcher_argv'] != launcher
+-            or gate['finite_env'] != command['finite_env'] or gate['cwd'] != str(ROOT)
+-            or gate['timeout_seconds'] != command['timeout_seconds']
+-            or gate['source']['path'] != str(Path(__file__))):
+-        raise ValueError('exact command/launcher/environment/cap mismatch')
+-    fixed(gate['source'])
+-    fixed(gate['prerequisite_source'])
+-    if gate['prerequisite_source'] != {'path': str(ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation/r235_startup_prerequisite.py'),
+-                                      'bytes': 5022, 'sha256': 'e46122f6ce00f9c5d0e13be33301b8861b567cb3f25c33d41447f1ea68880e0d'}:
+-        raise ValueError('exact unchanged import-only prerequisite plugin required')
+-    mutable = {str(D / name) for name in ('script-gate.json', 'source-gate.json', 'root-activation.json', 'command-ledger.json', 'root-command-ledger.json')}
+-    for record in gate['input_records']:
+-        if record['path'] in mutable:
+-            raise ValueError('mutable role/gate cannot enter current-fixed input loop')
+-        fixed(record)
+-    baseline = verify_baseline(plan, gate)
+-    controls_before = []
+-    for name in ('command-ledger.json', 'root-command-ledger.json', 'script-gate.json', 'root-activation.json', 'source-gate.json'):
++    baseline, physical_current, databases, absences = verify_retained(plan, gate)
++    out = D / 'implementation/capture'
++    out.mkdir(parents=True, exist_ok=False)
++    expected = [arg for arg in command['child_argv'] if '::' in arg]
++    base = next(Path(arg.split('=', 1)[1]) for arg in command['child_argv'] if arg.startswith('--basetemp='))
++    if base.exists() or base.is_symlink():
++        raise ValueError('fresh exact basetemp required')
++    for name in ('BIGSMALL_R223_RESOURCE_ROOT', 'BIGSMALL_R223_CASE_ROOT', 'BIGSMALL_R239_PROGRESS_ROOT'):
++        Path(command['finite_env'][name]).mkdir(parents=True, exist_ok=False)
++    source_rows = []
++    for row in baseline['sources']:
++        path = Path(row['path'])
++        data = path.read_bytes()
++        physical = out / 'before/sources' / path.relative_to(ROOT)
++        physical.parent.mkdir(parents=True, exist_ok=True)
++        with physical.open('xb') as handle:
++            if handle.write(data) != len(data):
++                raise OSError('partial fresh physical source archive')
++        if physical.read_bytes() != data:
++            raise ValueError('fresh physical source byte readback differs')
++        source_rows.append({**file_pin(path), 'mode': path.stat().st_mode,
++                            'base64': base64.b64encode(data).decode(),
++                            'physical': file_pin(physical), 'physical_original': row['physical_original']})
++    scripts = []
++    for row in (gate['source'], gate['observer_source'], gate['prerequisite_source']):
++        fixed(row)
++        scripts.append({**canonical(row), 'base64': base64.b64encode(Path(row['path']).read_bytes()).decode()})
++    source_index = {'round': 'R239', 'accepted_baseline': gate['source_index_pin'],
++                    'sources': source_rows, 'protected': baseline['protected'], 'scripts': scripts,
++                    'historical_current_physical': physical_current, 'history': baseline['history'],
++                    'resolved_history': baseline['resolved_history'], 'retained_databases': databases,
++                    'absent_sidecars': absences, 'input_records': gate['input_records']}
++    save(out / 'before/source-index.json', source_index)
++    controls = []
++    for name in ('command-ledger.json', 'root-command-ledger.json', 'script-gate.json', 'source-gate.json', 'root-activation.json'):
+         path = D / name
+         raw = path.read_bytes()
+-        controls_before.append({**file_pin(path), 'base64': base64.b64encode(raw).decode()})
+-    out = Path(command['evidence_directory'])
+-    out.mkdir(parents=True, exist_ok=False)
+-    expected = [arg for arg in command['argv'] if '::' in arg]
+-    base = next((Path(arg.split('=', 1)[1]) for arg in command['argv'] if arg.startswith('--basetemp=')), None)
+-    if base is not None and base.exists():
+-        raise ValueError('fresh exact basetemp required')
+-    for name in ('BIGSMALL_R223_RESOURCE_ROOT', 'BIGSMALL_R223_CASE_ROOT'):
+-        if name in command['finite_env']:
+-            Path(command['finite_env'][name]).mkdir(parents=True, exist_ok=False)
+-    invocation = {'round': 'R237', 'command': key, 'argv': command['argv'], 'launcher_argv': launcher,
+-                  'cwd': str(ROOT), 'finite_env': command['finite_env'], 'timeout_seconds': command['timeout_seconds'],
+-                  'cleanup_seconds': 15, 'attempt': 1, 'retry': 0, 'reservation_id': gate['reservation_id'],
+-                  'source': gate['source'], 'script_gate': file_pin(D / 'script-gate.json'),
+-                  'script_gate_before_base64': base64.b64encode(gate_data).decode(),
+-                  'author_ledger_before_base64': base64.b64encode(author_data).decode(),
+-                  'root_ledger_before_base64': base64.b64encode(root_data).decode(),
+-                  'outer_capture': gate['transport'], 'independent_tool_streams': None,
+-                  'baseline': gate['source_index_pin'], 'prerequisite_source': gate['prerequisite_source'],
+-                  'resolved_history_pin': gate['resolved_history_pin'], 'controls_before': controls_before}
++        controls.append({**file_pin(path), 'base64': base64.b64encode(raw).decode()})
++    invocation = {'round': 'R239', 'command': key, 'argv': command['child_argv'],
++                  'launcher_argv': command['launcher_argv'], 'cwd': str(ROOT), 'finite_env': command['finite_env'],
++                  'timeout_seconds': 600, 'cleanup_total_seconds': 15, 'process_group_cleanup_cap_seconds': 9,
++                  'sampler_cleanup_reserved_seconds': 6, 'attempt': 1, 'retry': 0,
++                  'reservation_id': gate['reservation_id'], 'source': gate['source'],
++                  'observer_source': gate['observer_source'], 'prerequisite_source': gate['prerequisite_source'],
++                  'controls_before': controls, 'outer_capture': gate['transport'], 'independent_tool_streams': None,
++                  'accepted_baseline': gate['source_index_pin'], 'fresh_source_index': file_pin(out / 'before/source-index.json')}
+     save(out / 'invocation.json', invocation)
+-    if ((D / 'command-ledger.json').read_bytes() != author_data
+-            or (D / 'root-command-ledger.json').read_bytes() != root_data
+-            or (D / 'script-gate.json').read_bytes() != gate_data):
+-        raise ValueError('immediate role/gate CAS failed')
+-    for row in controls_before:
++    for row in controls + gate['input_records']:
+         fixed(row)
++    if ((D / 'command-ledger.json').read_bytes() != author_raw
++            or (D / 'root-command-ledger.json').read_bytes() != root_raw
++            or (D / 'script-gate.json').read_bytes() != gate_raw):
++        raise ValueError('immediate complete role/gate CAS failed')
++    applied_timeout = 600 - (time.monotonic() - began)
++    if applied_timeout <= 0:
++        raise TimeoutError('integrated baseline exhausted diagnostic deadline before spawn')
++    invocation['applied_child_timeout_seconds'] = applied_timeout
++    save(out / 'spawn-invocation.json', invocation)
+     entry.update(state='SPENT', used=1, remaining=0, reservation_id=gate['reservation_id'])
+-    temporary = D / ('.author-' + key + '.tmp')
++    temporary = D / '.author-capture.tmp'
+     save(temporary, author)
+     os.replace(temporary, D / 'command-ledger.json')
+     process, child_exit, timed_out = None, None, False
+     failure = None
+     cleaned = {'leader_reaped': None, 'group_remaining': None, 'cleanup_notes': []}
++    cleanup_elapsed = None
+     try:
+         with (out / 'stdout.txt').open('xb') as stdout, (out / 'stderr.txt').open('xb') as stderr:
+-            process = subprocess.Popen(command['argv'], cwd=ROOT, env=dict(command['finite_env']),
++            process = subprocess.Popen(command['child_argv'], cwd=ROOT, env=dict(command['finite_env']),
+                                        stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                                        shell=False, start_new_session=True)
+             try:
+-                child_exit = process.wait(timeout=command['timeout_seconds'])
++                child_exit = process.wait(timeout=applied_timeout)
+             except subprocess.TimeoutExpired:
+                 timed_out = True
+             finally:
++                cleanup_start = time.monotonic()
+                 cleaned = cleanup(process)
++                cleanup_elapsed = time.monotonic() - cleanup_start
+                 child_exit = process.returncode
+     except BaseException as error:
+         failure = {'type': type(error).__name__, 'message': str(error), 'traceback': traceback.format_exc()}
+-    xml, resources, case_records, observation_errors = None, None, [], []
+-    prerequisite, source_after = None, None
+-    if key != 'ruff':
+-        try:
+-            xml = junit(out / 'junit.xml', expected)
+-        except BaseException as error:
+-            observation_errors.append({'stage': 'JUnit', 'type': type(error).__name__, 'message': str(error)})
+-        try:
+-            resources = resource_records(Path(command['finite_env']['BIGSMALL_R223_RESOURCE_ROOT']),
+-                                         key, command['argv'], None if process is None else process.pid)
+-            save(out / 'resource-summary.json', resources)
+-        except BaseException as error:
+-            observation_errors.append({'stage': 'resources', 'type': type(error).__name__, 'message': str(error)})
+-        try:
+-            directory = Path(command['finite_env']['BIGSMALL_R223_CASE_ROOT'])
+-            for path in sorted(directory.iterdir()):
+-                if path.is_symlink() or not path.is_file() or path.suffix != '.json':
+-                    raise ValueError('exact regular case JSON required')
+-                case_records.append({'pin': file_pin(path), 'data': read_json(path)})
+-            if (len(case_records) != len(expected)
+-                    or {Path(item['pin']['path']).name for item in case_records}
+-                    != {hashlib.sha256(node.encode()).hexdigest() + '.json' for node in expected}):
+-                raise ValueError('one full raw case per exact node required')
+-        except BaseException as error:
+-            observation_errors.append({'stage': 'cases', 'type': type(error).__name__, 'message': str(error)})
+-    if key == 'red':
+-        try:
+-            prerequisite_file = {'path': str(ROOT / 'tests/test_operational_time_v1.py'), 'bytes': 24211,
+-                                 'sha256': 'ff226e9a616462c67d74d29931f8f9a7d21548f4f13f93ced64901b263229c0f'}
+-            fixed(prerequisite_file)
+-            path = Path(command['finite_env']['BIGSMALL_R235_PREREQUISITE_RECORD'])
+-            prerequisite = {'pin': file_pin(path), 'data': read_json(path)}
+-            value = prerequisite['data']
+-            if (value['schema_version'] != 'bigsmall.r235.startup-prerequisite.v1'
+-                    or value['pid'] != (None if process is None else process.pid)
+-                    or value['module_name'] != 'tests.test_operational_time_v1'
+-                    or value['expected_pin'] != prerequisite_file
+-                    or value['actual_file_pin'] != prerequisite_file
+-                    or value['accepted_prerequisite'] is not True or value['exception'] is not None
+-                    or value['same_sys_modules_object_after'] is not True
+-                    or value['pre_import_hooks_empty'] is not True
+-                    or value['profile_trace_before_after_equal'] is not True
+-                    or any(item is not None for item in value['profile_trace_before'])
+-                    or any(item is not None for item in value['profile_trace_after'])
+-                    or value['pre_observer_resource_measurement'] is not None
+-                    or (value['already_loaded_before'] and value['same_previously_loaded_object'] is not True)):
+-                raise ValueError('startup prerequisite evidence incomplete or different')
+-        except BaseException as error:
+-            observation_errors.append({'stage': 'prerequisite', 'type': type(error).__name__, 'message': str(error)})
+-    try:
+-        post = verify_baseline(plan, gate)
+-        source_after = {'all_unchanged': True, 'sources': [
+-            {k: row[k] for k in ('path', 'bytes', 'sha256')} for row in post['sources']],
+-            'protected_count': len(post['protected'])}
+-        save(out / 'source-after.json', source_after)
++    xml, resources, progress, prerequisite, source_after = None, None, None, None, None
++    cases, errors = [], []
++    try:
++        xml = junit(out / 'junit.xml', expected)
+     except BaseException as error:
+-        observation_errors.append({'stage': 'source-after', 'type': type(error).__name__, 'message': str(error)})
+-    for record in gate['input_records']:
+-        try:
+-            fixed(record)
+-        except BaseException as error:
+-            observation_errors.append({'stage': 'post-input', 'path': record['path'], 'type': type(error).__name__, 'message': str(error)})
+-    for row in controls_before:
+-        try:
++        errors.append({'stage': 'JUnit', 'type': type(error).__name__, 'message': str(error)})
++    try:
++        resources = resource_records(Path(command['finite_env']['BIGSMALL_R223_RESOURCE_ROOT']), key,
++                                     command['child_argv'], None if process is None else process.pid)
++        save(out / 'resource-summary.json', resources)
++    except BaseException as error:
++        errors.append({'stage': 'frozen resources', 'type': type(error).__name__, 'message': str(error)})
++    try:
++        directory = Path(command['finite_env']['BIGSMALL_R223_CASE_ROOT'])
++        for path in sorted(directory.iterdir()):
++            if path.is_symlink() or not path.is_file() or path.suffix != '.json':
++                raise ValueError('exact regular frozen case JSON required')
++            cases.append({'pin': file_pin(path), 'data': read_json(path)})
++        if (len(cases) != len(expected) or {Path(row['pin']['path']).name for row in cases}
++                != {hashlib.sha256(node.encode()).hexdigest() + '.json' for node in expected}):
++            raise ValueError('one complete original case per node required')
++    except BaseException as error:
++        errors.append({'stage': 'cases', 'type': type(error).__name__, 'message': str(error)})
++    try:
++        progress = progress_records(plan, command, None if process is None else process.pid)
++        save(out / 'progress-summary.json', progress)
++    except BaseException as error:
++        errors.append({'stage': 'progress', 'type': type(error).__name__, 'message': str(error)})
++    try:
++        path = Path(command['finite_env']['BIGSMALL_R235_PREREQUISITE_RECORD'])
++        prerequisite = {'pin': file_pin(path), 'data': read_json(path)}
++        value = prerequisite['data']
++        dependency = next(row for row in plan['inputs'] if row['path'] == str(ROOT / 'tests/test_operational_time_v1.py'))
++        if (value['schema_version'] != 'bigsmall.r235.startup-prerequisite.v1'
++                or value['pid'] != (None if process is None else process.pid)
++                or value['module_name'] != 'tests.test_operational_time_v1'
++                or value['expected_pin'] != canonical(dependency) or value['actual_file_pin'] != canonical(dependency)
++                or value['accepted_prerequisite'] is not True or value['exception'] is not None
++                or value['same_sys_modules_object_after'] is not True or value['pre_import_hooks_empty'] is not True
++                or value['profile_trace_before_after_equal'] is not True
++                or any(item is not None for item in value['profile_trace_before'])
++                or any(item is not None for item in value['profile_trace_after'])
++                or value['pre_observer_resource_measurement'] is not None
++                or (value['already_loaded_before'] and value['same_previously_loaded_object'] is not True)):
++            raise ValueError('original import-only prerequisite evidence differs')
++    except BaseException as error:
++        errors.append({'stage': 'prerequisite', 'type': type(error).__name__, 'message': str(error)})
++    try:
++        post, _, _, _ = verify_retained(plan, gate)
++        for row in gate['input_records'] + scripts:
++            fixed(row)
++        for row in controls:
+             if row['path'] == str(D / 'command-ledger.json'):
+                 if Path(row['path']).read_bytes() != encoded(author):
+                     raise ValueError('exact author single-slot transition differs')
+             else:
+                 fixed(row)
+-        except BaseException as error:
+-            observation_errors.append({'stage': 'post-control', 'path': row['path'], 'type': type(error).__name__, 'message': str(error)})
+-    accepted = (failure is None and not observation_errors and not timed_out
+-                and cleaned['leader_reaped'] is True and cleaned['group_remaining'] is False
+-                and source_after is not None and source_after['all_unchanged'] is True)
+-    if key == 'ruff':
+-        accepted = accepted and child_exit == 0
+-    elif key == 'red':
+-        accepted = (accepted and prerequisite is not None and prerequisite['data']['accepted_prerequisite'] is True
+-                    and child_exit == 1 and xml is not None and xml['names_exact']
+-                    and (xml['tests'], xml['passes'], xml['failures'], xml['errors'], xml['skips']) == (3, 0, 3, 0, 0)
+-                    and all('R223 late local binding was not rejected' in item['text'] for item in xml['failure_details'])
+-                    and all(item['data']['bootstrap_complete'] is True
+-                            and item['data']['writer']['returned'] is True
+-                            and item['data']['writer']['exception'] is None
+-                            and item['data']['legacy_after'] != item['data']['legacy_before'] for item in case_records)
+-                    and resources is not None and resources['all_records_valid'])
+-    wrapper_exit = child_exit if accepted else 1
++        source_after = {'all_unchanged': True, 'sources': [canonical(row) for row in post['sources']],
++                        'protected_count': 211, 'history_count': 321, 'retained_DB_count': 24,
++                        'absent_sidecar_count': 72, 'scripts': [canonical(row) for row in scripts]}
++        save(out / 'source-after.json', source_after)
++    except BaseException as error:
++        errors.append({'stage': 'post-source-history-controls', 'type': type(error).__name__, 'message': str(error)})
++    capture_databases = []
++    file_index, temp_index = index(out), index(base)
++    if cleaned['leader_reaped'] is True and cleaned['group_remaining'] is False:
++        for row in temp_index:
++            if row.get('kind') == 'regular' and row.get('database_bytes_read') is False:
++                try:
++                    path = Path(row['path'])
++                    if path.is_symlink():
++                        raise ValueError('capture database became symlink')
++                    capture_databases.append({'pin': file_pin(path), 'bytes_read_after_process_cleanup': True})
++                except BaseException as error:
++                    errors.append({'stage': 'capture database hash', 'path': row['path'],
++                                   'type': type(error).__name__, 'message': str(error)})
++    else:
++        errors.append({'stage': 'capture database hash', 'message': 'not read without observed process closure'})
++    sampler_cleanup = (None if progress is None or progress['sampler_join_ns'] is None
++                       else progress['sampler_join_ns'] / 1000000000)
++    cleanup_total = None if sampler_cleanup is None or cleanup_elapsed is None else sampler_cleanup + cleanup_elapsed
++    complete = bool(failure is None and not errors and not timed_out and child_exit in {0, 1}
++                    and cleaned['leader_reaped'] is True and cleaned['group_remaining'] is False
++                    and cleanup_total is not None and cleanup_total <= 15
++                    and xml is not None and xml['tests'] == 3 and xml['names_exact']
++                    and resources is not None and resources['all_records_valid']
++                    and progress is not None and progress['all_records_valid']
++                    and prerequisite is not None and prerequisite['data']['accepted_prerequisite'] is True
++                    and source_after is not None and source_after['all_unchanged'])
++    wrapper_exit = 0 if complete else 1
+     streams = {name: file_pin(out / (name + '.txt')) if (out / (name + '.txt')).is_file() else None
+                for name in ('stdout', 'stderr')}
+-    result = {'round': 'R237', 'command': key, 'attempt': 1, 'retry': 0, 'child_pid': None if process is None else process.pid,
+-              'child_exit': child_exit, 'wrapper_exit': wrapper_exit, 'accepted_command_outcome': bool(accepted),
+-              'timed_out': timed_out, 'cleanup': cleaned, 'JUnit': xml, 'resource_summary': resources,
+-              'cases': case_records, 'streams': streams, 'input_records': gate['input_records'],
+-              'invocation': invocation, 'source_index_pin': gate['source_index_pin'],
+-              'prerequisite': prerequisite, 'source_after': source_after,
+-              'legal_RED_requires_ROOT_acceptance': True, 'GREEN': False, 'product_acceptance': False,
+-              'file_index': index(out), 'temp_index': [] if base is None else index(base),
+-              'runner_exception': failure, 'observation_errors': observation_errors, 'outer_capture': gate['transport']}
++    result = {'round': 'R239', 'command': key, 'attempt': 1, 'retry': 0,
++              'child_pid': None if process is None else process.pid, 'child_exit': child_exit,
++              'wrapper_exit': wrapper_exit, 'accepted_command_outcome': complete, 'diagnostic_complete': complete,
++              'timed_out': timed_out, 'cleanup': cleaned, 'process_cleanup_elapsed_seconds': cleanup_elapsed,
++              'sampler_cleanup_elapsed_seconds': sampler_cleanup, 'combined_cleanup_seconds': cleanup_total,
++              'JUnit': xml, 'resource_summary': resources, 'progress_summary': progress,
++              'cases': cases, 'prerequisite': prerequisite, 'streams': streams,
++              'input_records': gate['input_records'], 'invocation': invocation,
++              'source_index_pin': file_pin(out / 'before/source-index.json'), 'source_after': source_after,
++              'file_index': file_index, 'temp_index': temp_index, 'capture_databases': capture_databases,
++              'runner_exception': failure,
++              'observation_errors': errors, 'outer_capture': gate['transport'],
++              'root_cause': 'unknown pending ROOT interpretation of bounded non-atomic observations',
++              'legal_RED': False, 'GREEN': False, 'T2_complete': False, 'T12_complete': False}
+     save(out / 'file-index.json', result['file_index'])
+     save(out / 'temp-index.json', result['temp_index'])
+     save(out / 'result.json', result)
+-    # The full XML failures/resources/cases stay on disk, not in the console.
+     print(json.dumps({'command': key, 'child_exit': child_exit, 'wrapper_exit': wrapper_exit,
+-                      'accepted_command_outcome': bool(accepted), 'result_pin': file_pin(out / 'result.json')},
+-                     ensure_ascii=False))
++                      'diagnostic_complete': complete, 'result_pin': file_pin(out / 'result.json')}, ensure_ascii=False))
+     return wrapper_exit
+ 
+ 
+ if __name__ == '__main__':
+-    if len(sys.argv) != 2 or sys.argv[1] not in {'ruff', 'red'}:
+-        raise SystemExit('exact R237 ruff|red launcher required')
+-    try:
+-        raise SystemExit(main(sys.argv[1]))
++    try:
++        if sys.argv != [str(D / 'implementation/run-command.py'), 'capture']:
++            raise ValueError('exact R239 capture launcher required')
++        raise SystemExit(main())
+     except Exception as error:
+-        out = D / 'implementation' / sys.argv[1]
++        out = D / 'implementation/capture'
+         out.mkdir(parents=True, exist_ok=True)
+-        failure = {'round': 'R237', 'command': sys.argv[1], 'attempt': 1, 'retry': 0,
+-                   'wrapper_exit': 1, 'child_exit': None, 'accepted_command_outcome': False,
++        failure = {'round': 'R239', 'command': 'capture', 'attempt': 1, 'retry': 0, 'wrapper_exit': 1,
++                   'child_exit': None, 'diagnostic_complete': False, 'legal_RED': False, 'GREEN': False,
+                    'runner_exception': {'type': type(error).__name__, 'message': str(error),
+                                         'traceback': traceback.format_exc()}, 'file_index': index(out)}
+         if not (out / 'result.json').exists():
+             save(out / 'result.json', failure)
+-        print(json.dumps({'command': sys.argv[1], 'wrapper_exit': 1,
++        print(json.dumps({'command': 'capture', 'wrapper_exit': 1,
+                           'result_pin': file_pin(out / 'result.json')}, ensure_ascii=False))
+         raise SystemExit(1)
+-

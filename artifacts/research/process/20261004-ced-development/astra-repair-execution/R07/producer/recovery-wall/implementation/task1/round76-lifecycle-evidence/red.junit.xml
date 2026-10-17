@@ -1,0 +1,2139 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="36" skipped="0" tests="39" time="1.882" timestamp="2026-10-07T21:13:55.889344+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_restored_lifecycle_is_sticky[begin-plan_attempt]" time="0.039"><failure message="AssertionError: restoring identity must not authorize retry&#10;assert None is not None">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_restored_li0')
+recovery_wall_cpu_only = None, entry = 'begin', cause = 'plan_attempt'
+
+    @pytest.mark.parametrize(
+        "entry,cause",
+        [(entry, cause) for entry in ("begin", "end", "check")
+         for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+        ids=[f"{entry}-{cause}" for entry in ("begin", "end", "check")
+             for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+    )
+    def test_recovery_wall_restored_lifecycle_is_sticky(
+        tmp_path, recovery_wall_cpu_only, entry, cause
+    ):
+        owner, backend, identity, plan, output = recovery_wall_fixture(tmp_path)
+        if entry != "begin":
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+        if entry == "check":
+            recovery_wall_end(owner, backend)
+        start = output / "wall-start.json"
+        original_begin = start.read_bytes() if start.exists() else None
+        allocation = Path(plan["allocation_directory"]) / "recovery-0002-attempt-1.json"
+        original_allocation = allocation.read_bytes()
+        original_pid = identity["pid"]
+        message = {
+            "plan_attempt": "recovery wall plan allocation identity changed",
+            "allocation_bytes": "canonical allocation bytes changed",
+            "process_identity": "renderer lease process identity/lifecycle changed",
+        }[cause]
+        call = {
+            "begin": lambda: recovery_wall_begin(owner, backend),
+            "end": lambda: recovery_wall_end(owner, backend),
+            "check": lambda: owner.check("CURRENT", step=3, sim_time_s=1.0),
+        }[entry]
+        retry_error = None
+        try:
+            if cause == "plan_attempt":
+                plan["attempt"] = 2
+            elif cause == "allocation_bytes":
+                allocation.write_bytes(original_allocation + b" ")
+            else:
+                identity["pid"] += 1
+            with pytest.raises(ValueError, match=f"^{message}$"):
+                call()
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            try:
+                call()
+            except (ValueError, RuntimeError) as exc:
+                retry_error = exc
+        finally:
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       assert retry_error is not None, "restoring identity must not authorize retry"
+E       AssertionError: restoring identity must not authorize retry
+E       assert None is not None
+
+tests/test_protocol_generation_sources.py:1383: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_restored_lifecycle_is_sticky[begin-allocation_bytes]" time="0.020"><failure message="AssertionError: restoring identity must not authorize retry&#10;assert None is not None">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_restored_li1')
+recovery_wall_cpu_only = None, entry = 'begin', cause = 'allocation_bytes'
+
+    @pytest.mark.parametrize(
+        "entry,cause",
+        [(entry, cause) for entry in ("begin", "end", "check")
+         for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+        ids=[f"{entry}-{cause}" for entry in ("begin", "end", "check")
+             for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+    )
+    def test_recovery_wall_restored_lifecycle_is_sticky(
+        tmp_path, recovery_wall_cpu_only, entry, cause
+    ):
+        owner, backend, identity, plan, output = recovery_wall_fixture(tmp_path)
+        if entry != "begin":
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+        if entry == "check":
+            recovery_wall_end(owner, backend)
+        start = output / "wall-start.json"
+        original_begin = start.read_bytes() if start.exists() else None
+        allocation = Path(plan["allocation_directory"]) / "recovery-0002-attempt-1.json"
+        original_allocation = allocation.read_bytes()
+        original_pid = identity["pid"]
+        message = {
+            "plan_attempt": "recovery wall plan allocation identity changed",
+            "allocation_bytes": "canonical allocation bytes changed",
+            "process_identity": "renderer lease process identity/lifecycle changed",
+        }[cause]
+        call = {
+            "begin": lambda: recovery_wall_begin(owner, backend),
+            "end": lambda: recovery_wall_end(owner, backend),
+            "check": lambda: owner.check("CURRENT", step=3, sim_time_s=1.0),
+        }[entry]
+        retry_error = None
+        try:
+            if cause == "plan_attempt":
+                plan["attempt"] = 2
+            elif cause == "allocation_bytes":
+                allocation.write_bytes(original_allocation + b" ")
+            else:
+                identity["pid"] += 1
+            with pytest.raises(ValueError, match=f"^{message}$"):
+                call()
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            try:
+                call()
+            except (ValueError, RuntimeError) as exc:
+                retry_error = exc
+        finally:
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       assert retry_error is not None, "restoring identity must not authorize retry"
+E       AssertionError: restoring identity must not authorize retry
+E       assert None is not None
+
+tests/test_protocol_generation_sources.py:1383: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_restored_lifecycle_is_sticky[begin-process_identity]" time="0.019"><failure message="AssertionError: restoring identity must not authorize retry&#10;assert None is not None">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_restored_li2')
+recovery_wall_cpu_only = None, entry = 'begin', cause = 'process_identity'
+
+    @pytest.mark.parametrize(
+        "entry,cause",
+        [(entry, cause) for entry in ("begin", "end", "check")
+         for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+        ids=[f"{entry}-{cause}" for entry in ("begin", "end", "check")
+             for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+    )
+    def test_recovery_wall_restored_lifecycle_is_sticky(
+        tmp_path, recovery_wall_cpu_only, entry, cause
+    ):
+        owner, backend, identity, plan, output = recovery_wall_fixture(tmp_path)
+        if entry != "begin":
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+        if entry == "check":
+            recovery_wall_end(owner, backend)
+        start = output / "wall-start.json"
+        original_begin = start.read_bytes() if start.exists() else None
+        allocation = Path(plan["allocation_directory"]) / "recovery-0002-attempt-1.json"
+        original_allocation = allocation.read_bytes()
+        original_pid = identity["pid"]
+        message = {
+            "plan_attempt": "recovery wall plan allocation identity changed",
+            "allocation_bytes": "canonical allocation bytes changed",
+            "process_identity": "renderer lease process identity/lifecycle changed",
+        }[cause]
+        call = {
+            "begin": lambda: recovery_wall_begin(owner, backend),
+            "end": lambda: recovery_wall_end(owner, backend),
+            "check": lambda: owner.check("CURRENT", step=3, sim_time_s=1.0),
+        }[entry]
+        retry_error = None
+        try:
+            if cause == "plan_attempt":
+                plan["attempt"] = 2
+            elif cause == "allocation_bytes":
+                allocation.write_bytes(original_allocation + b" ")
+            else:
+                identity["pid"] += 1
+            with pytest.raises(ValueError, match=f"^{message}$"):
+                call()
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            try:
+                call()
+            except (ValueError, RuntimeError) as exc:
+                retry_error = exc
+        finally:
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       assert retry_error is not None, "restoring identity must not authorize retry"
+E       AssertionError: restoring identity must not authorize retry
+E       assert None is not None
+
+tests/test_protocol_generation_sources.py:1383: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_restored_lifecycle_is_sticky[end-plan_attempt]" time="0.021"><failure message="AssertionError: restoring identity must not authorize retry&#10;assert None is not None">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_restored_li3')
+recovery_wall_cpu_only = None, entry = 'end', cause = 'plan_attempt'
+
+    @pytest.mark.parametrize(
+        "entry,cause",
+        [(entry, cause) for entry in ("begin", "end", "check")
+         for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+        ids=[f"{entry}-{cause}" for entry in ("begin", "end", "check")
+             for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+    )
+    def test_recovery_wall_restored_lifecycle_is_sticky(
+        tmp_path, recovery_wall_cpu_only, entry, cause
+    ):
+        owner, backend, identity, plan, output = recovery_wall_fixture(tmp_path)
+        if entry != "begin":
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+        if entry == "check":
+            recovery_wall_end(owner, backend)
+        start = output / "wall-start.json"
+        original_begin = start.read_bytes() if start.exists() else None
+        allocation = Path(plan["allocation_directory"]) / "recovery-0002-attempt-1.json"
+        original_allocation = allocation.read_bytes()
+        original_pid = identity["pid"]
+        message = {
+            "plan_attempt": "recovery wall plan allocation identity changed",
+            "allocation_bytes": "canonical allocation bytes changed",
+            "process_identity": "renderer lease process identity/lifecycle changed",
+        }[cause]
+        call = {
+            "begin": lambda: recovery_wall_begin(owner, backend),
+            "end": lambda: recovery_wall_end(owner, backend),
+            "check": lambda: owner.check("CURRENT", step=3, sim_time_s=1.0),
+        }[entry]
+        retry_error = None
+        try:
+            if cause == "plan_attempt":
+                plan["attempt"] = 2
+            elif cause == "allocation_bytes":
+                allocation.write_bytes(original_allocation + b" ")
+            else:
+                identity["pid"] += 1
+            with pytest.raises(ValueError, match=f"^{message}$"):
+                call()
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            try:
+                call()
+            except (ValueError, RuntimeError) as exc:
+                retry_error = exc
+        finally:
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       assert retry_error is not None, "restoring identity must not authorize retry"
+E       AssertionError: restoring identity must not authorize retry
+E       assert None is not None
+
+tests/test_protocol_generation_sources.py:1383: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_restored_lifecycle_is_sticky[end-allocation_bytes]" time="0.021"><failure message="AssertionError: restoring identity must not authorize retry&#10;assert None is not None">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_restored_li4')
+recovery_wall_cpu_only = None, entry = 'end', cause = 'allocation_bytes'
+
+    @pytest.mark.parametrize(
+        "entry,cause",
+        [(entry, cause) for entry in ("begin", "end", "check")
+         for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+        ids=[f"{entry}-{cause}" for entry in ("begin", "end", "check")
+             for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+    )
+    def test_recovery_wall_restored_lifecycle_is_sticky(
+        tmp_path, recovery_wall_cpu_only, entry, cause
+    ):
+        owner, backend, identity, plan, output = recovery_wall_fixture(tmp_path)
+        if entry != "begin":
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+        if entry == "check":
+            recovery_wall_end(owner, backend)
+        start = output / "wall-start.json"
+        original_begin = start.read_bytes() if start.exists() else None
+        allocation = Path(plan["allocation_directory"]) / "recovery-0002-attempt-1.json"
+        original_allocation = allocation.read_bytes()
+        original_pid = identity["pid"]
+        message = {
+            "plan_attempt": "recovery wall plan allocation identity changed",
+            "allocation_bytes": "canonical allocation bytes changed",
+            "process_identity": "renderer lease process identity/lifecycle changed",
+        }[cause]
+        call = {
+            "begin": lambda: recovery_wall_begin(owner, backend),
+            "end": lambda: recovery_wall_end(owner, backend),
+            "check": lambda: owner.check("CURRENT", step=3, sim_time_s=1.0),
+        }[entry]
+        retry_error = None
+        try:
+            if cause == "plan_attempt":
+                plan["attempt"] = 2
+            elif cause == "allocation_bytes":
+                allocation.write_bytes(original_allocation + b" ")
+            else:
+                identity["pid"] += 1
+            with pytest.raises(ValueError, match=f"^{message}$"):
+                call()
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            try:
+                call()
+            except (ValueError, RuntimeError) as exc:
+                retry_error = exc
+        finally:
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       assert retry_error is not None, "restoring identity must not authorize retry"
+E       AssertionError: restoring identity must not authorize retry
+E       assert None is not None
+
+tests/test_protocol_generation_sources.py:1383: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_restored_lifecycle_is_sticky[end-process_identity]" time="0.021"><failure message="AssertionError: restoring identity must not authorize retry&#10;assert None is not None">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_restored_li5')
+recovery_wall_cpu_only = None, entry = 'end', cause = 'process_identity'
+
+    @pytest.mark.parametrize(
+        "entry,cause",
+        [(entry, cause) for entry in ("begin", "end", "check")
+         for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+        ids=[f"{entry}-{cause}" for entry in ("begin", "end", "check")
+             for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+    )
+    def test_recovery_wall_restored_lifecycle_is_sticky(
+        tmp_path, recovery_wall_cpu_only, entry, cause
+    ):
+        owner, backend, identity, plan, output = recovery_wall_fixture(tmp_path)
+        if entry != "begin":
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+        if entry == "check":
+            recovery_wall_end(owner, backend)
+        start = output / "wall-start.json"
+        original_begin = start.read_bytes() if start.exists() else None
+        allocation = Path(plan["allocation_directory"]) / "recovery-0002-attempt-1.json"
+        original_allocation = allocation.read_bytes()
+        original_pid = identity["pid"]
+        message = {
+            "plan_attempt": "recovery wall plan allocation identity changed",
+            "allocation_bytes": "canonical allocation bytes changed",
+            "process_identity": "renderer lease process identity/lifecycle changed",
+        }[cause]
+        call = {
+            "begin": lambda: recovery_wall_begin(owner, backend),
+            "end": lambda: recovery_wall_end(owner, backend),
+            "check": lambda: owner.check("CURRENT", step=3, sim_time_s=1.0),
+        }[entry]
+        retry_error = None
+        try:
+            if cause == "plan_attempt":
+                plan["attempt"] = 2
+            elif cause == "allocation_bytes":
+                allocation.write_bytes(original_allocation + b" ")
+            else:
+                identity["pid"] += 1
+            with pytest.raises(ValueError, match=f"^{message}$"):
+                call()
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            try:
+                call()
+            except (ValueError, RuntimeError) as exc:
+                retry_error = exc
+        finally:
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       assert retry_error is not None, "restoring identity must not authorize retry"
+E       AssertionError: restoring identity must not authorize retry
+E       assert None is not None
+
+tests/test_protocol_generation_sources.py:1383: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_restored_lifecycle_is_sticky[check-plan_attempt]" time="0.022"><failure message="AssertionError: restoring identity must not authorize retry&#10;assert None is not None">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_restored_li6')
+recovery_wall_cpu_only = None, entry = 'check', cause = 'plan_attempt'
+
+    @pytest.mark.parametrize(
+        "entry,cause",
+        [(entry, cause) for entry in ("begin", "end", "check")
+         for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+        ids=[f"{entry}-{cause}" for entry in ("begin", "end", "check")
+             for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+    )
+    def test_recovery_wall_restored_lifecycle_is_sticky(
+        tmp_path, recovery_wall_cpu_only, entry, cause
+    ):
+        owner, backend, identity, plan, output = recovery_wall_fixture(tmp_path)
+        if entry != "begin":
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+        if entry == "check":
+            recovery_wall_end(owner, backend)
+        start = output / "wall-start.json"
+        original_begin = start.read_bytes() if start.exists() else None
+        allocation = Path(plan["allocation_directory"]) / "recovery-0002-attempt-1.json"
+        original_allocation = allocation.read_bytes()
+        original_pid = identity["pid"]
+        message = {
+            "plan_attempt": "recovery wall plan allocation identity changed",
+            "allocation_bytes": "canonical allocation bytes changed",
+            "process_identity": "renderer lease process identity/lifecycle changed",
+        }[cause]
+        call = {
+            "begin": lambda: recovery_wall_begin(owner, backend),
+            "end": lambda: recovery_wall_end(owner, backend),
+            "check": lambda: owner.check("CURRENT", step=3, sim_time_s=1.0),
+        }[entry]
+        retry_error = None
+        try:
+            if cause == "plan_attempt":
+                plan["attempt"] = 2
+            elif cause == "allocation_bytes":
+                allocation.write_bytes(original_allocation + b" ")
+            else:
+                identity["pid"] += 1
+            with pytest.raises(ValueError, match=f"^{message}$"):
+                call()
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            try:
+                call()
+            except (ValueError, RuntimeError) as exc:
+                retry_error = exc
+        finally:
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       assert retry_error is not None, "restoring identity must not authorize retry"
+E       AssertionError: restoring identity must not authorize retry
+E       assert None is not None
+
+tests/test_protocol_generation_sources.py:1383: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_restored_lifecycle_is_sticky[check-allocation_bytes]" time="0.022"><failure message="AssertionError: restoring identity must not authorize retry&#10;assert None is not None">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_restored_li7')
+recovery_wall_cpu_only = None, entry = 'check', cause = 'allocation_bytes'
+
+    @pytest.mark.parametrize(
+        "entry,cause",
+        [(entry, cause) for entry in ("begin", "end", "check")
+         for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+        ids=[f"{entry}-{cause}" for entry in ("begin", "end", "check")
+             for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+    )
+    def test_recovery_wall_restored_lifecycle_is_sticky(
+        tmp_path, recovery_wall_cpu_only, entry, cause
+    ):
+        owner, backend, identity, plan, output = recovery_wall_fixture(tmp_path)
+        if entry != "begin":
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+        if entry == "check":
+            recovery_wall_end(owner, backend)
+        start = output / "wall-start.json"
+        original_begin = start.read_bytes() if start.exists() else None
+        allocation = Path(plan["allocation_directory"]) / "recovery-0002-attempt-1.json"
+        original_allocation = allocation.read_bytes()
+        original_pid = identity["pid"]
+        message = {
+            "plan_attempt": "recovery wall plan allocation identity changed",
+            "allocation_bytes": "canonical allocation bytes changed",
+            "process_identity": "renderer lease process identity/lifecycle changed",
+        }[cause]
+        call = {
+            "begin": lambda: recovery_wall_begin(owner, backend),
+            "end": lambda: recovery_wall_end(owner, backend),
+            "check": lambda: owner.check("CURRENT", step=3, sim_time_s=1.0),
+        }[entry]
+        retry_error = None
+        try:
+            if cause == "plan_attempt":
+                plan["attempt"] = 2
+            elif cause == "allocation_bytes":
+                allocation.write_bytes(original_allocation + b" ")
+            else:
+                identity["pid"] += 1
+            with pytest.raises(ValueError, match=f"^{message}$"):
+                call()
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            try:
+                call()
+            except (ValueError, RuntimeError) as exc:
+                retry_error = exc
+        finally:
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       assert retry_error is not None, "restoring identity must not authorize retry"
+E       AssertionError: restoring identity must not authorize retry
+E       assert None is not None
+
+tests/test_protocol_generation_sources.py:1383: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_restored_lifecycle_is_sticky[check-process_identity]" time="0.021"><failure message="AssertionError: restoring identity must not authorize retry&#10;assert None is not None">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_restored_li8')
+recovery_wall_cpu_only = None, entry = 'check', cause = 'process_identity'
+
+    @pytest.mark.parametrize(
+        "entry,cause",
+        [(entry, cause) for entry in ("begin", "end", "check")
+         for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+        ids=[f"{entry}-{cause}" for entry in ("begin", "end", "check")
+             for cause in ("plan_attempt", "allocation_bytes", "process_identity")],
+    )
+    def test_recovery_wall_restored_lifecycle_is_sticky(
+        tmp_path, recovery_wall_cpu_only, entry, cause
+    ):
+        owner, backend, identity, plan, output = recovery_wall_fixture(tmp_path)
+        if entry != "begin":
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+        if entry == "check":
+            recovery_wall_end(owner, backend)
+        start = output / "wall-start.json"
+        original_begin = start.read_bytes() if start.exists() else None
+        allocation = Path(plan["allocation_directory"]) / "recovery-0002-attempt-1.json"
+        original_allocation = allocation.read_bytes()
+        original_pid = identity["pid"]
+        message = {
+            "plan_attempt": "recovery wall plan allocation identity changed",
+            "allocation_bytes": "canonical allocation bytes changed",
+            "process_identity": "renderer lease process identity/lifecycle changed",
+        }[cause]
+        call = {
+            "begin": lambda: recovery_wall_begin(owner, backend),
+            "end": lambda: recovery_wall_end(owner, backend),
+            "check": lambda: owner.check("CURRENT", step=3, sim_time_s=1.0),
+        }[entry]
+        retry_error = None
+        try:
+            if cause == "plan_attempt":
+                plan["attempt"] = 2
+            elif cause == "allocation_bytes":
+                allocation.write_bytes(original_allocation + b" ")
+            else:
+                identity["pid"] += 1
+            with pytest.raises(ValueError, match=f"^{message}$"):
+                call()
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            try:
+                call()
+            except (ValueError, RuntimeError) as exc:
+                retry_error = exc
+        finally:
+            plan["attempt"] = 1
+            allocation.write_bytes(original_allocation)
+            identity["pid"] = original_pid
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       assert retry_error is not None, "restoring identity must not authorize retry"
+E       AssertionError: restoring identity must not authorize retry
+E       assert None is not None
+
+tests/test_protocol_generation_sources.py:1383: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[BEGIN_LOWER-negative]" time="0.013"><failure message="AssertionError: one rejected original D observation required at BEGIN_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co0')
+recovery_wall_cpu_only = None, position = 'BEGIN_LOWER', value_kind = 'negative'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...e-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', 'lower_ns': 110, ...}}, 'record_seq': 5}]
+position = 'BEGIN_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at BEGIN_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[BEGIN_LOWER-bool]" time="0.013"><failure message="AssertionError: one rejected original D observation required at BEGIN_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co1')
+recovery_wall_cpu_only = None, position = 'BEGIN_LOWER', value_kind = 'bool'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...e-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', 'lower_ns': 110, ...}}, 'record_seq': 5}]
+position = 'BEGIN_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at BEGIN_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[BEGIN_LOWER-returned_none]" time="0.014"><failure message="AssertionError: one rejected original D observation required at BEGIN_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co2')
+recovery_wall_cpu_only = None, position = 'BEGIN_LOWER'
+value_kind = 'returned_none'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...e-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', 'lower_ns': 110, ...}}, 'record_seq': 5}]
+position = 'BEGIN_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at BEGIN_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[BEGIN_LOWER-rollback]" time="0.013"><failure message="AssertionError: one rejected original D observation required at BEGIN_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co3')
+recovery_wall_cpu_only = None, position = 'BEGIN_LOWER', value_kind = 'rollback'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...e-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', 'lower_ns': 110, ...}}, 'record_seq': 5}]
+position = 'BEGIN_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at BEGIN_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[END_UPPER-negative]" time="0.022"><failure message="AssertionError: one rejected original D observation required at END_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co4')
+recovery_wall_cpu_only = None, position = 'END_UPPER', value_kind = 'negative'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'END_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at END_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[END_UPPER-bool]" time="0.021"><failure message="AssertionError: one rejected original D observation required at END_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co5')
+recovery_wall_cpu_only = None, position = 'END_UPPER', value_kind = 'bool'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'END_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at END_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[END_UPPER-returned_none]" time="0.021"><failure message="AssertionError: one rejected original D observation required at END_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co6')
+recovery_wall_cpu_only = None, position = 'END_UPPER'
+value_kind = 'returned_none'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'END_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at END_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[END_UPPER-rollback]" time="0.019"><failure message="AssertionError: one rejected original D observation required at END_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co7')
+recovery_wall_cpu_only = None, position = 'END_UPPER', value_kind = 'rollback'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'END_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at END_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[CHECK_LOWER-negative]" time="0.021"><failure message="AssertionError: one rejected original D observation required at CHECK_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co8')
+recovery_wall_cpu_only = None, position = 'CHECK_LOWER', value_kind = 'negative'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[CHECK_LOWER-bool]" time="0.023"><failure message="AssertionError: one rejected original D observation required at CHECK_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co9')
+recovery_wall_cpu_only = None, position = 'CHECK_LOWER', value_kind = 'bool'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[CHECK_LOWER-returned_none]" time="0.022"><failure message="AssertionError: one rejected original D observation required at CHECK_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co10')
+recovery_wall_cpu_only = None, position = 'CHECK_LOWER'
+value_kind = 'returned_none'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[CHECK_LOWER-rollback]" time="0.021"><failure message="AssertionError: one rejected original D observation required at CHECK_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co11')
+recovery_wall_cpu_only = None, position = 'CHECK_LOWER', value_kind = 'rollback'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[CHECK_UPPER-negative]" time="0.022"><failure message="AssertionError: one rejected original D observation required at CHECK_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co12')
+recovery_wall_cpu_only = None, position = 'CHECK_UPPER', value_kind = 'negative'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[CHECK_UPPER-bool]" time="0.021"><failure message="AssertionError: one rejected original D observation required at CHECK_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co13')
+recovery_wall_cpu_only = None, position = 'CHECK_UPPER', value_kind = 'bool'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[CHECK_UPPER-returned_none]" time="0.022"><failure message="AssertionError: one rejected original D observation required at CHECK_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co14')
+recovery_wall_cpu_only = None, position = 'CHECK_UPPER'
+value_kind = 'returned_none'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[CHECK_UPPER-rollback]" time="0.023"><failure message="AssertionError: one rejected original D observation required at CHECK_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co15')
+recovery_wall_cpu_only = None, position = 'CHECK_UPPER', value_kind = 'rollback'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[TERMINAL_LOWER-negative]" time="0.021"><failure message="AssertionError: one rejected original D observation required at TERMINAL_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co16')
+recovery_wall_cpu_only = None, position = 'TERMINAL_LOWER'
+value_kind = 'negative'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...failure': 'BudgetExceeded: recovery wall counter requires nonnegative integer ns', 'terminal': None}, 'record_seq': 6}]
+position = 'TERMINAL_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at TERMINAL_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[TERMINAL_LOWER-bool]" time="0.023"><failure message="AssertionError: one rejected original D observation required at TERMINAL_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co17')
+recovery_wall_cpu_only = None, position = 'TERMINAL_LOWER', value_kind = 'bool'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...failure': 'BudgetExceeded: recovery wall counter requires nonnegative integer ns', 'terminal': None}, 'record_seq': 6}]
+position = 'TERMINAL_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at TERMINAL_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[TERMINAL_LOWER-returned_none]" time="0.021"><failure message="AssertionError: one rejected original D observation required at TERMINAL_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co18')
+recovery_wall_cpu_only = None, position = 'TERMINAL_LOWER'
+value_kind = 'returned_none'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...failure': 'BudgetExceeded: recovery wall counter requires nonnegative integer ns', 'terminal': None}, 'record_seq': 6}]
+position = 'TERMINAL_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at TERMINAL_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[TERMINAL_LOWER-rollback]" time="0.020"><failure message="AssertionError: one rejected original D observation required at TERMINAL_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co19')
+recovery_wall_cpu_only = None, position = 'TERMINAL_LOWER'
+value_kind = 'rollback'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...ad': {'failure': 'BudgetExceeded: recovery wall counter rollback/order violation', 'terminal': None}, 'record_seq': 6}]
+position = 'TERMINAL_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at TERMINAL_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[TERMINAL_UPPER-negative]" time="0.022"><failure message="AssertionError: one rejected original D observation required at TERMINAL_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co20')
+recovery_wall_cpu_only = None, position = 'TERMINAL_UPPER'
+value_kind = 'negative'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...failure': 'BudgetExceeded: recovery wall counter requires nonnegative integer ns', 'terminal': None}, 'record_seq': 6}]
+position = 'TERMINAL_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at TERMINAL_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[TERMINAL_UPPER-bool]" time="0.023"><failure message="AssertionError: one rejected original D observation required at TERMINAL_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co21')
+recovery_wall_cpu_only = None, position = 'TERMINAL_UPPER', value_kind = 'bool'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...failure': 'BudgetExceeded: recovery wall counter requires nonnegative integer ns', 'terminal': None}, 'record_seq': 6}]
+position = 'TERMINAL_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at TERMINAL_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[TERMINAL_UPPER-returned_none]" time="0.023"><failure message="AssertionError: one rejected original D observation required at TERMINAL_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co22')
+recovery_wall_cpu_only = None, position = 'TERMINAL_UPPER'
+value_kind = 'returned_none'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...failure': 'BudgetExceeded: recovery wall counter requires nonnegative integer ns', 'terminal': None}, 'record_seq': 6}]
+position = 'TERMINAL_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at TERMINAL_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_rejected_counter_raw_evidence[TERMINAL_UPPER-rollback]" time="0.021"><failure message="AssertionError: one rejected original D observation required at TERMINAL_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_rejected_co23')
+recovery_wall_cpu_only = None, position = 'TERMINAL_UPPER'
+value_kind = 'rollback'
+
+    @pytest.mark.parametrize(
+        "position,value_kind",
+        [(position, kind) for position in ROUND76_POSITIONS
+         for kind in ("negative", "bool", "returned_none", "rollback")],
+        ids=[f"{position}-{kind}" for position in ROUND76_POSITIONS
+             for kind in ("negative", "bool", "returned_none", "rollback")],
+    )
+    def test_recovery_wall_rejected_counter_raw_evidence(
+        tmp_path, recovery_wall_cpu_only, position, value_kind
+    ):
+        index = {"BEGIN_LOWER": 1, "END_UPPER": 2, "CHECK_LOWER": 3, "CHECK_UPPER": 4,
+                 "TERMINAL_LOWER": 5, "TERMINAL_UPPER": 6}[position]
+        counters = [10, 100, 110, 120, 121, 200, 201]
+        previous = counters[index - 1]
+        bad = {"negative": -1, "bool": True, "returned_none": None,
+               "rollback": previous - 1}[value_kind]
+        counters[index] = bad
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            if position == "BEGIN_LOWER":
+                with pytest.raises(RuntimeError, match="counter"):
+                    recovery_wall_begin(owner, backend)
+            else:
+                recovery_wall_begin(owner, backend)
+                backend.events.append(backend.event())
+                if position == "END_UPPER":
+                    with pytest.raises(RuntimeError, match="counter"):
+                        recovery_wall_end(owner, backend)
+                else:
+                    recovery_wall_end(owner, backend)
+                    if position.startswith("CHECK"):
+                        with pytest.raises(RuntimeError, match="counter"):
+                            owner.check("CURRENT", step=3, sim_time_s=1.0)
+                    else:
+                        owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r...ad': {'failure': 'BudgetExceeded: recovery wall counter rollback/order violation', 'terminal': None}, 'record_seq': 6}]
+position = 'TERMINAL_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at TERMINAL_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_counter_read_exception_position[CHECK_LOWER]" time="0.022"><failure message="AssertionError: one rejected original D observation required at CHECK_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_counter_rea0')
+recovery_wall_cpu_only = None, position = 'CHECK_LOWER'
+
+    @pytest.mark.parametrize("position", ["CHECK_LOWER", "CHECK_UPPER"])
+    def test_recovery_wall_counter_read_exception_position(tmp_path, recovery_wall_cpu_only, position):
+        index = 3 if position == "CHECK_LOWER" else 4
+        counters = [10, 100, 110, 120, 121]
+        previous = counters[index - 1]
+        counters[index] = OSError("CPU original D read exception")
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+            recovery_wall_end(owner, backend)
+            with pytest.raises(RuntimeError, match="counter read failed"):
+                owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1471: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_counter_read_exception_position[CHECK_UPPER]" time="0.021"><failure message="AssertionError: one rejected original D observation required at CHECK_UPPER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_counter_rea1')
+recovery_wall_cpu_only = None, position = 'CHECK_UPPER'
+
+    @pytest.mark.parametrize("position", ["CHECK_LOWER", "CHECK_UPPER"])
+    def test_recovery_wall_counter_read_exception_position(tmp_path, recovery_wall_cpu_only, position):
+        index = 3 if position == "CHECK_LOWER" else 4
+        counters = [10, 100, 110, 120, 121]
+        previous = counters[index - 1]
+        counters[index] = OSError("CPU original D read exception")
+        owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
+        try:
+            recovery_wall_begin(owner, backend)
+            backend.events.append(backend.event())
+            recovery_wall_end(owner, backend)
+            with pytest.raises(RuntimeError, match="counter read failed"):
+                owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       payload, observation = round76_counter_failure(round76_journal(output), position)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1471: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_UPPER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_UPPER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_read_then_identity_drift_retains_raw" time="0.021"><failure message="AssertionError: one rejected original D observation required at CHECK_LOWER&#10;assert 0 == 1&#10; +  where 0 = len([])">tmp_path = PosixPath('/tmp/bigsmall-r07-round76-red/test_recovery_wall_read_then_i0')
+recovery_wall_cpu_only = None
+
+    def test_recovery_wall_read_then_identity_drift_retains_raw(tmp_path, recovery_wall_cpu_only):
+        owner, backend, identity, _plan, output = recovery_wall_fixture(tmp_path)
+        recovery_wall_begin(owner, backend)
+        original_begin = (output / "wall-start.json").read_bytes()
+        backend.events.append(backend.event())
+        recovery_wall_end(owner, backend)
+        original_read = owner._raw_read
+        original_pid = identity["pid"]
+    
+        def read_and_drift():
+            value = original_read()
+            identity["pid"] += 1
+            return value
+    
+        owner._raw_read = read_and_drift
+        try:
+            with pytest.raises(ValueError, match="renderer lease process identity/lifecycle changed"):
+                owner.check("CURRENT", step=3, sim_time_s=1.0)
+        finally:
+            identity["pid"] = original_pid
+            owner._raw_read = original_read
+            result = recovery_wall_finish(owner, backend, failure=None)
+&gt;       _payload, observation = round76_counter_failure(round76_journal(output), "CHECK_LOWER")
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:1502: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'kind': 'OWNER_START', 'payload': {'actual_authority': False, 'allocation': {'allocation_path': '/tmp/bigsmall-r07-r..._id': 'cpu-episode-1', 'episode_source': 'owned_live_backend._episode_id', 'kind': 'TERMINAL', ...}}, 'record_seq': 6}]
+position = 'CHECK_LOWER'
+
+    def round76_counter_failure(rows, position):
+        matches = [
+            (row["payload"], observation)
+            for row in rows
+            for observation in row["payload"].get("counter_observations", [])
+            if observation["position"] == position and observation["validated"] is False
+        ]
+&gt;       assert len(matches) == 1, f"one rejected original D observation required at {position}"
+E       AssertionError: one rejected original D observation required at CHECK_LOWER
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_protocol_generation_sources.py:1326: AssertionError</failure></testcase><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_lifecycle_evidence_controls[healthy_pair]" time="0.020" /><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_lifecycle_evidence_controls[forged_shared_handle]" time="0.021" /><testcase classname="tests.test_protocol_generation_sources" name="test_recovery_wall_lifecycle_evidence_controls[finished_handle]" time="0.020" /></testsuite></testsuites>

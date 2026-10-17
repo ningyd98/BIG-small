@@ -1,0 +1,20 @@
+{
+  "status": "METADATA_READER_PATH_FAILURE_PRESERVED_NO_RETRY",
+  "operation": "Read-only postpush receipt metadata inspection",
+  "cmd": ".venv/bin/python - <<'PY'\nimport json, hashlib\nfrom pathlib import Path\nroot=Path('/home/ningyd/文档/ChatGPT/BIGsmall'); d=root/'artifacts/research/process/20261004-ced-development/astra-rounds/round155-p6-disjoint-head-finite-delivery-20261012'; i=d/'implementation'\np=i/'postpush-receipt.json'; raw=p.read_bytes(); obj=json.loads(raw)\ndef small(v):\n    if isinstance(v,list):return {'type':'list','count':len(v),'first':small(v[0]) if v else None,'last':small(v[-1]) if v else None}\n    if isinstance(v,dict):\n        if len(v)>20:return {'type':'dict','count':len(v),'first_keys':list(v)[:2],'last_keys':list(v)[-2:]}\n        return {k:small(x) for k,x in v.items()}\n    return v\nprint(json.dumps({'postpush_receipt':{'path':str(p),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),'data':small(obj)}},ensure_ascii=False))\nresults=[]\nfor f in sorted((i/'git').glob('*.result.json')):\n    x=json.loads(f.read_bytes()); pins=[]\n    for stream in ('stdout','stderr'):\n        pin=x.get(stream)\n        if isinstance(pin,dict) and isinstance(pin.get('path'),str):\n            buf=Path(pin['path']).read_bytes()\n            pins.append({'stream':stream,'bytes':len(buf),'sha256':hashlib.sha256(buf).hexdigest(),'valid':len(buf)==pin.get('bytes') and hashlib.sha256(buf).hexdigest()==pin.get('sha256')})\n    rec={'id':x.get('id'),'ordinal':x.get('ordinal'),'exit_code':x.get('exit_code'),'stream_pins':pins}\n    if x.get('id') in ('G16','G17'):\n        rec['argv']=x.get('argv'); text=Path(x['stdout']['path']).read_text(); lines=text.splitlines(); rec['stdout_first_lines']=lines[:3]; rec['stdout_last_lines']=lines[-2:]\n        rec['stderr']=Path(x['stderr']['path']).read_text()\n    results.append(rec)\nprint(json.dumps({'actual_git_results':results,'count':len(results),'all_streams_match':all(z['valid'] for x in results for z in x['stream_pins'])},ensure_ascii=False))\nPY",
+  "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+  "actual_tool_result": {
+    "chunk_id": "d6a509",
+    "wall_time_seconds": 0.00000833,
+    "exit_code": 1,
+    "original_token_count": 163,
+    "output": "Traceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\n  File \"/usr/lib/python3.12/pathlib.py\", line 1021, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/pathlib.py\", line 1015, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round155-p6-disjoint-head-finite-delivery-20261012/implementation/postpush-receipt.json'\n"
+  },
+  "affected_scope": "postpush receipt read only",
+  "product_modified": false,
+  "git_commands_invoked_by_failed_reader": 0,
+  "git_commands_used_R155": 28,
+  "git_commands_remaining_R155": 0,
+  "product_commands_remaining": 0,
+  "independent_review_commands_remaining": 0
+}

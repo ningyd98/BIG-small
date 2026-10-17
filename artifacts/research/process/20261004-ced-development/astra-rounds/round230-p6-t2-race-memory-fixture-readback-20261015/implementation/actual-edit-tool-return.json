@@ -1,0 +1,7 @@
+{
+  "actual_tool_return": {},
+  "numeric_exit": null,
+  "stdout": null,
+  "stderr": null,
+  "patch": "*** Begin Patch\n*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_local_public_writer_binding_race.py\n@@\n-def _r223_run(monkeypatch, directory, backend, observed, *, mode, second=False):\n+def _r223_operation_rows(events, reads, operation_id):\n+    from cloud_edge_robot_arm.repositories.event_autonomy import (\n+        InMemoryEventAutonomyRepository, SQLiteEventAutonomyRepository,\n+    )\n+    from cloud_edge_robot_arm.repositories.event_autonomy.protocol import local_receipt_read_unlocked\n+\n+    if type(events) is SQLiteEventAutonomyRepository:\n+        return _frozen._b_t2_operation_rows(reads, operation_id)\n+    if type(events) is not InMemoryEventAutonomyRepository:\n+        raise TypeError('R223 requires an exact Memory or SQLite event repository')\n+    with events._lock:\n+        receipt = local_receipt_read_unlocked(events, operation_id)\n+    job_rows = [dict(row) for row in reads['job'].execute(\n+        'SELECT * FROM simulation_local_publications_v1 WHERE operation_id=?', (operation_id,))]\n+    return {'event': [] if receipt is None else [receipt], 'job': job_rows}\n+\n+\n+def _r223_run(monkeypatch, directory, backend, observed, *, mode, second=False):\n@@\n-        rows = _frozen._b_t2_operation_rows(reads, 'bootstrap-init:' + runtime._bootstrap_id)\n+        rows = _r223_operation_rows(events, reads, 'bootstrap-init:' + runtime._bootstrap_id)\n*** End Patch"
+}

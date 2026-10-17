@@ -1,0 +1,152 @@
+--- R178-frozen-before
++++ R178-current-root-metadata
+@@ -12,6 +12,11 @@
+ OUT = ROUND / "implementation"
+ RAW = OUT / "recovery7"
+ PLAN_SHA = "990947b3491a5fdd432c75fbde321cccd417681adf3cec062b4252a8ef100e63"
++HISTORY_PLAN_PIN = {
++    "path": str(ROUNDS / "round178-p6-t1-root-settlement-gate-history-20261014/plan.json"),
++    "bytes": 32492,
++    "sha256": "15ac46aeb197192d05e2559beb8211f74d89a5b7f688eb04afb64abf76dcf6ac",
++}
+ FIELDS = {"_events", "_budgets", "_active_contracts", "_checkpoints"}
+ COUNT_KEYS = {"allocation_attempts", "initialized", "init_failed", "primary", "transitive",
+               "close_attempts", "close_returns", "close_errors", "initialized_successfully_closed"}
+@@ -71,6 +76,46 @@
+ 
+ def positive(value):
+     return type(value) is int and value > 0
++
++def archived_history(mapping, finding_records):
++    original = mapping["original_pin"]
++    archive = mapping["archive_pin"]
++    checked(archive)
++    raw = Path(archive["path"]).read_bytes()
++    assert len(raw) == original["bytes"] and sha(raw) == original["sha256"]
++    finding = finding_records[original["path"]]
++    assert {key: finding[key] for key in ("path", "bytes", "sha256")} == original
++    assert raw == base64.b64decode(finding["base64"], validate=True)
++    return raw
++
++def preparation_value_bytes(raw):
++    text = raw.decode()
++    marker = '"preparation_metadata":'
++    assert text.count(marker) == 1
++    start = text.index(marker) + len(marker)
++    while text[start].isspace():
++        start += 1
++    assert text[start] == "{"
++    depth, quoted, escaped = 0, False, False
++    for index in range(start, len(text)):
++        char = text[index]
++        if quoted:
++            if escaped:
++                escaped = False
++            elif char == "\\":
++                escaped = True
++            elif char == '"':
++                quoted = False
++            continue
++        if char == '"':
++            quoted = True
++        elif char == "{":
++            depth += 1
++        elif char == "}":
++            depth -= 1
++            if depth == 0:
++                return text[start:index + 1].encode()
++    raise AssertionError("Incomplete preparation command JSON value")
+ 
+ def validate_call(observation, expected_nodes, pid):
+     assert observation["schema_version"] == "bigsmall.r175-memory-lifecycle.v1"
+@@ -133,7 +178,10 @@
+ assert Path.cwd() == ROOT
+ plan = read(ROUND / "plan.json")
+ assert pin(ROUND / "plan.json")["sha256"] == PLAN_SHA
+-gate = read(ROUND / "script-gate.json")["commands"]["ROOT_settlement_metadata"]
++gate_path = ROUND / "script-gate.json"
++gate_bytes = gate_path.read_bytes()
++gate_document = read(gate_path)
++gate = gate_document["commands"]["ROOT_settlement_metadata"]
+ assert gate["state"] == "APPROVED"
+ assert gate["argv"] == plan["command_budget"]["ROOT_settlement_metadata"]["argv"]
+ assert gate["cwd"] == str(ROOT) and gate["timeout_seconds"] == 120
+@@ -158,6 +206,29 @@
+             assert entry["state"] == ("RESERVED_BY_ROOT" if role == "root" and name == "recovery7" else "SPENT")
+ selected_root = root_ledger["commands"]["ROOT_settlement_metadata"]
+ assert selected_root["state"] == "RESERVED_BY_ROOT" and selected_root["used"] == 1 and selected_root["remaining"] == 0
++assert checked(selected_root["script_gate_pin"])["path"] == str(gate_path)
++assert gate_path.read_bytes() == gate_bytes
++assert gate["history_plan_pin"] == HISTORY_PLAN_PIN
++checked(HISTORY_PLAN_PIN)
++history_plan = read(HISTORY_PLAN_PIN["path"])
++history = gate["historical_run_metadata"]
++assert history == history_plan["historical_mapping"] and len(history) == 2
++history_by_path = {item["original_pin"]["path"]: item for item in history}
++assert set(history_by_path) == {str(gate_path), str(Path(__file__))}
++checked(history_plan["issue"]["source_finding"])
++finding = read(history_plan["issue"]["source_finding"]["path"])
++finding_records = {item["path"]: item for item in
++                   (finding["current_script_gate"], finding["current_source_draft"])}
++archived_bytes = {path: archived_history(item, finding_records)
++                  for path, item in history_by_path.items()}
++old_gate = read(history_by_path[str(gate_path)]["archive_pin"]["path"])
++assert "ROOT_settlement_metadata" not in old_gate["commands"]
++without_root_entry = {**gate_document, "commands": {
++    key: value for key, value in gate_document["commands"].items()
++    if key != "ROOT_settlement_metadata"
++}}
++assert without_root_entry == old_gate
++assert preparation_value_bytes(gate_bytes) == preparation_value_bytes(archived_bytes[str(gate_path)])
+ selected = author["commands"]["ROOT_settlement_metadata"]
+ assert selected["state"] == "HELD" and selected["used"] == 0 and selected["remaining"] == 1
+ selected.update({"state": "SPENT", "used": 1, "remaining": 0, "attempts": 1, "retries": 0,
+@@ -217,8 +288,19 @@
+     post = read(RAW / "post-run-input-pins.json")
+     assert post["matches_pre_run"] is True and post["errors"] == []
+     assert post["input_pins"] == invocation["pre_input_pins"]
++    assert len(post["input_pins"]) == 307
++    assert len({item["path"] for item in post["input_pins"]}) == 307
++    historical_count, current_fixed = 0, []
+     for item in post["input_pins"]:
+-        checked(item)
++        if item["path"] in history_by_path:
++            mapping = history_by_path[item["path"]]
++            assert item == mapping["original_pin"]
++            assert archived_history(mapping, finding_records) == archived_bytes[item["path"]]
++            historical_count += 1
++        else:
++            checked(item)
++            current_fixed.append(item)
++    assert historical_count == 2 and len(current_fixed) == 305
+     resource = read(RAW / "resource-summary.json")
+     assert resource["status"] == "MEMORY_LIFECYCLE_ACTUAL_RECORDS_VALIDATED"
+     sidecars = sorted((RAW / "resources").iterdir())
+@@ -261,6 +343,13 @@
+     assert snapshot["usage"]["R158_used"] == 3 and snapshot["usage"]["R158_remaining"] == 12
+     for record in gate["input_records"]:
+         checked(record)
++    for record in current_fixed:
++        checked(record)
++    for path, mapping in history_by_path.items():
++        assert archived_history(mapping, finding_records) == archived_bytes[path]
++    assert gate_path.read_bytes() == gate_bytes
++    checked(selected_root["script_gate_pin"])
++    checked(gate["source_pin"])
+     assert root_path.read_bytes() == root_bytes and author_path.read_bytes() == spent_author_bytes
+     settlement = {"schema_version": "bigsmall.r175-root-settlement.v1",
+                   "status": "ROOT_ACCEPTED_ACTUAL_7PASS_AND_OBSERVED_MEMORY_LIFECYCLE_ONLY",
+@@ -269,6 +358,13 @@
+                   "product_exit": 0, "runner_exit": 0, "resource_totals": totals,
+                   "resource_call_count": len(calls), "resource_node_count": 7,
+                   "sidecar_pins": actual_sidecar_pins, "stable_inputs": stable,
++                  "history_check": {
++                      "original_run_input_count": 307, "current_fixed_count": len(current_fixed),
++                      "archived_metadata_count": historical_count, "historical_mapping": history,
++                      "current_gate_pin": selected_root["script_gate_pin"],
++                      "current_source_pin": gate["source_pin"],
++                      "old_preparation_value_bytes_preserved": True,
++                  },
+                   "prior_R174_7PASS_preserved": True, "original_GREEN_5PASS_2FAIL_preserved": True,
+                   "old_R174_ROOT_settlement_used": 0,
+                   "old_R174_ROOT_settlement_effective": gate["old_settlement_disposition"],

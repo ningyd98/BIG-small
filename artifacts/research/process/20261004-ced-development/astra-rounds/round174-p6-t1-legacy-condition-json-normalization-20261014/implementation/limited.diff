@@ -1,0 +1,37 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py (before R174)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py (R174 helper)
+@@ -2253,6 +2253,8 @@
+ 
+ def _b_local_cases(legacy, original, app_current):
+     """Semantic sources come from actual legacy codecs, never empty schema placeholders."""
++    import json
++
+     sources = legacy["sources"]
+     fields = _b_fields()
+     bootstrap_original = copy.deepcopy(original)
+@@ -2298,7 +2300,11 @@
+         bound_original = bootstrap_original if tag.startswith("visual.bootstrap.") else original
+         decision = _b_decision(bound_original, app_current)
+         transaction = _b_transaction(decision)
+-        raw = source.model_dump(mode="json") if old_tag == "recovery.retry-budget.v1" else source.to_payload()
++        legacy_raw_payload = source.model_dump(mode="json") if old_tag == "recovery.retry-budget.v1" else source.to_payload()
++        raw = json.loads(json.dumps(
++            legacy_raw_payload, allow_nan=False, sort_keys=True,
++            separators=(",", ":"), ensure_ascii=False,
++        ))
+         diagnostics = {
+             "utc": {key: value for key, value in raw.items()
+                     if key.endswith("_at") or key in ("retry_deadline",)},
+@@ -2319,7 +2325,11 @@
+             body["content_hash"] = _b_sha(local_budget_binding)
+             assert body["content_hash"] != legacy_budget_payload["content_hash"]
+             assert set(local_budget_binding) == {"schema_version", "task_id", "state", "revision"}
+-            assert source.to_payload() == legacy_budget_payload
++            assert source.to_payload() == legacy_raw_payload
++            assert json.loads(json.dumps(
++                source.to_payload(), allow_nan=False, sort_keys=True,
++                separators=(",", ":"), ensure_ascii=False,
++            )) == legacy_budget_payload
+             assert body["state"]["original_budget_reference"] == bound_original["verification_reference"]
+             assert body["state"]["limits"] == legacy_budget_payload["state"]["limits"]
+             for counter in (

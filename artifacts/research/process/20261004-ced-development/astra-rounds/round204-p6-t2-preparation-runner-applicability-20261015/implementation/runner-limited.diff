@@ -1,0 +1,272 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/before/run-budgeted-command.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py
+@@ -42,10 +42,170 @@
+     os.replace(temporary, path)
+ 
+ 
++def _t2_pin(path: Path) -> dict:
++    raw = path.read_bytes()
++    return {"path": str(path), "bytes": len(raw),
++            "sha256": hashlib.sha256(raw).hexdigest()}
++
++
++def _t2_cleanup(process: subprocess.Popen) -> dict:
++    """One owned process group, one 15-second total termination/reap deadline."""
++    deadline = time.monotonic() + 15
++    errors = []
++
++    def remaining() -> float:
++        return max(0.0, deadline - time.monotonic())
++
++    def group_alive():
++        try:
++            os.killpg(process.pid, 0)
++            return True
++        except ProcessLookupError:
++            return False
++        except OSError as error:
++            errors.append({"stage": "observe group", "type": type(error).__name__,
++                           "message": str(error)})
++            return None
++
++    if group_alive() is True:
++        try:
++            os.killpg(process.pid, signal.SIGTERM)
++        except ProcessLookupError:
++            pass
++        except OSError as error:
++            errors.append({"stage": "TERM", "type": type(error).__name__, "message": str(error)})
++        try:
++            process.wait(timeout=min(5.0, remaining()))
++        except subprocess.TimeoutExpired:
++            pass
++        if group_alive() is True:
++            try:
++                os.killpg(process.pid, signal.SIGKILL)
++            except ProcessLookupError:
++                pass
++            except OSError as error:
++                errors.append({"stage": "KILL", "type": type(error).__name__, "message": str(error)})
++    try:
++        process.wait(timeout=remaining())
++    except subprocess.TimeoutExpired as error:
++        errors.append({"stage": "reap", "type": type(error).__name__, "message": str(error)})
++    alive = group_alive()
++    while alive is True and remaining() > 0:
++        time.sleep(min(0.02, remaining()))
++        alive = group_alive()
++    return {"leader_reaped": process.returncode is not None, "group_remaining": alive,
++            "cleanup_errors": errors, "cleanup_seconds_bound": 15}
++
++
++def _t2_resources(directory: Path, command_id: str, argv: list[str], process_pid: int | None) -> dict:
++    from collections import Counter
++
++    expected = [arg for arg in argv if "::" in arg]
++    records, errors, nodes = [], [], Counter()
++    counts = Counter()
++    paths = sorted(directory.iterdir()) if directory.is_dir() else []
++    if len(paths) > 10000:
++        raise ValueError("T2 resource directory exceeds finite evidence cap")
++    for path in paths:
++        record = {"path": str(path), "pin": None, "data": None, "error": None}
++        try:
++            if path.is_symlink() or not path.is_file() or path.suffix != ".json":
++                raise ValueError("exact regular T2 resource JSON required")
++            record["pin"] = _t2_pin(path)
++            value = read_json(path)
++            record["data"] = value
++            if value["schema_version"] != "bigsmall.r158-t2-resource.v1":
++                raise ValueError("exact T2 resource sidecar schema required")
++            if value["command_id"] != command_id or value["nodeid"] not in expected:
++                raise ValueError("T2 sidecar command/node provenance differs")
++            if value["pid"] != process_pid or process_pid is None:
++                raise ValueError("T2 sidecar actual child PID differs")
++            nodes[value["nodeid"]] += 1
++            if value["entered_contract_guard"] is not True:
++                raise ValueError("T2 attempt must record the contract guard")
++            if command_id == "t2_green" and value["entered_behavior"] is not True:
++                raise ValueError("T2 GREEN must enter every behavioral body")
++            resources = value["resources"]
++            if type(resources) is not list or type(value["allocation_attempts"]) is not int:
++                raise ValueError("actual resource allocation denominator required")
++            if value["allocation_attempts"] != len(resources):
++                raise ValueError("resource attempts do not match actual object records")
++            if value["cleanup_errors"]:
++                raise ValueError("actual T2 resource cleanup errors retained")
++            counts["allocation_attempts"] += len(resources)
++            for resource in resources:
++                if resource["initialization_attempted"] is not True:
++                    raise ValueError("resource attempt missing")
++                if type(resource["initialized"]) is not bool:
++                    raise ValueError("actual resource initialization observation required")
++                counts["initialized"] += int(resource["initialized"])
++                counts["kind:" + resource["kind"]] += 1
++                if resource["cleanup_observed"] is not True:
++                    raise ValueError("resource cleanup unavailable or failed")
++                counts["cleanup_observed"] += 1
++            if value["observations"]["observers_restored"] is not True:
++                raise ValueError("T2 observer restoration not observed")
++            if command_id == "t2_green" and value["observations"]["assertions_completed"] is not True:
++                raise ValueError("T2 behavioral assertions did not complete")
++        except (OSError, ValueError, TypeError, KeyError) as error:
++            record["error"] = {"type": type(error).__name__, "message": str(error)}
++            errors.append({"path": str(path), **record["error"]})
++        records.append(record)
++    mapping_match = nodes == Counter(expected)
++    if not mapping_match:
++        errors.append({"stage": "helper map", "type": "MissingOrDuplicateNode",
++                       "message": "exactly one actual attempt sidecar per selected node required"})
++    if counts["kind:worker"] > 18:
++        errors.append({"stage": "cap", "type": "WorkerLifecycleCap", "message": "T2 maximum18 exceeded"})
++    valid = not errors and mapping_match
++    return {"schema_version": "bigsmall.r158-t2-resource-summary.v1",
++            "command_id": command_id, "actual_node_attempts": len(records),
++            "actual_node_counts": dict(nodes), "records": records,
++            "counts": dict(counts), "all_records_valid": valid, "validation_errors": errors,
++            "interpretation": "Interface RED may reject before allocation; never behavioral proof.",
++            "unobserved": {"OS_handles": None, "external_models": None, "GPU_native": None,
++                           "network_calls": None}}
++
++
++def _t2_index(root: Path) -> list[dict]:
++    import stat
++
++    items = []
++    try:
++        initial = root.lstat()
++    except FileNotFoundError:
++        return items
++    if stat.S_ISLNK(initial.st_mode):
++        return [{"path": str(root), "mode": initial.st_mode, "bytes": initial.st_size,
++                 "inode": initial.st_ino, "symlink": True,
++                 "link_target": os.readlink(root)}]
++    pending = [root]
++    while pending:
++        directory = pending.pop()
++        with os.scandir(directory) as entries:
++            for entry in sorted(entries, key=lambda value: value.name):
++                path = Path(entry.path)
++                info = entry.stat(follow_symlinks=False)
++                value = {"path": str(path), "mode": info.st_mode, "bytes": info.st_size,
++                         "inode": info.st_ino, "symlink": stat.S_ISLNK(info.st_mode)}
++                if value["symlink"]:
++                    value["link_target"] = os.readlink(path)
++                elif stat.S_ISDIR(info.st_mode):
++                    pending.append(path)
++                elif stat.S_ISREG(info.st_mode):
++                    value["sha256"] = sha(path)
++                items.append(value)
++                if len(items) > 10000:
++                    raise ValueError("T2 finite file index cap exceeded")
++    return items
++
++
++
+ def main() -> int:
+     if len(sys.argv) != 2:
+         raise ValueError("exactly one R158 command id required")
+     command_id = sys.argv[1]
++    is_t2 = command_id in {"t2_red", "t2_green"}
+     if Path.cwd().resolve() != ROOT:
+         raise ValueError("exact R158 cwd required")
+     if Path(sys.executable).absolute() != ROOT / ".venv/bin/python":
+@@ -133,9 +293,22 @@
+                 "BIGSMALL_R158_COMMAND": command_id,
+                 "BIGSMALL_R158_LEGACY_GOLDENS": str(Path("/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round166-p6-t1-legacy-supervision-claim-timing-20261013/implementation/legacy_control/legacy-goldens.json")),
+             }
++        if is_t2:
++            fixture_controls = {
++                "BIGSMALL_R158_COMMAND": command_id,
++                "BIGSMALL_R158_T2_RESOURCE_DIR": str(evidence / "resources"),
++            }
+         environment.update(fixture_controls)
+         if approved["actual_environment"] != environment:
+             raise ValueError("ROOT must approve the exact effective finite environment")
++        fixture_map = ROUND / "implementation/t1/fixture-map.json"
++        fixture_map_pin = None
++        if is_t2:
++            fixture_map = ROUND / "implementation/t2/fixture-map.json"
++            fixture_map_pin = _t2_pin(fixture_map)
++            if approved["fixture_map_pin"] != fixture_map_pin:
++                raise ValueError("ROOT must approve the exact T2 fixture map")
++            (evidence / "resources").mkdir(exist_ok=False)
+         invocation = {
+             "command_id": command_id, "reservation_id": reservation,
+             "argv": command["argv"], "cwd": command["cwd"],
+@@ -143,13 +316,17 @@
+             "actual_environment": environment, "fixture_controls": fixture_controls,
+             "timeout_seconds": 600, "shell": False, "max_attempts": 1,
+             "stdout": str(stdout_path), "stderr": str(stderr_path),
+-            "fixture_map": str(ROUND / "implementation/t1/fixture-map.json"),
++            "fixture_map": str(fixture_map),
+             "runner_sha256": sha(Path(__file__)),
+             "root_gate_sha256": sha(ROUND / "script-gate.json"),
+             "root_ledger_sha256": sha(ROUND / "root-command-ledger.json"),
+             "resource_caps": plan["fixture"]["caps"],
+             "acceptance": "Raw actual process result only; ROOT evaluates RED and all later gates.",
+         }
++        if is_t2:
++            invocation.update(fixture_map_pin=fixture_map_pin,
++                              resource_sink=str(evidence / "resources"),
++                              cleanup_grace_max_seconds=15)
+         write_new(evidence / "invocation.json", invocation)
+         with stdout_path.open("xb") as stdout, stderr_path.open("xb") as stderr:
+             process = subprocess.Popen(
+@@ -162,8 +339,13 @@
+                 outcome["exit_code"] = process.wait(timeout=600)
+             except subprocess.TimeoutExpired:
+                 outcome["timed_out"] = True
+-                os.killpg(process.pid, signal.SIGKILL)
+-                outcome["exit_code"] = process.wait()
++                if not is_t2:
++                    os.killpg(process.pid, signal.SIGKILL)
++                    outcome["exit_code"] = process.wait()
++            finally:
++                if is_t2:
++                    outcome["cleanup"] = _t2_cleanup(process)
++                    outcome["exit_code"] = process.returncode
+         expected = command["expected_exit"]
+         allowed = expected if type(expected) is list else [expected]
+         outcome["expected_exit"] = expected
+@@ -185,10 +367,40 @@
+             )
+             if outcome["junit"] is None:
+                 outcome["classification"] = "MISSING_JUNIT_STOP_NEXT_ASTRA"
++        if is_t2:
++            summary = _t2_resources(evidence / "resources", command_id, command["argv"],
++                                    None if process is None else process.pid)
++            write_new(evidence / "resource-summary.json", summary)
++            outcome["resource_summary"] = _t2_pin(evidence / "resource-summary.json")
++            outcome["resource_observations"] = summary
++            outcome["file_index"] = _t2_index(evidence)
++            temp = Path(next(arg.split("=", 1)[1] for arg in command["argv"]
++                             if arg.startswith("--basetemp=")))
++            outcome["temp_index"] = _t2_index(temp)
++            cleanup = outcome["cleanup"]
++            if (not cleanup["leader_reaped"] or cleanup["group_remaining"] is not False
++                    or cleanup["cleanup_errors"] or not summary["all_records_valid"]):
++                outcome["classification"] = "T2_RESOURCE_OR_PROCESS_CLOSURE_STOP_NEXT_ASTRA"
+     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+         outcome["runner_failure"] = {"type": type(error).__name__, "message": str(error)}
+         outcome["classification"] = "RUNNER_FAILURE_STOP_NEXT_ASTRA"
+     finally:
++        if is_t2 and "resource_summary" not in outcome:
++            # Even a pre-spawn/gate failure retains every available real sidecar.
++            try:
++                summary = _t2_resources(evidence / "resources", command_id, command["argv"],
++                                        None if process is None else process.pid)
++                write_new(evidence / "resource-summary.json", summary)
++                outcome["resource_summary"] = _t2_pin(evidence / "resource-summary.json")
++                outcome["resource_observations"] = summary
++                outcome["file_index"] = _t2_index(evidence)
++                temp = Path(next(arg.split("=", 1)[1] for arg in command["argv"]
++                                 if arg.startswith("--basetemp=")))
++                outcome["temp_index"] = _t2_index(temp)
++            except (OSError, ValueError, KeyError, TypeError) as error:
++                outcome["t2_capture_failure"] = {"type": type(error).__name__,
++                                                 "message": str(error)}
++                outcome["classification"] = "T2_CAPTURE_FAILURE_STOP_NEXT_ASTRA"
+         outcome["elapsed_seconds"] = time.monotonic() - started
+         write_new(evidence / "result.json", outcome)
+         entry.update(state="SPENT", result_path=str(evidence / "result.json"))

@@ -1,0 +1,119 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py (R222 physical before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py (exact original intent)
+@@ -421,6 +421,7 @@
+         if type(ttl) is not int or not math.isfinite(ttl) or ttl <= 0:
+             raise OperationalLeaseError("frozen TTL must be positive finite integer seconds")
+         self.worker = worker
++        self._mode = worker._frozen_operational_time_mode
+         self.repository = cast("SQLiteSimulationJobRepository", worker.repository)
+         self.worker_id = worker.worker_id
+         self._binding = worker.visual_role_binding
+@@ -493,7 +494,9 @@
+         ):
+             self.invalidate("worker original policy changed")
+             raise OperationalLeaseError("worker frozen source/TTL policy changed")
+-        if self.worker.operational_time_mode != self.worker._frozen_operational_time_mode:
++        if (self.worker._frozen_operational_time_mode != self._mode
++                or (self._mode != "LOCAL_TEMPORAL_PUBLICATION_V1"
++                    and self.worker.operational_time_mode != self._mode)):
+             self.invalidate("worker mode changed while active")
+             raise OperationalLeaseError("worker frozen mode changed")
+         return str(role)
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py (R222 physical before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py (exact original intent)
+@@ -518,6 +518,23 @@
+             # Measure after lock acquisition: lock waits cannot revive expiry.
+             now = _now()
+             expires_at = now + timedelta(seconds=lease_ttl_seconds)
++            session = _current_session(self)
++            if session is not None and session._mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++                # The dispatcher already evaluated the genuine current broker
++                # segment in this transaction. UTC columns remain diagnostics.
++                cursor = conn.execute(
++                    "UPDATE simulation_job_leases SET heartbeat_at=?,expires_at=? WHERE lease_id=? "
++                    "AND released_at='' AND EXISTS (SELECT 1 FROM simulation_jobs j "
++                    "WHERE j.job_id=simulation_job_leases.job_id AND j.lease_id=simulation_job_leases.lease_id "
++                    "AND j.worker_id=simulation_job_leases.worker_id AND j.cancel_requested=0 "
++                    "AND j.status IN (?,?,?))",
++                    (_dt(now), _dt(expires_at), lease_id, RuntimeJobStatus.LEASED.value,
++                     RuntimeJobStatus.STARTING.value, RuntimeJobStatus.RUNNING.value))
++                if cursor.rowcount != 1:
++                    raise OperationalLeaseError("current local heartbeat ownership/CAS invalid")
++                conn.execute("UPDATE simulation_jobs SET lease_expires_at=?,updated_at=? WHERE lease_id=?",
++                             (_dt(expires_at), _dt(now), lease_id))
++                return
+             # Keep lease and job expiry in one transaction. Expiry, release,
+             # cancellation and ownership changes are irreversible to a heartbeat.
+             cursor = conn.execute(
+@@ -1294,19 +1311,22 @@
+         """Issue or join a genuine private read view; descriptors cannot enter."""
+         from cloud_edge_robot_arm.vision.operational_windows import OperationalWindowOwner, _prepare_startup
+         from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+ 
+         caller = sys._getframe(2).f_code
+         allowed = {
+             _prepare_startup.__code__, OperationalWindowOwner._bind_inputs.__code__,
+             VisualWorkerRuntime._read_lease.__code__,
+             VisualWorkerRuntime._local_publication_scope.__wrapped__.__code__,
++            SimulationWorker._owns_artifact_publication.__code__,
+         }
+         if (type(session) is not OperationalLeaseSession or _current_session(self) is not session
+                 or session.repository is not self or caller not in allowed
+                 or session.worker._frozen_operational_time_mode != "LOCAL_TEMPORAL_PUBLICATION_V1"):
+             raise OperationalLeaseError("registered private local session/caller required")
+         session._check_ingress(purpose)
+-        active = getattr(self._transactions, "local_view", None)
++        active = (getattr(self._transactions, "local_view", None)
++                  or getattr(self._transactions, "publication_view", None))
+         if active is not None:
+             session._view(active)
+             if active.snapshot["job_id"] != job_id:
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py (R222 physical before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py (exact original intent)
+@@ -1577,6 +1577,22 @@
+ 
+         if job.lease_id != lease_id or job.worker_id != self.worker_id:
+             return False
++        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            from cloud_edge_robot_arm.vision.operational_windows import _OWNERS
++            from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseError
++            from cloud_edge_robot_arm.research.operational_time_v1 import OperationalTimeError
++
++            try:
++                owner = _OWNERS.get(self)
++                if owner is not None:
++                    owner._check_app_live(require_origin=owner.task_origin is not None)
++                with self.repository._local_read_scope(
++                    self._operational_lease_session, job_id=job.job_id, purpose="worker-read",
++                    operation_sha256=hashlib.sha256((job.job_id + ":worker-read").encode()).hexdigest(),
++                ) as view:
++                    return self._operational_lease_session.evaluate_locked(view).status == "VALID"
++            except (OperationalLeaseError, OperationalTimeError, ValueError):
++                return False
+         lease = next(
+             (
+                 item
+@@ -1710,6 +1726,11 @@
+         """Recheck persisted ownership at each model return and physical boundary."""
+         from datetime import UTC, datetime
+ 
++        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            current = self.repository.get_job(original.job_id)
++            return (current.cancel_requested or current.status != RuntimeJobStatus.RUNNING
++                    or self._heartbeat_failed.is_set()
++                    or not self._owns_artifact_publication(current, original.lease_id))
+         try:
+             current = self.repository.get_job(original.job_id)
+             if current.cancel_requested or current.status in {
+@@ -1766,6 +1787,10 @@
+             raise RuntimeError("lease heartbeat failed; dispatch stopped")
+         if current.lease_id != original.lease_id or current.status != RuntimeJobStatus.RUNNING:
+             raise RuntimeError("job no longer owns an active running lease")
++        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            if not self._owns_artifact_publication(current, original.lease_id):
++                raise RuntimeError("current local task/lease authority unavailable")
++            return
+         if (time.monotonic() - start_monotonic) >= original.timeout_seconds:
+             raise TimedOut("timeout")
+ 

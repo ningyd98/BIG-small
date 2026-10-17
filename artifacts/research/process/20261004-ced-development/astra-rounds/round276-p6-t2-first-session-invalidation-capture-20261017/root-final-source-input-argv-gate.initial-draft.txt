@@ -1,0 +1,197 @@
+from pathlib import Path
+import base64
+import copy
+import difflib
+import hashlib
+import json
+import re
+import stat
+D=Path("/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round276-p6-t2-first-session-invalidation-capture-20261017")
+A=D.parent
+I=A/"round278-p6-t2-runner-main-builder-boundary-disposition-20261017/implementation"
+R277=A/"round277-p6-t2-session-snapshot-worker-field-collision-20261017"
+R279=A/"round279-p6-t2-source-read-display-framing-disposition-20261017"
+checks=[]
+def check(name, condition):
+ checks.append({"check":name,"passed":bool(condition)})
+def pin(path):
+ p=Path(path); b=p.read_bytes()
+ return {"path":str(p),"bytes":len(b),"sha256":hashlib.sha256(b).hexdigest()}
+def checked(q, physical=None):
+ p=Path(physical or q["path"]); b=p.read_bytes()
+ check("identity "+str(p),stat.S_ISREG(p.lstat().st_mode) and len(b)==q["bytes"] and hashlib.sha256(b).hexdigest()==q["sha256"])
+ return b
+def load_pin(q):
+ return json.loads(checked(q))
+def record(path,size,sha):
+ return {"path":str(path),"bytes":size,"sha256":sha}
+def full_before(q):
+ b=base64.b64decode(q["base64"],validate=True)
+ check("complete before "+q["original"]["path"],checked(q["archive"])==b and len(b)==q["original"]["bytes"] and hashlib.sha256(b).hexdigest()==q["original"]["sha256"])
+ return b
+def absent(path):
+ p=Path(path); check("required absence "+str(p),not p.exists() and not p.is_symlink())
+P=load_pin(record(D/"plan.json",48080,"bf3f11ceb390c316021714feffb54775d47bd2dcd5dc6f0ae59f9f8169a1c2a8"))
+O=load_pin(record(D/"input-observation.json",18102,"418b7a91a16ff867c811fbaabf6aa577a3782145b51c9a4e3b737d07c6322623"))
+S=load_pin(record(D/"prerequisite-supplement.json",5095,"9e1011333681dd85f92d302d995a28c0b28cfc8ee9fac259954fe97f66733374"))
+R=load_pin(record(I/"change-report.json",16686,"ea508a36924f68f6a25ae6c73c0f0a5bbb2f73e082f232081ef6dec43f4a6709"))
+N=load_pin(R["native_receipt"])
+X=load_pin(R["source_index"])
+proof=load_pin(R["scope_proof"])
+ctx_pin=record(D/"root-context-update.json",321314,"d423936ab5fc4d506f25db3c8b1beb5c2b54de93643c9fee9de812a9b4c27eb0")
+CTX=load_pin(ctx_pin)
+check("fifty original input equality",P["inputs"]==O["inputs"] and len(P["inputs"])==50)
+mapped={}
+for row in CTX["changes"]:
+ before=full_before(row["before"])
+ after=checked(row["after"])
+ check("context after physical bytes and modes",checked(row["after_archive"])==after and all(Path(v).lstat().st_mode==row["mode"]==33204 for v in (row["after"]["path"],row["after_archive"]["path"],row["before"]["archive"]["path"])))
+ mapped[row["before"]["original"]["path"]]=row
+for q in P["inputs"]:
+ if q["path"] in mapped:
+  row=mapped[q["path"]]
+  check("exact two typed context transitions",q==row["before"]["original"])
+  checked(q,row["before"]["archive"]["path"])
+ else:
+  checked(q)
+check("only two context transitions",len(mapped)==2)
+for q in S["inputs"]:checked(q)
+for q in R["authority"].values():checked(q)
+for k in ("runner_after","plugin","candidate","new_main","new_consumer","full_after","native_receipt","native_patch","candidate_native_receipt","candidate_native_patch","source_index","scope_proof","limited_diff","source_portions_diff"):
+ checked(R[k])
+candidate=checked(R["candidate"])
+check("complete reviewed candidate identity",len(candidate)==78491 and hashlib.sha256(candidate).hexdigest()=="50f38bb3d57e7d361283cf64adb97a8207b41445c17f8bce502bf8703ab430b6" and len(candidate.splitlines())==1316)
+check("candidate actual target and full after",candidate==checked(R["runner_after"])==checked(R["full_after"]) and R["runner_before"] is None and N["runner_before"] is None)
+check("actual source-only report",R["runtime_commands_executed"]==0 and R["roles_created"]==0 and R["STATE_PHASE_changed"] is False and R["T2_complete"] is False)
+for row in X["sources"]:
+ check("complete source-index current physical/base64/mode",checked(row["logical"])==checked(row["physical"])==base64.b64decode(row["base64"],validate=True) and Path(row["logical"]["path"]).lstat().st_mode==Path(row["physical"]["path"]).lstat().st_mode==row["mode"]==33204)
+check("two exact new sources",len(X["sources"])==2 and {x["logical"]["path"] for x in X["sources"]}=={R["plugin"]["path"],R["runner_after"]["path"]})
+check("six exact contiguous portions",proof["components"]==X["source_portions"]==R["scope_checks"]["components"] and len(proof["components"])==6)
+parts={}; pos=0
+for q in proof["components"]:
+ block=candidate[q["byte_offset"]:q["byte_offset"]+q["bytes"]]
+ check("component "+q["name"],q["byte_offset"]==pos and len(block)==q["bytes"] and hashlib.sha256(block).hexdigest()==q["sha256"] and candidate.splitlines(keepends=True)[q["first_line"]-1:q["last_line"]]==block.splitlines(keepends=True))
+ parts[q["name"]]=block;pos+=q["bytes"]
+check("whole assembled extent",pos==len(candidate))
+drafts=load_pin(X["draft_before_manifest"])
+draft_by_name={}
+for row in drafts["drafts"]:
+ b=full_before({"original":row["original"],"archive":row["physical"],"base64":row["base64"]})
+ check("draft complete current and mode",checked(row["original"])==b and Path(row["original"]["path"]).lstat().st_mode==Path(row["physical"]["path"]).lstat().st_mode==row["mode"])
+ draft_by_name[Path(row["original"]["path"]).name]=b
+old_prefix=draft_by_name["common-prefix-source.txt"]
+check("only new-run provenance prefix delta",old_prefix.count(b"This genuine new R268 diagnostic run only; old bytes not recovered")==1 and parts["common_prefix"]==old_prefix.replace(b"This genuine new R268 diagnostic run only; old bytes not recovered",b"This genuine new R276 diagnostic run only; old bytes not recovered",1))
+check("authority unchanged full source",parts["authority_preconditions"]==draft_by_name["authority-preconditions-source.txt"])
+old_consumer=draft_by_name["session-consumer-source.txt"]
+check("exact R277 consumer delta",old_consumer.count(b'snapshot.get("worker_id")')==1 and parts["session_consumer"]==old_consumer.replace(b'snapshot.get("worker_id")',b'snapshot.get("worker_object_id")',1)==checked(R["new_consumer"]))
+check("complete new main portion",parts["main"]==checked(R["new_main"]))
+template=checked(drafts["template_runner"])
+original_junit=template[template.index(b"def junit_observation("):template.index(b"def passive_observations(")]
+check("JUnit/cases only output-round delta",parts["JUnit_and_cases"]==original_junit.replace(b'"round": "R268"',b'"round": "R276"'))
+defs=re.findall(rb"^def ([A-Za-z_][A-Za-z_0-9]*)\(",candidate,re.M)
+check("unique complete top-level function definitions",len(defs)==len(set(defs)) and defs.count(b"main")==1 and defs.count(b"authority")==1 and defs.count(b"session_observations")==1)
+native_details=[]
+for stage in N["stages"]:
+ lines=stage["arguments"].splitlines()
+ check("native honest return "+stage["stage"],stage["actual_tool_return"]=={} and all(stage[k] is None for k in ("numeric_exit","independent_stdout","independent_stderr")))
+ check("native frame",lines[0]=="*** Begin Patch" and lines[-1]=="*** End Patch")
+ i=1;targets=[]
+ while i<len(lines)-1:
+  check("native Add only",lines[i].startswith("*** Add File: "))
+  path=lines[i][14:];i+=1;body=[]
+  while i<len(lines)-1 and lines[i].startswith("+"):
+   body.append(lines[i][1:]);i+=1
+  raw=("\n".join(body)+"\n").encode()
+  check("complete native Add reconstruction "+path,Path(path).read_bytes()==raw and Path(path).lstat().st_mode==33204)
+  targets.append(path)
+ native_details.append({"stage":stage["stage"],"targets":targets})
+check("exact native stages and destinations",[x["stage"] for x in native_details]==["before_candidate","implementation"] and set(native_details[0]["targets"])=={R["candidate"]["path"],R["new_main"]["path"],R["new_consumer"]["path"]} and native_details[1]["targets"]==[R["runner_after"]["path"]])
+check("exact implementation patch",N["stages"][1]["arguments"]==Path(R["native_patch"]["path"]).read_text())
+accepted=load_pin(record(R277/"root-independent-source-acceptance.json",3700,"c5de6c4faa1209dfbd5a055fc84d905f4b9429415d1140af30a82c37e6be6364"))
+P277=read277=load_pin(R["authority"]["R277_plan"])
+M277=load_pin(P277["full_before"]["manifest"])
+old_plugin=full_before(M277)
+replacement=P277["scope"]["exact_replacement"]
+check("R277 actual corrected full plugin",old_plugin.count(replacement["old"].encode())==1 and old_plugin.replace(replacement["old"].encode(),replacement["new"].encode(),1)==checked(accepted["after"])==checked(R["plugin"])==checked(accepted["physical_after"]))
+P279=load_pin(R["authority"]["R279_plan"])
+for q in P279["inputs"]:checked(q)
+for q,rng in zip(R["source_read_actuals"],P279["physical_read_contract"]["allowed_source_ranges"]):
+ evidence=load_pin(q); actual=evidence["actual_tool_return"]
+ block=b"".join(Path(rng["path"]).read_bytes().splitlines(keepends=True)[rng["first_line_1based"]-1:rng["last_line_inclusive"]])
+ check("plain bounded source-read actual",actual["exit_code"]==0 and not actual["output"].startswith("Warning:") and actual["output"].endswith(block.decode()) and len(actual["output"].encode())<=40000 and len(actual["output"].encode())-len(block)<=2000 and evidence["source_executed"] is False and evidence["source_display_parsed"] is False)
+check("all six read actuals",len(R["source_read_actuals"])==6)
+prep_pin=record(I/"actual-source-preparation-tool-return.json",24134,"03e426bda1f4d84b6421e17410b8e11f795cff1f0dc0302c8932696df37836d1")
+prep=load_pin(prep_pin)
+check("actual source preparation no runtime",prep["source_execution"] is False and prep["runtime_commands"]==prep["role_writes"]==prep["context_writes"]==0 and all(x["actual_tool_return"]["exit_code"]==0 for x in prep["stages"]))
+old_index=load_pin(next(q for q in P["inputs"] if q["path"].endswith("/dual_progress/before/source-index.json")))
+prior=old_index["authority_before"]
+check("current27 protected211 finite68",len(old_index["sources"])==27 and len(prior["protected"])==211 and len(prior["accepted_history_generations"])==68)
+test_manifest=load_pin(next(q for q in P["inputs"] if q["path"].endswith("/round274-p6-t2-wait-fixture-clock-scope-20261017/before/manifest.json")))
+old_test=full_before(test_manifest)
+new_test=checked(next(q for q in P["inputs"] if q["path"].endswith("/round274-p6-t2-wait-fixture-clock-scope-20261017/implementation/after-test.py")))
+for q in old_index["sources"]:
+ b=checked(q["physical"]);check("old full source base64",b==base64.b64decode(q["base64"],validate=True))
+ if q["path"]==test_manifest["original"]["path"]:
+  check("only exact test generation",b==old_test and Path(q["path"]).read_bytes()==new_test)
+ else:
+  check("other26 current bytes",checked(q)==b)
+ check("current source mode",Path(q["path"]).lstat().st_mode==q["mode"])
+for q in prior["protected"]:checked(q)
+check("old missing35 and sides90",len(prior["missing_registry35"])==35 and len(prior["old_absent_sidecars90"])==90)
+for q in prior["missing_registry35"]:absent(q["original"]["path"])
+for q in prior["old_absent_sidecars90"]:absent(q["path"])
+for name,n in (("R242_R248",12),("R251",18)):
+ rows=prior["old_retained_groups"][name];check("old DB group count "+name,len(rows)==n)
+ for q in rows:
+  checked(q["pin"])
+  for side in q["sidecars"]:
+   check("old DB sidecar declared absent",side["exists"] is False and side["is_symlink"] is False);absent(side["path"])
+def pairs(rows,n):
+ check("retained DB pair count",len(rows)==n);present=missing=0
+ for q in rows:
+  check("raw DB original archive",checked(q["pin"])==checked(q["archive"]))
+  check("three sidecar states",len(q["sidecars"])==3)
+  for side in q["sidecars"]:
+   check("no sidecar symlink",side["is_symlink"] is False)
+   if side["exists"]:
+    check("present raw sidecar pair",checked(side["pin"])==checked(side["archive"]));present+=1
+   else:
+    check("absent sidecar no pin",side["pin"] is None);absent(side["path"]);missing+=1
+ return present,missing
+check("R258 exact10 with2present28absent",pairs(prior["R258_retained_DB_pairs"],10)==(2,28))
+dual_accept=None
+for key,n,filename in (("wait_memory_failure",4,"root-wait-memory-independent-acceptance.json"),("dual_progress",2,"root-dual-independent-acceptance.json")):
+ result=load_pin(next(q for q in P["inputs"] if q["path"].endswith("/"+key+"/result.json")));pairs(result["new_retained_databases"],n)
+ acceptance=load_pin(next(q for q in P["inputs"] if q["path"].endswith("/"+filename)));full_before(acceptance["root_before"])
+ if key=="dual_progress":dual_accept=acceptance
+for q in old_index["control_before"]:
+ full_before(q)
+ if q["original"]["path"].endswith("/round268-p6-t2-targeted-failure-evidence-20261017/root-command-ledger.json"):
+  check("exact historical reserved ROOT control",q["original"]==dual_accept["root_before"]["original"])
+roles={k:P["runner_contract"]["roles"][k] for k in ("ROOT","AUTHOR")}
+for path in roles.values():absent(path)
+for command in P["commands"].values():
+ absent(command["output_directory"])
+ check("new once and finite argv",command["authorized"]==1 and command["used"]==0 and command["remaining"]==1 and command["limits"]["attempts"]==1 and command["limits"]["retries"]==0 and command["limits"]["child_seconds"]==600 and command["limits"]["cleanup_total_seconds"]==15 and command["limits"]["outer_total_seconds"]==900 and command["limits"]["faulthandler_seconds"]==540 and command["env_inheritance"] is False)
+check("new source/schema roles unmodified",X["runtime_executed"] is False and X["roles_created"] is False)
+failed=[x for x in checks if not x["passed"]]
+if failed:
+ print(json.dumps({"round":"R276","status":"FAILED_STOP_ASTRA","failed":failed},ensure_ascii=False));raise SystemExit(2)
+def write(name,value):
+ path=D/name
+ with path.open("x",encoding="utf-8") as f:f.write(json.dumps(value,ensure_ascii=False,indent=2)+"\n")
+ return pin(path)
+native_pin=write("root-native-chain-acceptance.json",{"round":"R276","status":"FULL_NATIVE_SOURCE_CHAINS_ACCEPTED","runner_native":R["native_receipt"],"runner_Add_stages":native_details,"plugin_R277_acceptance":pin(R277/"root-independent-source-acceptance.json"),"sources":{"runner":R["runner_after"],"plugin":R["plugin"]},"runtime":0})
+input_pin=write("root-final-input-check.json",{"round":"R276","status":"ALL_FINITE_INPUT_SOURCE_DB_CONTEXT_ARGV_CHECKS_PASSED","checks":checks,"initial_inputs":50,"mapped_context":2,"supplement_inputs":5,"current_sources":27,"protected":211,"history_generations_retained":68,"new_R268_DB_count":6,"runtime":0})
+fixed=[]
+for q in P["inputs"]:
+ fixed.append(mapped[q["path"]]["after"] if q["path"] in mapped else q)
+fixed+=S["inputs"]+list(R["authority"].values())+[R[k] for k in ("candidate","new_main","new_consumer","full_after","native_receipt","native_patch","candidate_native_receipt","candidate_native_patch","source_index","scope_proof","limited_diff","source_portions_diff")]+R["source_read_actuals"]+[ctx_pin,prep_pin,pin(R277/"root-independent-source-acceptance.json"),pin(R277/"before/manifest.json"),pin(R277/"before/r276_session_evidence.py"),pin(R277/"implementation/actual-plugin-native-tool-return.json"),pin(R277/"implementation/after-r276_session_evidence.py")]
+unique={}
+for q in fixed:unique[(q["path"],q["bytes"],q["sha256"])]=q
+sources={"runner":R["runner_after"],"plugin":R["plugin"]}
+source_gate={"round":"R276","status":"VERIFIED_SOURCE_ONLY","plan":pin(D/"plan.json"),"observation":pin(D/"input-observation.json"),"supplement":pin(D/"prerequisite-supplement.json"),"sources":sources,"input_check":input_pin,"native":native_pin,"context_manifest":ctx_pin,"fixed_inputs":list(unique.values()),"runtime_released":False,"T2_complete":False}
+source_pin=write("source-gate.json",source_gate)
+script_pin=write("script-gate.json",{"round":"R276","status":"VERIFIED_BY_ROOT","plan":source_gate["plan"],"source_gate":source_pin,"sources":sources,"commands":P["commands"],"role_files":roles,"reservation_directory":str(D/"root-reservations"),"runtime_released":False})
+accept_pin=write("root-final-source-acceptance.json",{"round":"R276","status":"FULL_SOURCE_NATIVE_INPUT_ARGV_ACCEPTED_NO_DISPATCH","checks_passed":len(checks),"source_gate":source_pin,"script_gate":script_pin,"native":native_pin,"input_check":input_pin,"fixed_inputs":len(unique),"sources":sources,"T2_complete":False})
+print(json.dumps({"status":"FULL_SOURCE_NATIVE_INPUT_ARGV_ACCEPTED_NO_DISPATCH","checks":len(checks),"fixed_inputs":len(unique),"source_gate":source_pin,"script_gate":script_pin,"acceptance":accept_pin},ensure_ascii=False))

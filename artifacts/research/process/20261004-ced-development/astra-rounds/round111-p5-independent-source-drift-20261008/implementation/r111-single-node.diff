@@ -1,0 +1,112 @@
+--- R111-before/tests/test_operational_windows.py
++++ current/tests/test_operational_windows.py
+@@ -424,28 +424,87 @@
+ 
+ 
+ def test_source_and_budget_changes_invalidate_window(monkeypatch, tmp_path):
+-    def run(module, runtime, raw, worker, repo, job):
+-        owner = runtime._operational_owner
+-        token, receipt = event(owner)
+-        window = owner.issue("capture", receipt, budget_ns=5_000_000_000, parent_ids=())
+-        with sqlite3.connect(repo.database_path) as connection:
+-            connection.execute(
+-                "UPDATE simulation_jobs SET timeout_seconds=? WHERE job_id=?",
+-                (job.timeout_seconds + 1, job.job_id),
+-            )
+-        assert owner.check(window, after=token).status == "UNKNOWN"
+-        with sqlite3.connect(repo.database_path) as connection:
+-            connection.execute(
+-                "UPDATE simulation_jobs SET timeout_seconds=? WHERE job_id=?",
+-                (job.timeout_seconds, job.job_id),
+-            )
+-        path = runtime.source.source_root / "device.py"
+-        original = path.read_bytes()
+-        path.write_bytes(original + b"# drift\n")
+-        assert owner.check(window, after=token).status == "UNKNOWN"
+-        path.write_bytes(original)
+-
+-    exercise(monkeypatch, tmp_path, run)
++    owners, nonces, repositories, case_results = [], [], [], []
++    for mutation in ("budget", "source"):
++        case_root = tmp_path / mutation
++        case_root.mkdir()
++        with monkeypatch.context() as local_patch:
++
++            def run(module, runtime, raw, worker, repo, job, mutation=mutation):
++                owner = runtime._operational_owner
++                assert not owner._closed
++                nonce = owner.clock.domain.startup_nonce
++                owners.append(owner)
++                nonces.append(nonce)
++                repositories.append(Path(repo.database_path))
++                token, receipt = event(owner)
++                window = owner.issue("capture", receipt, budget_ns=5_000_000_000, parent_ids=())
++                baseline = owner.check(window, after=token).status
++                assert baseline == "VALID" and not owner._closed
++                original_counter = raw.now
++                original_timeout = repo.get_job(job.job_id).timeout_seconds
++                assert original_timeout == job.timeout_seconds
++                path = runtime.source.source_root / "device.py"
++                original = path.read_bytes()
++                expected_sha = runtime.source.source_hashes["device.py"]
++                assert hashlib.sha256(original).hexdigest() == expected_sha
++                if mutation == "budget":
++                    try:
++                        with sqlite3.connect(repo.database_path) as connection:
++                            connection.execute(
++                                "UPDATE simulation_jobs SET timeout_seconds=? WHERE job_id=?",
++                                (original_timeout + 1, job.job_id),
++                            )
++                        assert not owner._closed
++                        rejected = owner.check(window, after=token).status
++                        assert rejected == "UNKNOWN"
++                    finally:
++                        with sqlite3.connect(repo.database_path) as connection:
++                            connection.execute(
++                                "UPDATE simulation_jobs SET timeout_seconds=? WHERE job_id=?",
++                                (original_timeout, job.job_id),
++                            )
++                    assert path.read_bytes() == original
++                else:
++                    assert repo.get_job(job.job_id).timeout_seconds == original_timeout
++                    try:
++                        path.write_bytes(original + b"# drift\n")
++                        assert path.read_bytes() != original
++                        changed_sha = hashlib.sha256(path.read_bytes()).hexdigest()
++                        assert changed_sha != expected_sha
++                        assert not owner._closed
++                        rejected = owner.check(window, after=token).status
++                        assert rejected == "UNKNOWN"
++                    finally:
++                        path.write_bytes(original)
++                        assert path.read_bytes() == original
++                assert repo.get_job(job.job_id).timeout_seconds == original_timeout
++                assert raw.now == original_counter
++                return {
++                    "mutation": mutation,
++                    "owner_object_id": id(owner),
++                    "startup_nonce": nonce,
++                    "repository": str(repo.database_path),
++                    "source_path": str(path),
++                    "registered_source_sha256": expected_sha,
++                    "baseline": baseline,
++                    "rejected": rejected,
++                    "original_timeout_s": original_timeout,
++                    "original_D_ns": original_counter,
++                    "restored_source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
++                }
++
++            result, _, counter = exercise(local_patch, case_root, run)
++            assert counter.close_call_count == 1
++            assert owners[-1]._closed
++            case_results.append(result)
++            (case_root / "drift-case-result.json").write_text(json.dumps(result, indent=2) + "\n")
++    assert owners[0] is not owners[1]
++    assert nonces[0] != nonces[1]
++    assert repositories[0] != repositories[1]
++    (tmp_path / "case-pair.json").write_text(
++        json.dumps({"independent_lifecycles": 2, "cases": case_results}, indent=2) + "\n"
++    )
+ 
+ 
+ def test_public_worker_or_source_without_startup_capability_cannot_issue(monkeypatch, tmp_path):

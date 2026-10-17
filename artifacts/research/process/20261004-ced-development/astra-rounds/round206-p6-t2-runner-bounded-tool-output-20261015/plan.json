@@ -1,0 +1,156 @@
+{
+  "schema_version": "astra.r206.plan.v1",
+  "round": "R206",
+  "date": "2026-10-15",
+  "actual_author": {
+    "agent": "/root/astra_status_plan",
+    "model": "gpt-6-astra"
+  },
+  "status": "FROZEN_PLAN_PENDING_ROOT_GATE",
+  "problem": "The R204 runner now embeds per-resource data and complete indexes in outcome, but its common final stdout prints that entire outcome without a byte bound.",
+  "original_evidence": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/original-source-observation.json",
+    "bytes": 41575,
+    "sha256": "0dc7f72d38f76c1c10b17ff98d9ad6a42078830fdb8fe3261d0699495e9e17f4"
+  },
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/original-source-observation.json",
+      "bytes": 41575,
+      "sha256": "0dc7f72d38f76c1c10b17ff98d9ad6a42078830fdb8fe3261d0699495e9e17f4"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round204-p6-t2-preparation-runner-applicability-20261015/plan.json",
+      "bytes": 40042,
+      "sha256": "d22d065d712f1be0eee9badf9d4233c13b269b5fa6a5ed47a1af847144026a02"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py",
+      "bytes": 20824,
+      "sha256": "940d9df93054c8433d6571229233b6a247239789132cdcc9d14f904d76548984"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/plan.json",
+      "bytes": 114866,
+      "sha256": "70f51381f8f401c5456304d9eb12f019e7f903a582407ab7819447b8cd1f871b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json",
+      "bytes": 32871,
+      "sha256": "0290f0e66648bf4e3251b5fec8552044cf0468fa663290ba693cfd0bf33fe63a"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json",
+      "bytes": 75684,
+      "sha256": "c161cb83a22ec9aefef972da94f15bec09f78defc253993aa02c14c550315974"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/script-gate.json",
+      "bytes": 298891,
+      "sha256": "9a65d359d5cf738cdfc7eb9da84cd90478bae21fa7097fd325daab8af8e57c84"
+    }
+  ],
+  "root_cause": "A complete on-disk evidence object is also used as the tool display object. T2 data volume is not bounded by its fixed seven-node count; token-budget increases cannot guarantee complete transport.",
+  "classification": "STATIC_PREEXECUTION_APPLICABILITY_GAP_NO_TEST_OR_TRUNCATION_FAILURE",
+  "scope": {
+    "sole_author": {
+      "agent": "/root/p6_stage_b_sol",
+      "model": "gpt-6.1-sol"
+    },
+    "only_modified_file": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py",
+    "allowed_regions": [
+      "One small pure formatting helper if needed",
+      "Replace only final common print with T2 bounded-summary branch and byte-identical original non-T2 print in else"
+    ],
+    "independent_work": "Original seven T2 test source preparation may continue under R204. It is not an R206 modification target.",
+    "forbidden": "No product/test edits, no role/gate/command/schema/raw outcome/resource index/cleanup/timeout change, no new imports of product code or subprocesses."
+  },
+  "summary_contract": {
+    "trigger": "Existing is_t2 flag (only original t2_red/t2_green).",
+    "ordering": "Only after the unchanged full result.json write and author SPENT-ledger save, build a separate display dictionary. Do not mutate outcome or any persisted evidence.",
+    "schema_version": "r158.t2-tool-summary.v1",
+    "allowed_fields": [
+      "schema_version",
+      "command_id",
+      "classification",
+      "exit_code",
+      "timed_out",
+      "started",
+      "expected_numeric_exit_matched",
+      "result"
+    ],
+    "result": "Exact absolute path, bytes and SHA256 of the already written full result.json; use existing _t2_pin. It is the canonical full-result reference, not a self-hash inside result.",
+    "optional_fields": "Only the existing stdout/stderr/junit/resource_summary path/bytes/SHA pin objects, or null if absent. No reservation message, exception message, raw strings, nested resources, indexes, full cleanup object or records[*].data in display.",
+    "bound": "Serialize the complete display once and measure UTF-8 bytes INCLUDING the print newline before printing: <=6000 bytes.",
+    "fallback": "If optional display would exceed the bound, use only schema_version, command_id, full result pin, display_omitted=true; construct and check this bounded record before printing. Exact R158 fixed result path and fixed scalars ensure it is small. Never slice/truncate serialized JSON or silently emit incomplete JSON.",
+    "semantics": "No status/result mutation, numeric-exit relabel, error swallowing or acceptance claim. Missing/failed evidence stays the existing failure. Consumers must read the full pinned result; the summary cannot replace raw/JUnit/resources checks.",
+    "non_T2": "The else branch remains exactly print(json.dumps(outcome, ensure_ascii=False)); non-T2 stdout content and return behavior remain unchanged."
+  },
+  "preserve": {
+    "before": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/before/run-budgeted-command.py",
+      "expected": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py",
+        "bytes": 20824,
+        "sha256": "940d9df93054c8433d6571229233b6a247239789132cdcc9d14f904d76548984"
+      },
+      "rule": "Exclusive full exact 20824-byte source archive before edit; verify full SHA940d... . Do not recreate/overwrite R204 limited diff/report or its prior a455 baseline."
+    },
+    "full_evidence": "Original invocation/stdout/stderr/result/resource-summary and file/temp indexes remain exactly governed by R204; no data omissions from disk.",
+    "previous_reports": "R204 original report/diff/before and this original observation are immutable. New delta/report use R206 paths only.",
+    "other_semantics": "All R158 exact argv/env/cwd,600-second child timeout,15-second cleanup contract, resource validation, reservation and per-command slots unchanged."
+  },
+  "steps": [
+    {
+      "actor": "ROOT",
+      "action": "Full-read plan/inputs and confirm runner20824/940d... still exact; T2 slots remain unreserved0/1. Native activation grants only this source edit."
+    },
+    {
+      "actor": "same Sol",
+      "action": "Preserve full before, implement narrow T2 display helper/branch, save exact new diff and change report. No script execution/import/AST/compile/test."
+    },
+    {
+      "actor": "ROOT",
+      "action": "Full-read final source and exact diff, normal stdlib byte/hash source gate. Verify all bytes outside allowed helper/print region unchanged; original non-T2 print literal retained; no scope/ledger/source drift. Check summary construction contains only permitted scalars/pins and UTF-8 bound is applied before output including newline."
+    },
+    {
+      "actor": "ROOT",
+      "action": "Record new runner pin as the R204 source-preparation successor with explicit before archive; old R204 candidate SHA remains history. Resume original R204 source gates only. No T2 command released by this plan itself."
+    }
+  ],
+  "metadata_outputs": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/before/run-budgeted-command.py",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/implementation/limited.diff",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/implementation/change-report.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/implementation/step-report.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/implementation/step-report.md",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/input-check.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/root-activation.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/source-gate.json"
+  ],
+  "budget": {
+    "new_execution_slots": 0,
+    "new_tests": 0,
+    "new_static": 0,
+    "new_Git": 0,
+    "runner_selftest": 0,
+    "original_t2_red": "HELD0/1; unchanged",
+    "original_t2_green": "HELD0/1; unchanged",
+    "normal_gate": "Bounded ordinary stdlib file/text/hash/diff review and native metadata saves only; no dedicated validation script/pipeline or collector."
+  },
+  "stop_conditions": [
+    "Unexpected tool/source issue or wider required modification -> preserve and STOP for genuine Astra.",
+    "No verification by intentionally generating large output, running fake outcomes or invoking runner.",
+    "Any output consumer incompatibility beyond the explicit T2 compact-vs-full distinction requires separate source review; never pretend summary is full outcome."
+  ],
+  "acceptance": {
+    "source_preparation_only": true,
+    "T2_complete": false,
+    "T12_complete": false,
+    "native": false,
+    "formal": false,
+    "Git": false,
+    "existing_T1_bounded_acceptance_unchanged": true
+  }
+}
+

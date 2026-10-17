@@ -1,0 +1,240 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py.R182-RED8-before
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py
+@@ -423,13 +423,39 @@
+     if isinstance(value, dict):
+         tag = value.get("schema_version")
+         if isinstance(tag, str) and tag in FIELDS:
+-            envelope = _object(value, OUTER_FIELDS)
+-            body = _object(envelope["payload"], FIELDS[tag])
+-            original = _original(envelope["original_time"])
+-            return {"schema_version": tag, "payload": semantic_projection(body),
+-                    "original_time": original}
++            envelope = LocalEnvelope.from_payload(value)
++            return {"schema_version": tag, "payload": semantic_projection(envelope.semantic),
++                    "original_time": envelope.local_time.to_payload()}
+         return {key: semantic_projection(item) for key, item in value.items()}
+     return value
++
++
++def _validate_nested_local(value: JSONValue) -> None:
++    """Validate strict descendants, including envelopes in descriptive JSON."""
++    if isinstance(value, list):
++        for item in value:
++            _validate_nested_local(item)
++    elif isinstance(value, dict):
++        tag = value.get("schema_version")
++        if isinstance(tag, str) and tag in FIELDS:
++            # The child validates its own descendants; never revisit its parent.
++            LocalEnvelope.from_payload(value)
++        else:
++            for item in value.values():
++                _validate_nested_local(item)
++
++
++def _semantic_child_original(
++    value: JSONValue, tag: str, original: dict[str, JSONValue],
++) -> None:
++    """Only an explicitly supported semantic edge binds a child's original."""
++    if value is None:
++        return
++    raw = _object(value)
++    if raw.get("schema_version") == tag:
++        child = decode_local_payload(raw, tag)
++        if child.local_time.to_payload() != original:
++            raise ValueError("semantic child must retain exact enclosing original reference")
+ 
+ 
+ def _local_publication_hash(body: dict[str, JSONValue], original: dict[str, JSONValue]) -> str:
+@@ -523,6 +549,8 @@
+         _sha(raw[name])
+     if raw["grounding"] is not None:
+         grounding_from_payload(_object(raw["grounding"]))
++        if local_original is not None:
++            _semantic_child_original(raw["grounding"], "visual.owner.grounding.local.v1", local_original)
+     if original is not None and (identity != original.identity or raw["original_plan_hash"] != original.digest() or raw["contract_hash"] != stable_payload_hash(original.contract)):
+         raise ValueError("publication must retain its complete original source")
+     return raw
+@@ -736,8 +764,11 @@
+ 
+ def _proposal_projection(draft: dict[str, JSONValue], source: dict[str, JSONValue]) -> dict[str, JSONValue] | None:
+     """Validate the adapter's semantic fields without filling identity/time placeholders."""
++    from copy import deepcopy
+     from pydantic import ConfigDict, create_model
+-    from cloud_edge_robot_arm.contracts.models import TaskContract
++    from cloud_edge_robot_arm.contracts.models import (
++        FailurePolicy, SafetyConstraints, TaskContract, TaskStep, TaskTarget,
++    )
+ 
+     if draft["parse_error"] is not None or not isinstance(draft["parsed_json"], dict):
+         return None
+@@ -758,7 +789,21 @@
+                 stamp = datetime.fromisoformat(value)
+                 if stamp.tzinfo is None or stamp.utcoffset() is None:
+                     return None
+-        fields = {name: (field.annotation, field)
++        for name, nested_model in (("task_target", TaskTarget),
++                                   ("safety_constraints", SafetyConstraints),
++                                   ("failure_policy", FailurePolicy)):
++            nested = proposal.get(name)
++            if not isinstance(nested, dict) or set(nested) - set(nested_model.model_fields):
++                return None
++        raw_steps = proposal.get("steps")
++        if not isinstance(raw_steps, list) or any(
++            not isinstance(step, dict) or set(step) - set(TaskStep.model_fields)
++            for step in raw_steps
++        ):
++            return None
++        # Copy FieldInfo so declared defaults/constraints survive without changing
++        # the source model while separating its identity and UTC-only fields.
++        fields = {name: (field.annotation, deepcopy(field))
+                   for name, field in TaskContract.model_fields.items() if name not in bound}
+         model = create_model("DetachedBootstrapProposal", __config__=ConfigDict(strict=True, extra="forbid"),
+                              **fields)
+@@ -771,7 +816,7 @@
+                 or (result["current_step_id"] is not None and result["current_step_id"] not in ids)):
+             return None
+         return result
+-    except (ValueError, TypeError):
++    except (ValueError, TypeError, KeyError):
+         return None
+ 
+ 
+@@ -780,6 +825,80 @@
+                   **{name: observation[name] for name in (
+                       "source", "width", "height", "intrinsics", "camera_to_world",
+                       "depth_convention", "calibration_version")}})
++
++
++def _bootstrap_promotion_source(
++    prior: VisualOriginalPlan, source: dict[str, JSONValue],
++    budget: dict[str, JSONValue], observation: JSONValue, descriptor: str,
++) -> None:
++    """Rebuild the compiler's source policy, without a lease issuer or UTC fill."""
++    from cloud_edge_robot_arm.cloud.replanning.visual_dependencies import StepDependency
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from cloud_edge_robot_arm.vision.owner_registration import OriginalActionRequirements
++    from cloud_edge_robot_arm.vision.worker_owner import (
++        REQUIRED_COMPILER_SOURCES, WORKER_CONDITION_REGISTRY,
++        WORKER_CONDITION_REGISTRY_VERSION, _POST, _PRE,
++    )
++
++    frame = _model(observation, RGBDObservation)
++    sources = {name: _sha(value) for name, value in _hashes(source["source_hashes"]).items()}
++    if (not REQUIRED_COMPILER_SOURCES <= sources.keys()
++            or "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py" not in sources
++            or dict(prior.compiler_source_hashes) != sources or dict(prior.source_hashes) != sources):
++        raise ValueError("bootstrap promotion full compiler/source inventory differs")
++    if (frame.episode_id != source["episode_id"] or not frame.calibration_version
++            or prior.identity.episode_id != frame.episode_id
++            or prior.contract.timestamp != prior.registered_at
++            or prior.contract.issued_at != prior.registered_at
++            or prior.contract.valid_until != prior.effective_deadline_at):
++        raise ValueError("bootstrap promotion archived frame/contract source differs")
++    contract = prior.contract
++    requirements: dict[str, OriginalActionRequirements] = {}
++    graph: list[StepDependency] = []
++    for index, step in enumerate(contract.steps):
++        if step.skill not in _PRE:
++            raise ValueError("unsupported bootstrap original skill policy")
++
++        def condition(name: str) -> ConditionSpec:
++            if name not in WORKER_CONDITION_REGISTRY:
++                raise ValueError("bootstrap original condition has no versioned policy")
++            tolerances: dict[str, str | float] = {
++                "max_age_s": 5.0, "calibration_version": frame.calibration_version,
++                "minimum_safe_height": contract.safety_constraints.minimum_safe_height,
++                "condition_registry_version": WORKER_CONDITION_REGISTRY_VERSION,
++                "camera_source_descriptor_sha256": descriptor,
++            }
++            if name == "object_held":
++                tolerances["holding_feedback_required"] = True
++            if name == "tcp_at_resolved_target":
++                tolerances.update(target_reference="grounded_step.parameters.target_pose", max_distance_m=0.02)
++            target_id = (contract.task_target.target_region_id
++                         if WORKER_CONDITION_REGISTRY[name] == "region"
++                         else contract.task_target.object_id)
++            return ConditionSpec(name, target_id, tolerances, ("rgbd",))
++
++        requirements[step.step_id] = OriginalActionRequirements(
++            step,
++            tuple(condition(name) for name in dict.fromkeys((*step.preconditions, *_PRE[step.skill]))),
++            tuple(condition(name) for name in dict.fromkeys((
++                *step.success_conditions, *_POST[step.skill],
++                *(contract.completion_criteria if index == len(contract.steps) - 1 else ()),
++            ))),
++            0.01, ("rgbd",), 5.0, max(step.timeout_ms, step.expected_duration_ms) / 1000, sources,
++        )
++        graph.append(StepDependency(
++            step.step_id, () if index == 0 else (contract.steps[index - 1].step_id,),
++            (frame.observation_id,), f"{step.step_id}:effect", False,
++        ))
++    if dict(prior.requirements) != requirements or tuple(prior.dependencies) != tuple(graph):
++        raise ValueError("bootstrap promotion complete requirements/camera/dependency source differs")
++    limits = _object(budget["limits"], LIMIT_FIELDS)
++    # The local promotion has no caller retry-pool field: its original retry
++    # allocation is derived from this replayed, unrefunded definition state.
++    if (_integer(budget["remaining_retries"]) != _integer(limits["max_retries"])
++            or _integer(limits["max_retries"]) > contract.failure_policy.local_retry_limit):
++        raise ValueError("bootstrap promotion original retry definition/counts differ")
+ 
+ 
+ def _history_temporal_source(
+@@ -866,14 +985,7 @@
+                 or prior.proposal_hash != _hash(draft["parsed_json"])):
+             raise ValueError("bootstrap promotion full contract/role/proposal relation differs")
+         descriptor = _sha(state["camera_descriptor_hash"])
+-        for requirement in prior.requirements.values():
+-            for condition in (*requirement.preconditions, *requirement.postconditions):
+-                if condition.tolerances.get("camera_source_descriptor_sha256") != descriptor:
+-                    raise ValueError("bootstrap promotion original camera policy differs")
+-        limits = _object(budget["limits"])
+-        if (_integer(budget["remaining_retries"]) != _integer(limits["max_retries"])
+-                or _integer(limits["max_retries"]) > prior.contract.failure_policy.local_retry_limit):
+-            raise ValueError("bootstrap promotion cannot reset original retry policy")
++        _bootstrap_promotion_source(prior, source, budget, state["observation"], descriptor)
+         state["terminal_reason"] = "original_adopted"
+         state["adopted_original_hash"] = prior.digest()
+     elif kind.startswith("RESERVE_"):
+@@ -1067,8 +1179,12 @@
+                 if (wanted is not None and wanted != descriptor) or (
+                         calibration is not None and calibration != observation.calibration_version):
+                     raise ValueError("supervision original camera/calibration policy differs")
+-            if publication["grounding"] is not None and _object(publication["grounding"])["calibration_version"] != observation.calibration_version:
+-                raise ValueError("supervision current grounded calibration changed")
++            if publication["grounding"] is not None:
++                grounding = _object(publication["grounding"])
++                if grounding.get("schema_version") == "visual.owner.grounding.local.v1":
++                    grounding = decode_local_payload(grounding, "visual.owner.grounding.local.v1").semantic
++                if grounding["calibration_version"] != observation.calibration_version:
++                    raise ValueError("supervision current grounded calibration changed")
+             if any(_object(item)["observation"] is not None
+                    and _object(_object(item)["observation"])["observation_id"] == observation.observation_id
+                    for item in claims.values()):
+@@ -1429,15 +1545,17 @@
+         if body["completion"] is not None:
+             from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import VisualEffectCompletion
+             VisualEffectCompletion.from_payload(_object(body["completion"]))
++            _semantic_child_original(body["completion"], "visual.verification.effect-completion.local.v1", original)
+         if body["grounding_receipt"] is not None:
+             from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import grounding_from_payload
+             grounding_from_payload(_object(body["grounding_receipt"]))
++            _semantic_child_original(body["grounding_receipt"], "visual.owner.grounding.local.v1", original)
+     if tag == "visual.verification.route.local.v1":
+         from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
+         from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import PHASES
+         request = _object(body["input"])
+         if request.get("schema_version") == "visual.verification.route-input.local.v1":
+-            LocalEnvelope.from_payload(request)
++            _semantic_child_original(request, "visual.verification.route-input.local.v1", original)
+         else:
+             _audit_original(request["original"])
+             _audit_publication(request["publication"])
+@@ -1629,6 +1747,7 @@
+                     raise ValueError("transaction and two-authority evidence disagree")
+         _semantic(tag, body, original, diagnostics,
+                   evidence_decision=decision, evidence_transaction=transaction)
++        _validate_nested_local(body)
+         result = object.__new__(cls)
+         object.__setattr__(result, "_json", _canonical(raw))
+         return result

@@ -1,0 +1,73 @@
+{
+  "status": "NEEDS_ASTRA_PLAN_BOUNDARY_CLARIFICATION",
+  "kind": "NEW_PLAN_BOUNDARY_ROOT_CAUSE_NOT_NEW_PRODUCT_TEST_FAILURE",
+  "detected_after": "Expected sole RED inspected; before any existing product source edit or GREEN/static",
+  "source_fragments": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round100-p5-worker-startup-authority-20261008/plan.md",
+      "bytes": 15571,
+      "sha256": "521200276ccbed5c7c6c97d0c91cd019094e572b2b6f59ff1e8a705652b71ade",
+      "line": 44,
+      "text": "D deadline = min(original task deadline, original verification deadline, applicable original parent deadlines, original event lower + kind budget). Check each OC1 deadline with current paired with that deadline's own origin token; check age with current paired with the original acquisition token. An unrelated `after` current cannot be reused to satisfy OC1 causality. Validate `after` as genuinely issued and causally applicable. Five-second age accepts <=5,000,000,000ns and rejects +1ns; deadline requires current.upper < deadline, rejecting equality. Legal overlapping brackets still need logical event-before-current; missing pairs, future/out-of-order, copied and foreign-domain handles fail closed."
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round100-p5-worker-startup-authority-20261008/plan.md",
+      "bytes": 15571,
+      "sha256": "521200276ccbed5c7c6c97d0c91cd019094e572b2b6f59ff1e8a705652b71ade",
+      "line": 71,
+      "text": "- `test_five_seconds_inclusive_and_plus_one_ns_rejected`: 1 case(s)."
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round100-p5-worker-startup-authority-20261008/plan.md",
+      "bytes": 15571,
+      "sha256": "521200276ccbed5c7c6c97d0c91cd019094e572b2b6f59ff1e8a705652b71ade",
+      "line": 72,
+      "text": "- `test_deadline_equality_rejected`: 1 case(s)."
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+      "bytes": 20734,
+      "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b",
+      "line": 383,
+      "text": "        return self.age_bounds(event, current).upper_ns <= max_age_ns"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+      "bytes": 20734,
+      "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b",
+      "line": 406,
+      "text": "            origin.lower_ns + budget_ns,"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+      "bytes": 20734,
+      "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b",
+      "line": 424,
+      "text": "        return current.upper_ns < deadline.deadline_ns"
+    }
+  ],
+  "counterexample": {
+    "event_lower_ns": 0,
+    "event_upper_ns": 0,
+    "current_lower_ns": 5000000000,
+    "current_upper_ns": 5000000000,
+    "kind_budget_ns": 5000000000,
+    "task_deadline_ns": 120000000000,
+    "verification_deadline_ns": 120000000000,
+    "parent_ids": [],
+    "oc1_age_upper_ns": 5000000000,
+    "within_age_5s": true,
+    "kind_deadline_ns": 5000000000,
+    "strict_before_kind_deadline": false,
+    "required_five_seconds_verdict": "VALID",
+    "algorithm_conjunction_verdict": "INVALID"
+  },
+  "derivation": "For a logically completed zero-width acquisition [0,0], an actually later paired current [5e9,5e9] has upper age exactly 5e9. R100 demands <=5e9 acceptance, but its min deadline is <=0+5e9, and 5e9 < 5e9 is false. Task/verification/lease/parents can only tighten this intersection. Legal OC1 logical sequence with equal raw acquisition endpoints does not resolve the algebraic contradiction.",
+  "not_executed_as_new_test": true,
+  "unauthorized_workarounds_not_taken": [
+    "Do not add 1ns to immutable kind budget/deadline.",
+    "Do not discard event-kind deadline or change strict deadline comparison.",
+    "Do not weaken the required inclusive-five-second assertion."
+  ],
+  "requested_next_action": "Actual Astra must distinguish age-bound inclusivity from applicable strict kind deadline semantics and explicitly approve the boundary behavior/test and any revised scope/budget; ROOT must separately dispatch. No implementation choice made."
+}

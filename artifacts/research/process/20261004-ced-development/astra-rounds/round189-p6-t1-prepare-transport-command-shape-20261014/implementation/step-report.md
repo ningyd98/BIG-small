@@ -1,0 +1,1 @@
+R189: Added only transport.cmd and replaced its complete gate pin in the ROOT reservation and activation. Original KeyError and all before bytes preserved. Same RID; ROOT1/0, author0/1. Original prepare_red still not started. No product or test execution.

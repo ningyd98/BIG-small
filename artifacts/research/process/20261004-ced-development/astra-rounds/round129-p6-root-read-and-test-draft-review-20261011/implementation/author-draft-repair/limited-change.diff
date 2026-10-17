@@ -1,0 +1,279 @@
+--- before/tests/test_operational_runtime_closure.py
++++ after/tests/test_operational_runtime_closure.py
+@@ -665,61 +665,98 @@
+     return clone, job, *captured[0]
+ 
+ 
+-def _denied_with_unchanged_rows(repo, operation):
++def _denied_with_unchanged_rows(repo, operation, *, status_none_allowed=False):
+     before = _all_sql(repo)
+     try:
+         value = operation()
+-    except (_api().OperationalLeaseError, ValueError, AttributeError):
+-        pass
++    except _api().OperationalLeaseError as error:
++        rejection = {"kind": "OperationalLeaseError", "reason": str(error)}
+     else:
+-        assert value is None, "positive mutation returned a result"
++        assert status_none_allowed and value is None, "authority exception required for void mutation"
++        rejection = {"kind": "documented-status-CAS-None"}
+     assert _all_sql(repo) == before, "denied operation changed persisted effects"
++    return rejection
+ 
+ 
+ @pytest.mark.parametrize("variant", ["worker_mismatch", "lease_mismatch", "revoked_cleanup"],
+                          ids=["worker_mismatch", "lease_mismatch", "revoked_cleanup"])
+ def test_operational_status_cas_cannot_grant_without_session(monkeypatch, tmp_path, variant):
+-    def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+-        from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+-        if variant == "revoked_cleanup":
+-            session.invalidate("negative-only-cleanup-test")
+-            operations = [
+-                lambda: repo.save_metrics(job.job_id, [{"metric": "forbidden-success"}]),
+-                lambda: repo.save_artifacts(job.job_id, {"result": "forbidden-success.json"}),
+-                lambda: repo.finish_attempt(job.job_id, attempt=1, result="SUCCEEDED", error="",
+-                                             artifact_paths={"result": "forbidden-success.json"}),
+-            ]
+-            repo.request_cancel(job.job_id)
+-            for operation in operations:
+-                _denied_with_unchanged_rows(repo, operation)
+-            _denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
+-                job.job_id, expected=repo.get_job(job.job_id).status,
+-                next_status=RuntimeJobStatus.FINALIZING, reason_code="forbidden-success",
+-                worker_id=worker.worker_id, lease_id=session.lease_id))
+-            repo.release_lease(session.lease_id)  # genuine authorized negative cleanup
++    from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
++    from cloud_edge_robot_arm.simulation_runtime.state_machine import ALLOWED_TRANSITIONS
++
++    def revoked_check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
++        current = repo.get_job(job.job_id)
++        assert current.status == RuntimeJobStatus.RUNNING
++        assert current.worker_id == worker.worker_id and current.lease_id == session.lease_id
++        assert RuntimeJobStatus.FINALIZING in ALLOWED_TRANSITIONS[current.status]
++        session.invalidate("negative-only-cleanup-test")
++        rejection = _denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
++            job.job_id, expected=current.status, next_status=RuntimeJobStatus.FINALIZING,
++            reason_code="forbidden-success", worker_id=worker.worker_id, lease_id=session.lease_id,
++            expected_worker_id=current.worker_id, expected_lease_id=current.lease_id),
++            status_none_allowed=True)
++        # The legal-state positive challenge is completed before negative cancellation.
++        repo.request_cancel(job.job_id)
++        operations = [
++            lambda: repo.save_metrics(job.job_id, [{"metric": "forbidden-success"}]),
++            lambda: repo.save_artifacts(job.job_id, {"result": "forbidden-success.json"}),
++            lambda: repo.finish_attempt(job.job_id, attempt=1, result="SUCCEEDED", error="",
++                                       artifact_paths={"result": "forbidden-success.json"}),
++        ]
++        payload_rejections = [_denied_with_unchanged_rows(repo, operation) for operation in operations]
++        repo.release_lease(session.lease_id)
++        _evidence(tmp_path, "revoked-legal-source-denials", {"source": current.model_dump(mode="json"),
++                  "positive_rejection": rejection, "payload_rejections": payload_rejections})
++        return variant
++
++    if variant == "revoked_cleanup":
++        _exercise(monkeypatch, tmp_path, revoked_check)
++        return
++    trials = [(RuntimeJobStatus.RUNNING, RuntimeJobStatus.FINALIZING),
++              (RuntimeJobStatus.FINALIZING, RuntimeJobStatus.SUCCEEDED)]
++    for source, target in trials:
++        trial_root = tmp_path / source.value.lower()
++        trial_root.mkdir()
++        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
++            current = repo.get_job(job.job_id)
++            assert current.status == RuntimeJobStatus.RUNNING
++            if source == RuntimeJobStatus.FINALIZING:
++                # This preparation is actual authorized main-thread status CAS, never foreign success.
++                prepared = repo.update_status_cas(job.job_id, expected=RuntimeJobStatus.RUNNING,
++                    next_status=RuntimeJobStatus.FINALIZING, reason_code="legal-positive-source-preparation",
++                    worker_id=worker.worker_id, lease_id=session.lease_id,
++                    expected_worker_id=current.worker_id, expected_lease_id=current.lease_id)
++                assert prepared is not None and prepared.status == RuntimeJobStatus.FINALIZING
++            current = repo.get_job(job.job_id)
++            assert current.status == source and target in ALLOWED_TRANSITIONS[source]
++            assert current.worker_id == worker.worker_id and current.lease_id == session.lease_id
++            errors, results = [], []
++            def foreign():
++                try:
++                    proposed_worker = "changed-worker" if variant == "worker_mismatch" else worker.worker_id
++                    proposed_lease = "changed-lease" if variant == "lease_mismatch" else session.lease_id
++                    results.append(_denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
++                        job.job_id, expected=source, next_status=target, reason_code="forbidden-positive-owner",
++                        worker_id=proposed_worker, lease_id=proposed_lease,
++                        expected_worker_id=current.worker_id, expected_lease_id=current.lease_id),
++                        status_none_allowed=True))
++                except BaseException as error:
++                    errors.append(error)
++            thread = threading.Thread(target=foreign, name="owned-foreign-status")
++            thread.start()
++            try:
++                thread.join(timeout=2)
++                assert not thread.is_alive()
++                if errors:
++                    raise errors[0]
++                assert results
++                _evidence(trial_root, "legal-source-positive-challenge", {
++                    "variant": variant, "source": current.model_dump(mode="json"),
++                    "target": target.value, "rejections": results})
++            finally:
++                thread.join(timeout=2)
+             return variant
+-        errors = []
+-        def foreign():
+-            try:
+-                worker_id = "changed-worker" if variant == "worker_mismatch" else worker.worker_id
+-                lease_id = "changed-lease" if variant == "lease_mismatch" else session.lease_id
+-                for target in (RuntimeJobStatus.FINALIZING, RuntimeJobStatus.SUCCEEDED):
+-                    _denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
+-                        job.job_id, expected=repo.get_job(job.job_id).status, next_status=target,
+-                        reason_code="forbidden-positive-owner", worker_id=worker_id, lease_id=lease_id))
+-            except BaseException as error:
+-                errors.append(error)
+-        thread = threading.Thread(target=foreign, name="owned-foreign-status")
+-        thread.start()
+-        try:
+-            thread.join(timeout=2)
+-            assert not thread.is_alive()
+-            if errors:
+-                raise errors[0]
+-        finally:
+-            thread.join(timeout=2)
+-        return variant
+-    _exercise(monkeypatch, tmp_path, check)
++        _exercise(monkeypatch, trial_root, check)
+ 
+ 
+ @pytest.mark.parametrize("variant", ["direct_legacy", "forged_tls", "nested_foreign_job"],
+@@ -956,9 +993,17 @@
+             before = _all_sql(repo)
+             with _tx(repo, session, job) as view:
+                 if variant == "lifecycle_replay":
+-                    view._connection.execute("ROLLBACK")
++                    assert view._connection.in_transaction and view._proposal is None
++                    assert not session._unusable.is_set()
++                    assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
++                                                    (job.job_id,)).fetchone() is not None
++                    module._invalidate_view(view, "actual-owner-terminal-view-transition")
++                    assert view.state == "INVALIDATED" and not session._unusable.is_set()
+                     with pytest.raises(module.OperationalLeaseError):
+                         session.evaluate_locked(view)
++                    assert view._connection.in_transaction and view._proposal is None
++                    assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
++                                                    (job.job_id,)).fetchone() is not None
+                 try:
+                     setattr(view, field, value)
+                 except (AttributeError, module.OperationalLeaseError):
+@@ -1028,8 +1073,9 @@
+ 
+ 
+ def test_actual_main_and_thread_heartbeat_producers(monkeypatch, tmp_path):
+-    records = []
++    records, main_samples = [], []
+     def configure(data):
++        from cloud_edge_robot_arm.vision import operational_windows
+         repo, job, worker, calls, received, backend, events = data
+         draft = dict(job.draft)
+         draft["parameter_overrides"] = {**draft.get("parameter_overrides", {}), "runtime_delay_ms": 120}
+@@ -1037,21 +1083,80 @@
+             conn.execute("UPDATE simulation_jobs SET draft_json=? WHERE job_id=?", (json.dumps(draft), job.job_id))
+         original = repo.heartbeat_lease
+         def record_actual_call(*args, **kwargs):
+-            records.append({"python_thread": threading.get_ident(), "native_thread": threading.get_native_id(),
+-                            "caller": inspect.currentframe().f_back.f_code.co_name})
+-            return original(*args, **kwargs)
++            frame = inspect.currentframe()
++            assert frame is not None and frame.f_back is not None
++            caller = frame.f_back
++            try:
++                python_thread, native_thread = threading.get_ident(), threading.get_native_id()
++                records.append({"python_thread": python_thread, "native_thread": native_thread,
++                                "caller": caller.f_code.co_name})
++                if caller.f_code is not worker._run.__func__.__code__:
++                    # The true maintenance thread never borrows main D_app handles.
++                    return original(*args, **kwargs)
++                session = worker._operational_lease_session
++                assert session is not None
++                assert (python_thread, native_thread) == (session.main_thread, session.main_native_thread)
++                owner = operational_windows._current_owner()
++                assert owner is not None and owner._startup.worker is worker
++                window, token, origin, clock = owner.task_window, owner.task_origin_token, owner.task_origin, owner.clock
++                assert window is not None and token is not None and origin is not None
++                hard = tuple(bound.deadline for bound in owner._hard)
++                origins = tuple(deadline.origin for deadline in hard)
++                export_before = owner.export_record(window)
++                before_current = clock.read_current(after=token)
++                row_before = _rows(repo)[0]
++                # Exactly one pass-through call to the original real guarded heartbeat.
++                result = original(*args, **kwargs)
++                after_owner = operational_windows._current_owner()
++                assert after_owner is owner and after_owner.clock is clock
++                assert after_owner.task_window == window and after_owner.task_origin_token is token
++                assert after_owner.task_origin is origin
++                assert len(after_owner._hard) == len(hard)
++                assert all(bound.deadline is saved for bound, saved in zip(after_owner._hard, hard, strict=True))
++                assert all(deadline.origin is saved for deadline, saved in zip(hard, origins, strict=True))
++                export_after = after_owner.export_record(window)
++                assert export_after == export_before
++                after_current = clock.read_current(after=token)
++                assert before_current.domain == after_current.domain == clock.domain
++                row_after = _rows(repo)[0]
++                assert row_after["generation"] > row_before["generation"]
++                assert row_after["original_acquisition_json"] == row_before["original_acquisition_json"]
++                main_samples.append({"owner": owner, "clock": clock, "window": window, "token": token,
++                    "origin": origin, "hard": hard, "deadline_origins": origins,
++                    "export_before": export_before, "export_after": export_after,
++                    "D_app_before": {"domain": asdict(before_current.domain), "lower_ns": before_current.lower_ns,
++                                     "upper_ns": before_current.upper_ns},
++                    "D_app_after": {"domain": asdict(after_current.domain), "lower_ns": after_current.lower_ns,
++                                    "upper_ns": after_current.upper_ns},
++                    "row_before": row_before, "row_after": row_after,
++                    "python_thread": python_thread, "native_thread": native_thread})
++                return result
++            finally:
++                del caller
++                del frame
+         monkeypatch.setattr(repo, "heartbeat_lease", record_actual_call)
+     def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+         main = [r for r in records if r["caller"] == "_run"]
+         background = [r for r in records if r["caller"] == "maintain_lease"]
+-        assert main and background and all(r["python_thread"] == session.main_thread for r in main)
++        assert main and background and main_samples
++        assert all(r["python_thread"] == session.main_thread for r in main)
+         assert all(r["python_thread"] != session.main_thread for r in background)
+         assert any(r["role"] == "heartbeat" and r["lifecycle"] == "ACQUIRED" for r in session.ingress_history)
+         owner = runtime._operational_owner
+         assert owner is not None and owner.task_window is not None
+-        original = owner.export_record(owner.task_window)
+-        hard = tuple(bound.deadline for bound in owner._hard)
+-        assert owner.task_origin_token is not None and original["hard_deadlines"]
++        late_export = owner.export_record(owner.task_window)
++        for sample in main_samples:
++            assert sample["owner"] is owner and sample["clock"] is owner.clock
++            assert sample["window"] == owner.task_window and sample["token"] is owner.task_origin_token
++            assert sample["origin"] is owner.task_origin
++            assert sample["export_before"]["domain"] == late_export["domain"]
++            assert sample["export_before"]["task_origin_event_id"] == late_export["task_origin_event_id"]
++            # Inputs/source hashes/episode metadata may be enriched after the delay loop.
++            # Every original deadline and budget remains exactly its original handle/receipt.
++            assert all(any(bound.deadline is saved for bound in owner._hard) for saved in sample["hard"])
++            assert all(deadline.origin is saved for deadline, saved in zip(sample["hard"], sample["deadline_origins"], strict=True))
++            for deadline_receipt in sample["export_before"]["hard_deadlines"]:
++                assert deadline_receipt in late_export["hard_deadlines"]
+         errors = []
+         def foreign():
+             try:
+@@ -1069,9 +1174,11 @@
+         with pytest.raises(module.OperationalLeaseError):
+             with module._heartbeat_lease_scope(session):
+                 repo.heartbeat_lease(session.lease_id, lease_ttl_seconds=worker.lease_ttl_seconds)
+-        assert owner.export_record(owner.task_window) == original
+-        assert all(bound.deadline is saved for bound, saved in zip(owner._hard, hard, strict=True))
+-        _evidence(tmp_path, "actual-heartbeat-producers", {"calls": records, "original_app": original,
+-                  "source_identity": session._binding_hash, "ingress": session.ingress_history})
++        evidence = [{key: value for key, value in sample.items()
++                     if key not in {"owner", "clock", "token", "origin", "hard", "deadline_origins"}}
++                    for sample in main_samples]
++        _evidence(tmp_path, "actual-heartbeat-producers", {"calls": records, "actual_main_before_after": evidence,
++                  "later_app_export": late_export, "source_identity": session._binding_hash,
++                  "ingress": session.ingress_history})
+         return "actual-delay-loop-and-maintain-thread"
+     _exercise(monkeypatch, tmp_path, check, configure=configure)

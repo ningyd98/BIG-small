@@ -1,0 +1,50 @@
+{
+  "schema_version": "bigsmall.r185-step-report.v1",
+  "round": "R185",
+  "actual_root": "/root",
+  "actual_planner": "/root/astra_status_plan",
+  "planner_model": "gpt-6-astra",
+  "status": "SAME_ORIGINAL_SOL_RESUMED_SOURCE_PREPARATION_ONLY",
+  "failure_preserved": "original-failure.json: exact available remote-compaction notification; numeric exit/independent streams/internal RPC unavailable and null.",
+  "plan_full_read": {
+    "chunk_id": "ed96f4",
+    "exit_code": 0
+  },
+  "observation_read": {
+    "chunk_id": "0986ee",
+    "exit_code": 0,
+    "display_recovery": "Saved actual output slice only; no replay."
+  },
+  "normal_existing_R182_input_gate": {
+    "exact_source": "from pathlib import Path\nimport base64,hashlib,json\nROOT=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall\")\nD=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round185-p6-t1-sol-compaction-transport-20261014\")\nB=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014\")\ndef pin(path):\n path=Path(path); assert not path.is_symlink()\n raw=path.read_bytes()\n return dict(path=str(path),bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest())\ndef check(record):\n actual=pin(record[\"path\"]); assert all(actual[k]==record[k] for k in (\"path\",\"bytes\",\"sha256\"))\n return actual\nplan=json.loads((D/\"plan.json\").read_bytes())\ninputs=[check(record) for record in plan[\"inputs\"]]\ncheck(plan[\"input_observation\"])\nbase=json.loads((B/\"plan.json\").read_bytes())\nbaseline=[check(record) for record in base[\"inputs\"]]\nroles={}\nfor name,state in ((\"command-ledger.json\",\"HELD\"),(\"root-command-ledger.json\",\"HELD_PENDING_ROOT_GATE\")):\n v=json.loads((B/name).read_bytes())\n assert len(v[\"commands\"])==6\n for slot in v[\"commands\"].values():\n  assert (slot[\"used\"],slot[\"remaining\"],slot[\"attempts\"],slot[\"retries\"],slot[\"state\"])==(0,1,0,0,state)\n roles[name]={k:{n:s[n] for n in (\"used\",\"remaining\",\"attempts\",\"retries\",\"state\")} for k,s in v[\"commands\"].items()}\nabsent=[B/\"implementation/prepare-evidence.py\",B/\"implementation/run-command.py\"]+[Path(c[\"evidence_dir\"]) for c in base[\"commands\"]]\nassert all(not path.exists() for path in absent)\naux=ROOT/\"tests/test_local_temporal_projection_closure.py\"\nraw=aux.read_bytes()\narchive=dict(**pin(aux),base64=base64.b64encode(raw).decode())\nresult=dict(schema_version=\"bigsmall.r185-root-activation.v1\",round=\"R185\",actual_root=\"/root\",actual_planner=\"/root/astra_status_plan\",planner_model=\"gpt-6-astra\",status=\"ROOT_ACCEPTED_SAME_SOL_SOURCE_PREPARATION_CONTINUATION_ONLY\",plan=pin(D/\"plan.json\"),plan_MD=pin(D/\"plan.md\"),observation=pin(D/\"input-observation.json\"),inputs=inputs,baseline255=baseline,before_auxiliary=archive,current_role_observations=roles,absent_specific_paths=[str(path) for path in absent],full_source_read=dict(auxiliary_chunk=\"4b75b5\",own_ROOT_draft_chunk=\"7dfdfb\"),R186_disposition=\"Optional enumeration abandoned; historical03f10f exit1 retained; no failed-reader replay.\",allowed_actor=\"/root/p6_stage_b_sol\",allowed_model=\"gpt-6.1-sol\",allowed_now=\"Existing auxiliary and two author scripts source preparation only, no blind repeat/recreation.\",execution_released=0,product_implementation_authorized=False,T1_complete=False,T12_complete=False,native_actual=False,formal_research_accepted=False)\npath=D/\"root-activation.json\"\nwith path.open(\"xb\") as stream:\n stream.write((json.dumps(result,ensure_ascii=False,sort_keys=True,indent=2,allow_nan=False)+\"\\n\").encode())\nprint(json.dumps(dict(root_activation=pin(path),input_matches=len(inputs),baseline_matches=len(baseline),auxiliary=pin(aux),role_slots_HELD=True,execution_released=0,product_commands=0),ensure_ascii=False))\n",
+    "actual_tool_return": {
+      "chunk_id": "b3485d",
+      "wall_time_seconds": 0.0000088,
+      "exit_code": 0,
+      "original_token_count": 156,
+      "output": "{\"root_activation\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round185-p6-t1-sol-compaction-transport-20261014/root-activation.json\", \"bytes\": 83497, \"sha256\": \"1a16f0a8188d5fdcaaf14f0fb1fe1a8eedd98cb8b5cdc23757f8debe3c73b676\"}, \"input_matches\": 6, \"baseline_matches\": 255, \"auxiliary\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_local_temporal_projection_closure.py\", \"bytes\": 12164, \"sha256\": \"80667bd840499fdb2c5163ba958a5d1bc20551fef70206df3dbe45ffd0c12e91\"}, \"role_slots_HELD\": true, \"execution_released\": 0, \"product_commands\": 0}\n"
+    },
+    "input_matches": 6,
+    "baseline_matches": 255,
+    "full_auxiliary_before_archived": true,
+    "root_activation": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round185-p6-t1-sol-compaction-transport-20261014/root-activation.json",
+      "bytes": 83497,
+      "sha256": "1a16f0a8188d5fdcaaf14f0fb1fe1a8eedd98cb8b5cdc23757f8debe3c73b676"
+    }
+  },
+  "continuation": {
+    "actor": "/root/p6_stage_b_sol",
+    "model": "gpt-6.1-sol",
+    "same_actor": true,
+    "scope": "Existing auxiliary and two missing author scripts source preparation only.",
+    "ledgers_reset": false,
+    "commands_released": 0,
+    "product_repair_authorized": false
+  },
+  "R186": "Adopted optional enumeration abandonment, zero retries/replacement.",
+  "T1_complete": false,
+  "T12_complete": false,
+  "native_actual": false,
+  "formal_research_accepted": false
+}

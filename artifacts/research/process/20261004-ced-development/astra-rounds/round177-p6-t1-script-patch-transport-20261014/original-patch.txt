@@ -1,0 +1,249 @@
+*** Begin Patch
+*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round175-p6-t1-transitive-memory-fixture-closure-20261014/implementation/prepare-metadata.py
+@@ -15,11 +15,11 @@
+ PROCESS = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds"
+ D158 = PROCESS / "round158-p6-stage-b-local-temporal-publication-20261013"
+ D166 = PROCESS / "round166-p6-t1-legacy-supervision-claim-timing-20261013"
+-D174 = PROCESS / "round175-p6-t1-transitive-memory-fixture-closure-20261014"
++D175 = PROCESS / "round175-p6-t1-transitive-memory-fixture-closure-20261014"
+ TASK = D158 / "implementation/t1"
+ PLAN_SHA = "990947b3491a5fdd432c75fbde321cccd417681adf3cec062b4252a8ef100e63"
+ MD_SHA = "702d470bf1d5d36709c16505a9caabbaa5dbb2c93457cfd4852d5b6ad31e2101"
+-CANDIDATE_TEST_PIN = None
++CANDIDATE_TEST_PIN = {"path":"/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py","bytes":135950,"sha256":"bb22fb6abd3f047de06da30252ec8c3aeef83082fba934d249dd54187fd9e688"}
+ CHANGES = [
+   {
+     "before": "def _b_legacy_sources(monkeypatch):\n    \"\"\"Use real pure builders/codecs and one real Memory repository; no worker.\"\"\"\n    import importlib\n    from datetime import timedelta\n\n    from cloud_edge_robot_arm.contracts.models import RecoveryBudget\n    from cloud_edge_robot_arm.edge.recovery.verification_router import (\n        VerificationBudget,\n        VerificationBudgetState,\n    )\n    from cloud_edge_robot_arm.repositories.event_autonomy.memory import (\n        InMemoryEventAutonomyRepository,\n    )\n    from cloud_edge_robot_arm.vision.role_models import RoleModelBundle, RoleProviderSnapshot\n    from cloud_edge_robot_arm.vision.worker_owner import WorkerLeaseObservation\n    from tests import test_visual_bootstrap as bootstrap_fixture\n    from tests import test_visual_owner_repository as owner_fixture\n    from tests import test_visual_verification_repository as route_fixture\n\n    data = owner_fixture.values()\n    original = data[\"original\"]\n    basis = original.registered_at + timedelta(seconds=0.2)\n    _b_utc(monkeypatch, basis)\n    state = VerificationBudgetState(\n        3, 2, 0, original.verification_deadline_at, VerificationBudget(3, 2, 3, 40.0)\n    )\n    retry = RecoveryBudget(\n        budget_id=\"r158-legacy-original-retry\",\n        task_id=original.identity.task_id,\n        task_total_retry_limit=2,\n        per_step_retry_limit=1,\n        per_skill_retry_limit=2,\n        effective_retry_limit=2,\n        remaining_retries=2,\n        retry_deadline=original.verification_deadline_at,\n        scene_version=original.contract.scene_version,\n        created_at=original.registered_at,\n        updated_at=original.registered_at,\n    )\n    # Reuse the existing immutable original builder with the actual lease identity\n    # and the exact role bundle consumed by the supervision definition.\n    lease = WorkerLeaseObservation(\n        original.identity.job_id, original.identity.run_id, original.identity.worker_id,\n        original.identity.lease_id, original.identity.attempt,\n        original.registered_at - timedelta(seconds=1), basis,\n        original.registered_at + timedelta(seconds=90), \"a\" * 64, \"b\" * 64, \"c\" * 64,\n    )\n    cloud = RoleProviderSnapshot(\n        \"CLOUD\", \"software-provider\", \"LOCAL_HOST\", \"software-model\",\n        None, None, None, \"d\" * 64, original.source_hashes,\n    )\n    bundle = RoleModelBundle(cloud, \"software-edge\", \"e\" * 64, \"f\" * 64)\n    owner_module = importlib.import_module(\"cloud_edge_robot_arm.vision.owner_registration\")\n    identity = lease.identity(\n        episode_id=original.identity.episode_id, task_id=original.identity.task_id,\n        plan_id=original.identity.plan_id, robot_id=original.identity.robot_id,\n    )\n    original = owner_module.freeze_original_visual_plan(\n        **{**original.freeze_inputs(), \"identity\": identity, \"role_bundle_hash\": bundle.digest()}\n    )\n    data[\"original\"], data[\"current_identity\"] = original, identity\n    repo = InMemoryEventAutonomyRepository()\n    try:\n        publication = repo.initialize_visual_owner_if_absent(\n            original, data[\"source_checkpoint\"], state, retry\n        )\n        initial_publication = publication\n        data[\"publication\"] = publication\n        owner_module = importlib.import_module(\"cloud_edge_robot_arm.vision.owner_registration\")\n        grounding = owner_module.bind_step_grounding(**{\n            key: value for key, value in data.items() if key != \"publication\"\n        })\n        route_input_v2 = route_fixture.request_for(data)\n        raw_v1 = route_input_v2.to_payload()\n        raw_v1[\"schema_version\"] = \"visual.verification.route-input.v1\"\n        del raw_v1[\"grounding_receipt\"]\n        route_module = route_fixture.api()\n        route_input_v1 = route_module.VisualVerificationRouteInput.from_payload(raw_v1)\n        historical_completion = route_fixture.software_completion(data)\n        route_result = repo.route_visual_verification_if_current(request=route_input_v2)\n        assert route_result is not None, \"legacy fixture must enter the actual source route\"\n        assert route_result.write_disposition == \"NEW_COMMIT\"\n        historical_route_payload = route_result.record.to_payload()\n        assert historical_route_payload[\"input\"] == route_input_v2.to_payload()\n        assert route_input_v2.to_payload()[\"publication\"] == initial_publication.to_payload()\n        current_publication = repo.get_visual_owner_publication(original.identity.task_id)\n        current_pool = repo.get_verification_budget(original.identity.task_id)\n        current_retry = repo.get_retry_budget(original.identity.task_id)\n        current_checkpoint = repo.get_latest_execution_checkpoint(original.identity.task_id)\n        assert all(value is not None for value in (\n            current_publication, current_pool, current_retry, current_checkpoint\n        )), \"actual current task source group must remain complete\"\n        assert current_publication.owner_revision == initial_publication.owner_revision + 1\n        assert current_publication.state_generation == initial_publication.state_generation + 1\n        assert historical_route_payload[\"produced_publication_hash\"] == current_publication.digest()\n        assert historical_route_payload[\"produced_publication\"] == current_publication.to_payload()\n        assert current_publication.identity == original.identity == initial_publication.identity\n        assert current_publication.original_plan_hash == initial_publication.original_plan_hash == original.digest()\n        assert current_pool.content_hash == current_publication.verification_budget.content_hash\n        assert _b_canonical(current_pool.to_payload()) == _b_canonical(\n            current_publication.verification_budget.to_payload()\n        )\n        assert _b_canonical(current_pool.to_payload()) == _b_canonical(\n            historical_route_payload[\"after_verification_budget\"]\n        )\n        assert current_pool.state.remaining_reobservations == (\n            initial_publication.verification_budget.state.remaining_reobservations - 1\n        )\n        assert current_pool.state.remaining_retries == initial_publication.verification_budget.state.remaining_retries\n        assert current_pool.state.limits == initial_publication.verification_budget.state.limits\n        assert current_pool.state.deadline_at == original.verification_deadline_at\n        assert _b_canonical(current_retry.model_dump(mode=\"json\")) == _b_canonical(\n            current_publication.retry_budget.model_dump(mode=\"json\")\n        ) == _b_canonical(retry.model_dump(mode=\"json\"))\n        assert current_checkpoint.checkpoint_hash == current_publication.checkpoint.checkpoint_hash\n        assert current_checkpoint.checkpoint_hash == initial_publication.checkpoint.checkpoint_hash\n        assert grounding.owner_revision == data[\"owner_revision\"]\n        assert grounding.state_generation == data[\"state_generation\"]\n        # The previous request/binding stay historical. Public getters supply\n        # the distinct current snapshot consumed by supervision and exports.\n        publication = current_publication\n        data[\"publication\"] = current_publication\n        completion = historical_completion\n        supervision_module = importlib.import_module(\n            \"cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision\"\n        )\n        supervision_definition = supervision_module.VisualSupervisionDefinition(\n            original=original, publication=publication, lease=lease,\n            task_started_at=original.registered_at, task_timeout_s=60.0,\n            supervision_period_s=0.2, model_snapshot_hash=\"1\" * 64, role_bundle=bundle,\n        )\n        supervision_record = repo.initialize_visual_supervision_if_absent(supervision_definition)\n        supervision_request = supervision_module.VisualSupervisionTransitionInput(\n            record=supervision_record, original=original, publication=publication, lease=lease,\n            robot_state=data[\"online\"].robot_state, step_id=\"move\", cursor=1,\n            kind=\"RESERVE_CAPTURE\", event_key=\"r158-supervision-capture\",\n            model_snapshot_hash=\"1\" * 64, role_bundle=bundle,\n        )\n        supervision_result = repo.transition_visual_supervision_if_current(\n            request=supervision_request\n        )\n        assert supervision_result is not None, \"legacy fixture must reserve a real source claim\"\n        bootstrap_source = bootstrap_fixture.source.__wrapped__()\n        source, bootstrap_record, promoted_original, bootstrap_retry, promotion = (\n            bootstrap_fixture.promotion_sources(bootstrap_source)\n        )\n        bootstrap_request = bootstrap_fixture.api().VisualBootstrapTransitionInput(\n            record=bootstrap_fixture.api().VisualBootstrapRecord.start(source[1]),\n            kind=\"RESERVE_INITIAL_CAPTURE\", event_key=\"r158-bootstrap-initial\",\n            current_lease=source[0], robot_state=data[\"online\"].robot_state,\n        )\n        sources = {\n            \"visual.bootstrap.definition.v1\": source[1],\n            \"visual.bootstrap.record.v1\": bootstrap_record,\n            \"visual.bootstrap.transition.v1\": bootstrap_request,\n            \"visual.bootstrap.promotion.v1\": promotion,\n            \"visual.supervision.definition.v1\": supervision_definition,\n            \"visual.supervision.record.v1\": supervision_result.record,\n            \"visual.supervision.transition.v1\": supervision_request,\n            \"visual.owner.original.v1\": original,\n            \"visual.owner.grounding.v1\": grounding,\n            \"visual.owner.publication.v1\": publication,\n            \"visual.verification.route-input.v1\": route_input_v1,\n            \"visual.verification.route-input.v2\": route_input_v2,\n            \"visual.verification.route.v1\": route_result.record,\n            \"visual.verification.effect-completion.v1\": completion,\n            \"recovery.verification-budget.v1\": current_pool,\n            \"recovery.retry-budget.v1\": current_retry,\n        }\n        return {\n            \"sources\": sources, \"data\": data, \"basis\": basis, \"state\": current_pool.state,\n            \"retry\": current_retry, \"promoted_original\": promoted_original,\n            \"bootstrap_retry\": bootstrap_retry,\n            \"historical_initial_publication\": initial_publication,\n            \"historical_route_input_v1\": route_input_v1,\n            \"historical_route_input_v2\": route_input_v2,\n            \"historical_route_result\": route_result.record,\n            \"historical_grounding\": grounding,\n            \"current_publication\": current_publication,\n            \"current_pool\": current_pool, \"current_checkpoint\": current_checkpoint,\n        }\n    finally:\n        repo.close()",
+@@ -114,28 +114,28 @@
+             assert entry["state"] == ("HELD" if role == "author" else "HELD_PENDING_ROOT_GATE")
+ 
+ assert Path.cwd() == ROOT
+-plan_bytes = (D174/"plan.json").read_bytes()
+-md_bytes = (D174/"plan.md").read_bytes()
++plan_bytes = (D175/"plan.json").read_bytes()
++md_bytes = (D175/"plan.md").read_bytes()
+ assert sha(plan_bytes) == PLAN_SHA and sha(md_bytes) == MD_SHA
+ plan = json.loads(plan_bytes)
+ contract = plan["command_budget"]["preparation_metadata"]
+ assert contract["timeout_seconds"] == 120
+ assert canonical(__file__) == canonical(contract["argv"][1])
+-gate_bytes = (D174/"script-gate.json").read_bytes()
++gate_bytes = (D175/"script-gate.json").read_bytes()
+ gate_document = json.loads(gate_bytes)
+ assert gate_document["schema_version"] == "bigsmall.r175-script-gate.v1"
+ gate = gate_document["commands"]["preparation_metadata"]
+ assert gate["state"] == "APPROVED"
+ assert gate["argv"] == contract["argv"] and gate["cwd"] == str(ROOT)
+ assert gate["timeout_seconds"] == 120
+-CANDIDATE_TEST_PIN = gate["candidate_test_pin"]
++assert gate["candidate_test_pin"] == CANDIDATE_TEST_PIN
+ assert CANDIDATE_TEST_PIN["path"] == plan["scope"]["owned_test"]
+ checked_pin(gate["source_pin"])
+ assert canonical(gate["source_pin"]["path"]) == canonical(__file__)
+ checked_pin(gate["runner_pin"])
+ assert canonical(gate["runner_pin"]["path"]) == canonical(plan["preparation"]["scripts"][1])
+-root_ledger_path = D174/"root-command-ledger.json"
+-author_ledger_path = D174/"command-ledger.json"
++root_ledger_path = D175/"root-command-ledger.json"
++author_ledger_path = D175/"command-ledger.json"
+ root_ledger_bytes = root_ledger_path.read_bytes()
+ author_ledger_bytes = author_ledger_path.read_bytes()
+ root_ledger = json.loads(root_ledger_bytes)
+@@ -272,7 +272,7 @@
+     if item["path"].endswith("/golden-provenance.json"):
+         checked_pin(item)
+ assert not (D158/"implementation/t1_red/legacy-goldens.json").exists()
+-implementation = D174/"implementation"
++implementation = D175/"implementation"
+ outputs = plan["evidence_outputs"]["preparation"]
+ written_paths = [path for path in outputs if not path.endswith(("preparation-actual-tool-return.json","preparation-stdout.txt","preparation-stderr.txt"))]
+ assert len(written_paths) == 6 and all(not Path(path).exists() for path in written_paths)
+@@ -289,9 +289,21 @@
+     "R175_preparation_metadata_used":1,"R175_preparation_metadata_remaining":0,
+     "R175_recovery7_used":0,"R175_recovery7_remaining":1,"R175_recovery7_state":"HELD",
+     "R175_ROOT_settlement_metadata_used":0,"R175_ROOT_settlement_metadata_remaining":1})
+-original_green = {"tests":7,"passes":5,"failures":2,"errors":0,"skips":0,
+-    "product_exit":1,"runner_tool_exit":2,"used":1,"remaining":0,"overall_pass":False,
+-    "raw_preserved":plan["original_failure"]["six_raw"]}
++r174_scope_pin = {"path":"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round174-p6-t1-legacy-condition-json-normalization-20261014/implementation/scope-proof.json","bytes":61009,"sha256":"b1812cd66c03751e23efc111aef0492f636f4acd6c0599f1d7553d5545975fdb"}
++expected_original_raw = [{"bytes":1356,"path":"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/result.json","sha256":"ae25624d036d081350fae5884bb92b774f42adc98db39ad4ee7ec0850edc2104"},{"bytes":3504,"path":"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/invocation.json","sha256":"24fc0b5a774ecf65469fd0360cf6bdd1786fbd3c3c574d38d841511a8c5f66fa"},{"bytes":7587,"path":"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/stdout.txt","sha256":"ad64dd236c12ff25f26072397194bb704ed6bca959338f9ac1980d6f566227ed"},{"bytes":0,"path":"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/stderr.txt","sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},{"bytes":8191,"path":"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/junit.xml","sha256":"8edd752cc997cd8c53ede765862edbe40c0e6a6bce17b088ddce93482b51eebb"},{"bytes":3821,"path":"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/actual-tool-return.json","sha256":"3c16ccf19217093315f664aaee5f72d2626415ce9d7a537a4b8c738382d84da5"}]
++checked_pin(r174_scope_pin)
++r174_scope_bytes = Path(r174_scope_pin["path"]).read_bytes()
++r174_scope = json.loads(r174_scope_bytes)
++assert type(r174_scope) is dict and type(r174_scope["original_green"]) is dict
++original_green = r174_scope["original_green"]
++assert type(original_green["raw_preserved"]) is list and len(original_green["raw_preserved"]) == 6
++assert original_green["raw_preserved"] == expected_original_raw
++assert all(original_green[key] == value for key,value in {
++    "tests":7,"passes":5,"failures":2,"errors":0,"skips":0,"product_exit":1,
++    "runner_tool_exit":2,"used":1,"remaining":0,"overall_pass":False}.items())
++auxiliary_records = [r174_scope_pin]+original_green["raw_preserved"]
++assert len(coordinates([item["path"] for item in auxiliary_records])) == 7
++auxiliary_receipts = [checked_pin(item) for item in auxiliary_records]
+ prior_r174 = {"product_exit":0,"runner_exit":0,"tests":7,"passes":7,"failures":0,"errors":0,"skipped":0,
+     "Memory_lifecycle_observed":False,"ROOT_settlement_effective":"HELD_SUPERSEDED_BY_R175_NO_EXECUTION",
+     "raw_preserved":True}
+@@ -308,12 +320,14 @@
+ scope = {"schema_version":"bigsmall.r175-scope-proof.v1","candidate_only":True,
+     "test_before":test_before_pin,"test_after":CANDIDATE_TEST_PIN,"helper_bounds":[start,end],
+     "exact_replacements":CHANGES,"test_outside_helper_byte_identical":True,
++    "R176_auxiliary_immutable_inputs":auxiliary_receipts,
+     "R174_JSON_boundary_helper_byte_identical":True,"observer_contract":plan["repair_contract"],
+     "production_23_byte_identical_to_settled_snapshot":True,"seven_bodies_unchanged":True,
+     "A80556_unchanged":True,"checks":checks,"usage":usage,"original_green":original_green,"prior_R174":prior_r174,"coverage":coverage}
+ snapshot = {"schema_version":"bigsmall.r175-candidate-snapshot.v1","sources":snapshots,
+     "source_text_index":source_index,"source_pins":source_pins,"protected":protected,
+     "parent_ledger_pins":ledger_pins,"runner_pin":gate["runner_pin"],
++    "R176_auxiliary_immutable_inputs":auxiliary_receipts,
+     "old_runner_pin":checked_pin(next(item for item in plan["inputs"] if item["path"] == str(D158/"implementation/run-budgeted-command.py"))),
+     "checks":checks,"usage":usage,"original_green":original_green,"prior_R174":prior_r174,"coverage":coverage}
+ archive = {"schema_version":"bigsmall.r175-before-t1-reports.v1","records":[
+@@ -364,6 +378,9 @@
+ assert len(immutable_records) == 48
+ 
+ def recheck():
++    for item in auxiliary_records:
++        checked_pin(item)
++    assert Path(r174_scope_pin["path"]).read_bytes() == r174_scope_bytes
+     for item in immutable_records:
+         checked_pin(item)
+     for item in protected:
+@@ -371,9 +388,9 @@
+     for item in source_pins:
+         checked_pin(item)
+     assert before_path.read_bytes() == before_bytes
+-    assert (D174/"plan.json").read_bytes() == plan_bytes
+-    assert (D174/"plan.md").read_bytes() == md_bytes
+-    assert (D174/"script-gate.json").read_bytes() == gate_bytes
++    assert (D175/"plan.json").read_bytes() == plan_bytes
++    assert (D175/"plan.md").read_bytes() == md_bytes
++    assert (D175/"script-gate.json").read_bytes() == gate_bytes
+     assert root_ledger_path.read_bytes() == root_ledger_bytes
+     assert author_ledger_path.read_bytes() == spent_author_bytes
+     checked_pin(gate["source_pin"])
+@@ -423,4 +440,8 @@
+     assert Path(path).read_bytes() == raw
+ recheck()
+ summary["preparation_result_pin"] = file_pin(result_path)
+-print(json.dumps(summary,sort_keys=True))
++receipt = json.dumps({"status":summary["status"],"result":summary["preparation_result_pin"],
++    "counts":summary["counts"],"candidate_test":CANDIDATE_TEST_PIN,
++    "R175_preparation_metadata":{"used":1,"remaining":0}},sort_keys=True)
++assert len(receipt) < 1500
++print(receipt)
+*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round175-p6-t1-transitive-memory-fixture-closure-20261014/implementation/run-recovery7.py
+@@ -13,10 +13,10 @@
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+ PROCESS = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds"
+ D158 = PROCESS / "round158-p6-stage-b-local-temporal-publication-20261013"
+-D174 = PROCESS / "round175-p6-t1-transitive-memory-fixture-closure-20261014"
++D175 = PROCESS / "round175-p6-t1-transitive-memory-fixture-closure-20261014"
+ PLAN_SHA = "990947b3491a5fdd432c75fbde321cccd417681adf3cec062b4252a8ef100e63"
+ MD_SHA = "702d470bf1d5d36709c16505a9caabbaa5dbb2c93457cfd4852d5b6ad31e2101"
+-CANDIDATE_TEST_PIN = None
++CANDIDATE_TEST_PIN = {"path":"/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py","bytes":135950,"sha256":"bb22fb6abd3f047de06da30252ec8c3aeef83082fba934d249dd54187fd9e688"}
+ 
+ def sha(data):
+     return hashlib.sha256(data).hexdigest()
+@@ -195,7 +195,7 @@
+         assert isinstance(observation["PYTEST_CURRENT_TEST"],str)
+         assert observation["PYTEST_CURRENT_TEST"].rsplit(" (",1)[0] == observation["nodeid"]
+         assert type(observation["pid"]) is int and observation["pid"] == expected_pid
+-        assert type(observation["thread"]) is int
++        assert type(observation["thread"]) is int and type(observation["native_thread"]) is int
+         assert observation["success"] is True and not observation["failures"]
+         assert set(observation["observed_fields"]) == required_fields
+         assert observation["repository_class_qualname"] == "InMemoryEventAutonomyRepository"
+@@ -216,6 +216,9 @@
+         for item in objects:
+             assert item["init_attempted"] is True and item["initialized"] is True
+             assert item["init_error"] is None and item["safe_real_close_available"] is True
++            assert type(item["init_thread"]) is int and type(item["init_native_thread"]) is int
++            assert item["init_thread"] == observation["thread"]
++            assert item["init_native_thread"] == observation["native_thread"]
+             assert item["class_qualname"] == "InMemoryEventAutonomyRepository"
+             assert item["class_module"] == "cloud_edge_robot_arm.repositories.event_autonomy.memory"
+             assert item["role"] in ("primary","transitive")
+@@ -226,6 +229,9 @@
+             attempts = item["close_calls"]
+             assert attempts and item["successful_close_observed"] is True
+             for attempt in attempts:
++                assert type(attempt["thread"]) is int and type(attempt["native_thread"]) is int
++                assert attempt["thread"] == observation["thread"]
++                assert attempt["native_thread"] == observation["native_thread"]
+                 actual["close_attempts"] += 1
+                 actual["close_returns"] += int(attempt["returned"])
+                 actual["close_errors"] += int(attempt["error"] is not None)
+@@ -256,8 +262,8 @@
+             "model_calls":None,"network_calls":None,"GPU_native_calls":None}}
+ 
+ assert Path.cwd() == ROOT
+-plan_bytes = (D174/"plan.json").read_bytes()
+-md_bytes = (D174/"plan.md").read_bytes()
++plan_bytes = (D175/"plan.json").read_bytes()
++md_bytes = (D175/"plan.md").read_bytes()
+ assert sha(plan_bytes) == PLAN_SHA and sha(md_bytes) == MD_SHA
+ plan = json.loads(plan_bytes)
+ contract = plan["command_budget"]["recovery7"]
+@@ -265,14 +271,14 @@
+ assert contract["resource_observation_required"] is True
+ assert contract["expected_product_exit"] == contract["expected_runner_exit"] == 0
+ assert canonical(__file__) == canonical(contract["outer_runner_argv"][1])
+-gate_path = D174/"recovery-gate.json"
++gate_path = D175/"recovery-gate.json"
+ gate_bytes = gate_path.read_bytes()
+ gate = json.loads(gate_bytes)
+ assert gate["schema_version"] == "bigsmall.r175-recovery-gate.v1"
+ assert gate["command_id"] == "recovery7" and gate["state"] == "APPROVED"
+ for key in ("argv","outer_runner_argv","actual_environment","cwd","timeout_seconds","resource_caps"):
+     assert gate[key] == contract[key]
+-CANDIDATE_TEST_PIN = gate["candidate_test_pin"]
++assert gate["candidate_test_pin"] == CANDIDATE_TEST_PIN
+ assert CANDIDATE_TEST_PIN["path"] == plan["scope"]["owned_test"]
+ assert gate["outer_runner_argv"] == [str(ROOT/".venv/bin/python"),canonical(__file__)]
+ checked_pin(gate["source_pin"])
+@@ -287,7 +293,7 @@
+ input_records = gate["input_records"]
+ assert isinstance(input_records,list) and len(input_records) >= 24+211
+ coordinates([item["path"] for item in input_records])
+-mutable_paths = {str(D174/"command-ledger.json"),str(D174/"root-command-ledger.json"),str(gate_path)}
++mutable_paths = {str(D175/"command-ledger.json"),str(D175/"root-command-ledger.json"),str(gate_path)}
+ assert not mutable_paths.intersection(canonical(item["path"]) for item in input_records)
+ pre_input_pins = [checked_pin(item) for item in input_records]
+ for item in snapshot["source_pins"]+snapshot["protected"]+snapshot["parent_ledger_pins"]:
+@@ -296,8 +302,8 @@
+ parent_ledgers = [parent_ledger_guard(D158/"command-ledger.json","author",parent_plan["commands"]),
+     parent_ledger_guard(D158/"root-command-ledger.json","root",parent_plan["commands"])]
+ assert parent_ledgers == snapshot["parent_ledger_pins"]
+-root_ledger_path = D174/"root-command-ledger.json"
+-author_ledger_path = D174/"command-ledger.json"
++root_ledger_path = D175/"root-command-ledger.json"
++author_ledger_path = D175/"command-ledger.json"
+ root_ledger_bytes = root_ledger_path.read_bytes()
+ author_ledger_bytes = author_ledger_path.read_bytes()
+ root_ledger = json.loads(root_ledger_bytes)
+@@ -392,7 +398,7 @@
+     for item in snapshot["source_pins"]+snapshot["protected"]+parent_ledgers:
+         checked_pin(item)
+     assert gate_path.read_bytes() == gate_bytes
+-    assert (D174/"plan.json").read_bytes() == plan_bytes and (D174/"plan.md").read_bytes() == md_bytes
++    assert (D175/"plan.json").read_bytes() == plan_bytes and (D175/"plan.md").read_bytes() == md_bytes
+     assert Path(gate["candidate_snapshot_pin"]["path"]).read_bytes() == snapshot_bytes
+     assert root_ledger_path.read_bytes() == root_ledger_bytes
+     assert author_ledger_path.read_bytes() == spent_author_bytes
+@@ -444,8 +450,10 @@
+     "targeted_R173_accessor_execution":False,"T1_complete":False,"B9_complete":False,
+     "T12_complete":False,"native":False,"actual":False,"formal":False}
+ result_pin = exclusive_json(output/"result.json",result)
+-print(json.dumps({"command_id":"recovery7","reservation_id":root_entry["reservation_id"],
+-    "product_exit":product_exit,"runner_exit":runner_exit,"timed_out":timed_out,
+-    "junit":junit,"classification":result["classification"],"result":result_pin,
+-    "artifacts":artifacts,"resources":result["resource_evidence"]},sort_keys=True))
++receipt = json.dumps({"command_id":"recovery7","product_exit":product_exit,"runner_exit":runner_exit,
++    "timed_out":timed_out,"classification":result["classification"],"result":result_pin,
++    "junit_counts":None if junit is None else {key:junit[key] for key in ("tests","passes","failures","errors","skipped")},
++    "Memory_call_count":resource_summary.get("call_count"),"Memory_node_count":resource_summary.get("node_count")},sort_keys=True)
++assert len(receipt) < 1500
++print(receipt)
+ raise SystemExit(runner_exit)
+*** End Patch

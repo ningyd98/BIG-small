@@ -1,0 +1,1 @@
+R147 foreign_repo单次actualexit0、JUnit1PASS0error/FAIL/skip。真实同DB不同repository/原session/原活连接前后与确切OperationalLeaseError拒绝sidecar完整冻结，全部fixture/raw/JUnit/六源保留。原GREEN20仍19PASS1FAIL，new19为0/1 HELD，STOP等待ROOT实读；无物理/真实/正式验收。

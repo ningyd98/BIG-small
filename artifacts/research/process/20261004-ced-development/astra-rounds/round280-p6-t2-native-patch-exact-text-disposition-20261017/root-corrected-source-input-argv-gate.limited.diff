@@ -1,0 +1,63 @@
+--- R276-immutable-failed-gate
++++ R280-independent-corrected-gate
+@@ -31,6 +31,20 @@
+  return b
+ def absent(path):
+  p=Path(path); check("required absence "+str(p),not p.exists() and not p.is_symlink())
++D280=A/"round280-p6-t2-native-patch-exact-text-disposition-20261017"
++P280=load_pin(record(D280/"plan.json",14217,"e7d7e2ed4266e29e18cbc6f4dfab89dc072c12ba313adeabd73c778b540cf1a1"))
++O280=load_pin(record(D280/"input-observation.json",7367,"7674ea449aefe193107f056aa9a1f4f74c6050a6ecd545def93eb82169015285"))
++check("R280 exact fifteen frozen inputs",P280["inputs"]==O280["inputs"] and len(P280["inputs"])==15)
++for q in P280["inputs"]:checked(q)
++M280=load_pin(P280["full_before"]["manifest"])
++b280=full_before(M280)
++check("R280 complete old gate before/base64/mode",b280==checked(P280["full_before"]["archive"]) and Path(M280["original"]["path"]).read_bytes()==b280 and Path(M280["original"]["path"]).lstat().st_mode==Path(M280["archive"]["path"]).lstat().st_mode==M280["mode"]==33204)
++for name in ("root-native-chain-acceptance.json","root-final-input-check.json","source-gate.json","script-gate.json","root-final-source-acceptance.json"):absent(D/name)
++for name in ("new-gate-check-report.json","new-gate-actual-tool-return.json"):absent(D280/name)
++def emit(value):
++ output=json.dumps(value,ensure_ascii=False)
++ if len((output+"\n").encode("utf-8"))>6000:raise RuntimeError("bounded metadata stdout exceeded")
++ print(output)
+ P=load_pin(record(D/"plan.json",48080,"bf3f11ceb390c316021714feffb54775d47bd2dcd5dc6f0ae59f9f8169a1c2a8"))
+ O=load_pin(record(D/"input-observation.json",18102,"418b7a91a16ff867c811fbaabf6aa577a3782145b51c9a4e3b737d07c6322623"))
+ S=load_pin(record(D/"prerequisite-supplement.json",5095,"9e1011333681dd85f92d302d995a28c0b28cfc8ee9fac259954fe97f66733374"))
+@@ -112,7 +126,11 @@
+   targets.append(path)
+  native_details.append({"stage":stage["stage"],"targets":targets})
+ check("exact native stages and destinations",[x["stage"] for x in native_details]==["before_candidate","implementation"] and set(native_details[0]["targets"])=={R["candidate"]["path"],R["new_main"]["path"],R["new_consumer"]["path"]} and native_details[1]["targets"]==[R["runner_after"]["path"]])
+-check("exact implementation patch",N["stages"][1]["arguments"]==Path(R["native_patch"]["path"]).read_text())
++native_argument_bytes = N["stages"][1]["arguments"].encode("utf-8")
++patch_archive_bytes = Path(R["native_patch"]["path"]).read_bytes()
++check("exact implementation actual argument pin", len(native_argument_bytes) == 80042 and hashlib.sha256(native_argument_bytes).hexdigest() == "4e1fc083c306c3855d66eca42b1419f8492794ba9509f14074657edba0aea4e0")
++check("exact implementation archived patch pin", len(patch_archive_bytes) == 80043 and hashlib.sha256(patch_archive_bytes).hexdigest() == "9f2e2f774a4d798ec28e6ffc8055ef970f32beede263f71ed6b1851f5e12c7dc")
++check("exact archive single terminal LF representation", not native_argument_bytes.endswith(bytes([10])) and patch_archive_bytes == native_argument_bytes + bytes([10]))
+ accepted=load_pin(record(R277/"root-independent-source-acceptance.json",3700,"c5de6c4faa1209dfbd5a055fc84d905f4b9429415d1140af30a82c37e6be6364"))
+ P277=read277=load_pin(R["authority"]["R277_plan"])
+ M277=load_pin(P277["full_before"]["manifest"])
+@@ -181,15 +199,18 @@
+  check("new once and finite argv",command["authorized"]==1 and command["used"]==0 and command["remaining"]==1 and command["limits"]["attempts"]==1 and command["limits"]["retries"]==0 and command["limits"]["child_seconds"]==600 and command["limits"]["cleanup_total_seconds"]==15 and command["limits"]["outer_total_seconds"]==900 and command["limits"]["faulthandler_seconds"]==540 and command["env_inheritance"] is False)
+ check("new source/schema roles unmodified",X["runtime_executed"] is False and X["roles_created"] is False)
+ failed=[x for x in checks if not x["passed"]]
++report={"round":"R280","status":"FAILED_STOP_ASTRA" if failed else "ALL_ORIGINAL_AND_R280_CHECKS_PASSED","checks":checks,"failed":failed,"total":len(checks),"passed":len(checks)-len(failed),"native_actual_argument":{"container":R["native_receipt"],"member":"stages[1].arguments","bytes":len(native_argument_bytes),"sha256":hashlib.sha256(native_argument_bytes).hexdigest()},"archive_representation":R["native_patch"],"archive_equals_actual_argument_plus_exact_one_LF":patch_archive_bytes==native_argument_bytes+bytes([10]),"native_reconstructed_source":R["runner_after"],"original_failure":P280["inputs"][0],"corrected_source":pin(__file__),"runtime":0}
++with (D280/"new-gate-check-report.json").open("x",encoding="utf-8") as f:f.write(json.dumps(report,ensure_ascii=False,indent=2)+"\n")
++report_pin=pin(D280/"new-gate-check-report.json")
+ if failed:
+- print(json.dumps({"round":"R276","status":"FAILED_STOP_ASTRA","failed":failed},ensure_ascii=False));raise SystemExit(2)
++ emit({"round":"R280","status":"FAILED_STOP_ASTRA","total":len(checks),"passed":len(checks)-len(failed),"failed":len(failed),"report":report_pin});raise SystemExit(2)
+ def write(name,value):
+  path=D/name
+  with path.open("x",encoding="utf-8") as f:f.write(json.dumps(value,ensure_ascii=False,indent=2)+"\n")
+  return pin(path)
+ native_pin=write("root-native-chain-acceptance.json",{"round":"R276","status":"FULL_NATIVE_SOURCE_CHAINS_ACCEPTED","runner_native":R["native_receipt"],"runner_Add_stages":native_details,"plugin_R277_acceptance":pin(R277/"root-independent-source-acceptance.json"),"sources":{"runner":R["runner_after"],"plugin":R["plugin"]},"runtime":0})
+ input_pin=write("root-final-input-check.json",{"round":"R276","status":"ALL_FINITE_INPUT_SOURCE_DB_CONTEXT_ARGV_CHECKS_PASSED","checks":checks,"initial_inputs":50,"mapped_context":2,"supplement_inputs":5,"current_sources":27,"protected":211,"history_generations_retained":68,"new_R268_DB_count":6,"runtime":0})
+-fixed=[]
++fixed=[pin(D280/"plan.json"),pin(D280/"input-observation.json"),P280["full_before"]["manifest"],P280["full_before"]["archive"],pin(__file__),pin(D280/"new-gate-source-review.json"),report_pin]
+ for q in P["inputs"]:
+  fixed.append(mapped[q["path"]]["after"] if q["path"] in mapped else q)
+ fixed+=[X["template_before_manifest"],X["draft_before_manifest"]]+S["inputs"]+list(R["authority"].values())+[R[k] for k in ("candidate","new_main","new_consumer","full_after","native_receipt","native_patch","candidate_native_receipt","candidate_native_patch","source_index","scope_proof","limited_diff","source_portions_diff")]+R["source_read_actuals"]+[ctx_pin,prep_pin,pin(R277/"root-independent-source-acceptance.json"),pin(R277/"before/manifest.json"),pin(R277/"before/r276_session_evidence.py"),pin(R277/"implementation/actual-plugin-native-tool-return.json"),pin(R277/"implementation/after-r276_session_evidence.py")]
+@@ -200,4 +221,4 @@
+ source_pin=write("source-gate.json",source_gate)
+ script_pin=write("script-gate.json",{"round":"R276","status":"VERIFIED_BY_ROOT","plan":source_gate["plan"],"source_gate":source_pin,"sources":sources,"commands":P["commands"],"role_files":roles,"reservation_directory":str(D/"root-reservations"),"runtime_released":False})
+ accept_pin=write("root-final-source-acceptance.json",{"round":"R276","status":"FULL_SOURCE_NATIVE_INPUT_ARGV_ACCEPTED_NO_DISPATCH","checks_passed":len(checks),"source_gate":source_pin,"script_gate":script_pin,"native":native_pin,"input_check":input_pin,"fixed_inputs":len(unique),"sources":sources,"T2_complete":False})
+-print(json.dumps({"status":"FULL_SOURCE_NATIVE_INPUT_ARGV_ACCEPTED_NO_DISPATCH","checks":len(checks),"fixed_inputs":len(unique),"source_gate":source_pin,"script_gate":script_pin,"acceptance":accept_pin},ensure_ascii=False))
++emit({"status":"FULL_SOURCE_NATIVE_INPUT_ARGV_ACCEPTED_NO_DISPATCH","checks":len(checks),"fixed_inputs":len(unique),"source_gate":source_pin,"script_gate":script_pin,"acceptance":accept_pin,"R280_check_report":report_pin})

@@ -1,0 +1,72 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py.R196-before
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py
+@@ -612,6 +612,10 @@
+ 
+ 
+ def _join_audit_original(prior: VisualOriginalPlan, original: dict[str, JSONValue]) -> None:
++    from cloud_edge_robot_arm.vision.owner_registration import LocalVisualOriginalPlan
++
++    if type(prior) is LocalVisualOriginalPlan and prior.local_time.to_payload() != original:
++        raise ValueError("local audit original must retain complete enclosing original time")
+     lease = _object(original["lease_identity"])
+     identity = prior.identity
+     if ((identity.job_id, identity.run_id, identity.worker_id, identity.lease_id,
+@@ -837,7 +841,9 @@
+     from cloud_edge_robot_arm.cloud.replanning.visual_dependencies import StepDependency
+     from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+     from cloud_edge_robot_arm.vision.observations import RGBDObservation
+-    from cloud_edge_robot_arm.vision.owner_registration import OriginalActionRequirements
++    from cloud_edge_robot_arm.vision.owner_registration import (
++        LocalVisualOriginalPlan, OriginalActionRequirements,
++    )
+     from cloud_edge_robot_arm.vision.worker_owner import (
+         REQUIRED_COMPILER_SOURCES, WORKER_CONDITION_REGISTRY,
+         WORKER_CONDITION_REGISTRY_VERSION, _POST, _PRE,
+@@ -850,8 +856,10 @@
+             or dict(prior.compiler_source_hashes) != sources or dict(prior.source_hashes) != sources):
+         raise ValueError("bootstrap promotion full compiler/source inventory differs")
+     if (frame.episode_id != source["episode_id"] or not frame.calibration_version
+-            or prior.identity.episode_id != frame.episode_id
+-            or prior.contract.timestamp != prior.registered_at
++            or prior.identity.episode_id != frame.episode_id):
++        raise ValueError("bootstrap promotion archived frame/contract source differs")
++    if type(prior) is not LocalVisualOriginalPlan and (
++            prior.contract.timestamp != prior.registered_at
+             or prior.contract.issued_at != prior.registered_at
+             or prior.contract.valid_until != prior.effective_deadline_at):
+         raise ValueError("bootstrap promotion archived frame/contract source differs")
+@@ -1556,11 +1564,13 @@
+         from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
+         from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import PHASES
+         request = _object(body["input"])
+-        if request.get("schema_version") == "visual.verification.route-input.local.v1":
++        request_tag, request_body, _ = _route_parts(request)
++        prior = _audit_original(request_body["original"])
++        expected_task = prior.identity.task_id
++        if request_tag == "visual.verification.route-input.local.v1":
+             _semantic_child_original(request, "visual.verification.route-input.local.v1", original)
+         else:
+-            _audit_original(request["original"])
+-            _audit_publication(request["publication"])
++            _audit_publication(request_body["publication"], prior)
+             if request["phase"] not in PHASES:
+                 raise ValueError("exact historical route phase required")
+         if body["input_hash"] != _hash(request):
+@@ -1584,6 +1594,8 @@
+             _text(domain_name)
+         before_pool = _audit_pool(body["before_verification_budget"], enclosing=original)
+         after_pool = _audit_pool(body["after_verification_budget"], enclosing=original)
++        if before_pool["task_id"] != expected_task or after_pool["task_id"] != expected_task:
++            raise ValueError("route budgets must bind the actual input original task")
+         before_state = _object(before_pool["state"])
+         after_state = _object(after_pool["state"])
+         if before_pool["task_id"] != after_pool["task_id"] or _integer(after_pool["revision"]) != _integer(before_pool["revision"]) + 1:
+@@ -1597,7 +1609,7 @@
+             if _number(after_limits[limit_name]) > _number(before_limits[limit_name]):
+                 raise ValueError("route cannot extend an original budget policy")
+         if body["produced_publication"] is not None:
+-            produced = _audit_publication(body["produced_publication"], enclosing=original)
++            produced = _audit_publication(body["produced_publication"], prior, enclosing=original)
+             if body["produced_publication_hash"] != produced["publication_hash"]:
+                 raise ValueError("route produced publication hash differs")
+     if tag == "visual.verification.effect-completion.local.v1":

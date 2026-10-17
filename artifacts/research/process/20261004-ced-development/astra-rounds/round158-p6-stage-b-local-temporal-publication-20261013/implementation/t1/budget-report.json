@@ -1,0 +1,436 @@
+{
+  "R173": {
+    "before_reports_archive": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/implementation/before-t1-reports.json",
+    "before_sources_archive": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/implementation/before-sources.json",
+    "coverage": {
+      "LocalRetryBudgetRecord_accessors_targeted_execution": false,
+      "inherited_seven_node_GREEN_executed": false,
+      "limit": "Existing seven bodies do not specifically execute the new history properties. Codec GREEN cannot establish targeted accessor coverage.",
+      "new_history_accessors_targeted_execution": false
+    },
+    "finding": "CONFIRMED_T1_TYPED_HISTORY_INTERFACE_GAP_SOURCE_ONLY",
+    "limited_diff": {
+      "bytes": 6130,
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/implementation/limited.diff",
+      "sha256": "4d8733da6fc8483e31ec3e90a0207e0b7ff11560daa82ebb963c7905c9e08f09"
+    },
+    "plan_json": {
+      "bytes": 25194,
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/plan.json",
+      "sha256": "2da2d8c705e7413230b366b0c94a60a50a4990ae561c469c80aa1c69fae6ba21"
+    },
+    "scope": {
+      "all_seven_tests_and_entire_test_file_unchanged": true,
+      "exact_changes": [
+        {
+          "after": "if TYPE_CHECKING:\n    from cloud_edge_robot_arm.edge.recovery.lifecycle import (\n        LocalRetryBudgetRecord,\n        LocalVerificationBudgetRecord,\n        VerificationBudgetRecord,\n    )\n",
+          "before": "if TYPE_CHECKING:\n    from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord\n",
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py"
+        },
+        {
+          "after": "    @property\n    def verification_budget(self) -> VerificationBudgetRecord:\n        from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord\n\n        payload = self.object(\"verification_budget\")\n        if payload.get(\"schema_version\") == \"recovery.verification-budget.local.v1\":\n            raise ValueError(\"local verification budget requires verification_budget_history\")\n        return VerificationBudgetRecord.from_payload(payload)\n\n    @property\n    def verification_budget_history(self) -> VerificationBudgetRecord | LocalVerificationBudgetRecord:\n        from cloud_edge_robot_arm.edge.recovery.lifecycle import (\n            LocalVerificationBudgetRecord,\n            VerificationBudgetRecord,\n        )\n\n        payload = self.object(\"verification_budget\")\n        tag = payload.get(\"schema_version\")\n        if tag == \"recovery.verification-budget.local.v1\":\n            return LocalVerificationBudgetRecord.from_payload(payload)\n        if tag == \"recovery.verification-budget.v1\":\n            return VerificationBudgetRecord.from_payload(payload)\n        raise ValueError(\"unsupported verification budget history schema\")\n\n    @property\n    def retry_budget(self) -> RecoveryBudget:\n        if self.object(\"retry_budget\").get(\"schema_version\") == \"recovery.retry-budget.local.v1\":\n            raise ValueError(\"local retry budget requires retry_budget_history\")\n        return self.model(\"retry_budget\", RecoveryBudget)\n\n    @property\n    def retry_budget_history(self) -> RecoveryBudget | LocalRetryBudgetRecord:\n        from cloud_edge_robot_arm.edge.recovery.lifecycle import LocalRetryBudgetRecord\n\n        payload = self.object(\"retry_budget\")\n        if \"schema_version\" in payload:\n            if payload[\"schema_version\"] == \"recovery.retry-budget.local.v1\":\n                return LocalRetryBudgetRecord.from_payload(payload)\n            raise ValueError(\"unsupported retry budget history schema\")\n        return self.model(\"retry_budget\", RecoveryBudget)\n",
+          "before": "    @property\n    def verification_budget(self) -> VerificationBudgetRecord:\n        from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord\n\n        return VerificationBudgetRecord.from_payload(self.object(\"verification_budget\"))\n\n    @property\n    def retry_budget(self) -> RecoveryBudget:\n        return self.model(\"retry_budget\", RecoveryBudget)\n",
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py"
+        },
+        {
+          "after": "from cloud_edge_robot_arm.vision.local_temporal import (\n    JSONValue,\n    LocalDomainEnvelope,\n    LocalVerificationBudgetState,\n)\n",
+          "before": "from cloud_edge_robot_arm.vision.local_temporal import (\n    LocalDomainEnvelope,\n    LocalVerificationBudgetState,\n)\n",
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py"
+        },
+        {
+          "after": "    def content_hash(self) -> str:\n        return self.string(\"content_hash\")\n\n\nclass LocalRetryBudgetRecord(LocalDomainEnvelope):\n    \"\"\"Immutable retry history; decoding cannot create or replenish a live budget.\"\"\"\n\n    _tag = \"recovery.retry-budget.local.v1\"\n\n    @property\n    def budget_id(self) -> str:\n        return self.string(\"budget_id\")\n\n    @property\n    def task_id(self) -> str:\n        return self.string(\"task_id\")\n\n    @property\n    def per_step_retry_limit(self) -> int:\n        return self.counter(\"per_step_retry_limit\")\n\n    @property\n    def per_skill_retry_limit(self) -> int:\n        return self.counter(\"per_skill_retry_limit\")\n\n    @property\n    def task_total_retry_limit(self) -> int:\n        return self.counter(\"task_total_retry_limit\")\n\n    @property\n    def retry_count_used(self) -> int:\n        return self.counter(\"retry_count_used\")\n\n    @property\n    def task_retry_count(self) -> int:\n        return self.counter(\"task_retry_count\")\n\n    def _retry_counts(self, name: str) -> dict[str, int]:\n        result: dict[str, int] = {}\n        for key, value in self.object(name).items():\n            if type(value) is not int or value < 0:\n                raise ValueError(\"strict nonnegative retry history counter required\")\n            result[key] = value\n        return result\n\n    @property\n    def step_retry_counts(self) -> dict[str, int]:\n        return self._retry_counts(\"step_retry_counts\")\n\n    @property\n    def skill_retry_counts(self) -> dict[str, int]:\n        return self._retry_counts(\"skill_retry_counts\")\n\n    @property\n    def event_retry_counts(self) -> dict[str, int]:\n        return self._retry_counts(\"event_retry_counts\")\n\n    @property\n    def retry_cooldown_ms(self) -> int:\n        return self.counter(\"retry_cooldown_ms\")\n\n    @property\n    def retry_backoff_policy(self) -> str:\n        return self.string(\"retry_backoff_policy\")\n\n    @property\n    def effective_retry_limit(self) -> int:\n        return self.counter(\"effective_retry_limit\")\n\n    @property\n    def remaining_retries(self) -> int:\n        return self.counter(\"remaining_retries\")\n\n    @property\n    def scene_version(self) -> int:\n        return self.counter(\"scene_version\")\n\n    @property\n    def original_recovery_reference(self) -> dict[str, JSONValue]:\n        reference = self.local_time.to_payload()[\"recovery_reference\"]\n        if not isinstance(reference, dict):\n            raise ValueError(\"original recovery reference must be a JSON object\")\n        return dict(reference)\n\n\n# Keep the ten roadmap fields positional; binding/CAS metadata is keyword-only.\n",
+          "before": "    def content_hash(self) -> str:\n        return self.string(\"content_hash\")\n\n\n# Keep the ten roadmap fields positional; binding/CAS metadata is keyword-only.\n",
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py"
+        }
+      ],
+      "existing_lifecycle_definitions_byte_identical": true,
+      "legacy_VisualOwnerPublicationRecord_byte_identical": true,
+      "legacy_getter_return_types_preserved": true,
+      "only_local_publication_budget_getters_and_history_getters_changed": true,
+      "other_owned_unchanged": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/models.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/service.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_workbench/models.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/execution.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py"
+      ],
+      "other_owned_unchanged_count": 22,
+      "shared_R170_receipt_codec_unchanged": true,
+      "source_receipts": [
+        {
+          "after_bytes": 44642,
+          "after_sha256": "9ef016a13907bf52fb9c969713252ae513a494b658c7d27e884c2b63b29ea9a8",
+          "before_bytes": 42191,
+          "before_sha256": "c59fef117801c807eee3da9eee9c990a4ddda4f7a1854815ac373d4f88dec61a",
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py"
+        },
+        {
+          "after_bytes": 31872,
+          "after_sha256": "c344ddeed1d8948b6d4322bb6710338079ec6fbf6b17666854ed73398aa06d02",
+          "before_bytes": 30156,
+          "before_sha256": "8a958ba9c3113e8465936c66d1f7a154dde3b17d014beff7a8065edf6bd34f38",
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py"
+        }
+      ]
+    },
+    "status": "CANDIDATE_SOURCE_REPAIR_ONLY_PENDING_ROOT_GREEN_GATE"
+  },
+  "R174": {
+    "coverage": {
+      "R174_recovery7_executed": false,
+      "limit": "Fixture JSON-boundary text proof only; no local-history targeted execution.",
+      "targeted_R173_accessor_execution": false
+    },
+    "old_reports_archive": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round174-p6-t1-legacy-condition-json-normalization-20261014/implementation/before-t1-reports.json",
+    "original_green": {
+      "errors": 0,
+      "failures": 2,
+      "overall_pass": false,
+      "passes": 5,
+      "product_exit": 1,
+      "raw_preserved": [
+        {
+          "bytes": 1356,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/result.json",
+          "sha256": "ae25624d036d081350fae5884bb92b774f42adc98db39ad4ee7ec0850edc2104"
+        },
+        {
+          "bytes": 3504,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/invocation.json",
+          "sha256": "24fc0b5a774ecf65469fd0360cf6bdd1786fbd3c3c574d38d841511a8c5f66fa"
+        },
+        {
+          "bytes": 7587,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/stdout.txt",
+          "sha256": "ad64dd236c12ff25f26072397194bb704ed6bca959338f9ac1980d6f566227ed"
+        },
+        {
+          "bytes": 0,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/stderr.txt",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 8191,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/junit.xml",
+          "sha256": "8edd752cc997cd8c53ede765862edbe40c0e6a6bce17b088ddce93482b51eebb"
+        },
+        {
+          "bytes": 3821,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/actual-tool-return.json",
+          "sha256": "3c16ccf19217093315f664aaee5f72d2626415ce9d7a537a4b8c738382d84da5"
+        }
+      ],
+      "remaining": 0,
+      "runner_tool_exit": 2,
+      "skips": 0,
+      "tests": 7,
+      "used": 1
+    },
+    "scope_proof": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round174-p6-t1-legacy-condition-json-normalization-20261014/implementation/scope-proof.json",
+    "source_snapshot": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round174-p6-t1-legacy-condition-json-normalization-20261014/implementation/candidate-snapshot.json",
+    "status": "PREPARATION_ONLY_RECOVERY_HELD",
+    "usage": {
+      "R158_remaining": 12,
+      "R158_remaining_state": "HELD",
+      "R158_used": 3,
+      "R166_legacy_control_remaining": 0,
+      "R166_legacy_control_used": 1,
+      "R169_metadata_used": 0,
+      "R169_patch_used": 0,
+      "R169_state": "HELD_SUPERSEDED",
+      "R170_metadata_remaining": 0,
+      "R170_metadata_used": 1,
+      "R172_metadata_remaining": 0,
+      "R172_metadata_used": 1,
+      "R173_metadata_remaining": 0,
+      "R173_metadata_used": 1,
+      "R173_new_product_verifications": 0,
+      "R174_ROOT_settlement_metadata_remaining": 1,
+      "R174_ROOT_settlement_metadata_used": 0,
+      "R174_preparation_metadata_remaining": 0,
+      "R174_preparation_metadata_used": 1,
+      "R174_recovery7_remaining": 1,
+      "R174_recovery7_state": "HELD",
+      "R174_recovery7_used": 0,
+      "new_product_verifications_during_preparation": 0,
+      "original_failed_freeze_remaining": 0,
+      "original_failed_freeze_used": 1,
+      "t1_green_remaining": 0,
+      "t1_green_state": "SPENT",
+      "t1_green_used": 1
+    }
+  },
+  "R175": {
+    "coverage": {
+      "Memory_lifecycle_observer_executed": false,
+      "R175_recovery7_executed": false,
+      "limit": "Scope/text proof only. R174 seven passes do not execute this new observer or establish transitive Memory closure.",
+      "targeted_R173_accessor_execution": false
+    },
+    "observer_contract": [
+      "Enter a scoped monkeypatch.context before the first owner_fixture.values call; leave only after helper-wide finally cleanup and method restoration. Observe the genuine InMemoryEventAutonomyRepository class, without replacing that class or bypassing its original constructor/methods.",
+      "Pass-through wrappers for that real class __init__ and close may record lifecycle only: original constructor/close executed exactly once per observed attempt with original arguments and original semantics. Keep actual objects/thread identity. Never grant permissions, fabricate results, edit repository data yourself or replace locks.",
+      "Count attempted allocations before invoking original __init__, successful initialization after it returns, and init failures separately. Track every successfully initialized object, including transitive builder/bootstrap allocations and the direct primary repo. Preserve actual attempted/failed denominator.",
+      "Retain direct primary-repo cleanup; outer finally closes every initialized tracked instance without a successful real close, including failures before the old direct-repo try. Attempt cleanup of all tracked instances even if one close fails. Do not silently suppress original or cleanup errors, and do not count a failed close as success. On partial constructor failure, record it; safe best-effort real close may be attempted only if actual required initialization exists, otherwise report incomplete cleanup and fail.",
+      "Record real close call/return/error. After close, observe only existing close-cleared fields _events,_budgets,_active_contracts,_checkpoints under the real lock; require those empty on successful close. Do not require all dictionary fields empty or invent Memory._closed. Preserve source value objects returned by fixture.",
+      "Ensure original __init__/close bindings are restored on every exit and prove their identity in the same helper finally. Local success assertions require all initialized instances closed with no errors, primary exactly one, at least one transitive allocation. Counts come from actual observations, not a guessed constant. Release tracking references after saving observation.",
+      "Cleanup and local assertions are mandatory even without the optional R175 diagnostic environment variable. No-env parent calls do not write sidecars and must not fail merely because the variable is absent. They do not inherit runtime evidence from R175; any later command's resource evidence remains separately assessed. Parent runner stays byte-identical.",
+      "When BIGSMALL_R175_RESOURCE_DIR is set by the new R175 runner, write one exclusive JSON sidecar per actual helper call in that exact existing directory, including actual PYTEST_CURRENT_TEST nodeid, pid/thread, unique call ID, attempted/initialized/init-failed counts, each object identity and primary/transitive role, close calls/returns/errors, observed field counts, method-restored identity and success/failure. Write in finally before releasing refs; output errors fail the call. Environment selects an evidence sink only, never authority or behavior.",
+      "The R175 runner requires this env and sidecars for all seven selected test nodes. No copying old resource outcomes, inventing unobserved counts or replaying fixture calls to fill records. Runtime counter fields not measured remain null with explanation."
+    ],
+    "old_reports_archive": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round175-p6-t1-transitive-memory-fixture-closure-20261014/implementation/before-t1-reports.json",
+    "original_green": {
+      "errors": 0,
+      "failures": 2,
+      "overall_pass": false,
+      "passes": 5,
+      "product_exit": 1,
+      "raw_preserved": [
+        {
+          "bytes": 1356,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/result.json",
+          "sha256": "ae25624d036d081350fae5884bb92b774f42adc98db39ad4ee7ec0850edc2104"
+        },
+        {
+          "bytes": 3504,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/invocation.json",
+          "sha256": "24fc0b5a774ecf65469fd0360cf6bdd1786fbd3c3c574d38d841511a8c5f66fa"
+        },
+        {
+          "bytes": 7587,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/stdout.txt",
+          "sha256": "ad64dd236c12ff25f26072397194bb704ed6bca959338f9ac1980d6f566227ed"
+        },
+        {
+          "bytes": 0,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/stderr.txt",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 8191,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/junit.xml",
+          "sha256": "8edd752cc997cd8c53ede765862edbe40c0e6a6bce17b088ddce93482b51eebb"
+        },
+        {
+          "bytes": 3821,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/actual-tool-return.json",
+          "sha256": "3c16ccf19217093315f664aaee5f72d2626415ce9d7a537a4b8c738382d84da5"
+        }
+      ],
+      "remaining": 0,
+      "runner_tool_exit": 2,
+      "skips": 0,
+      "tests": 7,
+      "used": 1
+    },
+    "prior_R174": {
+      "Memory_lifecycle_observed": false,
+      "ROOT_settlement_effective": "HELD_SUPERSEDED_BY_R175_NO_EXECUTION",
+      "errors": 0,
+      "failures": 0,
+      "passes": 7,
+      "product_exit": 0,
+      "raw_preserved": true,
+      "runner_exit": 0,
+      "skipped": 0,
+      "tests": 7
+    },
+    "scope_proof": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round175-p6-t1-transitive-memory-fixture-closure-20261014/implementation/scope-proof.json",
+    "source_snapshot": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round175-p6-t1-transitive-memory-fixture-closure-20261014/implementation/candidate-snapshot.json",
+    "status": "PREPARATION_ONLY_RECOVERY_HELD",
+    "usage": {
+      "R158_remaining": 12,
+      "R158_remaining_state": "HELD",
+      "R158_used": 3,
+      "R166_legacy_control_remaining": 0,
+      "R166_legacy_control_used": 1,
+      "R169_metadata_used": 0,
+      "R169_patch_used": 0,
+      "R169_state": "HELD_SUPERSEDED",
+      "R170_metadata_remaining": 0,
+      "R170_metadata_used": 1,
+      "R172_metadata_remaining": 0,
+      "R172_metadata_used": 1,
+      "R173_metadata_remaining": 0,
+      "R173_metadata_used": 1,
+      "R173_new_product_verifications": 0,
+      "R174_ROOT_settlement_metadata_effective": "HELD_SUPERSEDED_BY_R175_NO_EXECUTION",
+      "R174_ROOT_settlement_metadata_remaining": 1,
+      "R174_ROOT_settlement_metadata_used": 0,
+      "R174_preparation_metadata_remaining": 0,
+      "R174_preparation_metadata_used": 1,
+      "R174_recovery7_remaining": 0,
+      "R174_recovery7_state": "SPENT_ACTUAL_7PASS_RESOURCE_GAP",
+      "R174_recovery7_used": 1,
+      "R175_ROOT_settlement_metadata_remaining": 1,
+      "R175_ROOT_settlement_metadata_used": 0,
+      "R175_preparation_metadata_remaining": 0,
+      "R175_preparation_metadata_used": 1,
+      "R175_recovery7_remaining": 1,
+      "R175_recovery7_state": "HELD",
+      "R175_recovery7_used": 0,
+      "new_product_verifications_during_preparation": 0,
+      "original_failed_freeze_remaining": 0,
+      "original_failed_freeze_used": 1,
+      "t1_green_remaining": 0,
+      "t1_green_state": "SPENT",
+      "t1_green_used": 1
+    }
+  },
+  "acceptance": {
+    "B9_complete": false,
+    "T12_complete": false,
+    "T1_GREEN": false,
+    "T1_complete": false,
+    "actual": false,
+    "formal": false,
+    "native": false
+  },
+  "baseline": {
+    "checked_files": 22,
+    "diagnostic_census_only": true,
+    "errors": 72,
+    "files_with_errors": 3,
+    "modified_or_new_definition_errors_waived": false,
+    "mypy_pass_claim": false,
+    "numeric_exit": 1
+  },
+  "caps": {
+    "GPU_native_physics": 0,
+    "external_model_calls": 0,
+    "max_broker_threads_per_worker": 1,
+    "max_heartbeat_threads_per_worker": 1,
+    "max_test_wall_seconds": 600,
+    "max_worker_lifecycles_per_pytest": 64,
+    "max_workers_concurrent": 2,
+    "network": 0
+  },
+  "resource_boundary": {
+    "future_green_actual_resources": null,
+    "preparation_GPU_native_calls": 0,
+    "preparation_SQL_or_product_probe": 0,
+    "preparation_external_model_calls": 0,
+    "preparation_network_calls": 0,
+    "preparation_product_lifecycles": 0
+  },
+  "schema_version": "bigsmall.r158-t1-budget-report.v1",
+  "status": "R175_CANDIDATE_PREPARATION_ORIGINAL_GREEN_FAILED_RECOVERY_HELD",
+  "test_first_prerequisites": {
+    "R166_legacy_control": {
+      "ROOT_independently_accepted": true,
+      "errors": 0,
+      "failures": 0,
+      "passes": 1,
+      "skips": 0
+    },
+    "current_T1_candidate": "R175_RECOVERY_HELD_NOT_EXECUTED",
+    "original_T1_GREEN": {
+      "errors": 0,
+      "failures": 2,
+      "overall_pass": false,
+      "passes": 5,
+      "product_exit": 1,
+      "raw_preserved": [
+        {
+          "bytes": 1356,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/result.json",
+          "sha256": "ae25624d036d081350fae5884bb92b774f42adc98db39ad4ee7ec0850edc2104"
+        },
+        {
+          "bytes": 3504,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/invocation.json",
+          "sha256": "24fc0b5a774ecf65469fd0360cf6bdd1786fbd3c3c574d38d841511a8c5f66fa"
+        },
+        {
+          "bytes": 7587,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/stdout.txt",
+          "sha256": "ad64dd236c12ff25f26072397194bb704ed6bca959338f9ac1980d6f566227ed"
+        },
+        {
+          "bytes": 0,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/stderr.txt",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 8191,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/junit.xml",
+          "sha256": "8edd752cc997cd8c53ede765862edbe40c0e6a6bce17b088ddce93482b51eebb"
+        },
+        {
+          "bytes": 3821,
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/actual-tool-return.json",
+          "sha256": "3c16ccf19217093315f664aaee5f72d2626415ce9d7a537a4b8c738382d84da5"
+        }
+      ],
+      "remaining": 0,
+      "runner_tool_exit": 2,
+      "skips": 0,
+      "tests": 7,
+      "used": 1
+    },
+    "original_t1_red": {
+      "expected_missing_contract_failures": 6,
+      "failures": 7,
+      "legal_single_run_RED": false,
+      "passes": 0,
+      "spent_preserved": true,
+      "unexpected_legacy_failure": 1
+    },
+    "prerequisite_kind": "TWO_RUN_COMPOSITE_NOT_SINGLE_LEGAL_SEVEN_NODE_RED"
+  },
+  "usage": {
+    "R158_remaining": 12,
+    "R158_remaining_state": "HELD",
+    "R158_used": 3,
+    "R166_legacy_control_remaining": 0,
+    "R166_legacy_control_used": 1,
+    "R169_metadata_used": 0,
+    "R169_patch_used": 0,
+    "R169_state": "HELD_SUPERSEDED",
+    "R170_metadata_remaining": 0,
+    "R170_metadata_used": 1,
+    "R172_metadata_remaining": 0,
+    "R172_metadata_used": 1,
+    "R173_metadata_remaining": 0,
+    "R173_metadata_used": 1,
+    "R173_new_product_verifications": 0,
+    "R174_ROOT_settlement_metadata_effective": "HELD_SUPERSEDED_BY_R175_NO_EXECUTION",
+    "R174_ROOT_settlement_metadata_remaining": 1,
+    "R174_ROOT_settlement_metadata_used": 0,
+    "R174_preparation_metadata_remaining": 0,
+    "R174_preparation_metadata_used": 1,
+    "R174_recovery7_remaining": 0,
+    "R174_recovery7_state": "SPENT_ACTUAL_7PASS_RESOURCE_GAP",
+    "R174_recovery7_used": 1,
+    "R175_ROOT_settlement_metadata_remaining": 1,
+    "R175_ROOT_settlement_metadata_used": 0,
+    "R175_preparation_metadata_remaining": 0,
+    "R175_preparation_metadata_used": 1,
+    "R175_recovery7_remaining": 1,
+    "R175_recovery7_state": "HELD",
+    "R175_recovery7_used": 0,
+    "new_product_verifications_during_preparation": 0,
+    "original_failed_freeze_remaining": 0,
+    "original_failed_freeze_used": 1,
+    "t1_green_remaining": 0,
+    "t1_green_state": "SPENT",
+    "t1_green_used": 1
+  }
+}

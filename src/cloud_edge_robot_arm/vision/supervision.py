@@ -50,13 +50,21 @@ class SupervisionFrame:
 
 
 def decide_supervision(reply: SupervisionDecision, captured: SupervisionContext,
-                      current: SupervisionContext, *, maximum_age_s: float) -> str:
+                      current: SupervisionContext, *, maximum_age_s: float,
+                      operational_reference: dict[str, Any] | None = None) -> str:
     bindings = ("episode_id", "plan_version", "state_version", "observation_id", "next_step_id")
     if any(getattr(reply, key) != getattr(captured, key) for key in bindings):
         return "REJECT"
     if any(getattr(captured, key) != getattr(current, key) for key in (
         "episode_id", "plan_version", "state_version", "next_step_id"
-    )) or not 0 <= (datetime.now(UTC) - captured.captured_at).total_seconds() <= maximum_age_s:
+    )):
+        return "DISCARD"
+    from cloud_edge_robot_arm.vision.operational_windows import _check_context
+
+    local = _check_context(captured, maximum_age_s, operational_reference)
+    if local is False or (local is None and not (
+        0 <= (datetime.now(UTC) - captured.captured_at).total_seconds() <= maximum_age_s
+    )):
         return "DISCARD"
     # Replanning is a request to stop the current sequence. T13 will own safe replacement.
     return "STOP" if reply.recommendation == "REPLAN" else reply.recommendation

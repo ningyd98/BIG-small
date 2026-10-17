@@ -1,0 +1,202 @@
+{
+  "schema_version": "research.astra_plan.v1",
+  "round": "round91-native-full-action-support-20261007",
+  "planner_model": "gpt-6-astra",
+  "created_at_utc": "2026-10-07T16:03:11.616726+00:00",
+  "status": "PLANNED_AWAITING_ROOT_DESIGN_REVIEW_NO_IMPLEMENTATION",
+  "problem": "Frozen P2 contact-motion and operational calibration lack full-action source/reconstruction. GRASP has no target_pose; normal RELEASE missing; early success and extra LIFT hold are not automatically a complete nominal horizon.",
+  "original_failure_evidence": [
+    "artifacts/research/process/20261004-ced-development/t12-convergence-execution/P2/contract.md",
+    "artifacts/research/process/20261004-ced-development/t12-convergence-execution/P2/support-decision.json",
+    "source-excerpts.md"
+  ],
+  "new_failure_or_test_claim": false,
+  "root_cause": [
+    "Old UTC and continuously interpreted motion scalar cannot express independently calibrated full-S contact completion.",
+    "Current reconstruction returns no GRASP endpoint and requires target_pose for every action.",
+    "Producer does not necessarily isolate complete nominal horizon; built-in LIFT adds .5S and RELEASE needs full-body effect support.",
+    "Whole-future H_D was conditionally required by original clock contract, not quantified over all S-domain actions."
+  ],
+  "input_pins_file": "input-pins.json",
+  "input_pin_count": 26,
+  "input_pins_rechecked_unchanged": true,
+  "plan": "plan.md",
+  "design": "design.md",
+  "evidence_files": {
+    "plan.md": {
+      "sha256": "a1d5f8abd9637f623ffdbf532d80b80bb1df43b511c2414ce71411c909a375f5",
+      "bytes": 16051
+    },
+    "design.md": {
+      "sha256": "44ca18c156d901b49d3d88908379658fc62181d42ae02ef926963d57025b8229",
+      "bytes": 16413
+    },
+    "input-pins.json": {
+      "sha256": "5a49fe51671228e7da6a581b1cf4183f186b8f5df62e673ce66254ed63db4e38",
+      "bytes": 6326
+    },
+    "source-excerpts.md": {
+      "sha256": "4dd25f1a0d2ae7ec8404653d53d62a388b1da3d8d4405be6a0c1697187ffbf40",
+      "bytes": 17829
+    },
+    "read-provenance.json": {
+      "sha256": "30016ff60bb0c768ef94346b8a8f7b774f1d01356037e2e4404dda48a62694d4",
+      "bytes": 1073
+    }
+  },
+  "temporal_contract": {
+    "new_mode": "CHECKPOINT_D_FULL_S",
+    "legacy_explicit_full_future_d_mode": "FULL_FUTURE_D_REQUIRED",
+    "missing_future_wall_bound_in_new_mode": "NOT_REQUIRED_FOR_THIS_RECIPE_NOT_ZERO_NOT_PROVEN",
+    "mode_issuer": "source-owned registered recipe and actual owner, never caller flag",
+    "external_future_tolerance_ns": 1000000000,
+    "ttl_ns": 5000000000,
+    "allowed_error_m": 0.01,
+    "max_sample_gap_sim_s": 0.005,
+    "future_wall_deterministic_or_statistical_guarantee_claimed": false,
+    "citation": "clock-dependency-review.md:67-72; 2026-10-05-operational-clock-repair-supplement.md:16; inherited dataset spec:23"
+  },
+  "metric": {
+    "schema": "native.action_completion.operational.v2",
+    "recipe": "FULL_HORIZON_JOINT_CONTACT_COMPLETION_V2",
+    "joint_score": "C=max(G,U+L+M), max over registered control points and required hold evaluations; explicitly decomposed drift M",
+    "coverage": 0.9,
+    "minimum_independent_components": 9,
+    "rank": "ceil((n+1)*0.9)",
+    "missing_or_failed_required_item": "component infinity, retained in full denominator",
+    "not_claimed": [
+      "continuous velocity/supremum",
+      "unconditional physical safety",
+      "hard D completion",
+      "G1/P12/formal acceptance"
+    ],
+    "root_review_required_for_explicit_new_recipe": true
+  },
+  "supported_scope_proposed": [
+    "Single current app-owned MuJoCo backend/episode, source-owned single integrator",
+    "Exact registered asset/camera/visible marker/noise/grounder/controller and age_S=0",
+    "MOVE_ABOVE",
+    "APPROACH",
+    "GRASP",
+    "LIFT",
+    "RETREAT",
+    "MOVE_TO_REGION",
+    "PLACE",
+    "RELEASE with exact PLACE source and complete-body stability evidence"
+  ],
+  "unsupported_scope": [
+    "hardware",
+    "unbridged external UTC",
+    "arbitrary forced target motion/out-of-domain scenes",
+    "missing source/fullH/component",
+    "old mutable-reference velocity schema without bound",
+    "mandatory future D without true H_D",
+    "optional HOME native certification"
+  ],
+  "implementation_model": "gpt-6.1-sol",
+  "tasks": [
+    {
+      "id": 1,
+      "name": "Versioned pure contract and metric",
+      "depends_on": [
+        "ROOT explicit design acceptance"
+      ],
+      "new_cpu_nodes": 12
+    },
+    {
+      "id": 2,
+      "name": "Real complete-horizon producer through sole existing executor",
+      "depends_on": [
+        "Task1",
+        "P5/P6 accepted interface handoff, no parallel shared-source edits"
+      ],
+      "new_cpu_nodes": "included in Task3 cases, no duplicate budget"
+    },
+    {
+      "id": 3,
+      "name": "Independent originals reconstruction, complete groups and immutable private certification",
+      "depends_on": [
+        "Task1",
+        "Task2",
+        "P4 actual authority mechanism, own new live owner",
+        "P5/P6 closure"
+      ],
+      "new_cpu_nodes": 8
+    },
+    {
+      "id": 4,
+      "name": "Three native consumer integrations and unchanged legacy semantics",
+      "depends_on": [
+        "Task3",
+        "P5/P6"
+      ],
+      "new_cpu_nodes": 4
+    }
+  ],
+  "verification": {
+    "new_exact_cpu_nodes": 24,
+    "cycles": "one expected RED and one GREEN per task-owned node; one scoped static pass and independent review per frozen version",
+    "legacy_suite_reruns_authorized": false,
+    "current_plan_tests_run": 0,
+    "current_actual": 0,
+    "formal": 0,
+    "actual_stages": [
+      {
+        "stage": "first full assigned calibration group",
+        "attempts": 1,
+        "calibration_denominator_membership": "group001 of preregistered 9; never discarded pilot",
+        "finite_calibration_claim": false
+      },
+      {
+        "stage": "remaining groups only after first group complete independent readout",
+        "attempts": 8,
+        "automatic_retry": false
+      },
+      {
+        "stage": "separate full online normal-chain smoke",
+        "attempts": 1,
+        "calibration_membership": false,
+        "depends_on": "accepted finite joint q<=.01 and real source/hotpath"
+      }
+    ],
+    "collection_resource_caps_per_group": {
+      "simulation_seconds": 80,
+      "physics_and_rgbd_allocations": 20000,
+      "wall_operational_seconds": 5400,
+      "bytes": 34359738368,
+      "meaning": "resource-stop limits only, never H_D/Tcap/Rcap; exact dt/horizon/settle preflight and flush reserve required"
+    },
+    "all_9_group_upper_caps": {
+      "bytes": 309237645312,
+      "wall_hours": 13.5
+    },
+    "online_smoke_budget": "original registered task/Tcap/Rcap only; never collection wall cap"
+  },
+  "boundaries": {
+    "writes_this_round": "only this round directory",
+    "product_mutations": 0,
+    "git_mutations": 0,
+    "raw_copies": 0,
+    "active_p3_files_pinned": false,
+    "active_p4_outputs_pinned": false,
+    "p2_frozen_outputs_unchanged": true,
+    "no_new_agents": true,
+    "normal_positive_chain_required": true
+  },
+  "stop_conditions": [
+    "new root cause/unplanned failure => preserve original and new Astra for affected task",
+    "first complete group has unknown/failed/missing/invalid => infinity and stop remaining 8",
+    "insufficient bounded resource capacity before attempt => report concrete resource blocker",
+    "explicit H_D requirement without genuine support stays UNKNOWN",
+    "ROOT rejects explicit joint recipe => do not enable new path, preserve pure CPU work"
+  ],
+  "independent_work_may_continue": [
+    "P3",
+    "P4",
+    "P5",
+    "P6",
+    "P7 CPU"
+  ],
+  "git_delivery": "ROOT exact verified paths only; preserve user history/raw/nested workspaces; R77/R81 source and verbatim evidence rules; non-force push and local/upstream/live SHA checks",
+  "self_review": "No inherited unconditional H_D blockade, no statistical H_D substitute, no hidden drift in old e, no fabricated zero velocity, includes RELEASE and LIFT hold, preserves original denominators and requires real normal-chain success."
+}

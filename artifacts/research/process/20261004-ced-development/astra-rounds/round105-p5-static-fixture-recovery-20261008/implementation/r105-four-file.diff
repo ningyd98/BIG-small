@@ -1,0 +1,842 @@
+--- r105-before/src/cloud_edge_robot_arm/vision/operational_windows.py
++++ current/src/cloud_edge_robot_arm/vision/operational_windows.py
+@@ -14,7 +14,7 @@
+ from collections.abc import Iterator, Mapping
+ from contextlib import contextmanager
+ from dataclasses import asdict, dataclass
+-from decimal import Decimal, ROUND_FLOOR
++from decimal import ROUND_FLOOR, Decimal
+ from typing import TYPE_CHECKING, Any
+ from uuid import uuid4
+ 
+@@ -100,9 +100,22 @@
+ 
+ 
+ def _job_source(job: object) -> str:
+-    names = ("job_id", "run_id", "backend", "scenario_id", "control_mode", "seed",
+-             "draft", "timeout_seconds", "max_attempts", "manifest_id", "manifest",
+-             "reproducibility_hash", "source_commit", "source_tree_hash")
++    names = (
++        "job_id",
++        "run_id",
++        "backend",
++        "scenario_id",
++        "control_mode",
++        "seed",
++        "draft",
++        "timeout_seconds",
++        "max_attempts",
++        "manifest_id",
++        "manifest",
++        "reproducibility_hash",
++        "source_commit",
++        "source_tree_hash",
++    )
+     return _hash({name: getattr(job, name) for name in names})
+ 
+ 
+@@ -300,10 +313,11 @@
+             raise OperationalTimeError("original job/attempt/fencing source changed")
+         if self._origin_tuple is not None and worker._active_task_origin != self._origin_tuple:
+             raise OperationalTimeError("original task origin changed")
+-        self._clock.domain  # OC1 retains its exact process/thread/boot checks.
++        _ = self._clock.domain  # OC1 retains its exact process/thread/boot checks.
+         if self._source_hashes is not None:
+             pin_worker_source_inventory(
+-                self._source_root, self._source_hashes,
++                self._source_root,
++                self._source_hashes,
+                 required_paths=frozenset(self._source_hashes),
+             )
+ 
+@@ -322,9 +336,7 @@
+         s = self._startup
+         self._hard = tuple(
+             _Hard(
+-                self._clock.start_deadline(
+-                    task_key=key, origin=self.task_origin, budget_ns=budget
+-                ),
++                self._clock.start_deadline(task_key=key, origin=self.task_origin, budget_ns=budget),
+                 key,
+             )
+             for key, budget in (
+@@ -340,7 +352,10 @@
+         self._check_live()
+         s = self._startup
+         if source.job_repository is not s.worker.repository or (
+-            source.job_id, source.run_id, source.worker_id, source.lease_id
++            source.job_id,
++            source.run_id,
++            source.worker_id,
++            source.lease_id,
+         ) != (s.job_id, s.run_id, s.worker.worker_id, s.lease_id):
+             raise OperationalTimeError("runtime source differs from actual startup")
+         if (
+@@ -356,8 +371,13 @@
+         self._source_root = source.source_root
+         self._source_hashes = hashes
+         self._source_identity = _hash(
+-            {"job": s.job_source, "role": s.binding_hash, "sources": hashes,
+-             "robot": source.robot_id, "plan": source.plan_id}
++            {
++                "job": s.job_source,
++                "role": s.binding_hash,
++                "sources": hashes,
++                "robot": source.robot_id,
++                "plan": source.plan_id,
++            }
+         )
+         self._check_live()
+ 
+@@ -381,7 +401,8 @@
+             parents.append(self._windows[name])
+         identifier = uuid4().hex
+         ages = (
+-            [] if kind == "bootstrap"
++            []
++            if kind == "bootstrap"
+             else [_Age(event, budget_ns, self._source_identity + ":" + kind)]
+         )
+         hard = list(self._hard)
+@@ -537,8 +558,9 @@
+     return token
+ 
+ 
+-def _consume_handoff(token: object, source: object, binding: object, limits: object,
+-                     episode_id: str) -> OperationalWindowOwner:
++def _consume_handoff(
++    token: object, source: object, binding: object, limits: object, episode_id: str
++) -> OperationalWindowOwner:
+     owner = _HANDOFFS.pop(token, None)
+     if owner is None or owner._startup.binding is not binding:
+         raise OperationalTimeError("unissued or consumed runtime handoff")
+@@ -579,8 +601,9 @@
+     return _hash(observation.model_dump(mode="json"))
+ 
+ 
+-def _register_observation(owner: OperationalWindowOwner, event: OperationalBracket,
+-                          observation: object) -> None:
++def _register_observation(
++    owner: OperationalWindowOwner, event: OperationalBracket, observation: object
++) -> None:
+     owner._check_live()
+     if observation.episode_id != owner._episode_id:
+         raise OperationalTimeError("actual acquisition episode mismatch")
+@@ -646,8 +669,9 @@
+         return EvidenceVerdict("UNKNOWN", ("unregistered_operational_reference",))
+ 
+ 
+-def _check_observation(observation: object, kind: str, *, max_age_s: object = 5.0,
+-                       reference: object = None) -> bool | None:
++def _check_observation(
++    observation: object, kind: str, *, max_age_s: object = 5.0, reference: object = None
++) -> bool | None:
+     try:
+         if reference is None:
+             reference = _reference_for_observation(observation, kind, max_age_s=max_age_s)
+@@ -688,7 +712,9 @@
+         raise OperationalTimeError("actual one-shot transition owner required")
+     owner._check_live()
+     _TRANSITIONS[threading.get_ident()] = (
+-        owner, _hash(payload), tuple(r["window_id"] for r in references)
++        owner,
++        _hash(payload),
++        tuple(r["window_id"] for r in references),
+     )
+     try:
+         yield
+@@ -740,20 +766,48 @@
+     domain = _descriptor_fields(
+         value,
+         {
+-            "boot_id", "pid", "process_start_ticks", "owner_thread_id",
+-            "owner_native_thread_id", "namespace_device", "namespace_inode",
+-            "namespace_offsets", "startup_nonce", "startup_counter_ns", "os_name",
+-            "os_release", "os_version", "machine", "python_version", "resolution_seconds",
+-            "schema", "api", "scope", "utc_accuracy", "si_accuracy", "accuracy_status",
+-            "worker_authority", "lease_authority",
++            "boot_id",
++            "pid",
++            "process_start_ticks",
++            "owner_thread_id",
++            "owner_native_thread_id",
++            "namespace_device",
++            "namespace_inode",
++            "namespace_offsets",
++            "startup_nonce",
++            "startup_counter_ns",
++            "os_name",
++            "os_release",
++            "os_version",
++            "machine",
++            "python_version",
++            "resolution_seconds",
++            "schema",
++            "api",
++            "scope",
++            "utc_accuracy",
++            "si_accuracy",
++            "accuracy_status",
++            "worker_authority",
++            "lease_authority",
+         },
+     )
+     for name in (
+-        "boot_id", "startup_nonce", "os_release", "os_version", "machine", "python_version"
++        "boot_id",
++        "startup_nonce",
++        "os_release",
++        "os_version",
++        "machine",
++        "python_version",
+     ):
+         _descriptor_text(domain[name])
+-    for name in ("pid", "process_start_ticks", "owner_thread_id", "owner_native_thread_id",
+-                 "namespace_inode"):
++    for name in (
++        "pid",
++        "process_start_ticks",
++        "owner_thread_id",
++        "owner_native_thread_id",
++        "namespace_inode",
++    ):
+         _descriptor_integer(domain[name], positive=True)
+     for name in ("namespace_device", "startup_counter_ns"):
+         _descriptor_integer(domain[name])
+@@ -761,16 +815,25 @@
+     if type(offsets) is not list or len(offsets) != 2:
+         raise ValueError("complete original time namespace offsets required")
+     for expected, entry in zip(("monotonic", "boottime"), offsets, strict=True):
+-        if (type(entry) is not list or len(entry) != 3 or entry[0] != expected
+-                or type(entry[1]) is not int):
++        if (
++            type(entry) is not list
++            or len(entry) != 3
++            or entry[0] != expected
++            or type(entry[1]) is not int
++        ):
+             raise ValueError("typed original time namespace offsets required")
+         if _descriptor_integer(entry[2]) >= 1_000_000_000:
+             raise ValueError("namespace nanoseconds out of range")
+     constants = {
+-        "os_name": "Linux", "schema": "simulation.operational-time.v1",
+-        "api": "Linux time.clock_gettime_ns(time.CLOCK_BOOTTIME)", "scope": "SOFTWARE_ONLY",
+-        "utc_accuracy": None, "si_accuracy": None, "accuracy_status": "UNVERIFIED",
+-        "worker_authority": "UNAVAILABLE", "lease_authority": "UNAVAILABLE",
++        "os_name": "Linux",
++        "schema": "simulation.operational-time.v1",
++        "api": "Linux time.clock_gettime_ns(time.CLOCK_BOOTTIME)",
++        "scope": "SOFTWARE_ONLY",
++        "utc_accuracy": None,
++        "si_accuracy": None,
++        "accuracy_status": "UNVERIFIED",
++        "worker_authority": "UNAVAILABLE",
++        "lease_authority": "UNAVAILABLE",
+     }
+     if any(domain[name] != expected for name, expected in constants.items()):
+         raise ValueError("unsupported descriptive operational domain")
+@@ -788,28 +851,62 @@
+         record = _descriptor_fields(
+             record,
+             {
+-                "schema_version", "window_id", "kind", "kind_policy", "budget_semantics",
+-                "budget_ns", "domain", "origin_domain", "task_origin_event_id", "event_id",
+-                "source_hashes", "source_identity", "job_id", "run_id", "worker_id",
+-                "lease_id", "attempt", "fencing", "episode_id", "parents", "age_constraints",
+-                "hard_deadlines", "deadline_ns", "deadline_semantics", "effective_upper",
+-                "lease_deadline_domain", "live_authority",
++                "schema_version",
++                "window_id",
++                "kind",
++                "kind_policy",
++                "budget_semantics",
++                "budget_ns",
++                "domain",
++                "origin_domain",
++                "task_origin_event_id",
++                "event_id",
++                "source_hashes",
++                "source_identity",
++                "job_id",
++                "run_id",
++                "worker_id",
++                "lease_id",
++                "attempt",
++                "fencing",
++                "episode_id",
++                "parents",
++                "age_constraints",
++                "hard_deadlines",
++                "deadline_ns",
++                "deadline_semantics",
++                "effective_upper",
++                "lease_deadline_domain",
++                "live_authority",
+             },
+         )
+-        if (record["schema_version"] != _SCHEMA or type(record["kind"]) is not str
+-                or record["kind"] not in _KINDS):
++        if (
++            record["schema_version"] != _SCHEMA
++            or type(record["kind"]) is not str
++            or record["kind"] not in _KINDS
++        ):
+             raise ValueError("unsupported operational reference schema/kind")
+         bootstrap = record["kind"] == "bootstrap"
+         constants = {
+             "kind_policy": "HARD_ORIGINAL_TASK_LIFECYCLE" if bootstrap else "AGE_CLOSED",
+             "budget_semantics": "HARD_OPEN" if bootstrap else "AGE_CLOSED",
+-            "origin_domain": "ORIGINAL_TASK_D", "deadline_semantics": "HARD_OPEN",
+-            "lease_deadline_domain": "UTC_LEGACY_VETO", "live_authority": "NOT_EXPORTED",
++            "origin_domain": "ORIGINAL_TASK_D",
++            "deadline_semantics": "HARD_OPEN",
++            "lease_deadline_domain": "UTC_LEGACY_VETO",
++            "live_authority": "NOT_EXPORTED",
+         }
+         if any(record[name] != expected for name, expected in constants.items()):
+             raise ValueError("typed original operational policy required")
+-        for name in ("window_id", "event_id", "task_origin_event_id", "job_id", "run_id",
+-                     "worker_id", "lease_id", "fencing"):
++        for name in (
++            "window_id",
++            "event_id",
++            "task_origin_event_id",
++            "job_id",
++            "run_id",
++            "worker_id",
++            "lease_id",
++            "fencing",
++        ):
+             _descriptor_text(record[name])
+         _descriptor_digest(record["source_identity"])
+         _descriptor_integer(record["attempt"], positive=True)
+@@ -841,8 +938,15 @@
+         for age in ages:
+             age = _descriptor_fields(
+                 age,
+-                {"event_id", "source_id", "lower_ns", "upper_ns", "max_age_ns",
+-                 "upper_age_inclusive", "expiry_upper_ns"},
++                {
++                    "event_id",
++                    "source_id",
++                    "lower_ns",
++                    "upper_ns",
++                    "max_age_ns",
++                    "upper_age_inclusive",
++                    "expiry_upper_ns",
++                },
+             )
+             _descriptor_text(age["event_id"])
+             source_id = _descriptor_text(age["source_id"])
+@@ -851,8 +955,12 @@
+             upper = _descriptor_integer(age["upper_ns"])
+             maximum = _descriptor_integer(age["max_age_ns"], positive=True)
+             expiry = _descriptor_integer(age["expiry_upper_ns"], positive=True)
+-            if (lower > upper or maximum > _FIVE_NS or expiry != lower + maximum
+-                    or age["upper_age_inclusive"] is not True):
++            if (
++                lower > upper
++                or maximum > _FIVE_NS
++                or expiry != lower + maximum
++                or age["upper_age_inclusive"] is not True
++            ):
+                 raise ValueError("inconsistent original AGE_CLOSED constraint")
+             own_age |= age["event_id"] == record["event_id"] and maximum == budget
+             endpoints.append(expiry)
+@@ -863,8 +971,8 @@
+         own_bootstrap = False
+         for deadline in hard:
+             deadline = _descriptor_fields(
+-                deadline, {"origin_event_id", "source_id", "budget_ns", "deadline_ns",
+-                           "end_exclusive"},
++                deadline,
++                {"origin_event_id", "source_id", "budget_ns", "deadline_ns", "end_exclusive"},
+             )
+             if deadline["origin_event_id"] != record["task_origin_event_id"]:
+                 raise ValueError("original task hard origin identity required")
+@@ -877,23 +985,27 @@
+             hard_endpoints.append(end)
+             hard_origins.add(end - hard_budget)
+             own_bootstrap |= hard_budget == budget
+-        if len(hard_origins) != 1 or (bootstrap and (
+-            record["event_id"] != record["task_origin_event_id"] or not own_bootstrap
+-        )):
++        if len(hard_origins) != 1 or (
++            bootstrap
++            and (record["event_id"] != record["task_origin_event_id"] or not own_bootstrap)
++        ):
+             raise ValueError("inconsistent original task hard constraints")
+         minimum = min(hard_endpoints)
+         if _descriptor_integer(record["deadline_ns"], positive=True) != minimum:
+             raise ValueError("inconsistent minimum hard deadline")
+         effective = _descriptor_fields(record["effective_upper"], {"value_ns", "inclusive"})
+         value = min([minimum, *endpoints])
+-        if (_descriptor_integer(effective["value_ns"], positive=True) != value
+-                or type(effective["inclusive"]) is not bool
+-                or effective["inclusive"] != (value < minimum)):
++        if (
++            _descriptor_integer(effective["value_ns"], positive=True) != value
++            or type(effective["inclusive"]) is not bool
++            or effective["inclusive"] != (value < minimum)
++        ):
+             raise ValueError("inconsistent effective operational endpoint")
+ 
+ 
+-def _bind_observation_policy(owner: OperationalWindowOwner, observation: object, kind: str,
+-                             budget_s: object, source: object) -> None:
++def _bind_observation_policy(
++    owner: OperationalWindowOwner, observation: object, kind: str, budget_s: object, source: object
++) -> None:
+     """Bind an actual immutable requirement before its consumer; never rebind/refill."""
+     owner._check_live()
+     key = _observation_key(observation)
+@@ -911,10 +1023,14 @@
+         owner = _current_owner()
+         if owner is None:
+             return False if reference is not None else None
+-        matches = [key for key in owner._observations if key in owner._observation_values
+-                   and owner._observation_values[key].observation_id == context.observation_id
+-                   and owner._observation_values[key].episode_id == context.episode_id
+-                   and owner._observation_values[key].captured_at == context.captured_at]
++        matches = [
++            key
++            for key in owner._observations
++            if key in owner._observation_values
++            and owner._observation_values[key].observation_id == context.observation_id
++            and owner._observation_values[key].episode_id == context.episode_id
++            and owner._observation_values[key].captured_at == context.captured_at
++        ]
+         if len(matches) != 1:
+             return False
+         key = matches[0]
+@@ -926,7 +1042,8 @@
+         if existing is not None and existing != maximum:
+             return False
+         owner._maximum_ages[key] = maximum
+-        return _check_observation(owner._observation_values[key], "supervision",
+-                                  max_age_s=max_age_s, reference=reference)
++        return _check_observation(
++            owner._observation_values[key], "supervision", max_age_s=max_age_s, reference=reference
++        )
+     except (OperationalTimeError, ValueError, TypeError, KeyError, OSError):
+         return False
+--- r105-before/src/cloud_edge_robot_arm/vision/worker_runtime.py
++++ current/src/cloud_edge_robot_arm/vision/worker_runtime.py
+@@ -1169,8 +1169,9 @@
+             if online.context_hash != publication.checkpoint.checkpoint_hash:
+                 raise RuntimeError("online source binds a stale worker checkpoint")
+             if self._operational_owner is not None:
++                from dataclasses import replace
++
+                 from cloud_edge_robot_arm.edge.evidence.conditions import _operational_freshness
+-                from dataclasses import replace
+ 
+                 requirement = self.original.requirements[step_id]
+                 specs = (*requirement.preconditions, *requirement.postconditions)
+--- r105-before/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py
++++ current/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py
+@@ -12,6 +12,7 @@
+ from collections.abc import Mapping
+ from dataclasses import asdict, dataclass
+ from datetime import datetime, timedelta
++from types import MappingProxyType
+ from typing import Any, ClassVar, Literal, cast
+ 
+ from pydantic import BaseModel
+--- r105-before/tests/test_operational_windows.py
++++ current/tests/test_operational_windows.py
+@@ -51,7 +51,7 @@
+ 
+     def __init__(self):
+         self.now = 0
+-        self.closed_count = 0
++        self.close_call_count = 0
+         self.current_identity = _identity()
+ 
+     def identity(self):
+@@ -73,7 +73,13 @@
+ 
+ 
+ def exercise(
+-    monkeypatch, tmp_path, callback, *, initialize=None, settle=None, startup_config=None,
++    monkeypatch,
++    tmp_path,
++    callback,
++    *,
++    initialize=None,
++    settle=None,
++    startup_config=None,
+     startup_parameters=None,
+ ):
+     module = api()
+@@ -87,10 +93,8 @@
+         original = clock.close
+ 
+         def close():
+-            was_closed = clock._closed
++            counter.close_call_count += 1
+             original()
+-            if not was_closed:
+-                counter.closed_count += 1
+ 
+         clock.close = close
+         clocks.append(clock)
+@@ -135,7 +139,9 @@
+         policy["verification_budget"]["deadline_s"] = verification_s
+         edge = replace(binding.edge_snapshot, request_config_hash=configuration_hash(policy))
+         worker.visual_role_binding = replace(
+-            binding, edge_policy=policy, edge_snapshot=edge,
++            binding,
++            edge_policy=policy,
++            edge_snapshot=edge,
+             bundle=replace(binding.bundle, edge_provider_hash=edge.digest()),
+         )
+     try:
+@@ -143,7 +149,7 @@
+         if errors:
+             raise errors[0]
+         assert results, repo.get_job(job.job_id).error_message
+-        assert clocks and counter.closed_count == 1
++        assert clocks and counter.close_call_count == 1
+         assert clocks[0]._closed
+         return results[0], data, counter
+     finally:
+@@ -214,9 +220,7 @@
+                 "bootstrap", owner.task_origin, budget_ns=5_000_000_000, parent_ids=()
+             )
+             parents = (parent,)
+-        window = owner.issue(
+-            "plan", receipt, budget_ns=5_000_000_000, parent_ids=parents
+-        )
++        window = owner.issue("plan", receipt, budget_ns=5_000_000_000, parent_ids=parents)
+         assert owner.export_record(window)["deadline_ns"] == 5_000_000_000
+         raw.now = 4_999_999_999
+         assert owner.check(window, after=token).status == "VALID"
+@@ -261,6 +265,8 @@
+         raw.now = -1
+         assert owner.check(window, after=token).status == "UNKNOWN"
+         raw.now = 0
++        assert owner.check(window, after=token).status == "UNKNOWN"
++        assert owner._clock._closed
+ 
+     exercise(monkeypatch, tmp_path, run)
+ 
+@@ -272,8 +278,9 @@
+         first = owner.export_record(owner.task_window)
+         raw.now = 2_000_000_000
+         _, receipt = event(owner, "plan")
+-        child = owner.issue("plan", receipt, budget_ns=5_000_000_000,
+-                            parent_ids=(owner.task_window,))
++        child = owner.issue(
++            "plan", receipt, budget_ns=5_000_000_000, parent_ids=(owner.task_window,)
++        )
+         assert owner.task_origin is origin
+         assert owner.export_record(child)["deadline_ns"] <= first["deadline_ns"]
+         assert owner.export_record(owner.task_window) == first
+@@ -335,7 +342,8 @@
+         )
+         for delta in (-1000, 1000):
+             verdict = evaluate_conditions(
+-                [ConditionSpec("robot_stopped")], evidence,
++                [ConditionSpec("robot_stopped")],
++                evidence,
+                 now=observation.captured_at + timedelta(seconds=delta),
+             )[0]
+             assert verdict.status == "PASS"
+@@ -353,12 +361,16 @@
+         token, receipt = event(owner)
+         window = owner.issue("capture", receipt, budget_ns=5_000_000_000, parent_ids=())
+         with sqlite3.connect(repo.database_path) as connection:
+-            connection.execute("UPDATE simulation_jobs SET timeout_seconds=? WHERE job_id=?",
+-                               (job.timeout_seconds + 1, job.job_id))
++            connection.execute(
++                "UPDATE simulation_jobs SET timeout_seconds=? WHERE job_id=?",
++                (job.timeout_seconds + 1, job.job_id),
++            )
+         assert owner.check(window, after=token).status == "UNKNOWN"
+         with sqlite3.connect(repo.database_path) as connection:
+-            connection.execute("UPDATE simulation_jobs SET timeout_seconds=? WHERE job_id=?",
+-                               (job.timeout_seconds, job.job_id))
++            connection.execute(
++                "UPDATE simulation_jobs SET timeout_seconds=? WHERE job_id=?",
++                (job.timeout_seconds, job.job_id),
++            )
+         path = runtime.source.source_root / "device.py"
+         original = path.read_bytes()
+         path.write_bytes(original + b"# drift\n")
+@@ -378,7 +390,8 @@
+         from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+ 
+         replay = VisualWorkerRuntime(
+-            public, episode_id=runtime.episode_id,
++            public,
++            episode_id=runtime.episode_id,
+             instruction=runtime.bootstrap.definition.user_instruction,
+             role_binding=runtime.role_binding,
+             model_snapshot_hash=runtime.bootstrap.definition.model_snapshot_hash,
+@@ -404,12 +417,14 @@
+         token, receipt = event(owner)
+         window = owner.issue("capture", receipt, budget_ns=5_000_000_000, parent_ids=())
+         with sqlite3.connect(repo.database_path) as connection:
+-            connection.execute("UPDATE simulation_jobs SET attempt=attempt+1 WHERE job_id=?",
+-                               (job.job_id,))
++            connection.execute(
++                "UPDATE simulation_jobs SET attempt=attempt+1 WHERE job_id=?", (job.job_id,)
++            )
+         assert owner.check(window, after=token).status == "UNKNOWN"
+         with sqlite3.connect(repo.database_path) as connection:
+-            connection.execute("UPDATE simulation_jobs SET attempt=attempt-1 WHERE job_id=?",
+-                               (job.job_id,))
++            connection.execute(
++                "UPDATE simulation_jobs SET attempt=attempt-1 WHERE job_id=?", (job.job_id,)
++            )
+         return owner, window, token
+ 
+     (owner, window, token), _, _ = exercise(monkeypatch, tmp_path, run)
+@@ -463,7 +478,7 @@
+ 
+     owner, data, raw = exercise(monkeypatch, tmp_path, run)
+     api()._revoke_worker(data[2])
+-    assert raw.closed_count == 1
++    assert raw.close_call_count == 1
+     assert owner.check(owner.task_window, after=owner.task_origin_token).status == "UNKNOWN"
+ 
+ 
+@@ -487,8 +502,9 @@
+                 evaluate_conditions,
+             )
+ 
+-            evidence = OnlineEvidenceSnapshot(observation, RobotState(connected=True),
+-                                              operational_reference=reference)
++            evidence = OnlineEvidenceSnapshot(
++                observation, RobotState(connected=True), operational_reference=reference
++            )
+             assert (
+                 evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+             )
+@@ -503,25 +519,41 @@
+             claim = runtime.reserve_supervision_capture(1, RobotState(connected=True))
+             payload = observation.model_dump(mode="json")
+             payload.update(
+-                captured_at=datetime.now(UTC).isoformat(), observation_id="p5-supervisor",
+-                frame_id="p5-supervisor", checksum_sha256="",
++                captured_at=datetime.now(UTC).isoformat(),
++                observation_id="p5-supervisor",
++                frame_id="p5-supervisor",
++                checksum_sha256="",
+             )
+             fresh = RGBDObservation.model_validate(payload)
+-            context = context_for(claim, fresh).model_copy(update={
+-                "task_instruction": runtime.bootstrap.definition.user_instruction,
+-            })
++            context = context_for(claim, fresh).model_copy(
++                update={
++                    "task_instruction": runtime.bootstrap.definition.user_instruction,
++                }
++            )
+             runtime.complete_supervision_capture(claim, fresh, context, RobotState(connected=True))
+             frame = runtime.reserve_supervision_plan(claim, RobotState(connected=True))
+             reply = decision_for(frame)
+             reference = module._reference_for_observation(fresh, "supervision")
+-            assert decide_supervision(
+-                reply, frame.context, frame.context, maximum_age_s=5,
+-                operational_reference=frozen_json(reference),
+-            ) == "CONTINUE"
+-            assert decide_supervision(
+-                reply, frame.context, frame.context, maximum_age_s=6,
+-                operational_reference=frozen_json(reference),
+-            ) == "DISCARD"
++            assert (
++                decide_supervision(
++                    reply,
++                    frame.context,
++                    frame.context,
++                    maximum_age_s=5,
++                    operational_reference=frozen_json(reference),
++                )
++                == "CONTINUE"
++            )
++            assert (
++                decide_supervision(
++                    reply,
++                    frame.context,
++                    frame.context,
++                    maximum_age_s=6,
++                    operational_reference=frozen_json(reference),
++                )
++                == "DISCARD"
++            )
+             record = runtime.complete_supervision_plan(frame, reply, RobotState(connected=True))
+             assert record.to_payload()["claims"][frame.claim_id]["plan_completed_at"] is not None
+         elif category == "grounding":
+@@ -534,33 +566,50 @@
+             )
+             now = datetime.now(UTC)
+             binding = StepGroundingBinding(
+-                runtime.original.digest(), runtime.original.identity,
+-                runtime.original.requirements[step.step_id], publication.owner_revision,
+-                publication.state_generation + 1, publication.checkpoint.checkpoint_hash,
+-                observation.observation_id, observation.checksum_sha256,
+-                observation.calibration_version, contract.plan_version, contract.command_seq,
+-                "6" * 64, "7" * 64, None, runtime.source.source_hashes,
++                runtime.original.digest(),
++                runtime.original.identity,
++                runtime.original.requirements[step.step_id],
++                publication.owner_revision,
++                publication.state_generation + 1,
++                publication.checkpoint.checkpoint_hash,
++                observation.observation_id,
++                observation.checksum_sha256,
++                observation.calibration_version,
++                contract.plan_version,
++                contract.command_seq,
++                "6" * 64,
++                "7" * 64,
++                None,
++                runtime.source.source_hashes,
+                 step.model_dump_json(),
+                 runtime.original.requirements[step.step_id].expected_duration_s,
+-                now, now + timedelta(seconds=3),
++                now,
++                now + timedelta(seconds=3),
+             )
+             assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+         else:
+             # Real marker consumer's freshness gate over an actual CPU image source.
+-            from tests.test_marker_association import inputs
+             from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+             from cloud_edge_robot_arm.vision.observations import RGBDObservation
++            from tests.test_marker_association import inputs
+ 
+             marker, original, registration, context = inputs()
+             payload = original.model_dump(mode="json")
+-            payload.update(episode_id=runtime.episode_id, captured_at=datetime.now(UTC).isoformat(),
+-                           observation_id="cpu-marker", frame_id="cpu-marker", checksum_sha256="")
++            payload.update(
++                episode_id=runtime.episode_id,
++                captured_at=datetime.now(UTC).isoformat(),
++                observation_id="cpu-marker",
++                frame_id="cpu-marker",
++                checksum_sha256="",
++            )
+             fresh = RGBDObservation.model_validate(payload)
+             token, receipt = event(owner)
+             module._register_observation(owner, receipt, fresh)
+             context = replace(
+-                context, observation_id=fresh.observation_id,
+-                observation_sha256=fresh.checksum_sha256, episode_id=runtime.episode_id,
++                context,
++                observation_id=fresh.observation_id,
++                observation_sha256=fresh.checksum_sha256,
++                episode_id=runtime.episode_id,
+                 operational_reference=module._reference_for_observation(fresh, "marker"),
+             )
+             frozen = context.operational_reference
+@@ -572,9 +621,12 @@
+             )
+             changed = module._descriptor_plain(frozen)
+             changed["source_identity"] = "0" * 64
+-            assert associate_marker_target(
+-                fresh, registration, replace(context, operational_reference=changed)
+-            ).status != "OBSERVED_CANDIDATE"
++            assert (
++                associate_marker_target(
++                    fresh, registration, replace(context, operational_reference=changed)
++                ).status
++                != "OBSERVED_CANDIDATE"
++            )
+             legacy_context = replace(context, operational_reference=None)
+             legacy_body = {
+                 name: getattr(legacy_context, name)
+@@ -582,19 +634,21 @@
+                 if name != "operational_reference"
+             }
+             assert legacy_context.digest() == marker._digest(legacy_body)
+-            raw.now = 5_000_000_001
+-            assert (
+-                associate_marker_target(fresh, registration, context).status != "OBSERVED_CANDIDATE"
+-            )
+         raw.now = 5_000_000_000
+         assert module._check_reference(reference).status == "VALID"
+         raw.now += 1
+         assert module._check_reference(reference).status == "INVALID"
++        if category == "marker":
++            assert (
++                associate_marker_target(fresh, registration, context).status != "OBSERVED_CANDIDATE"
++            )
+         rebound = {**reference, "job_id": "foreign-job"}
+         assert module._check_reference(rebound).status == "UNKNOWN"
+ 
+     exercise(
+-        monkeypatch, tmp_path, run,
++        monkeypatch,
++        tmp_path,
++        run,
+         startup_parameters={"supervision_period_ms": 0.001} if category == "supervision" else None,
+     )
+ 
+@@ -603,6 +657,9 @@
+     def run(module, runtime, raw, *args):
+         observation = captured(runtime)
+         usable_plan(runtime, observation)
++        from cloud_edge_robot_arm.repositories.event_autonomy.memory import (
++            InMemoryEventAutonomyRepository,
++        )
+         from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
+             VisualBootstrapDefinition,
+             VisualBootstrapRecord,
+@@ -611,9 +668,6 @@
+         )
+         from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import (
+             VisualSupervisionDefinition,
+-        )
+-        from cloud_edge_robot_arm.repositories.event_autonomy.memory import (
+-            InMemoryEventAutonomyRepository,
+         )
+         from tests.test_visual_supervision_repository import definition, initialize
+ 
+@@ -683,8 +737,10 @@
+         owner = runtime._operational_owner
+         assert owner.check(owner.task_window, after=owner.task_origin_token).status == "VALID"
+         with sqlite3.connect(repo.database_path) as connection:
+-            connection.execute("UPDATE simulation_jobs SET lease_expires_at=? WHERE job_id=?",
+-                               ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), job.job_id))
++            connection.execute(
++                "UPDATE simulation_jobs SET lease_expires_at=? WHERE job_id=?",
++                ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), job.job_id),
++            )
+         assert owner.check(owner.task_window, after=owner.task_origin_token).status == "UNKNOWN"
+ 
+     exercise(monkeypatch, tmp_path, run)
+@@ -745,8 +801,14 @@
+         assert module._json(immutable) == module._json(record)
+         module._validate_references((immutable,))
+         evidence = VisualEvidence(
+-            "cpu-descriptor", "cpu-calibration", datetime.now(UTC), None, None,
+-            "UNKNOWN", "VALID", operational_reference=record,
++            "cpu-descriptor",
++            "cpu-calibration",
++            datetime.now(UTC),
++            None,
++            None,
++            "UNKNOWN",
++            "VALID",
++            operational_reference=record,
+         )
+         assert isinstance(evidence.operational_reference, MappingProxyType)
+         assert module._check_reference(evidence.operational_reference).status == "VALID"
+@@ -756,8 +818,12 @@
+             changed = copy.deepcopy(record)
+             changed[key] = value
+             malformed.append(changed)
+-        for key, value in (("lower_ns", True), ("upper_ns", 0.5),
+-                           ("upper_age_inclusive", 1), ("expiry_upper_ns", 1)):
++        for key, value in (
++            ("lower_ns", True),
++            ("upper_ns", 0.5),
++            ("upper_age_inclusive", 1),
++            ("expiry_upper_ns", 1),
++        ):
+             changed = copy.deepcopy(record)
+             changed["age_constraints"][0][key] = value
+             malformed.append(changed)

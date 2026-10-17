@@ -1,0 +1,64 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round255-p6-t2-candidate-character-byte-boundary-20261017/before/failed-generator.py.txt
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round255-p6-t2-candidate-character-byte-boundary-20261017/implementation/prepared-generator.py
+@@ -12,6 +12,40 @@
+  with q.open('xb') as f:f.write(b)
+  assert q.read_bytes()==b
+  return pin(q,b)
++
++# R255 finite preflight: identities, existing source schema and outputs only.
++C=R/'artifacts/research/process/20261004-ced-development/astra-rounds/round255-p6-t2-candidate-character-byte-boundary-20261017'
++authority=json.loads((C/'plan.json').read_text())
++for row in authority['inputs']:
++ fixed(row)
++for pair in authority['physical_before']:
++ assert fixed(pair['original'])==fixed(pair['archive'])
++assert type(p['inputs']) is list and len(p['inputs'])==14
++assert type(p['before']) is list and len(p['before'])==9
++assert type(p['outputs']) is dict
++output_names=[p['outputs'][name] for name in ('candidate','patch','values','limited_diff','report')]+p['outputs']['steps']
++assert output_names==authority['metadata_preparation']['outputs'] and len(set(output_names))==7
++assert all(not Path(name).exists() and not Path(name).is_symlink() for name in output_names)
++for role in authority['budgets']['roles']:
++ ledger=json.loads(fixed(role['pin']))
++ for name,expected in role['commands'].items():
++  assert {field:ledger['commands'][name][field] for field in expected}==expected
++observation=json.loads((S/'input-observation.json').read_text())
++assert type(observation['current_sources']) is list and len(observation['current_sources'])==27
++assert type(observation['protected']) is list and len(observation['protected'])==211
++for row in observation['current_sources']:
++ assert type(row) is dict and set(row)=={'original','physical'}
++ for label in ('original','physical'):
++  value=row[label]
++  assert type(value) is dict and type(value['path']) is str
++  assert type(value['bytes']) is int and value['bytes']>=0 and type(value['sha256']) is str
++ assert fixed(row['original'])==fixed(row['physical'])
++assert len({row['original']['path'] for row in observation['current_sources']})==27
++for row in observation['protected']:
++ fixed(row)
++assert type(p['scope']['candidate_input']) is dict and type(p['scope']['live_sqlite_before']) is dict
++assert type(p['inventory_correction']['entry_identity']) is dict
++
+ for row in p['inputs']:fixed(row)
+ for pair in p['before']:assert fixed(pair['original'])==fixed(pair['archive'])
+ o=json.loads((S/'input-observation.json').read_text())
+@@ -19,6 +53,7 @@
+ for row in o['protected']:fixed(row)
+ before=fixed(p['scope']['candidate_input']);s=before.decode()
+ methods=list(re.finditer(r'^    def (\w+)\(',s,re.M))
++assert sum(m[1]=='compare_and_set_checkpoint' for m in methods)==1
+ ix=next(i for i,m in enumerate(methods) if m[1]=='compare_and_set_checkpoint')
+ a=methods[ix].start();z=methods[ix+1].start();oldmethod=s[a:z]
+ prefix='        existing = self.get_checkpoint(checkpoint_id)\n        if existing is None or existing.checkpoint_hash != expected_checkpoint_hash:\n            return False\n        h = new_checkpoint.checkpoint_hash or _checkpoint_hash(new_checkpoint)\n        saved = new_checkpoint.model_copy(update={"checkpoint_hash": h}, deep=True)\n        payload = saved.model_dump_json()\n'
+@@ -29,7 +64,11 @@
+ newmethod=oldmethod.replace(prefix,'',1).replace(guard,guard+moved,1)
+ after=(s[:a]+newmethod+s[z:]).encode()
+ assert newmethod.count('self._conn.execute("BEGIN IMMEDIATE")')==1
+-assert after[:a]==before[:a] and after[a+len(newmethod.encode()):]==before[z:]
++a_bytes = len(s[:a].encode('utf-8'))
++z_bytes = len(s[:z].encode('utf-8'))
++assert before[a_bytes:z_bytes] == oldmethod.encode('utf-8')
++assert after[:a_bytes] == before[:a_bytes]
++assert after[a_bytes + len(newmethod.encode('utf-8')):] == before[z_bytes:]
+ cp=save(Path(p['outputs']['candidate']),after)
+ values=json.loads((S/'implementation/prepared-product-values.json').read_text())
+ updated=copy.deepcopy(values)

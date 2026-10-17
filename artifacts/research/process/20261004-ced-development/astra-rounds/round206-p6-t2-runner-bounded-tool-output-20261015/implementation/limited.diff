@@ -1,0 +1,34 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round206-p6-t2-runner-bounded-tool-output-20261015/before/run-budgeted-command.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py
+@@ -405,7 +405,30 @@
+         write_new(evidence / "result.json", outcome)
+         entry.update(state="SPENT", result_path=str(evidence / "result.json"))
+         replace_ledger(ledger_path, ledger)
+-    print(json.dumps(outcome, ensure_ascii=False))
++    if is_t2:
++        display = {
++            "schema_version": "r158.t2-tool-summary.v1",
++            **{key: outcome.get(key) for key in (
++                "command_id", "classification", "exit_code", "timed_out", "started",
++                "expected_numeric_exit_matched",
++            )},
++            "result": _t2_pin(evidence / "result.json"),
++        }
++        for key in ("stdout", "stderr", "junit", "resource_summary"):
++            display[key] = outcome.get(key)
++        rendered = json.dumps(display, ensure_ascii=False)
++        if len((rendered + "\n").encode("utf-8")) > 6000:
++            display = {
++                "schema_version": "r158.t2-tool-summary.v1",
++                "command_id": command_id, "result": _t2_pin(evidence / "result.json"),
++                "display_omitted": True,
++            }
++            rendered = json.dumps(display, ensure_ascii=False)
++        if len((rendered + "\n").encode("utf-8")) > 6000:
++            raise ValueError("fixed T2 result-pin display exceeds byte bound")
++        print(rendered)
++    else:
++        print(json.dumps(outcome, ensure_ascii=False))
+     if outcome["classification"].endswith("STOP_NEXT_ASTRA"):
+         return 2
+     # RED1 and mypy1 remain their actual numeric exits; never relabel as exit0.

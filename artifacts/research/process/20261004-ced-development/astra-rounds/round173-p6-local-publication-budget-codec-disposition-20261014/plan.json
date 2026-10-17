@@ -1,0 +1,358 @@
+{
+  "schema_version": "bigsmall.r173-plan.v1",
+  "round": "R173",
+  "date": "2026-10-14",
+  "planner": {
+    "model": "gpt-6-astra",
+    "agent": "/root/astra_status_plan",
+    "actual_authorship": true
+  },
+  "status": "FROZEN_PENDING_R172_SETTLEMENT_AND_ROOT_ACTIVATION",
+  "finding": {
+    "classification": "CONFIRMED_T1_TYPED_HISTORY_INTERFACE_GAP_SOURCE_ONLY",
+    "actual_runtime_failure": false,
+    "evidence": [
+      "R158 T1 explicitly requires distinct LocalVerificationBudgetRecord history, exact-tag codec dispatch and a local retry envelope retaining original recovery reference.",
+      "local_temporal._audit_publication accepts recovery.verification-budget.local.v1 and recovery.retry-budget.local.v1 nested envelopes and decodes them through LocalEnvelope.",
+      "LocalVisualOwnerPublicationRecord.verification_budget invokes only legacy VerificationBudgetRecord.from_payload, which rejects any tag except recovery.verification-budget.v1.",
+      "LocalVisualOwnerPublicationRecord.retry_budget passes the complete new envelope to the legacy RecoveryBudget parser; new envelope has no top-level task_id and must not be unwrapped into a legacy model with generated created_at/updated_at or fabricated retry_deadline."
+    ],
+    "type_boundary": "The local publication currently subclasses the legacy publication. Widening those override return types would violate the legacy contract; decoupling the class and widening existing public from_payload would propagate into worker_runtime and Memory/SQLite repositories beyond T1. This round explicitly preserves legacy getter types and adds separate typed history getters for local envelopes. This is a bounded interface decision, not a claim that current getters already work.",
+    "stage_disposition": "Repair typed history access in T1; actual locked budget consumption/publication remains T2/T3. No deferment of the identified T1 gap as merely a T2 consumer task."
+  },
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/original-finding.json",
+      "bytes": 4477,
+      "sha256": "27d341ef4e281aa6e4a8a7f753a48d9e48778a2b2ab21a4a81ffc4e3769cae50"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/plan.json",
+      "bytes": 114866,
+      "sha256": "70f51381f8f401c5456304d9eb12f019e7f903a582407ab7819447b8cd1f871b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/input-pins.json",
+      "bytes": 157886,
+      "sha256": "94454311381670c81874abbdfb31d8239ad6e14d7316a9e1888df9ea3e9bedb9"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round172-p6-t1-freeze-metadata-assertion-20261014/plan.json",
+      "bytes": 40996,
+      "sha256": "fb565c6ca6a7dd4045b43e0baeee8abc67b2eaff7660b0e6f9d9e0268a6d5bff"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round170-p6-detached-real-broker-receipt-closure-20261013/plan.json",
+      "bytes": 23649,
+      "sha256": "96686f705bc8c7d462e95fd0c330f8dfd220e1371ccbc4ea8b3cd4e616f612a9"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round166-p6-t1-legacy-supervision-claim-timing-20261013/implementation/legacy_control/legacy-goldens.json",
+      "bytes": 121893,
+      "sha256": "10452e376a00b1672d540fc1332c6beeeaa42b6cff44f03f425531e26a5d0c38"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/contracts/models.py",
+      "bytes": 43883,
+      "sha256": "75dedc466273ba1f02301de9880b3db533265e27c5de5c2576c7fa3859f36516"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "bytes": 42034,
+      "sha256": "a8287b841281221466dd2f0890b7ad9542d5567250484748d299619cd15fbb79"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "bytes": 23511,
+      "sha256": "ffce1cedb2cc9962ade0c5845d6ce92127372fa2248c0f4bc5f215706f5be86b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "bytes": 69415,
+      "sha256": "940c9cbd5271b38e9310561f641da6bef0ff510588d87ca9fe6bf034613fa51d"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "bytes": 44891,
+      "sha256": "6fa239d9df6f64e92630940fc61c10859cbd48344844003d37a11c092a9d7c4b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "bytes": 49436,
+      "sha256": "6128bb81934b18f66c83ce0aec02f2965e056ccfd11165f090172b26bdcf0f66"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "bytes": 38150,
+      "sha256": "37c08edf440bd7e5f3bf1d43f726ac12fd66a21654b938657f67243ae99c41f1"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "bytes": 30156,
+      "sha256": "8a958ba9c3113e8465936c66d1f7a154dde3b17d014beff7a8065edf6bd34f38"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+      "bytes": 50358,
+      "sha256": "17845a336a10c88b9666d124e6dad4a88b39e18f0254c3abd86985eb8e599b8f"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "bytes": 18939,
+      "sha256": "3f53fc60baa1d37fb236ed95e93638ead6a4c3dea2eb3e7a9f252395c5c33278"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "bytes": 85316,
+      "sha256": "3a02686a0bf89d8ec3943b46d2b2a98792009e0a0374f0faaf184a7c066d4703"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "bytes": 140339,
+      "sha256": "92bc23b61ee7867547a8f4b6304d813f0caec5d3d338371b7bc1dcd1975eae2d"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+      "bytes": 7430,
+      "sha256": "9e38a56ba3c4cfe80b8cb17f9deb39917b342c3b7658ea3c88c2f1c31ce37a12"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "bytes": 91533,
+      "sha256": "d0833f98112ccac9b5e9b04163dfcbf2f7d1d053f72c9ab7a7a18398a5e6cdab"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "bytes": 40472,
+      "sha256": "524bce7ee480fc7f9757e23a8360257900d3600c3b6842c46b80d0771201ec90"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "bytes": 104321,
+      "sha256": "e4a60c5c8dd6edd468f3033637fce3003ec83dcd0599c59d31dff99dd0291e32"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "bytes": 4851,
+      "sha256": "228e5480630fe14ad6752ec75f9ea42f4c1cf89c8ce278b6378b2ab9a5624447"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "bytes": 4062,
+      "sha256": "70edefdc953cea27c65d9fe6228aaf7be4a062320c306966c5c7f04862857d79"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "bytes": 20875,
+      "sha256": "39f63d8276b053db3be4fab4999008f8feecc4cf1ae910975a6ba5c5e22bcd62"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/models.py",
+      "bytes": 4887,
+      "sha256": "36a9bf16372607a4b25731090dfe7af30bc2d439f260510537bd9b29bef297cf"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_workbench/models.py",
+      "bytes": 17099,
+      "sha256": "48621c3f51c0b989f495a2b36b7be6aca158e6e68aaef024a368457ade060720"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/execution.py",
+      "bytes": 103171,
+      "sha256": "2770da01bfe1869622b104d763c6852b621158d7aaac4004a04fadfdf2a164de"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+      "bytes": 42191,
+      "sha256": "c59fef117801c807eee3da9eee9c990a4ddda4f7a1854815ac373d4f88dec61a"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "bytes": 65633,
+      "sha256": "654635d5a1fd6b66534895b1a824da1e93a40ac9724211bc222f5fea107e88b6"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py",
+      "bytes": 124891,
+      "sha256": "6f366d63732893eee86ee0c0e1c1fdd60fa2812618a4448ae9d7b7f451e4174f"
+    }
+  ],
+  "independently_read_sources": {
+    "visual_owner": "legacy constructor/from_payload and local getter definitions",
+    "lifecycle": "copy_budget and legacy/local budget records",
+    "local_temporal": "exact tag fields, _audit_publication, _semantic and LocalEnvelope/LocalDomainEnvelope",
+    "models": "RecoveryBudget exact semantic fields and UTC defaults",
+    "test": "existing domain decoder map dispatches publication via VisualOwnerPublicationRecord.from_payload; seven bodies remain immutable"
+  },
+  "dependency_boundary": {
+    "owned_snapshot_count": 24,
+    "protected_manifest_count": 211,
+    "protected_all_match": true,
+    "mutable_R172_receipts_not_pinned": true
+  },
+  "scope": {
+    "sole_author": "/root/p6_stage_b_sol",
+    "model": "gpt-6.1-sol",
+    "product_owned": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py"
+    ],
+    "test_edits": [],
+    "new_test_nodes": 0,
+    "other_22_owned": "byte-identical to the input pins, including shared local_temporal.py and all tests",
+    "allowed_regions": [
+      "visual_owner.py: TYPE_CHECKING imports needed for the two new history result types; only LocalVisualOwnerPublicationRecord's two old budget getters and two new history getters.",
+      "lifecycle.py: one new LocalRetryBudgetRecord(LocalDomainEnvelope) and its precise JSONValue typing import if needed; keep all existing classes/functions byte-identical."
+    ],
+    "forbidden": [
+      "legacy model/decoder body changes",
+      "widening legacy getter return annotations",
+      "publication hierarchy/factory redesign",
+      "T2/Memory/SQLite/worker edits",
+      "shared codec changes",
+      "Any/type-ignore/cast used to misrepresent local history as legacy",
+      "UTC field/default fabrication",
+      "live authority registration or runtime activation"
+    ],
+    "local_ROOT_outputs": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/input-check.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/root-activation.json"
+    ]
+  },
+  "interface_contract": {
+    "LocalVisualOwnerPublicationRecord.verification_budget_history": "property -> VerificationBudgetRecord | LocalVerificationBudgetRecord. Exact local tag -> existing LocalVerificationBudgetRecord.from_payload(full nested envelope); exact legacy v1 -> unchanged legacy decoder; unknown tag or malformed recognized envelope rejects. No fallback after a decoder rejection.",
+    "LocalVisualOwnerPublicationRecord.retry_budget_history": "property -> RecoveryBudget | LocalRetryBudgetRecord. Exact local retry tag -> new LocalRetryBudgetRecord.from_payload(full nested envelope). Existing untagged complete legacy RecoveryBudget value -> the same strict model path as before. Any other supplied schema_version rejects. Never parse only a local payload into RecoveryBudget.",
+    "LocalVisualOwnerPublicationRecord.verification_budget": "Keep -> VerificationBudgetRecord. A nested exact local envelope raises an explicit ValueError directing callers to verification_budget_history. Legacy path remains unchanged. It is a legacy projection, not a local runtime entry point.",
+    "LocalVisualOwnerPublicationRecord.retry_budget": "Keep -> RecoveryBudget. A nested exact local retry envelope raises an explicit ValueError directing callers to retry_budget_history. Existing legacy path remains unchanged.",
+    "LocalRetryBudgetRecord": "A distinct immutable LocalDomainEnvelope, _tag=recovery.retry-budget.local.v1. Full six-field outer envelope and all validation remain delegated to the existing shared decoder. to_payload/digest/local_time/decision/transaction/detached preserve original envelope semantics.",
+    "local_retry_accessors": {
+      "strings": [
+        "budget_id",
+        "task_id",
+        "retry_backoff_policy"
+      ],
+      "integers": [
+        "per_step_retry_limit",
+        "per_skill_retry_limit",
+        "task_total_retry_limit",
+        "retry_count_used",
+        "task_retry_count",
+        "retry_cooldown_ms",
+        "effective_retry_limit",
+        "remaining_retries",
+        "scene_version"
+      ],
+      "counter_maps": [
+        "step_retry_counts",
+        "skill_retry_counts",
+        "event_retry_counts"
+      ],
+      "original_recovery_reference": "A defensive typed JSON dictionary copied from the existing immutable local_time.recovery_reference; no fresh origin or budget.",
+      "rules": "Use the already validated semantic fields through precise typed accessors. Return defensive copies for maps; no mutation/replenishment method, no UTC properties, no model subclass construction, no private registry, no NEW_COMMIT permission. The original_recovery_reference is a read-only accessor derived from envelope.original_time; it is not a new payload field. The exact payload field list above is copied from frozen R158, not from conversational counts."
+    },
+    "preservation": "Existing nested legacy budgets remain readable through both their legacy projection and history interface with original bytes. Local nested histories are read through history properties only. T2 must explicitly consume these typed history interfaces under its approved private authority path.",
+    "local_retry_payload_fields": [
+      "budget_id",
+      "task_id",
+      "per_step_retry_limit",
+      "per_skill_retry_limit",
+      "task_total_retry_limit",
+      "retry_count_used",
+      "task_retry_count",
+      "step_retry_counts",
+      "skill_retry_counts",
+      "event_retry_counts",
+      "retry_cooldown_ms",
+      "retry_backoff_policy",
+      "effective_retry_limit",
+      "remaining_retries",
+      "scene_version"
+    ],
+    "local_retry_payload_field_count": 15
+  },
+  "required_preconditions": [
+    "R172's actual single metadata action must finish successfully and ROOT must settle its output. Do not change either product file while R172 is executing or before that gate; this plan does not preempt or rerun R172.",
+    "ROOT records actual R172 step/result/output pins in R173 activation only after they exist. No fabricated future pins and no immutable pin on currently changing R172 reports.",
+    "Recheck all 31 static input pins and all211 protected inputs, the seven T1 test bodies/A80556 and real R166 golden; exact current sources must still equal this plan.",
+    "ROOT confirms the bounded interface decision and reads the precise proposed two-file diff before author implementation gate. No automatic type-scope expansion."
+  ],
+  "implementation_steps": [
+    "After R172 success/ROOT settlement, bind its actual frozen semantic source snapshots and thirteen report pins as immutable pre-R173 evidence. Confirm the frozen two source bytes equal this plan's pins. Author changes no report before the later new metadata action; that action archives these actual frozen before-source bytes and pre-refresh reports. Do not run a separate unbudgeted snapshot helper.",
+    "Sole author implements only the typed history properties, explicit local rejection in legacy projection getters and distinct LocalRetryBudgetRecord described here.",
+    "Perform text self-review for exact tag dispatch, no default-filled legacy model from local payload, immutable original recovery reference, unchanged shared R170 receipt semantics, and unchanged legacy methods.",
+    "ROOT text-reviews the two-file source diff and a new finite stdlib metadata action before execution.",
+    "Use one new metadata action to prove exact scope/unchanged inputs and refresh the T1 candidate reports. R172's already-spent action is not replayed. Original R158 before23, all24 current snapshots,15 later unchanged, protected211, A80556, seven bodies, R166 golden and two-ledger 2/13 checks remain mandatory.",
+    "ROOT then applies original R158 source/fixture/runner gate; T1 GREEN remains held until that gate. This plan adds no pytest/static or review-budget reset."
+  ],
+  "metadata_allowance": {
+    "authorized": 1,
+    "used": 0,
+    "remaining": 1,
+    "max_attempts": 1,
+    "timeout_seconds": 120,
+    "interpreter": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+    "libraries": "stdlib text/bytes/hash/JSON/base64/difflib only; no AST/import of product/compile/collect/probe/SQL",
+    "script": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/verify-and-refresh-metadata.py",
+    "ROOT_full_text_and_SHA_gate_required": true,
+    "validation": [
+      "Two-file exact bounded source diff with before/after SHA and complete diff.",
+      "All22 other owned files unchanged; protected211 unchanged; old VisualOwnerPublicationRecord class and all prior lifecycle definitions byte-identical.",
+      "Seven test bodies and entire test file unchanged, A prefix unchanged, original golden/hash/provenance unchanged.",
+      "No unsupported claim of runtime accessor coverage; inherited seven-node GREEN is not new targeted accessor execution.",
+      "Use R172's actual frozen semantic.sources base64 bytes for the two pre-R173 source snapshots and verify their bytes/SHA against this plan before archiving. Read and archive the settled pre-refresh R172 report bytes before any report overwrite in the same single new action; freeze new complete source snapshot and record the R173 source-only finding/interface contract."
+    ],
+    "outputs": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/implementation/before-sources.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/implementation/before-t1-reports.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/implementation/change-report.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/implementation/limited.diff",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/implementation/metadata-verification.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/implementation/actual-tool-return.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/implementation/result.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/step-report.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round173-p6-local-publication-budget-codec-disposition-20261014/step-report.md"
+    ],
+    "refreshed_T1_reports": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/semantic.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/semantic.md",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/final-freeze.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/final-freeze.md",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/change-report.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/change-report.md",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/fixture-map.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/fixture-map.md",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/budget-report.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/budget-report.md",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/step-report.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/step-report.md",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/limited.diff"
+    ]
+  },
+  "budget": {
+    "R158_used": 2,
+    "R158_remaining": 13,
+    "t1_green": {
+      "used": 0,
+      "remaining": 1,
+      "state": "HELD"
+    },
+    "R172": "its actual single metadata usage is preserved, never reset",
+    "R169": "HELD_SUPERSEDED zero used",
+    "new_pytest": 0,
+    "new_static": 0,
+    "new_Git": 0
+  },
+  "evidence_limit": "This is a source-level interface finding and planned repair. No runtime reproduction exists. The preserved seven test bodies do not specifically assert the new history properties; do not claim those paths executed even if inherited GREEN passes. Fresh T1 review must account for this coverage boundary. Any demand for additional execution or test changes requires an explicit subsequent plan; no hidden probe.",
+  "stop": "Any additional semantic cause, required edit outside these named regions, type incompatibility requiring consumer/hierarchy changes, or new execution failure stops the affected work and returns to actual Astra.",
+  "acceptance": {
+    "candidate_source_repair_only": true,
+    "T1_GREEN": false,
+    "T1_complete": false,
+    "B9_complete": false,
+    "T12_complete": false,
+    "native": false,
+    "actual": false,
+    "formal": false
+  },
+  "ROOT_interface_direction": "ROOT explicitly adopted the two-file typed-history design before freeze; no product action occurred."
+}

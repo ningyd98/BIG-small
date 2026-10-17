@@ -1,0 +1,25 @@
+*** Begin Patch
+*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py
+@@
+     def _terminalize_operational(
+-        self, conn: sqlite3.Connection, before: dict[str, Any], reason: str
++        self, conn: sqlite3.Connection, before: dict[str, Any], reason: str,
++        *, phase: str = "REVOKED",
+     ) -> None:
+         self._require_active_writer()
+@@
+         target = dict(before)
+         target.update(
+-            durable_phase="REVOKED",
++            durable_phase=phase,
+             lifecycle="TERMINAL",
+@@
+             "UPDATE simulation_operational_leases_v1 SET "
+             + ",".join(c + "=?" for c in columns)
+-            + " WHERE lease_id=? AND row_revision=? AND generation=?",
++            + " WHERE lease_id=? AND row_revision=? AND generation=? AND proposed_row_digest=?",
+             tuple(target[c] for c in columns)
+-            + (before["lease_id"], before["row_revision"], before["generation"]),
++            + (before["lease_id"], before["row_revision"], before["generation"], before["proposed_row_digest"]),
+         )
+*** End Patch

@@ -166,8 +166,9 @@ class _LiveApplicationV1:
     source: _ApplicationSourceV1 | None = None
     exact_handles: tuple[Any, ...] | None = None
     preregistration_bytes: bytes | None = None
+    preregistration_primary: tuple[BaseException, int] | None = None
     failures: list[dict[str, Any]] = field(default_factory=list)
-    recorder: Any = None
+    recorder: OperationalPrefixRecorderV1 | None = None
     issuing: bool = False
     catalog_json: bytes | None = None
     partial_receipt: dict[str, Any] | None = None
@@ -452,7 +453,8 @@ class OperationalPrefixApplicationV1:
         ):
             raise ValueError("exact issued operational recorder/source handles required")
         prereg = decode_original_json_v1(record.preregistration_bytes or b"")
-        if source.backend._config.model_dump(mode="json") != prereg["recipe"]["simulator_config"]:
+        config = source.backend._config
+        if config is None or config.model_dump(mode="json") != prereg["recipe"]["simulator_config"]:
             raise ValueError("original backend simulator configuration changed")
         if recorder._current_asset_hash() != prereg["recipe"]["scene"]["sha256"]:
             raise ValueError("original source scene asset changed")
@@ -568,12 +570,23 @@ def _prepare_source_v1(
         _check_source_v1(application)
         return context
     except BaseException as error:
-        record.failures.append(
-            {"phase": "preregistration", "error_type": type(error).__name__, "error": str(error)}
-        )
-        _write_exclusive_v1(
-            record.output / "startup-failures.json", canonical_bytes_v1(record.failures)
-        )
+        row = _failure_row_v1(record, "preregistration", error, primary_id=None)
+        primary_id = row["failure_id"]
+        record.preregistration_primary = (error, primary_id)
+        if not _failure_write_v1(
+            record,
+            record.output / "startup-failures.json",
+            record.failures,
+            phase="startup_failure_persistence",
+            primary_id=primary_id,
+        ):
+            try:
+                _persist_failure_stage_v1(record, record.output, primary_id=primary_id)
+            except BaseException as secondary:
+                record.durable_failure_evidence_complete = False
+                _failure_row_v1(
+                    record, "startup_failure_fallback", secondary, primary_id=primary_id
+                )
         raise
 
 
@@ -676,6 +689,80 @@ def _integer_ns_v1(value: Any) -> int:
     return cast(int, value)
 
 
+def _current_source_event_v1(
+    current: dict[str, Any], frames: list[dict[str, Any]], captures: list[dict[str, Any]]
+) -> dict[str, Any]:
+    returned_id = current.get("returned_acquisition_id")
+    source_id = current.get("source_acquisition_id")
+    if (
+        not isinstance(returned_id, str)
+        or not returned_id
+        or not isinstance(source_id, str)
+        or not source_id
+    ):
+        raise ValueError("original returned/source acquisition identity missing")
+    returned = [frame for frame in frames if frame.get("acquisition_id") == returned_id]
+    if len(returned) != 1:
+        raise ValueError("exact original returned frame required")
+    returned_frame = returned[0]
+    original_source = (
+        returned_frame.get("source_acquisition_id") or returned_frame["acquisition_id"]
+    )
+    if original_source != source_id:
+        raise ValueError("original returned frame/source acquisition relation differs")
+    sources = [frame for frame in frames if frame.get("acquisition_id") == original_source]
+    events = [
+        event
+        for event in captures
+        if event.get("kind") == "CAPTURE" and event.get("acquisition_id") == original_source
+    ]
+    if len(sources) != 1 or len(events) != 1:
+        raise ValueError("exact original source frame/CAPTURE event required")
+    source_event = events[0]
+    interval_id = f"operation-{source_event['operation_id']}"
+    if (
+        sources[0].get("interval_id") != interval_id
+        or returned_frame.get("interval_id") != interval_id
+    ):
+        raise ValueError("original returned/source frame operation interval differs")
+    return source_event
+
+
+def _validate_instance_original_v1(
+    aux: Any, source_result: Any, metadata: Any, *, width: int, height: int
+) -> None:
+    if type(aux) is not dict or type(source_result) is not dict or type(metadata) is not dict:
+        raise ValueError("instance original objects required")
+    ids = aux.get("instance_ids")
+    if type(ids) is not list or any(
+        type(value) is not int or not -(2**31) <= value < 2**31 for value in ids
+    ):
+        raise ValueError("instance signed32 original integer IDs required")
+    pixels = width * height
+    if len(ids) not in {0, pixels}:
+        raise ValueError("instance original pixel count differs")
+    _same_v1(source_result.get("instance_ids"), ids, "instance source/auxiliary IDs differ")
+    count = metadata.get("instance_id_count")
+    if type(count) is not int or count != len(ids):
+        raise ValueError("instance metadata count differs")
+    available = metadata.get("instances_available")
+    if type(available) is not bool or available is not (len(ids) == pixels):
+        raise ValueError("instance metadata availability differs")
+    labels = aux.get("instance_labels")
+    source_labels = source_result.get("instance_labels")
+    metadata_labels = metadata.get("instance_labels")
+    if any(type(value) is not dict for value in (labels, source_labels, metadata_labels)):
+        raise ValueError("instance original labels objects required")
+    _same_v1(source_labels, labels, "instance source/auxiliary labels differ")
+    _same_v1(metadata_labels, labels, "instance metadata labels differ")
+    if not ids and labels:
+        raise ValueError("instance empty IDs require empty labels")
+    passes = metadata.get("pass_state_hashes")
+    if type(passes) is not list or len(passes) != (3 if ids else 2):
+        raise ValueError("instance metadata pass count differs")
+    _same_v1(passes, source_result.get("pass_state_hashes"), "instance metadata passes differ")
+
+
 def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) -> dict[str, Any]:
     """Historical original joins only: never read now, DBlive or execute an app."""
     result: dict[str, Any] = {
@@ -699,7 +786,7 @@ def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) 
         if entry.get("schema_version") != "simulation.operational-prefix.receipt.v1":
             raise ValueError("operational source receipt schema required")
         manifest = entry["original_files"]
-        validate_inventory_v1(manifest)
+        validate_inventory_v1(manifest, allow_empty_instances=True)
         for name, expected in manifest.items():
             _same_v1(
                 _pin(_historical_path_v1(root, name)),
@@ -1021,6 +1108,14 @@ def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) 
                 if obs.get("valid_mask_base64") is None
                 else base64.b64decode(obs["valid_mask_base64"])
             )
+            metadata = _read_original_v1(root, prefix + "source-frame.json")
+            _validate_instance_original_v1(
+                frozen["frame_aux"][frame["acquisition_id"]],
+                source["end"]["result"],
+                metadata,
+                width=obs["width"],
+                height=obs["height"],
+            )
             blobs = {
                 "rgb.png": base64.b64decode(obs["rgb_png_base64"]),
                 "depth.f32": base64.b64decode(obs["depth_float32_base64"]),
@@ -1033,7 +1128,6 @@ def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) 
             for name, raw in blobs.items():
                 if _historical_path_v1(root, prefix + name).read_bytes() != raw:
                     raise ValueError("persisted frame bytes differ from original source")
-            metadata = _read_original_v1(root, prefix + "source-frame.json")
             _same_v1(metadata["observation"], obs, "frame metadata original differs")
             for name in [*blobs, "source-frame.json"]:
                 required_files.add(prefix + name)
@@ -1056,9 +1150,7 @@ def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) 
         current = d["current"]
         if current is None:
             raise ValueError("original capture/current causal pair missing")
-        source = next(
-            r for r in captures if r["acquisition_id"] == current["source_acquisition_id"]
-        )
+        source = _current_source_event_v1(current, frames, captures)
         if (
             current["after_token_identity"] != source["token_identity"]
             or current["domain_sha256"] != domain_sha
@@ -1318,13 +1410,21 @@ def run_operational_prefix_v1(
         if primary is not None:
             _failure_row_v1(record, phase, error, primary_id=primary_id)
             return
-        primary = error
-        primary_traceback = error.__traceback__
-        primary_id = _failure_row_v1(record, phase, error, primary_id=None)["failure_id"]
+        pending = record.preregistration_primary
+        record.preregistration_primary = None
+        if pending is None:
+            primary = error
+            primary_traceback = error.__traceback__
+            primary_id = _failure_row_v1(record, phase, error, primary_id=None)["failure_id"]
+        else:
+            primary, primary_id = pending
+            primary_traceback = primary.__traceback__
+            if error is not primary:
+                _failure_row_v1(record, phase, error, primary_id=primary_id)
         record.catalog_json = None
         directory = source.directory if source is not None else record.output
         try:
-            _archive_primary_failure_v1(record, recorder, directory, error, primary_id=primary_id)
+            _archive_primary_failure_v1(record, recorder, directory, primary, primary_id=primary_id)
         except BaseException as archive_error:
             record.durable_failure_evidence_complete = False
             _failure_row_v1(record, "failure_archival", archive_error, primary_id=primary_id)

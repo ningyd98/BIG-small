@@ -1,0 +1,88 @@
+UP047 Generic function `_job_writer` should use type parameters
+  --> src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:61:5
+   |
+61 | def _job_writer(function: Callable[_P, _R]) -> Callable[_P, _R]:
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+62 |     """Every public writer joins one guarded connection; nested helpers cannot bypass it."""
+   |
+help: Use type parameters
+
+E501 Line too long (104 > 100)
+    --> src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:1164:101
+     |
+1162 |                     "UPDATE simulation_operational_leases_v1 SET "
+1163 |                     + ",".join(c + "=?" for c in columns)
+1164 |                     + " WHERE lease_id=? AND generation=? AND row_revision=? AND proposed_row_digest=?",
+     |                                                                                                     ^^^^
+1165 |                     tuple(target[c] for c in columns)
+1166 |                     + (
+     |
+
+E501 Line too long (106 > 100)
+    --> src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:1536:101
+     |
+1534 |             self._terminalize_operational(conn, row, "orphaned epoch ended")
+1535 |             conn.execute(
+1536 |                 "UPDATE simulation_operational_leases_v1 SET durable_phase='TERMINATED' WHERE lease_id=?",
+     |                                                                                                     ^^^^^^
+1537 |                 (row["lease_id"],),
+1538 |             )
+     |
+
+E501 Line too long (105 > 100)
+    --> src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:1543:101
+     |
+1541 |             if final is not None:
+1542 |                 conn.execute(
+1543 |                     "UPDATE simulation_operational_leases_v1 SET proposed_row_digest=? WHERE lease_id=?",
+     |                                                                                                     ^^^^^
+1544 |                     (_canonical(final), row["lease_id"]),
+1545 |                 )
+     |
+
+E501 Line too long (102 > 100)
+    --> src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:1692:101
+     |
+1690 |                     job_id TEXT NOT NULL UNIQUE, run_id TEXT NOT NULL, worker_id TEXT NOT NULL,
+1691 |                     attempt INTEGER, lifecycle TEXT NOT NULL,
+1692 |                     pid INTEGER NOT NULL, boot_id TEXT NOT NULL, process_start_ticks INTEGER NOT NULL,
+     |                                                                                                     ^^
+1693 |                     epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL,
+1694 |                     original_job_digest TEXT NOT NULL, original_policy_digest TEXT NOT NULL,
+     |
+
+E501 Line too long (109 > 100)
+   --> tests/test_operational_runtime_closure.py:270:101
+    |
+268 |             elif variant == "cas_zero":
+269 |                 view._connection.execute(
+270 |                     "UPDATE simulation_operational_leases_v1 SET row_revision=row_revision+1 WHERE job_id=?",
+    |                                                                                                     ^^^^^^^^^
+271 |                     (job.job_id,),
+272 |                 )
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_operational_runtime_closure.py:483:101
+    |
+481 |             elif variant == "cas_zero":
+482 |                 view._connection.execute(
+483 |                     "UPDATE simulation_operational_leases_v1 SET row_revision=row_revision+1 WHERE job_id=?",
+    |                                                                                                     ^^^^^^^^^
+484 |                     (job.job_id,),
+485 |                 )
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/test_operational_runtime_closure.py:577:101
+    |
+575 |     with legacy.publication_guard(), closing(sqlite3.connect(legacy.database_path)) as conn, conn:
+576 |         conn.execute(
+577 |             "UPDATE simulation_jobs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE job_id=?",
+    |                                                                                                     ^
+578 |             (legacy_job.job_id,),
+579 |         )
+    |
+
+Found 8 errors.
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).

@@ -1,0 +1,82 @@
+{
+  "schema_version": "research.astra_plan.v1",
+  "round": "round89-activation-compact-receipt-20261007",
+  "planner_model": "gpt-6-astra",
+  "status": "PLAN_ONLY",
+  "input_pins": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round87-p2-git-delivery-20261007/root-activation.json",
+      "bytes": 10005801,
+      "sha256": "39376d5386e9944b6fcf3e737b65862887659514e9698b5fecb217d95a7b8e74"
+    },
+    {
+      "path": "/tmp/bigsmall-r88-activate.py",
+      "bytes": 5099,
+      "sha256": "2d77c902c010187d63ee4211117d56b22ef61bd4afcd5f176bbf4519755cd394"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round87-p2-git-delivery-20261007/plan.md",
+      "bytes": 10315,
+      "sha256": "849a738bf3beb790d715df58bd4b532371647a5c8d12a9d9468d4b1ca216e811"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round87-p2-git-delivery-20261007/plan.json",
+      "bytes": 15706,
+      "sha256": "3c8349fac34ff1652fccb57871da628580fae1ec5a6a02bee58a4547c708b2c5"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/delivery-p2/activation-size-observation.json",
+      "bytes": 1743,
+      "sha256": "48cda9be1bea36ba26387ded27073611a3bc9c1636c0df6b1dc85c6431b2728b"
+    }
+  ],
+  "plan_md_sha256": "02babcbf7ebec239d61e434504ac53f513dfd8691074e5c250440b323055836f",
+  "sections": {
+    "发现与输入": "真实原发现见 `t12-sol-handoff-20261007/delivery-p2/activation-size-observation.json`，SHA256 `48cda9be1bea36ba26387ded27073611a3bc9c1636c0df6b1dc85c6431b2728b`。Sol暂停copy/stage/test，candidate4=0。ROOT原激活脚本exit0，14项输入和82项候选已核验；父98b8282138ba61367db526d7d8f52e27085f4f9f及三SHA/clean是原运行证据，不重述为本轮新Git检查。\n\n本代理读原激活与实际脚本确认：root-activation.json为10005801 bytes，SHA256 `39376d5386e9944b6fcf3e737b65862887659514e9698b5fecb217d95a7b8e74`。两份嵌套status分别同时存于nested_workspaces_preserved及commands[9]/[10].stdout，原脚本return .strip()导致两种保存字符串略有不同，必须分别hash而不能共用一个摘要。实际脚本/tmp/bigsmall-r88-activate.py为5099 bytes，SHA256 `2d77c902c010187d63ee4211117d56b22ef61bd4afcd5f176bbf4519755cd394`。原激活、脚本、R87两计划与真实发现的5项pins见plan.json；本轮不复制或更改它们。",
+    "限定实施": "1. ROOT写入前复核5项pins。把原激活完整10005801字节复制至本R89目录 `original/root-activation.verbatim.json`，使用新建不可覆盖语义，逐字节/bytes/SHA验证与原文件相同。完整原件local-only，不stage、不删减或改原始JSON字节；备份验证成功前不得替换原路径。原发现和脚本也保持不变。\n2. 从原字节解析对象，仅派生替换四个文本字段：nested_workspaces_preserved[0/1].status与commands[9/10].stdout。每个值改成明确摘要对象，含representation=STORED_UTF8_TEXT_DIGEST、UTF-8编码后的sha256/bytes、nonempty、原命令exit_code，以及原件SHA/bytes和对应JSON Pointer引用。保留nested path、全部commands argv/cwd/exit_code/stderr。摘要描述的是原JSON保存的字符串，不冒称解码前进程管道原始字节。两status与各自stdout.strip()关系核对成立；各自字节/hash分别记录。\n3. 顶层只新增 `receipt_representation=DERIVED_COMPACT_RECEIPT`、`derived_from`（原件local-only路径、SHA、bytes、原time_utc）、`derivation`（R89 plan SHA、派生时间、上述四个JSON Pointer、no_git_rerun=true）。原status和time_utc保留，不能把派生时间当新Git观测。其他全部原字段逐项深度相等，包括原Git证据、14+82计数、五源、收据/pins、父级、三SHA/clean、candidate4预算及出版边界。\n4. 序列化到同目录全新临时文件，验证合法JSON、四摘要可由local-only原件重算、仅允许字段变化、原备份hash保持、compact大小小于65536 bytes。验证失败保留新文件和错误，不递归删字段或重跑Git；回Astra。通过后一次原子替换R87/root-activation.json，形成原样原件与紧凑派生件两个明确版本，不改R87 plan.md/json或原82载荷。\n5. 保存小型本地派生步骤收据（旧/新SHA/bytes、四字段映射、结构不变量、原件保留路径），不触发任何Git/产品/pytest/mypy/status重跑。Sol重新读取并固定compact activation的实际新SHA，核对derived来源后再继续原R87的候选准备/一次candidate4。先前没有以大激活冻结发布清单，因此无需篡改旧提交或伪造旧pin通过；若实际出现已冻结引用，保留并显式重新登记新版本。",
+    "验收与边界": "原10MB完整字节可本地复核；compact四字段摘要准确，其余旧证据不变且明确为派生；R87发布仍82载荷+7固定元数据，compact替代同一个activation路径。R89计划、原件、发现/派生收据全local-only，不扩发布范围。不得重跑百万路径nested status，不清理嵌套树、不改用户1007、产品或raw/DB。\n\n本轮actual/test/Git调用均0，candidate4预算不消费，formal=false。保持旧证据时间属性；后续ROOT最终commit/push仍按R87核验当时三SHA，不把本派生收据冒称新的远端验证。"
+  },
+  "independent_observed_field_digests": [
+    {
+      "nested_index": 0,
+      "command_index": 9,
+      "path": "artifacts/research/process/20261004-t7-parallel-local-models-physics/physics/workspace-baseline",
+      "status_sha256": "cefc0e89a3988697b1b8edac643ba3071679bab48151d03a56e1429cd5c93365",
+      "status_bytes": 2480976,
+      "stdout_sha256": "850104d5ba1e84f352a4f5373648222813ea3a180dc226f00549f51da8f2a717",
+      "stdout_bytes": 2480978,
+      "nonempty": true,
+      "exit_code": 0,
+      "stderr_bytes": 0,
+      "status_equals_stdout_strip": true
+    },
+    {
+      "nested_index": 1,
+      "command_index": 10,
+      "path": "artifacts/research/process/20261004-t7-parallel-local-models-physics/physics/workspace-h3",
+      "status_sha256": "881581d49bafb5ec4caa12dc1803234af6a5cf8305c91732f21f2b925fec39f1",
+      "status_bytes": 2481190,
+      "stdout_sha256": "d13d46a161a91b9c66f19f4d64363585f15a7475c8bcd58cc50fd1c86bea47e5",
+      "stdout_bytes": 2481192,
+      "nonempty": true,
+      "exit_code": 0,
+      "stderr_bytes": 0,
+      "status_equals_stdout_strip": true
+    }
+  ],
+  "allowed_changes": [
+    "/nested_workspaces_preserved/0/status",
+    "/nested_workspaces_preserved/1/status",
+    "/commands/9/stdout",
+    "/commands/10/stdout",
+    "/receipt_representation",
+    "/derived_from",
+    "/derivation"
+  ],
+  "local_only_R89": true,
+  "compact_activation_existing_R87_path_only": true,
+  "candidate4_consumed": 0,
+  "git_calls": 0,
+  "tests": 0,
+  "actual": 0
+}

@@ -1,0 +1,147 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_______________ test_late_binding_rejects_public_writer[memory] ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76ea4d779b50>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r223-red/test_late_binding_rejects_publ0')
+request = <FixtureRequest for <Function test_late_binding_rejects_public_writer[memory]>>
+backend = 'memory'
+
+    @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
+    def test_late_binding_rejects_public_writer(monkeypatch, tmp_path, request, backend):
+        with _r223_observe(monkeypatch, request) as observed:
+>           case = _r223_case(monkeypatch, tmp_path, request, backend, observed, mode='race')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_local_public_writer_binding_race.py:252: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_local_public_writer_binding_race.py:242: in _r223_case
+    return _r223_run(monkeypatch, tmp_path / 'real-factory', backend, observed, mode=mode, second=second)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_local_public_writer_binding_race.py:220: in _r223_run
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:3654: in poll_once
+    result = real_poll(worker, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:166: in poll_once
+    session = _open_worker_lease_session(self)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+worker = <cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x76ea4c316210>
+
+    def _open_worker_lease_session(worker: SimulationWorker) -> OperationalLeaseSession:
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+            SQLiteSimulationJobRepository,
+        )
+        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+    
+        if (
+            type(worker) is not SimulationWorker
+            or sys._getframe(1).f_code is not SimulationWorker.poll_once.__code__
+        ):
+>           raise OperationalLeaseError("only genuine exact worker poll opens session")
+E           cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: only genuine exact worker poll opens session
+
+src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py:923: OperationalLeaseError
+_______________ test_late_binding_rejects_public_writer[sqlite] ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76ea4c317a40>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r223-red/test_late_binding_rejects_publ1')
+request = <FixtureRequest for <Function test_late_binding_rejects_public_writer[sqlite]>>
+backend = 'sqlite'
+
+    @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
+    def test_late_binding_rejects_public_writer(monkeypatch, tmp_path, request, backend):
+        with _r223_observe(monkeypatch, request) as observed:
+>           case = _r223_case(monkeypatch, tmp_path, request, backend, observed, mode='race')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_local_public_writer_binding_race.py:252: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_local_public_writer_binding_race.py:242: in _r223_case
+    return _r223_run(monkeypatch, tmp_path / 'real-factory', backend, observed, mode=mode, second=second)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_local_public_writer_binding_race.py:220: in _r223_run
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:3654: in poll_once
+    result = real_poll(worker, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:166: in poll_once
+    session = _open_worker_lease_session(self)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+worker = <cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x76ea4c137ef0>
+
+    def _open_worker_lease_session(worker: SimulationWorker) -> OperationalLeaseSession:
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+            SQLiteSimulationJobRepository,
+        )
+        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+    
+        if (
+            type(worker) is not SimulationWorker
+            or sys._getframe(1).f_code is not SimulationWorker.poll_once.__code__
+        ):
+>           raise OperationalLeaseError("only genuine exact worker poll opens session")
+E           cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: only genuine exact worker poll opens session
+
+src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py:923: OperationalLeaseError
+__________ test_late_binding_rejects_public_writer_second_connection ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76ea4c3164e0>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r223-red/test_late_binding_rejects_publ2')
+request = <FixtureRequest for <Function test_late_binding_rejects_public_writer_second_connection>>
+
+    def test_late_binding_rejects_public_writer_second_connection(monkeypatch, tmp_path, request):
+        with _r223_observe(monkeypatch, request) as observed:
+>           case = _r223_case(monkeypatch, tmp_path, request, 'sqlite', observed, mode='race', second=True)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_local_public_writer_binding_race.py:262: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_local_public_writer_binding_race.py:242: in _r223_case
+    return _r223_run(monkeypatch, tmp_path / 'real-factory', backend, observed, mode=mode, second=second)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_local_public_writer_binding_race.py:220: in _r223_run
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:3654: in poll_once
+    result = real_poll(worker, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:166: in poll_once
+    session = _open_worker_lease_session(self)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+worker = <cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x76ea4c32a7e0>
+
+    def _open_worker_lease_session(worker: SimulationWorker) -> OperationalLeaseSession:
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+            SQLiteSimulationJobRepository,
+        )
+        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+    
+        if (
+            type(worker) is not SimulationWorker
+            or sys._getframe(1).f_code is not SimulationWorker.poll_once.__code__
+        ):
+>           raise OperationalLeaseError("only genuine exact worker poll opens session")
+E           cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: only genuine exact worker poll opens session
+
+src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py:923: OperationalLeaseError
+=============================== warnings summary ===============================
+tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/red/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]
+FAILED tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[sqlite]
+FAILED tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer_second_connection
+3 failed, 1 warning in 3.34s

@@ -1,0 +1,194 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+___ test_preregistration_primary_survives_startup_report_failure_cpu[direct] ___
+
+tmp_path = PosixPath('/tmp/bigsmall-oc2-round80-review_red/test_preregistration_primary_s0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7a90901a5f70>
+entry = 'direct'
+
+    @pytest.mark.parametrize("entry", ["direct", "worker"])
+    def test_preregistration_primary_survives_startup_report_failure_cpu(
+        tmp_path, monkeypatch, entry
+    ):
+        from tests.test_operational_prefix_v1 import activate
+    
+        require_task2()
+        app = application(tmp_path)
+        _, calls = cpu_components(monkeypatch, app)
+        original = ValueError("CPU preregistration primary")
+        startup_writes = []
+        original_write = module._write_exclusive_v1
+    
+        def construct():
+            raise original
+    
+        def write(path, raw):
+            if path.name == "startup-failures.json":
+                startup_writes.append(path)
+                raise OSError("CPU startup report secondary")
+            original_write(path, raw)
+    
+        monkeypatch.setattr(module, "_new_prefix_backend_v1", construct)
+        monkeypatch.setattr(module, "_write_exclusive_v1", write)
+        if entry == "direct":
+            job, _, start = activate(app)
+            with pytest.raises(BaseException) as caught:
+                module._prepare_source_v1(app, app.worker, job, start_monotonic=start)
+>           assert caught.value is original
+E           AssertionError: assert OSError('CPU startup report secondary') is ValueError('CPU preregistration primary')
+E            +  where OSError('CPU startup report secondary') = <ExceptionInfo OSError('CPU startup report secondary') tblen=3>.value
+
+tests/test_operational_capture_v1.py:519: AssertionError
+___ test_preregistration_primary_survives_startup_report_failure_cpu[worker] ___
+
+tmp_path = PosixPath('/tmp/bigsmall-oc2-round80-review_red/test_preregistration_primary_s1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7a9063f0c740>
+entry = 'worker'
+
+    @pytest.mark.parametrize("entry", ["direct", "worker"])
+    def test_preregistration_primary_survives_startup_report_failure_cpu(
+        tmp_path, monkeypatch, entry
+    ):
+        from tests.test_operational_prefix_v1 import activate
+    
+        require_task2()
+        app = application(tmp_path)
+        _, calls = cpu_components(monkeypatch, app)
+        original = ValueError("CPU preregistration primary")
+        startup_writes = []
+        original_write = module._write_exclusive_v1
+    
+        def construct():
+            raise original
+    
+        def write(path, raw):
+            if path.name == "startup-failures.json":
+                startup_writes.append(path)
+                raise OSError("CPU startup report secondary")
+            original_write(path, raw)
+    
+        monkeypatch.setattr(module, "_new_prefix_backend_v1", construct)
+        monkeypatch.setattr(module, "_write_exclusive_v1", write)
+        if entry == "direct":
+            job, _, start = activate(app)
+            with pytest.raises(BaseException) as caught:
+                module._prepare_source_v1(app, app.worker, job, start_monotonic=start)
+            assert caught.value is original
+            failures = module._live(app).failures
+            with pytest.raises(RuntimeError, match="cannot be allocated twice"):
+                module._prepare_source_v1(app, app.worker, job, start_monotonic=start)
+        else:
+            receipt = app.execute_once()
+>           assert receipt["primary_error"] == {
+                "error_type": "ValueError",
+                "error": "CPU preregistration primary",
+            }
+E           AssertionError: assert {'error': 'CP...e': 'OSError'} == {'error': 'CP... 'ValueError'}
+E             
+E             Differing items:
+E             {'error_type': 'OSError'} != {'error_type': 'ValueError'}
+E             {'error': 'CPU startup report secondary'} != {'error': 'CPU preregistration primary'}
+E             Use -v to get more diff
+
+tests/test_operational_capture_v1.py:525: AssertionError
+__ test_reader_rejects_broken_returned_acquisition_join_cpu[missing_returned] __
+
+tmp_path = PosixPath('/tmp/bigsmall-oc2-round80-review_red/test_reader_rejects_broken_ret0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7a9063ff69c0>
+tamper = 'missing_returned'
+
+    @pytest.mark.parametrize("tamper", ["missing_returned", "wrong_source_relation"])
+    def test_reader_rejects_broken_returned_acquisition_join_cpu(tmp_path, monkeypatch, tamper):
+        require_task2()
+        app = application(tmp_path)
+        cpu_components(monkeypatch, app)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is True
+        root = app.output / "prefix-originals"
+        path = root / "operational-originals.json"
+        slab = json.loads(path.read_bytes())
+        if tamper == "missing_returned":
+            returned_id = "CPU-absent-returned-acquisition"
+        else:
+            frames = json.loads((root / "frozen-originals.json").read_bytes())["frames"]
+            frame = next(
+                row
+                for row in frames
+                if row["acquisition_id"] != slab["current"]["source_acquisition_id"]
+                and (row["source_acquisition_id"] or row["acquisition_id"])
+                != slab["current"]["source_acquisition_id"]
+            )
+            returned_id = frame["acquisition_id"]
+        slab["current"]["returned_acquisition_id"] = returned_id
+        raw = module.canonical_bytes_v1(slab)
+        path.write_bytes(raw)
+        receipt["original_files"][path.name] = {
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "bytes": len(raw),
+        }
+        monkeypatch.setattr(module, "_open_clock_v1", lambda: pytest.fail("reader minted live D"))
+        monkeypatch.setattr(
+            module, "_new_prefix_backend_v1", lambda: pytest.fail("reader initialized backend")
+        )
+        view = module.verify_operational_prefix_originals_v1(root, receipt)
+>       assert view["original_integrity"] == "INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INVALID'
+E         
+E         - INVALID
+E         + VERIFIED
+
+tests/test_operational_capture_v1.py:599: AssertionError
+_ test_reader_rejects_broken_returned_acquisition_join_cpu[wrong_source_relation] _
+
+tmp_path = PosixPath('/tmp/bigsmall-oc2-round80-review_red/test_reader_rejects_broken_ret1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7a90623b7d70>
+tamper = 'wrong_source_relation'
+
+    @pytest.mark.parametrize("tamper", ["missing_returned", "wrong_source_relation"])
+    def test_reader_rejects_broken_returned_acquisition_join_cpu(tmp_path, monkeypatch, tamper):
+        require_task2()
+        app = application(tmp_path)
+        cpu_components(monkeypatch, app)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is True
+        root = app.output / "prefix-originals"
+        path = root / "operational-originals.json"
+        slab = json.loads(path.read_bytes())
+        if tamper == "missing_returned":
+            returned_id = "CPU-absent-returned-acquisition"
+        else:
+            frames = json.loads((root / "frozen-originals.json").read_bytes())["frames"]
+            frame = next(
+                row
+                for row in frames
+                if row["acquisition_id"] != slab["current"]["source_acquisition_id"]
+                and (row["source_acquisition_id"] or row["acquisition_id"])
+                != slab["current"]["source_acquisition_id"]
+            )
+            returned_id = frame["acquisition_id"]
+        slab["current"]["returned_acquisition_id"] = returned_id
+        raw = module.canonical_bytes_v1(slab)
+        path.write_bytes(raw)
+        receipt["original_files"][path.name] = {
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "bytes": len(raw),
+        }
+        monkeypatch.setattr(module, "_open_clock_v1", lambda: pytest.fail("reader minted live D"))
+        monkeypatch.setattr(
+            module, "_new_prefix_backend_v1", lambda: pytest.fail("reader initialized backend")
+        )
+        view = module.verify_operational_prefix_originals_v1(root, receipt)
+>       assert view["original_integrity"] == "INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INVALID'
+E         
+E         - INVALID
+E         + VERIFIED
+
+tests/test_operational_capture_v1.py:599: AssertionError
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round80-oc2-review-repair-20261007/implementation/review_RED.junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_operational_capture_v1.py::test_preregistration_primary_survives_startup_report_failure_cpu[direct]
+FAILED tests/test_operational_capture_v1.py::test_preregistration_primary_survives_startup_report_failure_cpu[worker]
+FAILED tests/test_operational_capture_v1.py::test_reader_rejects_broken_returned_acquisition_join_cpu[missing_returned]
+FAILED tests/test_operational_capture_v1.py::test_reader_rejects_broken_returned_acquisition_join_cpu[wrong_source_relation]
+4 failed in 47.26s

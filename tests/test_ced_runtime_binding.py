@@ -27,45 +27,76 @@ def role_binding(tmp_path):
         resolve_visual_planner,
     )
 
-    snapshot = ModelConfigSnapshot(provider="openai_compatible", model="qwen3.8-max",
-        endpoint="https://example.invalid", weight_digest=None, quantization=None,
-        image_size=(320, 240), generation_parameters={"temperature": 0, "num_predict": 512},
-        timeout_s=30)
+    snapshot = ModelConfigSnapshot(
+        provider="openai_compatible",
+        model="qwen3.8-max",
+        endpoint="https://example.invalid",
+        weight_digest=None,
+        quantization=None,
+        image_size=(320, 240),
+        generation_parameters={"temperature": 0, "num_predict": 512},
+        timeout_s=30,
+    )
     planner = resolve_visual_planner(snapshot, api_key="", allow_paid=False)
     sources = {}
     for name in ("cloud.py", "edge.py", "device.py"):
         path = tmp_path / name
         path.write_text("# frozen implementation\n")
         sources[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-    cloud = RoleProviderSnapshot("CLOUD", "max", "REMOTE_SERVICE", planner.model_name,
-        None, None, None, configuration_hash(cloud_request_settings(planner)),
-        {"cloud.py": sources["cloud.py"]})
-    edge_policy = {"provider": "rules", "local_recover_enabled": False,
-        "verification_budget": asdict(ExecutionPolicy("legacy", model_snapshot_hash="a" * 64)
-                                      .verification_budget),
+    cloud = RoleProviderSnapshot(
+        "CLOUD",
+        "max",
+        "REMOTE_SERVICE",
+        planner.model_name,
+        None,
+        None,
+        None,
+        configuration_hash(cloud_request_settings(planner)),
+        {"cloud.py": sources["cloud.py"]},
+    )
+    edge_policy = {
+        "provider": "rules",
+        "local_recover_enabled": False,
+        "verification_budget": asdict(
+            ExecutionPolicy("legacy", model_snapshot_hash="a" * 64).verification_budget
+        ),
         "runtime_router": "verification_router.v1",
-        "capabilities": ["CONTINUE", "REOBSERVE", "STOP"]}
+        "capabilities": ["CONTINUE", "REOBSERVE", "STOP"],
+    }
     router = "src/cloud_edge_robot_arm/edge/recovery/verification_router.py"
     original = Path(__file__).resolve().parents[1] / router
     copied = tmp_path / router
     copied.parent.mkdir(parents=True, exist_ok=True)
     copied.write_bytes(original.read_bytes())
-    edge_sources = {"edge.py": sources["edge.py"],
-                    router: hashlib.sha256(copied.read_bytes()).hexdigest()}
+    edge_sources = {
+        "edge.py": sources["edge.py"],
+        router: hashlib.sha256(copied.read_bytes()).hexdigest(),
+    }
     for name in ("models", "validator", "conditions"):
         rel = f"src/cloud_edge_robot_arm/edge/evidence/{name}.py"
         target = tmp_path / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes((Path(__file__).resolve().parents[1] / rel).read_bytes())
         edge_sources[rel] = hashlib.sha256(target.read_bytes()).hexdigest()
-    edge = RoleProviderSnapshot("EDGE", "rules", "LOCAL_HOST", None, None, None, None,
-        configuration_hash(edge_policy), edge_sources)
+    edge = RoleProviderSnapshot(
+        "EDGE",
+        "rules",
+        "LOCAL_HOST",
+        None,
+        None,
+        None,
+        None,
+        configuration_hash(edge_policy),
+        edge_sources,
+    )
     action_source = "src/cloud_edge_robot_arm/vision/action_evidence.py"
     target = tmp_path / action_source
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes((Path(__file__).resolve().parents[1] / action_source).read_bytes())
-    device = {"device.py": sources["device.py"],
-              action_source: hashlib.sha256(target.read_bytes()).hexdigest()}
+    device = {
+        "device.py": sources["device.py"],
+        action_source: hashlib.sha256(target.read_bytes()).hexdigest(),
+    }
     bundle = RoleModelBundle(cloud, edge.provider_id, edge.digest(), configuration_hash(device))
     planner.role_snapshot = cloud
     return planner, api().RoleRuntimeBinding(bundle, edge, device, edge_policy, root=tmp_path)
@@ -74,9 +105,15 @@ def role_binding(tmp_path):
 def test_native_gate_sources_cannot_be_omitted_from_frozen_role_binding(tmp_path):
     _, binding = role_binding(tmp_path)
     from dataclasses import replace
-    edge = replace(binding.edge_snapshot, source_hashes={
-        key: value for key, value in binding.edge_snapshot.source_hashes.items()
-        if not key.endswith("validator.py")})
+
+    edge = replace(
+        binding.edge_snapshot,
+        source_hashes={
+            key: value
+            for key, value in binding.edge_snapshot.source_hashes.items()
+            if not key.endswith("validator.py")
+        },
+    )
     bundle = replace(binding.bundle, edge_provider_hash=edge.digest())
     with pytest.raises(ValueError, match="evidence"):
         replace(binding, bundle=bundle, edge_snapshot=edge)
@@ -122,13 +159,22 @@ def test_opencv_factory_preserves_native_unknown_in_canonical_conditions(tmp_pat
     from tests.test_rgbd_online_verification import evidence
 
     _, binding = role_binding(tmp_path)
-    policy = ExecutionPolicy("Move the red block to the green region.",
-        model_snapshot_hash="a" * 64, device_pipeline="OPENCV", role_binding=binding)
+    policy = ExecutionPolicy(
+        "Move the red block to the green region.",
+        model_snapshot_hash="a" * 64,
+        device_pipeline="OPENCV",
+        role_binding=binding,
+    )
     observation = scene()
-    tracker = make_target_tracker(observation, {
-        "original_pixel_target": [12, 26], "original_pixel_destination": [57, 32],
-        "top_grasp_support_height_m": 0.0,
-    }, policy)
+    tracker = make_target_tracker(
+        observation,
+        {
+            "original_pixel_target": [12, 26],
+            "original_pixel_destination": [57, 32],
+            "top_grasp_support_height_m": 0.0,
+        },
+        policy,
+    )
     facts = tracker.facts(observation)
     snap = OnlineEvidenceSnapshot(observation, evidence().robot_state, facts, 1, 1, "test")
     verdicts = evaluate_conditions(terminal_conditions(policy), snap)
@@ -142,8 +188,9 @@ def test_role_drift_before_skill_stops_before_safety_and_dispatch(tmp_path):
     planner, binding = role_binding(tmp_path)
     episode = _VisualEpisode.__new__(_VisualEpisode)
     episode.planner = planner
-    episode.policy = ExecutionPolicy("pick red", model_snapshot_hash="a" * 64,
-        device_pipeline="OPENCV", role_binding=binding)
+    episode.policy = ExecutionPolicy(
+        "pick red", model_snapshot_hash="a" * 64, device_pipeline="OPENCV", role_binding=binding
+    )
     episode.check_active = lambda: None
     episode.observation = SimpleNamespace(observation_id="fresh")
     calls = []
@@ -170,20 +217,23 @@ def test_native_stability_is_not_overwritten_by_legacy_endpoint_hold(tmp_path, d
 
     _, binding = role_binding(tmp_path)
     episode = _VisualEpisode.__new__(_VisualEpisode)
-    episode.policy = ExecutionPolicy("pick red", model_snapshot_hash="a" * 64,
-        device_pipeline="OPENCV", role_binding=binding)
+    episode.policy = ExecutionPolicy(
+        "pick red", model_snapshot_hash="a" * 64, device_pipeline="OPENCV", role_binding=binding
+    )
     episode.observation = scene()
     episode.tracker = tracker(episode.observation)
     if damage:
-        episode.observation = scene("occluded", time=.1, damage=damage,
-            started=episode.tracker._reference.captured_at)
+        episode.observation = scene(
+            "occluded", time=0.1, damage=damage, started=episode.tracker._reference.captured_at
+        )
     from cloud_edge_robot_arm.contracts import RobotState
 
     state = RobotState(connected=True)
     episode.robot = SimpleNamespace(get_state=lambda: state)
-    backend = SimpleNamespace(total_physics_steps=0, _config=SimpleNamespace(physics_dt_s=.1))
-    backend.step = lambda steps: setattr(backend, "total_physics_steps",
-        backend.total_physics_steps + steps)
+    backend = SimpleNamespace(total_physics_steps=0, _config=SimpleNamespace(physics_dt_s=0.1))
+    backend.step = lambda steps: setattr(
+        backend, "total_physics_steps", backend.total_physics_steps + steps
+    )
     episode.backend = backend
     episode.records = []
     episode.monitor_physics_state = lambda: None
@@ -206,8 +256,9 @@ def test_cloud_return_checks_binding_before_accepting_draft(tmp_path, changed_du
 
     planner, binding = role_binding(tmp_path)
     episode = _VisualEpisode.__new__(_VisualEpisode)
-    episode.policy = ExecutionPolicy("pick red", model_snapshot_hash="a" * 64,
-        device_pipeline="OPENCV", role_binding=binding)
+    episode.policy = ExecutionPolicy(
+        "pick red", model_snapshot_hash="a" * 64, device_pipeline="OPENCV", role_binding=binding
+    )
     episode.planner = planner
     episode.check_active = lambda: None
     episode.observation = scene()
@@ -223,8 +274,13 @@ def test_cloud_return_checks_binding_before_accepting_draft(tmp_path, changed_du
         calls.append(request.observation.observation_id)
         if changed_during_call:
             planner.model_name = "changed-during-inference"
-        return PlannerDraft(planner_name="fixture", model_name=planner.model_name,
-            raw_text="{}", parsed_json={"steps": []}, parse_error=None)
+        return PlannerDraft(
+            planner_name="fixture",
+            model_name=planner.model_name,
+            raw_text="{}",
+            parsed_json={"steps": []},
+            parse_error=None,
+        )
 
     planner.plan = plan
     if changed_during_call:
@@ -241,7 +297,7 @@ def test_legacy_runtime_import_does_not_require_optional_opencv():
     import subprocess
     import sys
 
-    code = '''
+    code = """
 import builtins
 original = builtins.__import__
 def without_cv(name, *args, **kwargs):
@@ -251,7 +307,7 @@ def without_cv(name, *args, **kwargs):
 builtins.__import__ = without_cv
 from cloud_edge_robot_arm.vision.execution import RGBDTargetTracker
 assert RGBDTargetTracker is not None
-'''
+"""
     completed = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert completed.returncode == 0, completed.stderr
 
@@ -261,9 +317,13 @@ def test_identical_role_bundle_cannot_change_consumed_verification_limits(tmp_pa
 
     _, binding = role_binding(tmp_path)
     with pytest.raises(ValueError, match="budget"):
-        ExecutionPolicy("Move the red block to the green region.", model_snapshot_hash="a" * 64,
-            device_pipeline="OPENCV", role_binding=binding,
-            verification_budget=VerificationBudget(100, 0, 100, 120))
+        ExecutionPolicy(
+            "Move the red block to the green region.",
+            model_snapshot_hash="a" * 64,
+            device_pipeline="OPENCV",
+            role_binding=binding,
+            verification_budget=VerificationBudget(100, 0, 100, 120),
+        )
 
 
 def test_binding_cannot_omit_the_actual_verification_router_source(tmp_path):
@@ -272,3 +332,46 @@ def test_binding_cannot_omit_the_actual_verification_router_source(tmp_path):
     bundle = replace(binding.bundle, edge_provider_hash=edge.digest())
     with pytest.raises(ValueError, match="router source"):
         replace(binding, bundle=bundle, edge_snapshot=edge)
+
+
+def test_existing_max_success_is_not_new_source_freeze(tmp_path):
+    import json
+
+    historical = Path(__file__).resolve().parents[1] / (
+        "artifacts/research/process/20261004-qwen38max-closed-loop/verification.json"
+    )
+    assert json.loads(historical.read_text())["valid"] is True
+    planner, binding = role_binding(tmp_path)
+    binding.validate(planner)
+    assert binding.bundle.cloud_snapshot.revision is None
+    assert binding.bundle.cloud_snapshot.weight_digest is None
+    (tmp_path / "cloud.py").write_text("# changed current software, old Max still available\n")
+    with pytest.raises(ValueError, match="source hash changed"):
+        binding.validate(planner)
+
+
+def test_role_thinking_change_invalidates_request_binding(tmp_path):
+    planner, binding = role_binding(tmp_path)
+    planner.model_snapshot = replace(
+        planner.model_snapshot,
+        generation_parameters={"temperature": 0, "num_predict": 512, "think": False},
+    )
+    cloud = replace(
+        binding.bundle.cloud_snapshot,
+        request_config_hash=configuration_hash(cloud_request_settings(planner)),
+    )
+    planner.role_snapshot = cloud
+    binding = replace(
+        binding,
+        bundle=replace(binding.bundle, cloud_snapshot=cloud),
+        edge_policy=binding.evidence()["edge_policy"],
+    )
+    binding.validate(planner)
+    before = configuration_hash(cloud_request_settings(planner))
+    planner.model_snapshot = replace(
+        planner.model_snapshot,
+        generation_parameters={"temperature": 0, "num_predict": 512, "think": True},
+    )
+    assert configuration_hash(cloud_request_settings(planner)) != before
+    with pytest.raises(ValueError, match="request settings"):
+        binding.validate(planner)

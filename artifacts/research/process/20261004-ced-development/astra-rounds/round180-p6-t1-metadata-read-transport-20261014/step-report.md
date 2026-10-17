@@ -1,0 +1,1 @@
+R180 唯一 metadata action 实际 exit0；receipt15461B SHA25616d48ffbcab22b5d1c12ae45e23a63f07d6b37e53a3d60d834d1e2c623487856。四份元数据 shape 已保存；旧截断尾部未恢复、原reader未重试、产品命令0、R179六槽均未使用。工具独立stdout/stderr未提供，保持null。等待ROOT独立结算；仅恢复R179测试/脚本准备。

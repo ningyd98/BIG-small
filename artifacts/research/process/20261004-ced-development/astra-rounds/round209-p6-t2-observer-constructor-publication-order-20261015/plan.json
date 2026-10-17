@@ -1,0 +1,138 @@
+{
+  "schema_version": "bigsmall.astra.repair-plan.v1",
+  "round": "R209",
+  "date": "2026-10-15",
+  "actual_author": {
+    "agent": "/root/astra_status_plan",
+    "model": "gpt-6-astra"
+  },
+  "status": "FROZEN_PENDING_ROOT_REVIEW",
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round209-p6-t2-observer-constructor-publication-order-20261015/original-source-observation.json",
+      "bytes": 39757,
+      "sha256": "5f29ac45f50fb9ea08f984475f96e68da5738a3982b1faedf8c099627cd72d0b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py",
+      "bytes": 204335,
+      "sha256": "27dcb9b8a34d175824b6aa43b446bcbfeb4bc1dacfd4007d7f59a8f7a447a2dd"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/plan.json",
+      "bytes": 16922,
+      "sha256": "0e1b67081eff58ab2b3c56c3983c827ad83e970ff3d30975caa47311459e2881"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/implementation/limited.diff",
+      "bytes": 23500,
+      "sha256": "540780a388e911bbe594eaf960b214a569b5f62e536fe0d4c4bc5861e381683e"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/implementation/change-report.json",
+      "bytes": 7804,
+      "sha256": "6f8b73066aac29c78c165a00425f977d169ae2c304ba294cc61be6c7ca5655db"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py",
+      "bytes": 31818,
+      "sha256": "13304d13376054c42441eda1060dcd926984498bafaea98243edf1c27f839808"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json",
+      "bytes": 32871,
+      "sha256": "0290f0e66648bf4e3251b5fec8552044cf0468fa663290ba693cfd0bf33fe63a"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json",
+      "bytes": 75684,
+      "sha256": "c161cb83a22ec9aefef972da94f15bec09f78defc253993aa02c14c550315974"
+    }
+  ],
+  "problem": {
+    "classification": "Confirmed source-level observer registration publication-order defect; no runtime reproduction",
+    "evidence": "Pinned original-source-observation.json preserves complete ROOT consumer37b229 and producer236503 actual reads. Independent945b80 read confirms current add/profile/sample_runtime_locked flow;655117 confirms source and role pins.",
+    "cause": "add appends a worker to worker_refs at3563 before publishing objects[key] at3564 and resource attempt at3565. Active sys.setprofile may receive append c_return and sample the newly visible worker via objects[id(worker)] at3611. The RLock permits same-thread callback reentry and therefore does not by itself fix incomplete publication.",
+    "observed_runtime_exception": false,
+    "T2_commands_executed": 0,
+    "R208_source_gate_accepted": false
+  },
+  "scope": {
+    "sole_author": {
+      "agent": "/root/p6_stage_b_sol",
+      "model": "gpt-6.1-sol"
+    },
+    "editable_source": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py",
+    "editable_region": "Nested add(obj,kind,**details) in _b_t2_observe, current3546–3566: registration/publication ordering only.",
+    "minimal_change": [
+      "Build the complete record including all worker-specific fields with initialized=false before publishing it.",
+      "Within the existing guard, publish objects[key]=(obj,record), then append that same record exactly once to value['resources'], then append obj exactly once to worker_refs only if kind=='worker'. Return the same record.",
+      "Keep the existing id-based duplicate lookup and strong references. Each worker visible to profile must already have a complete identity mapping and exactly one allocation-attempt resource record.",
+      "No sampler redesign is necessary for this identified path: sample_runtime already acquires the same guard. ROOT must verify the corrected publication invariant at every existing profile-visible boundary."
+    ],
+    "forbidden": [
+      "No KeyError swallowing, objects.get fallback, skip-on-missing worker, disabling profile, or dropping constructor/partial/transitive allocations.",
+      "No initialized/cleanup success before actual constructor/cleanup; retain missing/not-yet-observed fields as unknown.",
+      "No changes to poll_once pass-through, runtime sampling semantics, lifecycle fields/schema/counters/caps, runner consumer or R206 output boundary.",
+      "No changes to other test functions, original168003-byte prefix, seven planned T2 behavior bodies/nodeids,19 products,211 protected files, roles, historical reports, raw or goldens."
+    ],
+    "broader_change": "If a required fix cannot be expressed as this publication ordering, stop and return to actual Astra; do not silently broaden sampler changes."
+  },
+  "steps": [
+    "ROOT fulltext review this plan and original observation, verify eight inputs and applicability. Existing R208 source gate remains pending; neither R208 nor R209 is a test pass.",
+    "Same Sol exclusively saves the complete204335-byte frozen test as R209 implementation/before-test.py before edit; current bytes/SHA must match input pin. Preserve the complete pinned R208 candidate diff/report and runner.",
+    "Same Sol applies only the ordered add registration change. Save new R209 limited.diff and change-report.json with exact before/after source hashes, original evidence references and static-only status.",
+    "ROOT ordinary bounded stdlib text/bytes/hash gate checks exact diff and current source: all bytes outside add unchanged, same record fields and duplicate branch, map/resource publication precede worker_refs visibility under guard; one resource record and one worker list entry per new object; original168003 prefix unchanged; frozen runner and both role snapshots unchanged. Compare19 product and211 protected bytes against already accepted R204/R208 authority through the normal combined source gate, without a new product command.",
+    "ROOT fulltext-review combined R208 consumer/producer plus R209 delta. Only after this source gate may same Sol continue original R204 seven-body/fixture/report preparation. All execution still requires original separate test/runner/role gate."
+  ],
+  "outputs": {
+    "before_test": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round209-p6-t2-observer-constructor-publication-order-20261015/implementation/before-test.py",
+    "diff": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round209-p6-t2-observer-constructor-publication-order-20261015/implementation/limited.diff",
+    "change_report": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round209-p6-t2-observer-constructor-publication-order-20261015/implementation/change-report.json",
+    "root_gate": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round209-p6-t2-observer-constructor-publication-order-20261015/source-gate.json",
+    "step": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round209-p6-t2-observer-constructor-publication-order-20261015/step-report.json"
+  },
+  "budget": {
+    "new_execution_slots": 0,
+    "new_tests": 0,
+    "new_static": 0,
+    "new_Git": 0,
+    "new_AST_or_import_probe": 0,
+    "t2_red": {
+      "author_used": 0,
+      "author_remaining": 1,
+      "author_state": "HELD",
+      "root_used": 0,
+      "root_remaining": 1,
+      "root_state": "HELD_PENDING_ROOT_GATE"
+    },
+    "t2_green": {
+      "author_used": 0,
+      "author_remaining": 1,
+      "author_state": "HELD",
+      "root_used": 0,
+      "root_remaining": 1,
+      "root_state": "HELD_PENDING_ROOT_GATE"
+    },
+    "unchanged_caps": {
+      "poll_attempt_lifecycles": 18,
+      "parent_lifecycles": 64,
+      "concurrency": 2,
+      "broker_per_worker": 1,
+      "heartbeat_per_worker": 1
+    },
+    "reset": false
+  },
+  "input_roles": "Original evidence, R208 plans/diff/report and before archives are immutable historical artifacts. Current test is the only authorized source delta; frozen consumer and role bytes must remain fixed through this repair. Later authorized R204 preparation/new ROOT gates acquire new current pins without rewriting these history pins.",
+  "acceptance": {
+    "round": "Static source-order repair and normal source gate only; no runtime guarantee from this plan.",
+    "T2_ready": false,
+    "T2_pass": false,
+    "T1_acceptance_changed": false,
+    "P6B_complete": false,
+    "T12_complete": false,
+    "native": false,
+    "formal": false
+  },
+  "stop": "Any new failure, unexplained drift, additional causal defect, required scope enlargement or execution request outside existing authority: preserve exact available evidence and STOP for genuine Astra; no retry."
+}

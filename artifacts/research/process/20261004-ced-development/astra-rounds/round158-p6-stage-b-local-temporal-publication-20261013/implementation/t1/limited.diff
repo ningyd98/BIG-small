@@ -1,0 +1,3012 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py (original R158 before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/owner_registration.py (after R175 helper)
+@@ -5,6 +5,15 @@
+ """
+ 
+ from __future__ import annotations
++
++from cloud_edge_robot_arm.vision.local_temporal import (
++    JSONValue,
++    LocalDomainEnvelope,
++    _array as local_array,
++    _integer as local_integer,
++    _object as local_object,
++    _text as local_text,
++)
+ 
+ import hashlib
+ import json
+@@ -462,6 +471,86 @@
+     def digest(self) -> str:
+         return _digest(self.to_payload())
+ 
++
++
++def local_owner_identity(payload: Mapping[str, JSONValue]) -> VisualOwnerIdentity:
++    values = local_object(payload, frozenset("job_id run_id attempt worker_id lease_id owner_epoch episode_id task_id plan_id robot_id".split()))
++    return VisualOwnerIdentity(
++        local_text(values["job_id"]), local_text(values["run_id"]),
++        local_integer(values["attempt"], positive=True), local_text(values["worker_id"]),
++        local_text(values["lease_id"]), local_text(values["owner_epoch"]),
++        local_text(values["episode_id"]), local_text(values["task_id"]),
++        local_text(values["plan_id"]), local_text(values["robot_id"]),
++    )
++
++
++class LocalVisualOriginalPlan(LocalDomainEnvelope, VisualOriginalPlan):
++    _tag = "visual.owner.original.local.v1"
++
++    @property
++    def identity(self) -> VisualOwnerIdentity:
++        return local_owner_identity(self.object("identity"))
++
++    @property
++    def contract(self) -> TaskContract:
++        return self.model("contract", TaskContract)
++
++    @property
++    def proposal_hash(self) -> str:
++        return self.string("proposal_hash")
++
++    @property
++    def role_bundle_hash(self) -> str:
++        return self.string("role_bundle_hash")
++
++    @property
++    def compiler_source_hashes(self) -> Mapping[str, str]:
++        return self.hashes("compiler_source_hashes")
++
++    @property
++    def source_hashes(self) -> Mapping[str, str]:
++        return self.hashes("source_hashes")
++
++    @property
++    def requirements(self) -> Mapping[str, OriginalActionRequirements]:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import requirement_from_payload
++
++        return {key: requirement_from_payload(local_object(value))
++                for key, value in self.object("requirements").items()}
++
++    @property
++    def dependencies(self) -> tuple[StepDependency, ...]:
++        result: list[StepDependency] = []
++        for raw in local_array(self.semantic["dependencies"]):
++            item = local_object(raw)
++            completed = item["completed"]
++            if type(completed) is not bool:
++                raise ValueError("strict dependency completion flag required")
++            effect = item["physical_effect_id"]
++            result.append(StepDependency(
++                local_text(item["step_id"]),
++                tuple(local_text(value) for value in local_array(item["depends_on"])),
++                tuple(local_text(value) for value in local_array(item["evidence_ids"])),
++                None if effect is None else local_text(effect),
++                completed,
++            ))
++        return tuple(result)
++
++    @property
++    def task_deadline_at(self) -> datetime:
++        return self.legacy_deadline()
++
++    @property
++    def verification_deadline_at(self) -> datetime:
++        return self.legacy_deadline()
++
++    @property
++    def registered_at(self) -> datetime:
++        return self.legacy_deadline()
++
++    @property
++    def effective_deadline_at(self) -> datetime:
++        return self.legacy_deadline()
+ 
+ def freeze_original_visual_plan(
+     *,
+@@ -775,6 +864,89 @@
+ 
+     def digest(self) -> str:
+         return _digest(self.to_payload())
++
++
++
++class LocalStepGroundingBinding(LocalDomainEnvelope, StepGroundingBinding):
++    _tag = "visual.owner.grounding.local.v1"
++
++    @property
++    def current_identity(self) -> VisualOwnerIdentity:
++        return local_owner_identity(self.object("current_identity"))
++
++    @property
++    def original_requirements(self) -> OriginalActionRequirements:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import requirement_from_payload
++
++        return requirement_from_payload(self.object("original_requirements"))
++
++    @property
++    def grounded_step(self) -> TaskStep:
++        return self.model("grounded_step", TaskStep)
++
++    @property
++    def original_plan_hash(self) -> str:
++        return self.string("original_plan_hash")
++
++    @property
++    def source_checkpoint_hash(self) -> str:
++        return self.string("source_checkpoint_hash")
++
++    @property
++    def observation_id(self) -> str:
++        return self.string("observation_id")
++
++    @property
++    def observation_checksum_sha256(self) -> str:
++        return self.string("observation_checksum_sha256")
++
++    @property
++    def calibration_version(self) -> str:
++        return self.string("calibration_version")
++
++    @property
++    def grounding_policy_hash(self) -> str:
++        return self.string("grounding_policy_hash")
++
++    @property
++    def grounding_inputs_hash(self) -> str:
++        return self.string("grounding_inputs_hash")
++
++    @property
++    def owner_revision(self) -> int:
++        return self.counter("owner_revision")
++
++    @property
++    def state_generation(self) -> int:
++        return self.counter("state_generation")
++
++    @property
++    def plan_version(self) -> int:
++        return self.counter("plan_version")
++
++    @property
++    def command_seq(self) -> int:
++        return self.counter("command_seq")
++
++    @property
++    def duration_check_hash(self) -> str | None:
++        return self.optional_string("duration_check_hash")
++
++    @property
++    def grounding_source_hashes(self) -> Mapping[str, str]:
++        return self.hashes("grounding_source_hashes")
++
++    @property
++    def expected_duration_s(self) -> float:
++        return self.number("expected_duration_s", positive=True)
++
++    @property
++    def created_at(self) -> datetime:
++        return self.legacy_deadline()
++
++    @property
++    def valid_until(self) -> datetime:
++        return self.legacy_deadline()
+ 
+ 
+ def _resolved_parameters(
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py (original R158 before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py (after R175 helper)
+@@ -43,6 +43,15 @@
+     strict_retry,
+ )
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation
++from cloud_edge_robot_arm.vision.local_temporal import (
++    JSONValue,
++    LocalDomainEnvelope,
++    LocalVerificationBudgetState,
++    _integer as local_integer,
++    _number as local_number,
++    _object as local_object,
++    _text as local_text,
++)
+ from cloud_edge_robot_arm.vision.owner_registration import (
+     OriginalActionRequirements,
+     VisualOriginalPlan,
+@@ -280,6 +289,8 @@
+ 
+     @classmethod
+     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapDefinition:
++        if raw.get("schema_version") == "visual.bootstrap.definition.local.v1":
++            return LocalVisualBootstrapDefinition.from_payload(raw)
+         normalized = _plain(raw)
+         body = dict(normalized)
+         if (
+@@ -359,6 +370,8 @@
+ 
+     @classmethod
+     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapRecord:
++        if raw.get("schema_version") == "visual.bootstrap.record.local.v1":
++            return LocalVisualBootstrapRecord.from_payload(raw)
+         raw = cast(dict[str, Any], _plain(raw))
+         if (
+             raw.get("schema_version") != "visual.bootstrap.record.v1"
+@@ -483,6 +496,8 @@
+ 
+     @classmethod
+     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapTransitionInput:
++        if raw.get("schema_version") == "visual.bootstrap.transition.local.v1":
++            return LocalVisualBootstrapTransitionInput.from_payload(raw)
+         raw = cast(dict[str, Any], _plain(raw))
+         if "operational_windows" in raw:
+             from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+@@ -955,6 +970,8 @@
+ 
+     @classmethod
+     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapPromotionInput:
++        if raw.get("schema_version") == "visual.bootstrap.promotion.local.v1":
++            return LocalVisualBootstrapPromotionInput.from_payload(raw)
+         raw = cast(dict[str, Any], _plain(raw))
+         if (
+             set(raw)
+@@ -982,6 +999,135 @@
+         result = object.__new__(cls)
+         object.__setattr__(result, "_json", canonical(raw))
+         return result
++
++
++class LocalVisualBootstrapDefinition(LocalDomainEnvelope, VisualBootstrapDefinition):
++    """Detached original instruction and policy; UTC fields grant no authority."""
++
++    _tag = "visual.bootstrap.definition.local.v1"
++
++    @property
++    def lease(self) -> WorkerLeaseObservation:
++        raise ValueError("local original carries a broker identity, not a UTC worker lease")
++
++    @property
++    def episode_id(self) -> str:
++        return self.string("episode_id")
++
++    @property
++    def user_instruction(self) -> str:
++        return self.string("user_instruction")
++
++    @property
++    def task_timeout_s(self) -> float:
++        return self.number("task_timeout_s", positive=True)
++
++    @property
++    def verification_limits(self) -> VerificationBudget:
++        values = self.object("verification_limits")
++        return VerificationBudget(
++            local_integer(values["max_reobservations"]),
++            local_integer(values["max_retries"]),
++            local_integer(values["max_no_progress"]),
++            local_number(values["deadline_s"], positive=True),
++        )
++
++    @property
++    def role_bundle_hash(self) -> str:
++        return self.string("role_bundle_hash")
++
++    @property
++    def model_snapshot_hash(self) -> str:
++        return self.string("model_snapshot_hash")
++
++    @property
++    def source_hashes(self) -> Mapping[str, str]:
++        return self.hashes("source_hashes")
++
++    @property
++    def task_started_at(self) -> datetime:
++        return self.legacy_deadline()
++
++    @property
++    def registered_at(self) -> datetime:
++        return self.legacy_deadline()
++
++    @property
++    def task_deadline_at(self) -> datetime:
++        return self.legacy_deadline()
++
++    @property
++    def verification_deadline_at(self) -> datetime:
++        return self.legacy_deadline()
++
++    @property
++    def operational_windows(self) -> tuple[Mapping[str, JSONValue], ...]:
++        original = self.local_time.to_payload()
++        return tuple(local_object(original[name]) for name in (
++            "task_reference", "verification_reference", "recovery_reference"
++        ))
++
++    @property
++    def bootstrap_id(self) -> str:
++        identity = local_object(self.local_time.to_payload()["lease_identity"])
++        return digest(["visual.bootstrap.job-run.v1", identity["job_id"], identity["run_id"]])
++
++
++class LocalVisualBootstrapRecord(LocalDomainEnvelope, VisualBootstrapRecord):
++    _tag = "visual.bootstrap.record.local.v1"
++
++    @property
++    def definition(self) -> VisualBootstrapDefinition:
++        return VisualBootstrapDefinition.from_payload(self.object("definition"))
++
++    @property
++    def revision(self) -> int:
++        return self.counter("revision")
++
++    @property
++    def local_state(self) -> LocalVerificationBudgetState:
++        return LocalVerificationBudgetState.from_payload(self.object("state"))
++
++    @property
++    def verification_state(self) -> VerificationBudgetState:
++        raise ValueError("local budget state must retain its original local reference")
++
++    @property
++    def task_deadline_at(self) -> datetime:
++        return self.legacy_deadline()
++
++    @property
++    def pending_claim_id(self) -> str | None:
++        pending = self.semantic["pending"]
++        return None if pending is None else local_text(local_object(pending)["claim_id"])
++
++    @property
++    def terminal_reason(self) -> str | None:
++        return self.optional_string("terminal_reason")
++
++    @property
++    def observation(self) -> RGBDObservation | None:
++        return self.optional_model("observation", RGBDObservation)
++
++    @property
++    def draft(self) -> PlannerDraft | None:
++        return self.optional_model("draft", PlannerDraft)
++
++    @property
++    def planning_source_usable(self) -> bool:
++        return self.boolean("planning_source_usable")
++
++    @property
++    def proposal_hash(self) -> str | None:
++        return self.optional_string("proposal_hash")
++
++
++class LocalVisualBootstrapTransitionInput(LocalDomainEnvelope, VisualBootstrapTransitionInput):
++    _tag = "visual.bootstrap.transition.local.v1"
++
++
++class LocalVisualBootstrapPromotionInput(LocalDomainEnvelope, VisualBootstrapPromotionInput):
++    _tag = "visual.bootstrap.promotion.local.v1"
+ 
+ 
+ def _promote(
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py (original R158 before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py (after R175 helper)
+@@ -45,6 +45,12 @@
+     current_models_exact,
+ )
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation
++from cloud_edge_robot_arm.vision.local_temporal import (
++    LocalDomainEnvelope,
++    _array as local_array,
++    _integer as local_integer,
++    _object as local_object,
++)
+ from cloud_edge_robot_arm.vision.owner_registration import VisualOriginalPlan
+ from cloud_edge_robot_arm.vision.role_models import RoleModelBundle, RoleProviderSnapshot
+ from cloud_edge_robot_arm.vision.supervision import SupervisionContext, SupervisionDecision
+@@ -209,6 +215,8 @@
+ 
+     @classmethod
+     def from_payload(cls, body: dict[str, Any]) -> VisualSupervisionDefinition:
++        if body.get("schema_version") == "visual.supervision.definition.local.v1":
++            return LocalVisualSupervisionDefinition.from_payload(body)
+         copied = _load(canonical(_plain(body)))
+         cls._validate(copied)
+         result = object.__new__(cls)
+@@ -401,6 +409,8 @@
+ 
+     @classmethod
+     def from_payload(cls, body: dict[str, Any]) -> VisualSupervisionTransitionInput:
++        if body.get("schema_version") == "visual.supervision.transition.local.v1":
++            return LocalVisualSupervisionTransitionInput.from_payload(body)
+         copied = _load(canonical(_plain(body)))
+         cls._validate(copied)
+         result = object.__new__(cls)
+@@ -478,6 +488,8 @@
+ 
+     @classmethod
+     def from_payload(cls, body: dict[str, Any]) -> VisualSupervisionRecord:
++        if body.get("schema_version") == "visual.supervision.record.local.v1":
++            return LocalVisualSupervisionRecord.from_payload(body)
+         copied = _load(canonical(_plain(body)))
+         definition = VisualSupervisionDefinition.from_payload(copied["definition"])
+         expected = _start(definition)
+@@ -515,6 +527,72 @@
+     @property
+     def definition(self) -> VisualSupervisionDefinition:
+         return VisualSupervisionDefinition.from_payload(self.to_payload()["definition"])
++
++
++class LocalVisualSupervisionDefinition(LocalDomainEnvelope, VisualSupervisionDefinition):
++    _tag = "visual.supervision.definition.local.v1"
++
++    @property
++    def original(self) -> VisualOriginalPlan:
++        # Embedded external/legacy sources are audit inputs, never current authority.
++        return original_from_payload(self.object("original"))
++
++    @property
++    def task_id(self) -> str:
++        return self.original.identity.task_id
++
++    @property
++    def deadline_at(self) -> datetime:
++        return self.legacy_deadline()
++
++    @property
++    def max_periodic_captures(self) -> int:
++        period = self.semantic["supervision_period_s"]
++        if period is None:
++            return 0
++        reference = local_object(self.local_time.to_payload()["verification_reference"])
++        lengths = [local_integer(local_object(raw)["budget_ns"], positive=True)
++                   for raw in local_array(reference["hard_deadlines"])]
++        return max(0, math.ceil(min(lengths) / 1_000_000_000 / self.number("supervision_period_s", positive=True)) - 1)
++
++
++class LocalVisualSupervisionTransitionInput(LocalDomainEnvelope, VisualSupervisionTransitionInput):
++    _tag = "visual.supervision.transition.local.v1"
++
++    @property
++    def task_id(self) -> str:
++        return self.string("task_id")
++
++    def semantic_hash(self) -> str:
++        body = self.semantic
++        for name in ("event_key", "expected_revision", "expected_record_hash"):
++            body.pop(name)
++        return digest({"schema_version": self._tag, "payload": body,
++                       "original_time": self.local_time.to_payload()})
++
++
++class LocalVisualSupervisionRecord(LocalDomainEnvelope, VisualSupervisionRecord):
++    _tag = "visual.supervision.record.local.v1"
++
++    @property
++    def revision(self) -> int:
++        return self.counter("revision")
++
++    @property
++    def definition(self) -> VisualSupervisionDefinition:
++        return VisualSupervisionDefinition.from_payload(self.object("definition"))
++
++    @property
++    def captures_reserved(self) -> int:
++        return self.counter("captures_reserved")
++
++    @property
++    def supervisor_calls_reserved(self) -> int:
++        return self.counter("supervisor_calls_reserved")
++
++    @property
++    def wait_seconds_reserved(self) -> float:
++        return self.number("wait_seconds_reserved")
+ 
+ 
+ @dataclass(frozen=True)
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py (original R158 before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py (after R175 helper)
+@@ -19,9 +19,14 @@
+     TaskStep,
+ )
+ from cloud_edge_robot_arm.repositories.event_autonomy.hashing import stable_payload_hash
++from cloud_edge_robot_arm.vision.local_temporal import LocalDomainEnvelope
+ 
+ if TYPE_CHECKING:
+-    from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++        LocalRetryBudgetRecord,
++        LocalVerificationBudgetRecord,
++        VerificationBudgetRecord,
++    )
+     from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
+     from cloud_edge_robot_arm.vision.owner_registration import (
+         OriginalActionRequirements,
+@@ -114,9 +119,13 @@
+ def original_from_payload(payload: dict[str, Any]) -> VisualOriginalPlan:
+     from cloud_edge_robot_arm.cloud.replanning.visual_dependencies import StepDependency
+     from cloud_edge_robot_arm.vision.owner_registration import (
++        LocalVisualOriginalPlan,
+         VisualOwnerIdentity,
+         freeze_original_visual_plan,
+     )
++
++    if payload.get("schema_version") == "visual.owner.original.local.v1":
++        return LocalVisualOriginalPlan.from_payload(payload)
+ 
+     result = freeze_original_visual_plan(
+         identity=VisualOwnerIdentity(**payload["identity"]),
+@@ -144,9 +153,13 @@
+ 
+ def grounding_from_payload(payload: dict[str, Any]) -> StepGroundingBinding:
+     from cloud_edge_robot_arm.vision.owner_registration import (
++        LocalStepGroundingBinding,
+         StepGroundingBinding,
+         VisualOwnerIdentity,
+     )
++
++    if payload.get("schema_version") == "visual.owner.grounding.local.v1":
++        return LocalStepGroundingBinding.from_payload(payload)
+ 
+     values = dict(payload)
+     values.pop("binding_scope", None)
+@@ -397,6 +410,8 @@
+ 
+     @classmethod
+     def from_payload(cls, payload: dict[str, Any]) -> VisualOwnerPublicationRecord:
++        if payload.get("schema_version") == "visual.owner.publication.local.v1":
++            return LocalVisualOwnerPublicationRecord.from_payload(payload)
+         if "publication_hash" not in payload:
+             raise ValueError("stored publication hash missing")
+         return cls(payload)
+@@ -444,6 +459,77 @@
+     @property
+     def effective_deadline_at(self) -> datetime:
+         return datetime.fromisoformat(json.loads(self._payload_json)["effective_deadline_at"])
++
++
++class LocalVisualOwnerPublicationRecord(LocalDomainEnvelope, VisualOwnerPublicationRecord):
++    _tag = "visual.owner.publication.local.v1"
++
++    @property
++    def identity(self) -> VisualOwnerIdentity:
++        from cloud_edge_robot_arm.vision.owner_registration import local_owner_identity
++
++        return local_owner_identity(self.object("identity"))
++
++    @property
++    def checkpoint(self) -> ExecutionCheckpoint:
++        return self.model("checkpoint", ExecutionCheckpoint)
++
++    @property
++    def verification_budget(self) -> VerificationBudgetRecord:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++
++        payload = self.object("verification_budget")
++        if payload.get("schema_version") == "recovery.verification-budget.local.v1":
++            raise ValueError("local verification budget requires verification_budget_history")
++        return VerificationBudgetRecord.from_payload(payload)
++
++    @property
++    def verification_budget_history(self) -> VerificationBudgetRecord | LocalVerificationBudgetRecord:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++            LocalVerificationBudgetRecord,
++            VerificationBudgetRecord,
++        )
++
++        payload = self.object("verification_budget")
++        tag = payload.get("schema_version")
++        if tag == "recovery.verification-budget.local.v1":
++            return LocalVerificationBudgetRecord.from_payload(payload)
++        if tag == "recovery.verification-budget.v1":
++            return VerificationBudgetRecord.from_payload(payload)
++        raise ValueError("unsupported verification budget history schema")
++
++    @property
++    def retry_budget(self) -> RecoveryBudget:
++        if self.object("retry_budget").get("schema_version") == "recovery.retry-budget.local.v1":
++            raise ValueError("local retry budget requires retry_budget_history")
++        return self.model("retry_budget", RecoveryBudget)
++
++    @property
++    def retry_budget_history(self) -> RecoveryBudget | LocalRetryBudgetRecord:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import LocalRetryBudgetRecord
++
++        payload = self.object("retry_budget")
++        if "schema_version" in payload:
++            if payload["schema_version"] == "recovery.retry-budget.local.v1":
++                return LocalRetryBudgetRecord.from_payload(payload)
++            raise ValueError("unsupported retry budget history schema")
++        return self.model("retry_budget", RecoveryBudget)
++
++    @property
++    def owner_revision(self) -> int:
++        return self.counter("owner_revision")
++
++    @property
++    def state_generation(self) -> int:
++        return self.counter("state_generation")
++
++    @property
++    def original_plan_hash(self) -> str:
++        return self.string("original_plan_hash")
++
++    @property
++    def effective_deadline_at(self) -> datetime:
++        return self.legacy_deadline()
+ 
+ 
+ def publication(
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py (original R158 before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py (after R175 helper)
+@@ -50,6 +50,13 @@
+ )
+ from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation
++from cloud_edge_robot_arm.vision.local_temporal import (
++    LocalDomainEnvelope,
++    _integer as local_integer,
++    _model as local_model,
++    _object as local_object,
++    _sha as local_sha,
++)
+ from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding, VisualOriginalPlan
+ from cloud_edge_robot_arm.vision.worker_owner import grounded_worker_execution_effect_conditions
+ 
+@@ -355,6 +362,8 @@
+ 
+     @classmethod
+     def from_payload(cls, raw: dict[str, Any]) -> VisualEffectCompletion:
++        if raw.get("schema_version") == "visual.verification.effect-completion.local.v1":
++            return LocalVisualEffectCompletion.from_payload(raw)
+         result = object.__new__(cls)
+         result._store(_plain(raw))
+         return result
+@@ -460,12 +469,17 @@
+ 
+     @classmethod
+     def from_json(cls, raw: str) -> VisualVerificationRouteInput:
++        payload = _load(raw)
++        if payload.get("schema_version") == "visual.verification.route-input.local.v1":
++            return LocalVisualVerificationRouteInput.from_payload(payload)
+         result = object.__new__(cls)
+-        result._store(_load(raw))
++        result._store(payload)
+         return result
+ 
+     @classmethod
+     def from_payload(cls, raw: dict[str, Any]) -> VisualVerificationRouteInput:
++        if raw.get("schema_version") == "visual.verification.route-input.local.v1":
++            return LocalVisualVerificationRouteInput.from_payload(raw)
+         return cls.from_json(canonical(_plain(raw)))
+ 
+     @property
+@@ -529,6 +543,11 @@
+ 
+ 
+ class VisualVerificationRouteRecord(_FrozenJSON):
++    def __new__(cls, raw: dict[str, Any]) -> VisualVerificationRouteRecord:
++        if cls is VisualVerificationRouteRecord and raw.get("schema_version") == "visual.verification.route.local.v1":
++            return LocalVisualVerificationRouteRecord.from_payload(raw)
++        return object.__new__(cls)
++
+     def __init__(self, raw: dict[str, Any]) -> None:
+         fields = {
+             "schema_version",
+@@ -671,6 +690,91 @@
+     @property
+     def reasons(self) -> tuple[str, ...]:
+         return tuple(self.to_payload()["reasons"])
++
++
++class LocalVisualEffectCompletion(LocalDomainEnvelope, VisualEffectCompletion):
++    _tag = "visual.verification.effect-completion.local.v1"
++
++    @property
++    def result(self) -> SkillExecutionResult:
++        return self.model("result", SkillExecutionResult)
++
++    @property
++    def task_id(self) -> str:
++        return self.string("task_id")
++
++    @property
++    def step_id(self) -> str:
++        return self.string("step_id")
++
++    @property
++    def plan_id(self) -> str:
++        return self.string("plan_id")
++
++    @property
++    def robot_id(self) -> str:
++        return self.string("robot_id")
++
++    @property
++    def attempt(self) -> int:
++        return self.counter("attempt")
++
++
++class LocalVisualVerificationRouteInput(LocalDomainEnvelope, VisualVerificationRouteInput):
++    _tag = "visual.verification.route-input.local.v1"
++
++    @property
++    def task_id(self) -> str:
++        return original_from_payload(self.object("original")).identity.task_id
++
++    @property
++    def event_key(self) -> str:
++        return self.string("event_key")
++
++    def source_key(self) -> str:
++        original = original_from_payload(self.object("original"))
++        observation = self.online().observation
++        return digest({
++            "schema_version": "visual.verification.source-key.local.v1",
++            "original_time_hash": self.local_time.digest(),
++            "original_plan_hash": original.digest(),
++            "task_id": original.identity.task_id,
++            "step_id": self.string("step_id"), "attempt": self.counter("attempt"),
++            "phase": self.string("phase"), "frame_id": observation.observation_id,
++            "frame_checksum": observation.checksum_sha256,
++            "plan_version": original.contract.plan_version,
++            "command_seq": original.contract.command_seq,
++            "requirements_hash": original.requirements[self.string("step_id")].digest(),
++        })
++
++    def semantic_hash(self) -> str:
++        body = self.semantic
++        body.pop("event_key")
++        return digest({"schema_version": self._tag, "payload": body,
++                       "original_time": self.local_time.to_payload()})
++
++    def online(self) -> OnlineEvidenceSnapshot:
++        body = self.object("online")
++        return OnlineEvidenceSnapshot(
++            local_model(body["observation"], RGBDObservation),
++            local_model(body["robot_state"], RobotState),
++            local_object(body["visual_facts"]),
++            local_integer(body["plan_version"]),
++            local_integer(body["command_seq"]),
++            local_sha(body["context_hash"]),
++        )
++
++
++class LocalVisualVerificationRouteRecord(LocalDomainEnvelope, VisualVerificationRouteRecord):
++    _tag = "visual.verification.route.local.v1"
++
++    @property
++    def route(self) -> str:
++        return self.string("route")
++
++    @property
++    def reasons(self) -> tuple[str, ...]:
++        return self.strings("reasons")
+ 
+ 
+ class VisualVerificationRouteWriteResult:
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py (original R158 before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/verification_router.py (after R175 helper)
+@@ -16,6 +16,7 @@
+ 
+ from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
+ from cloud_edge_robot_arm.edge.evidence.conditions import ConditionStatus, ConditionVerdict
++from cloud_edge_robot_arm.vision.local_temporal import LocalVerificationBudgetState
+ 
+ 
+ @dataclass(frozen=True)
+@@ -84,10 +85,14 @@
+ 
+ def route_verification(
+     verdicts: Sequence[ConditionVerdict],
+-    budget: VerificationBudgetState,
++    budget: VerificationBudgetState | LocalVerificationBudgetState,
+     capabilities: set[DecisionAction],
+ ) -> DecisionAction:
+     """UNKNOWN only reobserves; FAIL may use a supported, budgeted recovery."""
++    if isinstance(budget, LocalVerificationBudgetState):
++        # T1 only decodes detached history. A recorded VALID decision cannot
++        # supply the private coupled job/event consumer introduced by T2/T3.
++        return DecisionAction.STOP
+     if budget.exhausted_reason is not None:
+         return DecisionAction.STOP
+     if datetime.now(UTC) >= budget.deadline_at:
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py (original R158 before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py (after R175 helper)
+@@ -10,7 +10,7 @@
+ from datetime import UTC, datetime
+ from math import isfinite
+ from types import MappingProxyType
+-from typing import TYPE_CHECKING, Any
++from typing import TYPE_CHECKING, Any, overload
+ 
+ from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
+ from cloud_edge_robot_arm.contracts.models import (
+@@ -39,6 +39,11 @@
+     VerificationBudget,
+     VerificationBudgetState,
+ )
++from cloud_edge_robot_arm.vision.local_temporal import (
++    JSONValue,
++    LocalDomainEnvelope,
++    LocalVerificationBudgetState,
++)
+ 
+ if TYPE_CHECKING:
+     from cloud_edge_robot_arm.repositories.event_autonomy.protocol import EventAutonomyRepository
+@@ -91,7 +96,19 @@
+     return state
+ 
+ 
+-def copy_budget(state: VerificationBudgetState) -> VerificationBudgetState:
++@overload
++def copy_budget(state: VerificationBudgetState) -> VerificationBudgetState: ...
++
++
++@overload
++def copy_budget(state: LocalVerificationBudgetState) -> LocalVerificationBudgetState: ...
++
++
++def copy_budget(
++    state: VerificationBudgetState | LocalVerificationBudgetState,
++) -> VerificationBudgetState | LocalVerificationBudgetState:
++    if isinstance(state, LocalVerificationBudgetState):
++        return LocalVerificationBudgetState.from_payload(state.to_payload())
+     return _state_from_payload(json.loads(json.dumps(_state_payload(state), allow_nan=False)))
+ 
+ 
+@@ -146,6 +163,109 @@
+ 
+     def detached(self) -> VerificationBudgetRecord:
+         return type(self).from_payload(self.to_payload())
++
++
++class LocalVerificationBudgetRecord(LocalDomainEnvelope):
++    """Strict detached pool history; construction cannot initialize a live pool."""
++
++    _tag = "recovery.verification-budget.local.v1"
++
++    @property
++    def task_id(self) -> str:
++        return self.string("task_id")
++
++    @property
++    def state(self) -> LocalVerificationBudgetState:
++        return LocalVerificationBudgetState.from_payload(self.object("state"))
++
++    @property
++    def revision(self) -> int:
++        return self.counter("revision")
++
++    @property
++    def content_hash(self) -> str:
++        return self.string("content_hash")
++
++
++class LocalRetryBudgetRecord(LocalDomainEnvelope):
++    """Immutable retry history; decoding cannot create or replenish a live budget."""
++
++    _tag = "recovery.retry-budget.local.v1"
++
++    @property
++    def budget_id(self) -> str:
++        return self.string("budget_id")
++
++    @property
++    def task_id(self) -> str:
++        return self.string("task_id")
++
++    @property
++    def per_step_retry_limit(self) -> int:
++        return self.counter("per_step_retry_limit")
++
++    @property
++    def per_skill_retry_limit(self) -> int:
++        return self.counter("per_skill_retry_limit")
++
++    @property
++    def task_total_retry_limit(self) -> int:
++        return self.counter("task_total_retry_limit")
++
++    @property
++    def retry_count_used(self) -> int:
++        return self.counter("retry_count_used")
++
++    @property
++    def task_retry_count(self) -> int:
++        return self.counter("task_retry_count")
++
++    def _retry_counts(self, name: str) -> dict[str, int]:
++        result: dict[str, int] = {}
++        for key, value in self.object(name).items():
++            if type(value) is not int or value < 0:
++                raise ValueError("strict nonnegative retry history counter required")
++            result[key] = value
++        return result
++
++    @property
++    def step_retry_counts(self) -> dict[str, int]:
++        return self._retry_counts("step_retry_counts")
++
++    @property
++    def skill_retry_counts(self) -> dict[str, int]:
++        return self._retry_counts("skill_retry_counts")
++
++    @property
++    def event_retry_counts(self) -> dict[str, int]:
++        return self._retry_counts("event_retry_counts")
++
++    @property
++    def retry_cooldown_ms(self) -> int:
++        return self.counter("retry_cooldown_ms")
++
++    @property
++    def retry_backoff_policy(self) -> str:
++        return self.string("retry_backoff_policy")
++
++    @property
++    def effective_retry_limit(self) -> int:
++        return self.counter("effective_retry_limit")
++
++    @property
++    def remaining_retries(self) -> int:
++        return self.counter("remaining_retries")
++
++    @property
++    def scene_version(self) -> int:
++        return self.counter("scene_version")
++
++    @property
++    def original_recovery_reference(self) -> dict[str, JSONValue]:
++        reference = self.local_time.to_payload()["recovery_reference"]
++        if not isinstance(reference, dict):
++            raise ValueError("original recovery reference must be a JSON object")
++        return dict(reference)
+ 
+ 
+ # Keep the ten roadmap fields positional; binding/CAS metadata is keyword-only.
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py (original R158 before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py (after R175 helper)
+@@ -0,0 +1,1087 @@
++"""Strict detached Stage-B histories. Serialization never grants live authority."""
++from __future__ import annotations
++
++from collections.abc import Mapping
++from dataclasses import dataclass
++from datetime import datetime
++import hashlib
++import json
++from math import ceil as math_ceil, isfinite
++from typing import TYPE_CHECKING, ClassVar, Self
++
++from pydantic import BaseModel
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudget
++    from cloud_edge_robot_arm.vision.owner_registration import VisualOriginalPlan
++
++type JSONValue = None | bool | int | float | str | list[JSONValue] | dict[str, JSONValue]
++
++FIELDS: dict[str, frozenset[str]] = {
++    "visual.bootstrap.definition.local.v1": frozenset("scope episode_id user_instruction task_timeout_s verification_limits role_bundle_hash model_snapshot_hash source_hashes".split()),
++    "visual.bootstrap.record.local.v1": frozenset("scope definition revision state initial_capture_claimed pending observation camera_descriptor_hash draft planning_source_usable proposal_hash terminal_reason adopted_original_hash history".split()),
++    "visual.bootstrap.transition.local.v1": frozenset("scope bootstrap_id definition_hash expected_record_hash kind event_key robot_state claim_id observation draft".split()),
++    "visual.bootstrap.promotion.local.v1": frozenset("scope bootstrap_id definition_hash expected_record_hash event_key original robot_state".split()),
++    "visual.supervision.definition.local.v1": frozenset("scope original publication task_timeout_s supervision_period_s model_snapshot_hash role_bundle job_configuration_hash".split()),
++    "visual.supervision.record.local.v1": frozenset("scope definition revision max_periodic_captures max_supervisor_calls captures_reserved supervisor_calls_reserved last_capture_cursor last_wait_cursor wait_seconds_reserved claims history".split()),
++    "visual.supervision.transition.local.v1": frozenset("scope task_id definition_hash expected_revision expected_record_hash original publication robot_state step_id cursor kind event_key model_snapshot_hash role_bundle claim_id observation context decision wait_duration_s wait_elapsed_s".split()),
++    "visual.owner.original.local.v1": frozenset("binding_scope identity contract contract_provenance proposal_hash role_bundle_hash compiler_source_hashes source_hashes requirements dependencies".split()),
++    "visual.owner.grounding.local.v1": frozenset("binding_scope original_plan_hash current_identity original_requirements owner_revision state_generation source_checkpoint_hash observation_id observation_checksum_sha256 calibration_version plan_version command_seq grounding_policy_hash grounding_inputs_hash duration_check_hash grounding_source_hashes grounded_step expected_duration_s".split()),
++    "visual.owner.publication.local.v1": frozenset("binding_scope mode_scope identity original_plan_hash contract_hash owner_revision state_generation checkpoint verification_budget retry_budget grounding operation_hash source_owner_revision publication_hash".split()),
++    "visual.verification.route-input.local.v1": frozenset("scope original publication online step_id attempt phase event_key execution_contract completion grounding_receipt".split()),
++    "visual.verification.route.local.v1": frozenset("scope input input_hash semantic_hash source_key route reasons verdicts before_verification_budget after_verification_budget produced_publication produced_publication_hash source_context_hash native_context_hash evidence_content_hash context_domains capture_claim_id camera_source_descriptor_sha256".split()),
++    "visual.verification.effect-completion.local.v1": frozenset("scope result task_id plan_id robot_id step_id attempt plan_version command_seq before_observation_id execution_payload_hash source_checkpoint_hash source_hashes".split()),
++    "recovery.verification-budget.local.v1": frozenset("task_id state revision content_hash".split()),
++    "recovery.retry-budget.local.v1": frozenset("budget_id task_id per_step_retry_limit per_skill_retry_limit task_total_retry_limit retry_count_used task_retry_count step_retry_counts skill_retry_counts event_retry_counts retry_cooldown_ms retry_backoff_policy effective_retry_limit remaining_retries scene_version".split()),
++}
++OUTER_FIELDS = frozenset("schema_version payload original_time decision transaction diagnostics".split())
++ORIGINAL_FIELDS = frozenset("schema_version app_domain task_origin_event_id task_reference verification_reference recovery_reference lease_identity source_hashes contract_provenance".split())
++LEASE_IDENTITY_FIELDS = frozenset("job_id run_id worker_id lease_id attempt epoch source_identity original_acquisition".split())
++REFERENCE_FIELDS = frozenset("schema_version window_id kind kind_policy budget_semantics budget_ns domain origin_domain task_origin_event_id event_id source_hashes source_identity job_id run_id worker_id lease_id attempt fencing episode_id parents age_constraints hard_deadlines deadline_ns deadline_semantics effective_upper lease_deadline_domain live_authority".split())
++DECISION_FIELDS = frozenset("schema_version operation_id operation_sha256 original_time_hash app_domain app_current app_verdict app_references lease_observation lease_epoch lease_generation lease_row_revision lease_row_digest source_identity job_id run_id worker_id lease_id attempt disposition reasons".split())
++TRANSACTION_FIELDS = frozenset("schema_version operation_id operation_sha256 job_id attempt lease_id epoch generation row_revision job_database_id event_repository_id event_kind event_key expected_event_revision event_revision event_record_hash job_receipt_hash event_receipt_hash phase failure_reason".split())
++STATE_FIELDS = frozenset("remaining_reobservations remaining_retries consecutive_no_progress limits previous_conditions exhausted_reason verification_rounds original_budget_reference".split())
++LIMIT_FIELDS = frozenset("max_reobservations max_retries max_no_progress deadline_s".split())
++
++
++def _copy(value: object) -> JSONValue:
++    if value is None or type(value) in (bool, str):
++        if isinstance(value, (bool, str)) or value is None:
++            return value
++    if type(value) is int:
++        if not -(2**63) < value < 2**63:
++            raise ValueError("bounded integral JSON required")
++        return value
++    if type(value) is float:
++        if not isfinite(value):
++            raise ValueError("finite JSON required")
++        return value
++    if isinstance(value, Mapping):
++        result: dict[str, JSONValue] = {}
++        for key, item in value.items():
++            if type(key) is not str or key in result:
++                raise ValueError("unique strict JSON keys required")
++            result[key] = _copy(item)
++        return result
++    if type(value) is list:
++        return [_copy(item) for item in value]
++    raise ValueError("detached JSON data required; live objects are forbidden")
++
++
++def _object(value: object, fields: frozenset[str] | None = None) -> dict[str, JSONValue]:
++    copied = _copy(value)
++    if not isinstance(copied, dict) or (fields is not None and set(copied) != fields):
++        raise ValueError("exact complete object fields required")
++    return copied
++
++
++def _array(value: JSONValue) -> list[JSONValue]:
++    if not isinstance(value, list):
++        raise ValueError("strict JSON array required")
++    return value
++
++
++def _text(value: JSONValue) -> str:
++    if type(value) is not str or not value.strip():
++        raise ValueError("nonempty text required")
++    return value
++
++
++def _integer(value: JSONValue, *, positive: bool = False) -> int:
++    if type(value) is not int or value < (1 if positive else 0):
++        raise ValueError("strict nonnegative integer required")
++    return value
++
++
++def _number(value: JSONValue, *, positive: bool = False) -> float:
++    if type(value) not in (int, float) or not isinstance(value, (int, float)) or not isfinite(value):
++        raise ValueError("strict finite number required")
++    if value < 0 or (positive and value <= 0):
++        raise ValueError("positive policy duration required")
++    return float(value)
++
++
++def _sha(value: JSONValue) -> str:
++    text = _text(value)
++    if len(text) != 64 or any(char not in "0123456789abcdef" for char in text):
++        raise ValueError("SHA256 required")
++    return text
++
++
++def _canonical(value: JSONValue) -> str:
++    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
++
++
++def _hash(value: JSONValue) -> str:
++    return hashlib.sha256(_canonical(value).encode()).hexdigest()
++
++
++def _hashes(value: JSONValue) -> dict[str, JSONValue]:
++    hashes = _object(value)
++    if not hashes:
++        raise ValueError("nonempty source inventory required")
++    for name, digest in hashes.items():
++        _text(name)
++        _sha(digest)
++    return hashes
++
++
++def _domain(value: JSONValue) -> dict[str, JSONValue]:
++    # The frozen P5 pure domain validator has no issuer/registry side effect.
++    from cloud_edge_robot_arm.vision.operational_windows import _validate_domain
++
++    domain = _object(value)
++    _validate_domain(domain)
++    return domain
++
++
++def _bracket(value: JSONValue, *, event: bool = True) -> dict[str, JSONValue]:
++    fields = frozenset("domain event_identity lower_ns upper_ns".split()) if event else frozenset("domain lower_ns upper_ns".split())
++    bracket = _object(value, fields)
++    _domain(bracket["domain"])
++    if event:
++        _text(bracket["event_identity"])
++    if _integer(bracket["lower_ns"]) > _integer(bracket["upper_ns"]):
++        raise ValueError("reversed detached bracket")
++    return bracket
++
++
++def _lease_segment_receipt(value: JSONValue) -> dict[str, JSONValue]:
++    """Validate and preserve a detached raw broker receipt, without issuing one."""
++    receipt = _object(value, frozenset(
++        "domain event_id lower_ns upper_ns deadline_ns budget_ns end_exclusive".split()
++    ))
++    _domain(receipt["domain"])
++    _text(receipt["event_id"])
++    lower = _integer(receipt["lower_ns"])
++    upper = _integer(receipt["upper_ns"])
++    budget = _integer(receipt["budget_ns"], positive=True)
++    deadline = _integer(receipt["deadline_ns"], positive=True)
++    if lower > upper or deadline != lower + budget or receipt["end_exclusive"] is not True:
++        raise ValueError("exact detached broker HARD_OPEN receipt required")
++    return receipt
++
++
++def _reference(value: JSONValue) -> dict[str, JSONValue]:
++    ref = _object(value, REFERENCE_FIELDS)
++    if ref["schema_version"] != "simulation.operational-window.local.v1":
++        raise ValueError("exact local window tag required")
++    if ref["lease_deadline_domain"] != "SEPARATE_D_LEASE_DECISION" or ref["live_authority"] != "NOT_EXPORTED":
++        raise ValueError("D_app reference must exclude renewable D_lease authority")
++    if ref["origin_domain"] != "ORIGINAL_TASK_D" or ref["deadline_semantics"] != "HARD_OPEN":
++        raise ValueError("fixed original task causality required")
++    _domain(ref["domain"])
++    for key in ("window_id", "event_id", "task_origin_event_id", "job_id", "run_id", "worker_id", "lease_id", "fencing"):
++        _text(ref[key])
++    _sha(ref["source_identity"])
++    _integer(ref["attempt"], positive=True)
++    _hashes(ref["source_hashes"])
++    budget = _integer(ref["budget_ns"], positive=True)
++    parents = [_text(parent) for parent in _array(ref["parents"])]
++    if len(parents) != len(set(parents)) or ref["window_id"] in parents:
++        raise ValueError("duplicate/self parent identity")
++    bootstrap = ref["kind"] == "bootstrap"
++    if ref["kind"] not in {"bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"}:
++        raise ValueError("known local window kind required")
++    if ref["kind_policy"] != ("HARD_ORIGINAL_TASK_LIFECYCLE" if bootstrap else "AGE_CLOSED") or ref["budget_semantics"] != ("HARD_OPEN" if bootstrap else "AGE_CLOSED"):
++        raise ValueError("exact original window policy required")
++    if bootstrap and (parents or ref["event_id"] != ref["task_origin_event_id"]):
++        raise ValueError("original task window has no unissued parent")
++    ages = _array(ref["age_constraints"])
++    hard = _array(ref["hard_deadlines"])
++    if not hard or (not bootstrap and (not ages or budget > 5_000_000_000)):
++        raise ValueError("original hard/age constraints required")
++    endpoints: list[int] = []
++    origins: set[int] = set()
++    for raw in hard:
++        item = _object(raw, frozenset("origin_event_id source_id budget_ns deadline_ns end_exclusive".split()))
++        if item["origin_event_id"] != ref["task_origin_event_id"] or item["end_exclusive"] is not True:
++            raise ValueError("fixed original HARD_OPEN origin required")
++        _text(item["source_id"])
++        end = _integer(item["deadline_ns"], positive=True)
++        length = _integer(item["budget_ns"], positive=True)
++        if end < length:
++            raise ValueError("hard origin cannot precede domain counter")
++        origins.add(end - length)
++        endpoints.append(end)
++    if len(origins) != 1:
++        raise ValueError("all obligations must retain original task origin")
++    hard_end = min(endpoints)
++    if _integer(ref["deadline_ns"], positive=True) != hard_end:
++        raise ValueError("original deadline minimum changed")
++    for raw in ages:
++        item = _object(raw, frozenset("event_id source_id lower_ns upper_ns max_age_ns upper_age_inclusive expiry_upper_ns".split()))
++        _text(item["event_id"]); _text(item["source_id"])
++        lower = _integer(item["lower_ns"]); upper = _integer(item["upper_ns"])
++        maximum = _integer(item["max_age_ns"], positive=True)
++        expiry = _integer(item["expiry_upper_ns"], positive=True)
++        if lower > upper or maximum > 5_000_000_000 or expiry != lower + maximum or item["upper_age_inclusive"] is not True:
++            raise ValueError("inconsistent AGE_CLOSED constraint")
++        endpoints.append(expiry)
++    effective = _object(ref["effective_upper"], frozenset(("value_ns", "inclusive")))
++    if effective["value_ns"] != min(endpoints) or type(effective["inclusive"]) is not bool or effective["inclusive"] != (min(endpoints) < hard_end):
++        raise ValueError("effective original bound changed")
++    return ref
++
++
++def _original(value: JSONValue) -> dict[str, JSONValue]:
++    original = _object(value, ORIGINAL_FIELDS)
++    if original["schema_version"] != "visual.local-original-time.v1":
++        raise ValueError("exact immutable original tag required")
++    app_domain = _domain(original["app_domain"])
++    origin = _text(original["task_origin_event_id"])
++    hashes = _hashes(original["source_hashes"])
++    identity = _object(original["lease_identity"], LEASE_IDENTITY_FIELDS)
++    for key in ("job_id", "run_id", "worker_id", "lease_id", "epoch"):
++        _text(identity[key])
++    _integer(identity["attempt"], positive=True); _sha(identity["source_identity"])
++    acquisition = _lease_segment_receipt(identity["original_acquisition"])
++    if acquisition["domain"] == app_domain:
++        raise ValueError("app and broker authority domains must remain distinct")
++    references = [_reference(original[name]) for name in ("task_reference", "verification_reference", "recovery_reference")]
++    task = references[0]
++    available = {_text(ref["window_id"]) for ref in references}
++    for ref in references:
++        if ref["domain"] != app_domain or ref["task_origin_event_id"] != origin or ref["source_hashes"] != hashes:
++            raise ValueError("immutable original domain/origin/source changed")
++        if ref["source_identity"] != identity["source_identity"] or any(ref[key] != identity[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")):
++            raise ValueError("reference original job/fence changed")
++        if any(_text(parent) not in available for parent in _array(ref["parents"])):
++            raise ValueError("unissued detached original parent")
++        if ref["hard_deadlines"] != task["hard_deadlines"]:
++            raise ValueError("original obligations cannot be extended or rebound")
++        if ref["fencing"] != task["fencing"]:
++            raise ValueError("immutable original references must retain the same fence")
++    provenance = _object(original["contract_provenance"], frozenset(("kind", "content_sha256")))
++    if provenance["kind"] not in {"LOCAL_APP_PRODUCED", "EXTERNAL_UTC"}:
++        raise ValueError("explicit immutable contract provenance required")
++    _sha(provenance["content_sha256"])
++    return original
++
++
++def _decision(value: JSONValue) -> dict[str, JSONValue]:
++    decision = _object(value, DECISION_FIELDS)
++    if decision["schema_version"] != "visual.local-two-authority-decision.v1":
++        raise ValueError("exact two-authority decision tag required")
++    for key in ("operation_id", "lease_epoch", "job_id", "run_id", "worker_id", "lease_id"):
++        _text(decision[key])
++    for key in ("operation_sha256", "original_time_hash", "lease_row_digest", "source_identity"):
++        _sha(decision[key])
++    for key in ("lease_generation", "lease_row_revision", "attempt"):
++        _integer(decision[key], positive=True)
++    domain = _domain(decision["app_domain"])
++    current = _bracket(decision["app_current"])
++    if current["domain"] != domain:
++        raise ValueError("current app event belongs to another domain")
++    refs = [_reference(raw) for raw in _array(decision["app_references"])]
++    if not refs or any(ref["domain"] != domain for ref in refs):
++        raise ValueError("same original D_app references required")
++    app = _object(decision["app_verdict"], frozenset(("status", "reasons")))
++    _text(app["status"])
++    observation = _object(decision["lease_observation"], frozenset(
++        "status reasons domain original_acquisition segment current job_id lease_id worker_id attempt generation source_identity schema stage_label".split()
++    ))
++    if observation["schema"] != "simulation.operational-lease-observation.v1" or observation["stage_label"] != "LEASE_FOUNDATION_WITH_LEGACY_UTC_VETO":
++        raise ValueError("exact unchanged broker observation schema/stage required")
++    _text(observation["status"])
++    lease_domain = _domain(observation["domain"])
++    if lease_domain == domain:
++        raise ValueError("never merge D_app and D_lease")
++    if _integer(observation["generation"], positive=True) != decision["lease_generation"] or any(observation[key] != decision[key] for key in ("job_id", "worker_id", "lease_id", "attempt", "source_identity")):
++        raise ValueError("decision current lease/fence mismatch")
++    acquisition = _lease_segment_receipt(observation["original_acquisition"])
++    segment = _lease_segment_receipt(observation["segment"])
++    lease_current = _bracket(observation["current"], event=False)
++    if any(item["domain"] != lease_domain for item in (acquisition, segment, lease_current)):
++        raise ValueError("broker acquisition/current segment/current bracket domain changed")
++    if acquisition["budget_ns"] != segment["budget_ns"]:
++        raise ValueError("renewal cannot change the frozen broker TTL")
++    if decision["disposition"] not in {"VALID", "REJECTED", "UNKNOWN"}:
++        raise ValueError("detached disposition required")
++    for raw in (decision["reasons"], app["reasons"], observation["reasons"]):
++        for reason in _array(raw):
++            _text(reason)
++    if decision["disposition"] == "VALID":
++        if app["status"] != "VALID" or observation["status"] != "VALID":
++            raise ValueError("both independent recorded authorities must be valid")
++        app_upper = _integer(current["upper_ns"])
++        for ref in refs:
++            effective = _object(ref["effective_upper"])
++            endpoint = _integer(effective["value_ns"])
++            if app_upper >= _integer(ref["deadline_ns"], positive=True) or app_upper > endpoint or (app_upper == endpoint and effective["inclusive"] is not True):
++                raise ValueError("recorded D_app decision crosses original HARD_OPEN/AGE_CLOSED bounds")
++        if _integer(lease_current["upper_ns"]) >= _integer(segment["deadline_ns"], positive=True):
++            raise ValueError("recorded D_lease decision crosses current segment HARD_OPEN bound")
++    return decision
++
++
++def _join_decision(original: dict[str, JSONValue], decision: dict[str, JSONValue]) -> None:
++    identity = _object(original["lease_identity"])
++    if decision["original_time_hash"] != _hash(original) or decision["app_domain"] != original["app_domain"]:
++        raise ValueError("decision must bind the exact immutable original")
++    for name in ("job_id", "run_id", "worker_id", "lease_id", "attempt", "source_identity"):
++        if decision[name] != identity[name]:
++            raise ValueError("current decision cannot replace original identity")
++    if decision["lease_epoch"] != identity["epoch"]:
++        raise ValueError("original lease epoch changed")
++    if _object(decision["lease_observation"])["original_acquisition"] != identity["original_acquisition"]:
++        raise ValueError("renewal cannot replace the immutable raw original acquisition")
++    task = _object(original["task_reference"])
++    for raw in _array(decision["app_references"]):
++        reference = _object(raw)
++        if reference["task_origin_event_id"] != original["task_origin_event_id"] or reference["source_hashes"] != original["source_hashes"] or reference["source_identity"] != identity["source_identity"] or reference["hard_deadlines"] != task["hard_deadlines"] or reference["fencing"] != task["fencing"]:
++            raise ValueError("current app evidence cannot replace original obligations/source/fence")
++        for name in ("job_id", "run_id", "worker_id", "lease_id", "attempt"):
++            if reference[name] != identity[name]:
++                raise ValueError("current app reference job identity changed")
++
++
++def _transaction(value: JSONValue) -> dict[str, JSONValue]:
++    transaction = _object(value, TRANSACTION_FIELDS)
++    if transaction["schema_version"] != "visual.local-publication-transaction.v1":
++        raise ValueError("exact transaction history tag required")
++    for key in ("operation_id", "job_id", "lease_id", "epoch", "job_database_id", "event_repository_id", "event_kind", "event_key"):
++        _text(transaction[key])
++    for key in ("operation_sha256", "event_record_hash"):
++        _sha(transaction[key])
++    for key in ("attempt", "generation"):
++        _integer(transaction[key], positive=True)
++    for key in ("row_revision", "expected_event_revision", "event_revision"):
++        _integer(transaction[key])
++    if transaction["phase"] not in {"PENDING", "EVENT_COMMITTED", "COMPLETE", "REJECTED", "UNKNOWN"}:
++        raise ValueError("transaction phase must remain descriptive")
++    for key in ("job_receipt_hash", "event_receipt_hash"):
++        if transaction[key] is not None:
++            _sha(transaction[key])
++    if transaction["phase"] == "COMPLETE" and (transaction["job_receipt_hash"] is None or transaction["event_receipt_hash"] is None):
++        raise ValueError("completed history requires both durable receipt hashes")
++    if transaction["failure_reason"] is not None:
++        _text(transaction["failure_reason"])
++    return transaction
++
++
++def _state(value: JSONValue) -> dict[str, JSONValue]:
++    state = _object(value, STATE_FIELDS)
++    limits = _object(state["limits"], LIMIT_FIELDS)
++    for name in ("max_reobservations", "max_retries", "max_no_progress"):
++        _integer(limits[name])
++    deadline_s = _number(limits["deadline_s"], positive=True)
++    for name in ("remaining_reobservations", "remaining_retries", "consecutive_no_progress", "verification_rounds"):
++        _integer(state[name])
++    if _integer(state["remaining_reobservations"]) > _integer(limits["max_reobservations"]) or _integer(state["remaining_retries"]) > _integer(limits["max_retries"]):
++        raise ValueError("spent counters cannot exceed frozen limits")
++    reference = _reference(state["original_budget_reference"])
++    hard = [_object(raw) for raw in _array(reference["hard_deadlines"])]
++    if int(deadline_s * 1_000_000_000) > min(_integer(item["budget_ns"], positive=True) for item in hard):
++        raise ValueError("budget duration cannot extend the original obligation")
++    for name, raw in _object(state["previous_conditions"]).items():
++        _text(name)
++        pair = _array(raw)
++        if len(pair) != 2 or pair[0] not in {"UNKNOWN", "FAIL", "PASS"}:
++            raise ValueError("complete typed condition history required")
++        if pair[1] is not None:
++            _number(pair[1])
++    if state["exhausted_reason"] is not None:
++        _text(state["exhausted_reason"])
++    return state
++
++
++def _model[Model: BaseModel](value: JSONValue, model: type[Model]) -> Model:
++    parsed = model.model_validate_json(_canonical(value))
++    if _canonical(_copy(parsed.model_dump(mode="json"))) != _canonical(value):
++        raise ValueError("complete strict semantic model required")
++    return parsed
++
++
++def _audit_original(value: JSONValue) -> VisualOriginalPlan:
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import original_from_payload
++
++    return original_from_payload(_object(value))
++
++
++def _audit_publication(value: JSONValue, original: VisualOriginalPlan | None = None) -> dict[str, JSONValue]:
++    """Validate detached audit sources without consulting the current wall clock."""
++    from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint, RecoveryBudget
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++    from cloud_edge_robot_arm.repositories.event_autonomy.hashing import stable_payload_hash
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import grounding_from_payload, strict_retry
++    from cloud_edge_robot_arm.vision.owner_registration import local_owner_identity
++
++    raw = _object(value)
++    if raw.get("schema_version") == "visual.owner.publication.local.v1":
++        if "payload" in raw:
++            raw = LocalEnvelope.from_payload(raw).semantic
++        else:
++            _object(raw, FIELDS["visual.owner.publication.local.v1"] | {"schema_version", "original_time"})
++            raw = {name: raw[name] for name in FIELDS["visual.owner.publication.local.v1"]}
++    else:
++        raw = _object(raw, frozenset(
++            "schema_version binding_scope mode_scope identity original_plan_hash contract_hash owner_revision state_generation checkpoint verification_budget retry_budget grounding effective_deadline_at operation_hash source_owner_revision published_at publication_hash".split()
++        ))
++        if raw["schema_version"] != "visual.owner.publication.v1":
++            raise ValueError("exact preserved audit publication tag required")
++        content = dict(raw)
++        declared = content.pop("publication_hash")
++        if _sha(declared) != _hash(content):
++            raise ValueError("audit publication content hash differs")
++        for name in ("effective_deadline_at", "published_at"):
++            stamp = datetime.fromisoformat(_text(raw[name]))
++            if stamp.tzinfo is None or stamp.utcoffset() is None:
++                raise ValueError("aware preserved audit timestamp required")
++    if raw["binding_scope"] != "DURABLE_BINDING_ONLY" or raw["mode_scope"] != "NOT_INCLUDED":
++        raise ValueError("publication remains a durable binding only")
++    identity = local_owner_identity(_object(raw["identity"]))
++    checkpoint = _model(raw["checkpoint"], ExecutionCheckpoint)
++    checkpoint_body = _object(raw["checkpoint"])
++    checkpoint_body["checkpoint_hash"] = ""
++    if checkpoint.checkpoint_hash != stable_payload_hash(checkpoint_body):
++        raise ValueError("audit checkpoint content hash differs")
++    if (checkpoint.task_id, checkpoint.plan_id, checkpoint.robot_id) != (identity.task_id, identity.plan_id, identity.robot_id):
++        raise ValueError("publication checkpoint identity differs")
++    pool = _object(raw["verification_budget"])
++    if pool.get("schema_version") == "recovery.verification-budget.local.v1":
++        pool_task = LocalEnvelope.from_payload(pool).string("task_id")
++    else:
++        pool_task = VerificationBudgetRecord.from_payload(pool).task_id
++    retry_raw = _object(raw["retry_budget"])
++    if retry_raw.get("schema_version") == "recovery.retry-budget.local.v1":
++        retry_task = LocalEnvelope.from_payload(retry_raw).string("task_id")
++    else:
++        retry_task = strict_retry(_model(retry_raw, RecoveryBudget)).task_id
++    if pool_task != identity.task_id or retry_task != identity.task_id:
++        raise ValueError("publication budget task binding differs")
++    _integer(raw["owner_revision"], positive=True)
++    _integer(raw["state_generation"])
++    if raw["source_owner_revision"] is not None:
++        _integer(raw["source_owner_revision"])
++    for name in ("original_plan_hash", "contract_hash", "operation_hash", "publication_hash"):
++        _sha(raw[name])
++    if raw["grounding"] is not None:
++        grounding_from_payload(_object(raw["grounding"]))
++    if original is not None and (identity != original.identity or raw["original_plan_hash"] != original.digest() or raw["contract_hash"] != stable_payload_hash(original.contract)):
++        raise ValueError("publication must retain its complete original source")
++    return raw
++
++
++def _audit_supervision_definition(value: JSONValue) -> tuple[str, int]:
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import _lease
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import _bundle
++
++    raw = _object(value)
++    if raw.get("schema_version") == "visual.supervision.definition.local.v1":
++        envelope = LocalEnvelope.from_payload(raw)
++        prior = _audit_original(envelope.semantic["original"])
++        reference = _object(envelope.local_time.to_payload()["verification_reference"])
++        lengths = [_integer(_object(item)["budget_ns"], positive=True) for item in _array(reference["hard_deadlines"])]
++        period = envelope.semantic["supervision_period_s"]
++        maximum = 0 if period is None else max(0, math_ceil(min(lengths) / 1_000_000_000 / _number(period, positive=True)) - 1)
++        return prior.identity.task_id, maximum
++    required = frozenset("schema_version scope original publication lease task_started_at task_timeout_s supervision_period_s model_snapshot_hash role_bundle job_configuration_hash".split())
++    _object(raw, required | ({"operational_windows"} if "operational_windows" in raw else set()))
++    if raw["schema_version"] != "visual.supervision.definition.v1" or raw["scope"] != "SUPERVISION_SOURCE_ONLY":
++        raise ValueError("exact preserved supervision definition required")
++    prior = _audit_original(raw["original"])
++    _audit_publication(raw["publication"], prior)
++    lease = _lease(_object(raw["lease"]))
++    if lease.identity(episode_id=prior.identity.episode_id, task_id=prior.identity.task_id, plan_id=prior.identity.plan_id, robot_id=prior.identity.robot_id) != prior.identity:
++        raise ValueError("audit supervision lease/original identity differs")
++    if _bundle(_object(raw["role_bundle"])).digest() != prior.role_bundle_hash:
++        raise ValueError("audit supervision role policy differs")
++    start = datetime.fromisoformat(_text(raw["task_started_at"]))
++    if start.tzinfo is None or start.utcoffset() is None:
++        raise ValueError("aware original audit timestamp required")
++    _number(raw["task_timeout_s"], positive=True)
++    _sha(raw["model_snapshot_hash"])
++    if raw["job_configuration_hash"] is not None:
++        _sha(raw["job_configuration_hash"])
++    period = raw["supervision_period_s"]
++    duration = (prior.effective_deadline_at - start).total_seconds()
++    maximum = 0 if period is None else max(0, math_ceil(duration / _number(period, positive=True)) - 1)
++    return prior.identity.task_id, maximum
++
++
++def _audit_pool(value: JSONValue) -> dict[str, JSONValue]:
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++
++    raw = _object(value)
++    if raw.get("schema_version") == "recovery.verification-budget.local.v1":
++        return LocalEnvelope.from_payload(raw).semantic
++    _object(raw, frozenset("schema_version task_id state revision created_at updated_at content_hash".split()))
++    if raw["schema_version"] != "recovery.verification-budget.v1":
++        raise ValueError("exact preserved budget source required")
++    VerificationBudgetRecord.from_payload(raw)
++    return raw
++
++
++def _history(value: JSONValue, original: dict[str, JSONValue], *, bootstrap: bool) -> int:
++    """New D histories and explicitly preserved legacy audit history stay distinct."""
++    from cloud_edge_robot_arm.contracts.models import RecoveryBudget
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
++        VisualBootstrapPromotionInput, VisualBootstrapTransitionInput,
++    )
++    events = _array(value)
++    keys: set[str] = set()
++    for item in events:
++        event = _object(item)
++        if set(event) == {"request", "decision", "transaction", "resulting_record_hash"}:
++            request = LocalEnvelope.from_payload(_object(event["request"]))
++            if request.local_time.to_payload() != original:
++                raise ValueError("history request cannot replace original causality")
++            decision = _decision(event["decision"])
++            transaction = _transaction(event["transaction"])
++            _join_decision(original, decision)
++            if decision["original_time_hash"] != _hash(original):
++                raise ValueError("history decision must retain the original hash")
++            identity = _object(original["lease_identity"])
++            if _object(decision["lease_observation"])["original_acquisition"] != identity["original_acquisition"]:
++                raise ValueError("history cannot replace original acquisition")
++            for target, source in (("operation_id", "operation_id"), ("operation_sha256", "operation_sha256"), ("job_id", "job_id"), ("attempt", "attempt"), ("lease_id", "lease_id"), ("epoch", "lease_epoch"), ("generation", "lease_generation"), ("row_revision", "lease_row_revision")):
++                if transaction[target] != decision[source]:
++                    raise ValueError("history decision/transaction binding differs")
++            _sha(event["resulting_record_hash"])
++            key = request.string("event_key")
++        elif set(event) == {"request", "committed_at"} or (bootstrap and set(event) == {"promotion", "state", "retry", "committed_at"}):
++            # These untouched UTC inputs are archival source evidence only.
++            stamp = datetime.fromisoformat(_text(event["committed_at"]))
++            if stamp.tzinfo is None or stamp.utcoffset() is None:
++                raise ValueError("aware historical audit timestamp required")
++            if "promotion" in event:
++                request_raw = _object(event["promotion"])
++                VisualBootstrapPromotionInput.from_payload(request_raw)
++                _model(event["retry"], RecoveryBudget)
++                _object(event["state"])
++            else:
++                request_raw = _object(event["request"])
++                if bootstrap:
++                    VisualBootstrapTransitionInput.from_payload(request_raw)
++                else:
++                    # Do not replay the legacy publication codec's current-UTC gate.
++                    expected = FIELDS["visual.supervision.transition.local.v1"] | {"schema_version", "lease"}
++                    _object(request_raw, expected)
++                    if request_raw["schema_version"] != "visual.supervision.transition.v1":
++                        raise ValueError("exact preserved supervision audit request required")
++                    from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import _lease
++                    _lease(_object(request_raw["lease"]))
++                    semantic = {name: request_raw[name] for name in FIELDS["visual.supervision.transition.local.v1"]}
++                    _semantic("visual.supervision.transition.local.v1", semantic, original, {"utc": {}, "monotonic": None})
++            key = _text(request_raw["event_key"])
++        else:
++            raise ValueError("complete new history or exact preserved legacy audit event required")
++        if key in keys:
++            raise ValueError("historical event identity cannot be replayed")
++        keys.add(key)
++    return len(events)
++
++
++def _semantic(tag: str, body: dict[str, JSONValue], original: dict[str, JSONValue], diagnostics: dict[str, JSONValue]) -> None:
++    from cloud_edge_robot_arm.cloud.planning.models import PlannerDraft
++    from cloud_edge_robot_arm.cloud.replanning.visual_dependencies import StepDependency, find_repair_window
++    from cloud_edge_robot_arm.contracts.models import RobotState, SkillExecutionResult, TaskContract, TaskStep
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import VisualBootstrapDefinition
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import requirement_from_payload
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import _bundle
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from cloud_edge_robot_arm.vision.owner_registration import local_owner_identity
++    from cloud_edge_robot_arm.vision.supervision import SupervisionContext, SupervisionDecision
++
++    scope = body.get("scope")
++    expected_scope = "BOOTSTRAP_SOURCE_ONLY" if tag.startswith("visual.bootstrap.") else "SUPERVISION_SOURCE_ONLY" if tag.startswith("visual.supervision.") else "SOURCE_ROUTE_ONLY"
++    if scope is not None and scope != expected_scope:
++        raise ValueError("exact detached semantic scope required")
++    if "binding_scope" in body and body["binding_scope"] != ("DURABLE_BINDING_ONLY" if tag == "visual.owner.publication.local.v1" else "SOURCE_BINDING_ONLY"):
++        raise ValueError("exact source binding scope required")
++    for name, value in body.items():
++        if (name.endswith("_hash") or name.endswith("_sha256")) and value is not None:
++            _sha(value)
++        if name in {"revision", "owner_revision", "state_generation", "expected_revision", "attempt", "plan_version", "command_seq", "cursor", "max_periodic_captures", "max_supervisor_calls", "captures_reserved", "supervisor_calls_reserved", "last_capture_cursor", "last_wait_cursor"}:
++            _integer(value)
++        if name in {"task_id", "step_id", "event_key", "bootstrap_id", "observation_id", "calibration_version", "plan_id", "robot_id", "before_observation_id"}:
++            _text(value)
++        if name in {"initial_capture_claimed", "planning_source_usable"} and type(value) is not bool:
++            raise ValueError("strict semantic boolean required")
++    if "robot_state" in body:
++        _model(body["robot_state"], RobotState)
++    if body.get("observation") is not None:
++        _model(body["observation"], RGBDObservation)
++    if body.get("draft") is not None:
++        _model(body["draft"], PlannerDraft)
++    if "state" in body:
++        state = _state(body["state"])
++        if state["original_budget_reference"] != original["verification_reference"]:
++            raise ValueError("budget must retain exact immutable original reference")
++    if tag == "visual.bootstrap.definition.local.v1":
++        from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudget
++        limits = _object(body["verification_limits"], LIMIT_FIELDS)
++        VerificationBudget(_integer(limits["max_reobservations"]), _integer(limits["max_retries"]), _integer(limits["max_no_progress"]), _number(limits["deadline_s"], positive=True))
++        _number(body["task_timeout_s"], positive=True)
++        _text(body["episode_id"]); _text(body["user_instruction"])
++        _hashes(body["source_hashes"])
++        if body["source_hashes"] != original["source_hashes"]:
++            raise ValueError("bootstrap source inventory changed")
++    if tag == "visual.bootstrap.record.local.v1":
++        definition = VisualBootstrapDefinition.from_payload(_object(body["definition"]))
++        state = _state(body["state"])
++        limits = _object(state["limits"])
++        if (limits["max_reobservations"], limits["max_retries"], limits["max_no_progress"], limits["deadline_s"]) != (definition.verification_limits.max_reobservations, definition.verification_limits.max_retries, definition.verification_limits.max_no_progress, definition.verification_limits.deadline_s):
++            raise ValueError("bootstrap cannot replace original budget policy")
++        if _integer(body["revision"]) != _history(body["history"], original, bootstrap=True):
++            raise ValueError("bootstrap revision/history count differs")
++        pending = body["pending"]
++        if pending is not None:
++            item = _object(pending)
++            _sha(item["claim_id"])
++            if item["effect"] not in {"CAPTURE", "PLAN"}:
++                raise ValueError("exact pending bootstrap effect required")
++        for name in ("terminal_reason", "adopted_original_hash", "camera_descriptor_hash", "proposal_hash"):
++            if body[name] is not None:
++                _text(body[name])
++    if tag == "visual.bootstrap.transition.local.v1":
++        kind = body["kind"]
++        if kind not in {"RESERVE_INITIAL_CAPTURE", "COMPLETE_CAPTURE", "RESERVE_PLAN", "COMPLETE_PLAN", "RESERVE_REOBSERVATION", "STOP"}:
++            raise ValueError("exact bootstrap transition kind required")
++        if (kind == "COMPLETE_CAPTURE") != (body["observation"] is not None) or (kind == "COMPLETE_PLAN") != (body["draft"] is not None):
++            raise ValueError("exact bootstrap phase-specific source required")
++        if (kind in {"COMPLETE_CAPTURE", "COMPLETE_PLAN"}) != (body["claim_id"] is not None):
++            raise ValueError("completed bootstrap source must bind its exact claim")
++        if body["claim_id"] is not None:
++            _sha(body["claim_id"])
++    if tag == "visual.bootstrap.promotion.local.v1":
++        promoted = _audit_original(body["original"])
++        if _object(original["contract_provenance"])["content_sha256"] != _hash(_copy(promoted.contract.model_dump(mode="json"))):
++            raise ValueError("promotion must preserve the original contract source")
++    if tag.startswith("visual.supervision."):
++        if tag.endswith(".definition.local.v1") or tag.endswith(".transition.local.v1"):
++            prior = _audit_original(body["original"])
++            _audit_publication(body["publication"], prior)
++            if _bundle(_object(body["role_bundle"])).digest() != prior.role_bundle_hash:
++                raise ValueError("supervision must preserve the original role policy")
++        if tag.endswith(".definition.local.v1"):
++            _number(body["task_timeout_s"], positive=True)
++            if body["supervision_period_s"] is not None:
++                _number(body["supervision_period_s"], positive=True)
++        elif tag.endswith(".transition.local.v1"):
++            if _integer(body["cursor"], positive=True) < 1:
++                raise ValueError("positive supervision cursor required")
++            kind = _text(body["kind"])
++            required_by_kind = {
++                "RESERVE_CAPTURE": set(), "COMPLETE_CAPTURE": {"claim_id", "observation", "context"},
++                "RESERVE_PLAN": {"claim_id"}, "COMPLETE_PLAN": {"claim_id", "decision"},
++                "RESERVE_WAIT": {"wait_duration_s"}, "COMPLETE_WAIT": {"claim_id", "wait_elapsed_s"},
++            }
++            if kind not in required_by_kind:
++                raise ValueError("exact supervision phase required")
++            optional = {"claim_id", "observation", "context", "decision", "wait_duration_s", "wait_elapsed_s"}
++            if {name for name in optional if body[name] is not None} != required_by_kind[kind]:
++                raise ValueError("exact phase-specific supervision source required")
++            if body["claim_id"] is not None:
++                _sha(body["claim_id"])
++            if body["context"] is not None:
++                _model(body["context"], SupervisionContext)
++            if body["decision"] is not None:
++                _model(body["decision"], SupervisionDecision)
++            if body["wait_duration_s"] is not None:
++                _number(body["wait_duration_s"], positive=True)
++            if body["wait_elapsed_s"] is not None:
++                _number(body["wait_elapsed_s"])
++            if body["task_id"] != prior.identity.task_id:
++                raise ValueError("supervision task binding differs")
++        else:
++            _, maximum = _audit_supervision_definition(body["definition"])
++            if body["max_periodic_captures"] != maximum or body["max_supervisor_calls"] != maximum:
++                raise ValueError("supervision limits must retain original cadence")
++            if _integer(body["captures_reserved"]) > maximum or _integer(body["supervisor_calls_reserved"]) > maximum:
++                raise ValueError("supervision cannot refill or exceed frozen allowances")
++            _number(body["wait_seconds_reserved"])
++            for key, claim in _object(body["claims"]).items():
++                _sha(key); _object(claim)
++            if body["revision"] != _history(body["history"], original, bootstrap=False):
++                raise ValueError("supervision revision/history count differs")
++    if tag == "visual.owner.original.local.v1":
++        contract = _model(body["contract"], TaskContract)
++        identity = local_owner_identity(_object(body["identity"]))
++        if body["contract_provenance"] != original["contract_provenance"] or _object(body["contract_provenance"])["content_sha256"] != _hash(body["contract"]):
++            raise ValueError("original contract provenance/content changed")
++        if identity.task_id != contract.task_id:
++            raise ValueError("semantic task identity changed")
++        requirements = _object(body["requirements"])
++        if set(requirements) != {step.step_id for step in contract.steps}:
++            raise ValueError("complete immutable action requirements required")
++        hashes = _hashes(body["source_hashes"])
++        compiler = _hashes(body["compiler_source_hashes"])
++        if hashes != original["source_hashes"] or any(hashes.get(name) != value for name, value in compiler.items()):
++            raise ValueError("original/compiler source inventory changed")
++        for step in contract.steps:
++            requirement = requirement_from_payload(_object(requirements[step.step_id]))
++            if requirement.original_step.model_dump(mode="json") != step.model_dump(mode="json"):
++                raise ValueError("original action policy changed")
++            if any(hashes.get(name) != value for name, value in requirement.policy_source_hashes.items()):
++                raise ValueError("original requirement policy/source changed")
++            if any(condition.target_id is not None and condition.target_id not in {contract.task_target.object_id, contract.task_target.target_region_id} for condition in (*requirement.preconditions, *requirement.postconditions)):
++                raise ValueError("original condition target changed")
++        graph: list[StepDependency] = []
++        for raw in _array(body["dependencies"]):
++            item = _object(raw, frozenset("step_id depends_on evidence_ids physical_effect_id completed".split()))
++            completed = item["completed"]
++            if type(completed) is not bool:
++                raise ValueError("strict dependency completion required")
++            effect = item["physical_effect_id"]
++            graph.append(StepDependency(_text(item["step_id"]), tuple(_text(value) for value in _array(item["depends_on"])), tuple(_text(value) for value in _array(item["evidence_ids"])), None if effect is None else _text(effect), completed))
++        if [item.step_id for item in graph] != [step.step_id for step in contract.steps]:
++            raise ValueError("complete ordered original dependency graph required")
++        find_repair_window(graph, set(), expected_plan_version=contract.plan_version, expected_command_seq=contract.command_seq)
++        lease = _object(original["lease_identity"])
++        if (identity.job_id, identity.run_id, identity.worker_id, identity.lease_id, identity.attempt, identity.owner_epoch) != (lease["job_id"], lease["run_id"], lease["worker_id"], lease["lease_id"], lease["attempt"], lease["epoch"]):
++            raise ValueError("original job/fence/epoch changed")
++    if tag == "visual.owner.grounding.local.v1":
++        identity = local_owner_identity(_object(body["current_identity"]))
++        lease = _object(original["lease_identity"])
++        if (identity.job_id, identity.run_id, identity.worker_id, identity.lease_id, identity.attempt, identity.owner_epoch) != (lease["job_id"], lease["run_id"], lease["worker_id"], lease["lease_id"], lease["attempt"], lease["epoch"]):
++            raise ValueError("grounding cannot replace original job/fence/epoch")
++        step = _model(body["grounded_step"], TaskStep)
++        requirement = requirement_from_payload(_object(body["original_requirements"]))
++        prior_step = requirement.original_step
++        if (step.step_id, step.skill, step.timeout_ms, step.retry_limit, step.expected_duration_ms) != (prior_step.step_id, prior_step.skill, prior_step.timeout_ms, prior_step.retry_limit, prior_step.expected_duration_ms) or step.preconditions or step.success_conditions:
++            raise ValueError("grounding cannot replace original action policy")
++        if _number(body["expected_duration_s"], positive=True) < requirement.expected_duration_s:
++            raise ValueError("grounding cannot shorten immutable horizon")
++        _hashes(body["grounding_source_hashes"])
++    if tag == "visual.owner.publication.local.v1":
++        utc = _object(diagnostics["utc"])
++        if "effective_deadline_at" in utc and "published_at" in utc:
++            audit = dict(body)
++            audit["schema_version"] = "visual.owner.publication.v1"
++            audit["effective_deadline_at"] = utc["effective_deadline_at"]
++            audit["published_at"] = utc["published_at"]
++            _audit_publication(audit)
++        else:
++            _audit_publication({**body, "schema_version": tag, "original_time": original})
++    if tag == "visual.verification.route-input.local.v1":
++        prior = _audit_original(body["original"])
++        _audit_publication(body["publication"], prior)
++        online = _object(body["online"], frozenset("observation robot_state visual_facts plan_version command_seq context_hash".split()))
++        _model(online["observation"], RGBDObservation); _model(online["robot_state"], RobotState)
++        _object(online["visual_facts"]); _integer(online["plan_version"]); _integer(online["command_seq"]); _sha(online["context_hash"])
++        _model(body["execution_contract"], TaskContract)
++        if body["phase"] not in {"PRECONDITION", "NATIVE_PRE_SAFETY", "NATIVE_PRE_SKILL", "CLOUD_RETURN", "AFTER_EFFECT", "POST_HOLD", "TERMINAL"} or _integer(body["attempt"], positive=True) < 1:
++            raise ValueError("exact verification phase/attempt required")
++        if body["completion"] is not None:
++            from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import VisualEffectCompletion
++            VisualEffectCompletion.from_payload(_object(body["completion"]))
++        if body["grounding_receipt"] is not None:
++            from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import grounding_from_payload
++            grounding_from_payload(_object(body["grounding_receipt"]))
++    if tag == "visual.verification.route.local.v1":
++        from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import PHASES
++        request = _object(body["input"])
++        if request.get("schema_version") == "visual.verification.route-input.local.v1":
++            LocalEnvelope.from_payload(request)
++        else:
++            _audit_original(request["original"])
++            _audit_publication(request["publication"])
++            if request["phase"] not in PHASES:
++                raise ValueError("exact historical route phase required")
++        if body["input_hash"] != _hash(request):
++            raise ValueError("route input content hash differs")
++        DecisionAction(_text(body["route"]))
++        for reason in _array(body["reasons"]):
++            _text(reason)
++        for verdict in _array(body["verdicts"]):
++            item = _object(verdict, frozenset("condition_name status reasons observation_id measured_values".split()))
++            _text(item["condition_name"]); _text(item["observation_id"]); _object(item["measured_values"])
++            if item["status"] not in {"PASS", "FAIL", "UNKNOWN"}:
++                raise ValueError("exact condition verdict status required")
++            for reason in _array(item["reasons"]):
++                _text(reason)
++        _object(body["context_domains"], frozenset("source native evidence".split()))
++        for domain_name in _object(body["context_domains"]).values():
++            _text(domain_name)
++        before_pool = _audit_pool(body["before_verification_budget"])
++        after_pool = _audit_pool(body["after_verification_budget"])
++        before_state = _object(before_pool["state"])
++        after_state = _object(after_pool["state"])
++        if before_pool["task_id"] != after_pool["task_id"] or _integer(after_pool["revision"]) != _integer(before_pool["revision"]) + 1:
++            raise ValueError("route must bind exact task budget CAS revisions")
++        for counter_name in ("remaining_reobservations", "remaining_retries"):
++            if _integer(after_state[counter_name]) > _integer(before_state[counter_name]):
++                raise ValueError("route history cannot refund a consumed allowance")
++        before_limits = _object(before_state["limits"])
++        after_limits = _object(after_state["limits"])
++        for limit_name in LIMIT_FIELDS:
++            if _number(after_limits[limit_name]) > _number(before_limits[limit_name]):
++                raise ValueError("route cannot extend an original budget policy")
++        if body["produced_publication"] is not None:
++            produced = _audit_publication(body["produced_publication"])
++            if body["produced_publication_hash"] != produced["publication_hash"]:
++                raise ValueError("route produced publication hash differs")
++    if tag == "visual.verification.effect-completion.local.v1":
++        result = _model(body["result"], SkillExecutionResult)
++        if (result.task_id, result.step_id, result.plan_version, result.command_seq) != (body["task_id"], body["step_id"], body["plan_version"], body["command_seq"]):
++            raise ValueError("effect result/source identity changed")
++        _integer(body["attempt"], positive=True); _hashes(body["source_hashes"])
++    if tag == "recovery.verification-budget.local.v1":
++        binding = {"schema_version": tag, "task_id": body["task_id"], "state": body["state"], "revision": body["revision"]}
++        if body["content_hash"] != _hash(binding):
++            raise ValueError("new budget hash must cover new schema/task/state/revision")
++    if tag == "recovery.retry-budget.local.v1":
++        _text(body["budget_id"]); _text(body["task_id"]); _text(body["retry_backoff_policy"])
++        for name in ("per_step_retry_limit", "per_skill_retry_limit", "task_total_retry_limit", "retry_count_used", "task_retry_count", "retry_cooldown_ms", "effective_retry_limit", "remaining_retries", "scene_version"):
++            _integer(body[name])
++        for name in ("step_retry_counts", "skill_retry_counts", "event_retry_counts"):
++            for key, count in _object(body[name]).items():
++                _text(key); _integer(count)
++        if body["retry_count_used"] != body["task_retry_count"] or _integer(body["remaining_retries"]) > min(_integer(body["effective_retry_limit"]), _integer(body["task_total_retry_limit"]) - _integer(body["task_retry_count"])):
++            raise ValueError("retry history cannot refill the original pool")
++
++
++@dataclass(frozen=True, init=False)
++class _DetachedValue:
++    _json: str
++    _kind: ClassVar[str] = ""
++
++    @classmethod
++    def from_payload(cls, payload: Mapping[str, JSONValue]) -> Self:
++        raw = _object(payload)
++        if cls._kind == "original":
++            _original(raw)
++        elif cls._kind == "decision":
++            _decision(raw)
++        elif cls._kind == "transaction":
++            _transaction(raw)
++        elif cls._kind == "state":
++            _state(raw)
++        else:
++            raise ValueError("known detached value kind required")
++        result = object.__new__(cls)
++        object.__setattr__(result, "_json", _canonical(raw))
++        return result
++
++    def to_payload(self) -> dict[str, JSONValue]:
++        return _object(json.loads(self._json))
++
++    def digest(self) -> str:
++        return hashlib.sha256(self._json.encode()).hexdigest()
++
++
++class _StrictDetachedValue(_DetachedValue):
++    def __setattr__(self, name: str, value: object) -> None:
++        raise TypeError("immutable detached value")
++
++
++class LocalOriginalTime(_StrictDetachedValue):
++    _kind = "original"
++
++
++class LocalAuthorityDecision(_StrictDetachedValue):
++    _kind = "decision"
++
++
++class LocalTransactionReceipt(_StrictDetachedValue):
++    _kind = "transaction"
++
++
++class LocalVerificationBudgetState(_StrictDetachedValue):
++    _kind = "state"
++
++    @property
++    def limits(self) -> VerificationBudget:
++        from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudget
++
++        values = _object(self.to_payload()["limits"])
++        return VerificationBudget(
++            _integer(values["max_reobservations"]), _integer(values["max_retries"]),
++            _integer(values["max_no_progress"]), _number(values["deadline_s"], positive=True),
++        )
++
++    @property
++    def remaining_reobservations(self) -> int:
++        return _integer(self.to_payload()["remaining_reobservations"])
++
++    @property
++    def remaining_retries(self) -> int:
++        return _integer(self.to_payload()["remaining_retries"])
++
++    @property
++    def consecutive_no_progress(self) -> int:
++        return _integer(self.to_payload()["consecutive_no_progress"])
++
++    @property
++    def verification_rounds(self) -> int:
++        return _integer(self.to_payload()["verification_rounds"])
++
++    @property
++    def previous_conditions(self) -> dict[str, tuple[str, float | None]]:
++        conditions: dict[str, tuple[str, float | None]] = {}
++        for name, raw in _object(self.to_payload()["previous_conditions"]).items():
++            pair = _array(raw)
++            conditions[name] = (_text(pair[0]), None if pair[1] is None else _number(pair[1]))
++        return conditions
++
++    @property
++    def exhausted_reason(self) -> str | None:
++        value = self.to_payload()["exhausted_reason"]
++        return None if value is None else _text(value)
++
++    @property
++    def original_budget_reference(self) -> dict[str, JSONValue]:
++        return _reference(self.to_payload()["original_budget_reference"])
++
++
++@dataclass(frozen=True, init=False)
++class LocalEnvelope:
++    _json: str
++
++    @classmethod
++    def from_payload(cls, payload: Mapping[str, JSONValue]) -> Self:
++        raw = _object(payload, OUTER_FIELDS)
++        tag = _text(raw["schema_version"])
++        if tag not in FIELDS:
++            raise ValueError("exact local semantic tag required")
++        body = _object(raw["payload"], FIELDS[tag])
++        original = _original(raw["original_time"])
++        diagnostics = _object(raw["diagnostics"], frozenset(("utc", "monotonic")))
++        for name, value in _object(diagnostics["utc"]).items():
++            _text(name)
++            if value is not None:
++                stamp = datetime.fromisoformat(_text(value))
++                if stamp.tzinfo is None or stamp.utcoffset() is None:
++                    raise ValueError("typed diagnostic UTC required")
++        if diagnostics["monotonic"] is not None:
++            _number(diagnostics["monotonic"])
++        original_or_request = tag.endswith((".definition.local.v1", ".original.local.v1", ".transition.local.v1", ".promotion.local.v1", ".route-input.local.v1"))
++        if original_or_request:
++            if raw["decision"] is not None or raw["transaction"] is not None:
++                raise ValueError("original/request cannot self-install a current decision")
++        else:
++            decision = _decision(raw["decision"])
++            transaction = _transaction(raw["transaction"])
++            _join_decision(original, decision)
++            for current_name, decision_name in (("operation_id", "operation_id"), ("operation_sha256", "operation_sha256"), ("job_id", "job_id"), ("attempt", "attempt"), ("lease_id", "lease_id"), ("epoch", "lease_epoch"), ("generation", "lease_generation"), ("row_revision", "lease_row_revision")):
++                if transaction[current_name] != decision[decision_name]:
++                    raise ValueError("transaction and two-authority evidence disagree")
++        _semantic(tag, body, original, diagnostics)
++        result = object.__new__(cls)
++        object.__setattr__(result, "_json", _canonical(raw))
++        return result
++
++    def to_payload(self) -> dict[str, JSONValue]:
++        return _object(json.loads(self._json))
++
++    def digest(self) -> str:
++        return hashlib.sha256(self._json.encode()).hexdigest()
++
++    @property
++    def semantic(self) -> dict[str, JSONValue]:
++        return _object(self.to_payload()["payload"])
++
++    @property
++    def local_time(self) -> LocalOriginalTime:
++        return LocalOriginalTime.from_payload(_object(self.to_payload()["original_time"]))
++
++    @property
++    def decision(self) -> LocalAuthorityDecision | None:
++        value = self.to_payload()["decision"]
++        return None if value is None else LocalAuthorityDecision.from_payload(_object(value))
++
++    @property
++    def transaction(self) -> LocalTransactionReceipt | None:
++        value = self.to_payload()["transaction"]
++        return None if value is None else LocalTransactionReceipt.from_payload(_object(value))
++
++    def detached(self) -> Self:
++        return type(self).from_payload(self.to_payload())
++
++    def string(self, name: str) -> str:
++        return _text(self.semantic[name])
++
++    def counter(self, name: str) -> int:
++        return _integer(self.semantic[name])
++
++    def object(self, name: str) -> dict[str, JSONValue]:
++        return _object(self.semantic[name])
++
++    def number(self, name: str, *, positive: bool = False) -> float:
++        return _number(self.semantic[name], positive=positive)
++
++    def boolean(self, name: str) -> bool:
++        value = self.semantic[name]
++        if type(value) is not bool:
++            raise ValueError("strict semantic boolean required")
++        return value
++
++    def optional_string(self, name: str) -> str | None:
++        value = self.semantic[name]
++        return None if value is None else _text(value)
++
++    def model[Model: BaseModel](self, name: str, model: type[Model]) -> Model:
++        return _model(self.semantic[name], model)
++
++    def optional_model[Model: BaseModel](self, name: str, model: type[Model]) -> Model | None:
++        value = self.semantic[name]
++        return None if value is None else _model(value, model)
++
++    def strings(self, name: str) -> tuple[str, ...]:
++        return tuple(_text(value) for value in _array(self.semantic[name]))
++
++    def hashes(self, name: str) -> dict[str, str]:
++        return {key: _sha(value) for key, value in _hashes(self.semantic[name]).items()}
++
++    @classmethod
++    def _from_local_payload(cls, payload: object, tag: str) -> Self:
++        envelope = decode_local_payload(_object(payload), tag)
++        result = object.__new__(cls)
++        object.__setattr__(result, "_json", envelope._json)
++        return result
++
++
++def is_local_payload(payload: Mapping[str, object], tag: str) -> bool:
++    return payload.get("schema_version") == tag
++
++
++def decode_local_payload(payload: Mapping[str, JSONValue], tag: str) -> LocalEnvelope:
++    envelope = LocalEnvelope.from_payload(payload)
++    if envelope.to_payload()["schema_version"] != tag:
++        raise ValueError("wrong domain local tag")
++    return envelope
++
++
++class LocalDomainEnvelope(LocalEnvelope):
++    """Domain codec carrier; its base-class UTC paths are never constructors."""
++
++    _tag: ClassVar[str] = ""
++
++    def __setattr__(self, name: str, value: object) -> None:
++        raise TypeError("immutable detached domain carrier")
++
++    def __init__(
++        self,
++        payload: Mapping[str, JSONValue],
++        *,
++        local_time: LocalOriginalTime | None = None,
++    ) -> None:
++        envelope = decode_local_payload(payload, self._tag)
++        if local_time is not None and local_time.to_payload() != envelope.local_time.to_payload():
++            raise ValueError("local time cannot replace the immutable original")
++        object.__setattr__(self, "_json", envelope._json)
++
++    @classmethod
++    def from_payload(cls, payload: Mapping[str, JSONValue]) -> Self:
++        return cls._from_local_payload(payload, cls._tag)
++
++    def to_json(self) -> str:
++        return self._json
++
++    @classmethod
++    def from_json(cls, raw: str) -> Self:
++        def pairs(items: list[tuple[str, JSONValue]]) -> dict[str, JSONValue]:
++            values: dict[str, JSONValue] = {}
++            for key, value in items:
++                if key in values:
++                    raise ValueError("duplicate local JSON field")
++                values[key] = value
++            return values
++
++        return cls.from_payload(_object(json.loads(raw, object_pairs_hook=pairs)))
++
++    def legacy_deadline(self) -> datetime:
++        raise ValueError("local history has no UTC authority deadline")
+--- /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py (original R158 before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py (after R175 helper)
+@@ -1858,3 +1858,958 @@
+             },
+         },
+     )
++
++
++# R158 Stage B / T1: appended detached-codec cases; the frozen A prefix stays intact.
++def _b_canonical(value):
++    import json
++
++    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
++
++
++def _b_sha(value):
++    import hashlib
++
++    return hashlib.sha256(_b_canonical(value)).hexdigest()
++
++
++def _b_api():
++    import importlib
++    from pathlib import Path
++
++    name = "cloud_edge_robot_arm.vision.local_temporal"
++    source = Path(__file__).resolve().parents[1] / "src/cloud_edge_robot_arm/vision/local_temporal.py"
++    assert source.is_file(), "R158 missing detached local temporal schema contract"
++    api = importlib.import_module(name)
++    for symbol in (
++        "LocalEnvelope",
++        "LocalOriginalTime",
++        "LocalAuthorityDecision",
++        "LocalTransactionReceipt",
++        "LocalVerificationBudgetState",
++    ):
++        assert hasattr(api, symbol), f"R158 missing detached local contract {symbol}"
++    return api
++
++
++def _b_utc(monkeypatch, basis):
++    import importlib
++    from datetime import datetime
++
++    class DateTimeMeta(type):
++        def __instancecheck__(cls, value):
++            return isinstance(value, datetime)
++
++    class FixtureDateTime(datetime, metaclass=DateTimeMeta):
++        @classmethod
++        def now(cls, tz=None):
++            return basis.replace(tzinfo=None) if tz is None else basis.astimezone(tz)
++
++    for name in (
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner",
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_verification",
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap",
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision",
++        "cloud_edge_robot_arm.repositories.event_autonomy.memory",
++        "cloud_edge_robot_arm.edge.recovery.lifecycle",
++        "cloud_edge_robot_arm.edge.recovery.verification_router",
++        "tests.test_visual_bootstrap",
++    ):
++        monkeypatch.setattr(importlib.import_module(name), "datetime", FixtureDateTime)
++
++
++def _b_legacy_sources(monkeypatch):
++    """Use real pure builders/codecs and one real Memory repository; no worker."""
++    import importlib
++    import json
++    import os
++    import threading
++    import traceback
++    import uuid
++    from pathlib import Path
++    from datetime import timedelta
++
++    from cloud_edge_robot_arm.contracts.models import RecoveryBudget
++    from cloud_edge_robot_arm.edge.recovery.verification_router import (
++        VerificationBudget,
++        VerificationBudgetState,
++    )
++    from cloud_edge_robot_arm.repositories.event_autonomy.memory import (
++        InMemoryEventAutonomyRepository,
++    )
++    from cloud_edge_robot_arm.vision.role_models import RoleModelBundle, RoleProviderSnapshot
++    from cloud_edge_robot_arm.vision.worker_owner import WorkerLeaseObservation
++    from tests import test_visual_bootstrap as bootstrap_fixture
++    from tests import test_visual_owner_repository as owner_fixture
++    from tests import test_visual_verification_repository as route_fixture
++
++    original_init = InMemoryEventAutonomyRepository.__init__
++    original_close = InMemoryEventAutonomyRepository.close
++    observed_fields = ("_events", "_budgets", "_active_contracts", "_checkpoints")
++    close_required_fields = (
++        "_lock", "_events", "_event_hashes", "_events_by_task", "_budgets",
++        "_states", "_transitions", "_failure_summaries", "_failure_hashes",
++        "_completion_summaries", "_completion_hashes", "_replan_requests",
++        "_replan_request_hashes", "_replan_idempotency", "_replan_results",
++        "_replan_result_hashes", "_outbox", "_outbox_hashes", "_outbox_idempotency",
++        "_plan_versions", "_active_contracts", "_contract_versions", "_checkpoints",
++        "_checkpoint_hashes", "_checkpoints_by_task", "_apply_records",
++        "_apply_by_request", "_apply_hashes", "_acks_by_key", "_ack_hashes", "_audit",
++    )
++    call_id = uuid.uuid4().hex
++    call_pid = os.getpid()
++    call_thread = threading.get_ident()
++    current_test = os.environ.get("PYTEST_CURRENT_TEST")
++    records = []
++    tracked = []
++    untracked_close_calls = []
++    failures = []
++    result = None
++
++    def error_details(error):
++        return {
++            "type": type(error).__name__, "message": str(error),
++            "traceback": "".join(traceback.format_exception(error)),
++        }
++
++    def record_for(instance):
++        return next((record for candidate, record in tracked if candidate is instance), None)
++
++    def mark_primary(instance):
++        record = record_for(instance)
++        assert record is not None and record["initialized"] is True
++        record["role"] = "primary"
++
++    def observed_init(instance, *args, **kwargs):
++        record = {
++            "object_id": id(instance), "class_module": type(instance).__module__,
++            "class_qualname": type(instance).__qualname__, "role": "transitive",
++            "init_attempted": True, "initialized": False, "init_error": None,
++            "init_thread": threading.get_ident(), "init_native_thread": threading.get_native_id(),
++            "close_calls": [], "successful_close_observed": False,
++        }
++        records.append(record)
++        tracked.append((instance, record))
++        try:
++            returned = original_init(instance, *args, **kwargs)
++        except BaseException as error:
++            record["init_error"] = error_details(error)
++            record["safe_real_close_available"] = all(
++                hasattr(instance, name) for name in close_required_fields
++            )
++            raise
++        record["initialized"] = True
++        record["init_return_type"] = type(returned).__name__
++        record["safe_real_close_available"] = all(
++            hasattr(instance, name) for name in close_required_fields
++        )
++        return returned
++
++    def observed_close(instance, *args, **kwargs):
++        record = record_for(instance)
++        attempt = {
++            "thread": threading.get_ident(), "native_thread": threading.get_native_id(),
++            "returned": False, "successful": False, "error": None,
++            "post_close_field_counts": None,
++        }
++        if record is None:
++            untracked_close_calls.append({"object_id": id(instance), "attempt": attempt})
++        else:
++            record["close_calls"].append(attempt)
++        try:
++            returned = original_close(instance, *args, **kwargs)
++            attempt["returned"] = True
++            attempt["return_type"] = type(returned).__name__
++            attempt["return_value"] = None if returned is None else repr(returned)
++            with instance._lock:
++                counts = {name: len(getattr(instance, name)) for name in observed_fields}
++            attempt["post_close_field_counts"] = counts
++            assert all(count == 0 for count in counts.values()), (
++                "real Memory close did not clear its four observed fields", counts
++            )
++            attempt["successful"] = True
++            if record is not None:
++                record["successful_close_observed"] = True
++            return returned
++        except BaseException as error:
++            attempt["error"] = error_details(error)
++            raise
++
++    def build_legacy_sources():
++        data = owner_fixture.values()
++        original = data["original"]
++        basis = original.registered_at + timedelta(seconds=0.2)
++        _b_utc(monkeypatch, basis)
++        state = VerificationBudgetState(
++            3, 2, 0, original.verification_deadline_at, VerificationBudget(3, 2, 3, 40.0)
++        )
++        retry = RecoveryBudget(
++            budget_id="r158-legacy-original-retry",
++            task_id=original.identity.task_id,
++            task_total_retry_limit=2,
++            per_step_retry_limit=1,
++            per_skill_retry_limit=2,
++            effective_retry_limit=2,
++            remaining_retries=2,
++            retry_deadline=original.verification_deadline_at,
++            scene_version=original.contract.scene_version,
++            created_at=original.registered_at,
++            updated_at=original.registered_at,
++        )
++        # Reuse the existing immutable original builder with the actual lease identity
++        # and the exact role bundle consumed by the supervision definition.
++        lease = WorkerLeaseObservation(
++            original.identity.job_id, original.identity.run_id, original.identity.worker_id,
++            original.identity.lease_id, original.identity.attempt,
++            original.registered_at - timedelta(seconds=1), basis,
++            original.registered_at + timedelta(seconds=90), "a" * 64, "b" * 64, "c" * 64,
++        )
++        cloud = RoleProviderSnapshot(
++            "CLOUD", "software-provider", "LOCAL_HOST", "software-model",
++            None, None, None, "d" * 64, original.source_hashes,
++        )
++        bundle = RoleModelBundle(cloud, "software-edge", "e" * 64, "f" * 64)
++        owner_module = importlib.import_module("cloud_edge_robot_arm.vision.owner_registration")
++        identity = lease.identity(
++            episode_id=original.identity.episode_id, task_id=original.identity.task_id,
++            plan_id=original.identity.plan_id, robot_id=original.identity.robot_id,
++        )
++        original = owner_module.freeze_original_visual_plan(
++            **{**original.freeze_inputs(), "identity": identity, "role_bundle_hash": bundle.digest()}
++        )
++        data["original"], data["current_identity"] = original, identity
++        repo = InMemoryEventAutonomyRepository()
++        mark_primary(repo)
++        try:
++            publication = repo.initialize_visual_owner_if_absent(
++                original, data["source_checkpoint"], state, retry
++            )
++            initial_publication = publication
++            data["publication"] = publication
++            owner_module = importlib.import_module("cloud_edge_robot_arm.vision.owner_registration")
++            grounding = owner_module.bind_step_grounding(**{
++                key: value for key, value in data.items() if key != "publication"
++            })
++            route_input_v2 = route_fixture.request_for(data)
++            raw_v1 = route_input_v2.to_payload()
++            raw_v1["schema_version"] = "visual.verification.route-input.v1"
++            del raw_v1["grounding_receipt"]
++            route_module = route_fixture.api()
++            route_input_v1 = route_module.VisualVerificationRouteInput.from_payload(raw_v1)
++            historical_completion = route_fixture.software_completion(data)
++            route_result = repo.route_visual_verification_if_current(request=route_input_v2)
++            assert route_result is not None, "legacy fixture must enter the actual source route"
++            assert route_result.write_disposition == "NEW_COMMIT"
++            historical_route_payload = route_result.record.to_payload()
++            assert historical_route_payload["input"] == route_input_v2.to_payload()
++            assert route_input_v2.to_payload()["publication"] == initial_publication.to_payload()
++            current_publication = repo.get_visual_owner_publication(original.identity.task_id)
++            current_pool = repo.get_verification_budget(original.identity.task_id)
++            current_retry = repo.get_retry_budget(original.identity.task_id)
++            current_checkpoint = repo.get_latest_execution_checkpoint(original.identity.task_id)
++            assert all(value is not None for value in (
++                current_publication, current_pool, current_retry, current_checkpoint
++            )), "actual current task source group must remain complete"
++            assert current_publication.owner_revision == initial_publication.owner_revision + 1
++            assert current_publication.state_generation == initial_publication.state_generation + 1
++            assert historical_route_payload["produced_publication_hash"] == current_publication.digest()
++            assert historical_route_payload["produced_publication"] == current_publication.to_payload()
++            assert current_publication.identity == original.identity == initial_publication.identity
++            assert current_publication.original_plan_hash == initial_publication.original_plan_hash == original.digest()
++            assert current_pool.content_hash == current_publication.verification_budget.content_hash
++            assert _b_canonical(current_pool.to_payload()) == _b_canonical(
++                current_publication.verification_budget.to_payload()
++            )
++            assert _b_canonical(current_pool.to_payload()) == _b_canonical(
++                historical_route_payload["after_verification_budget"]
++            )
++            assert current_pool.state.remaining_reobservations == (
++                initial_publication.verification_budget.state.remaining_reobservations - 1
++            )
++            assert current_pool.state.remaining_retries == initial_publication.verification_budget.state.remaining_retries
++            assert current_pool.state.limits == initial_publication.verification_budget.state.limits
++            assert current_pool.state.deadline_at == original.verification_deadline_at
++            assert _b_canonical(current_retry.model_dump(mode="json")) == _b_canonical(
++                current_publication.retry_budget.model_dump(mode="json")
++            ) == _b_canonical(retry.model_dump(mode="json"))
++            assert current_checkpoint.checkpoint_hash == current_publication.checkpoint.checkpoint_hash
++            assert current_checkpoint.checkpoint_hash == initial_publication.checkpoint.checkpoint_hash
++            assert grounding.owner_revision == data["owner_revision"]
++            assert grounding.state_generation == data["state_generation"]
++            # The previous request/binding stay historical. Public getters supply
++            # the distinct current snapshot consumed by supervision and exports.
++            publication = current_publication
++            data["publication"] = current_publication
++            completion = historical_completion
++            supervision_module = importlib.import_module(
++                "cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision"
++            )
++            supervision_definition = supervision_module.VisualSupervisionDefinition(
++                original=original, publication=publication, lease=lease,
++                task_started_at=original.registered_at, task_timeout_s=60.0,
++                supervision_period_s=0.2, model_snapshot_hash="1" * 64, role_bundle=bundle,
++            )
++            supervision_record = repo.initialize_visual_supervision_if_absent(supervision_definition)
++            supervision_request = supervision_module.VisualSupervisionTransitionInput(
++                record=supervision_record, original=original, publication=publication, lease=lease,
++                robot_state=data["online"].robot_state, step_id="move", cursor=1,
++                kind="RESERVE_CAPTURE", event_key="r158-supervision-capture",
++                model_snapshot_hash="1" * 64, role_bundle=bundle,
++            )
++            supervision_result = repo.transition_visual_supervision_if_current(
++                request=supervision_request
++            )
++            assert supervision_result is not None, "legacy fixture must reserve a real source claim"
++            bootstrap_source = bootstrap_fixture.source.__wrapped__()
++            source, bootstrap_record, promoted_original, bootstrap_retry, promotion = (
++                bootstrap_fixture.promotion_sources(bootstrap_source)
++            )
++            bootstrap_request = bootstrap_fixture.api().VisualBootstrapTransitionInput(
++                record=bootstrap_fixture.api().VisualBootstrapRecord.start(source[1]),
++                kind="RESERVE_INITIAL_CAPTURE", event_key="r158-bootstrap-initial",
++                current_lease=source[0], robot_state=data["online"].robot_state,
++            )
++            sources = {
++                "visual.bootstrap.definition.v1": source[1],
++                "visual.bootstrap.record.v1": bootstrap_record,
++                "visual.bootstrap.transition.v1": bootstrap_request,
++                "visual.bootstrap.promotion.v1": promotion,
++                "visual.supervision.definition.v1": supervision_definition,
++                "visual.supervision.record.v1": supervision_result.record,
++                "visual.supervision.transition.v1": supervision_request,
++                "visual.owner.original.v1": original,
++                "visual.owner.grounding.v1": grounding,
++                "visual.owner.publication.v1": publication,
++                "visual.verification.route-input.v1": route_input_v1,
++                "visual.verification.route-input.v2": route_input_v2,
++                "visual.verification.route.v1": route_result.record,
++                "visual.verification.effect-completion.v1": completion,
++                "recovery.verification-budget.v1": current_pool,
++                "recovery.retry-budget.v1": current_retry,
++            }
++            return {
++                "sources": sources, "data": data, "basis": basis, "state": current_pool.state,
++                "retry": current_retry, "promoted_original": promoted_original,
++                "bootstrap_retry": bootstrap_retry,
++                "historical_initial_publication": initial_publication,
++                "historical_route_input_v1": route_input_v1,
++                "historical_route_input_v2": route_input_v2,
++                "historical_route_result": route_result.record,
++                "historical_grounding": grounding,
++                "current_publication": current_publication,
++                "current_pool": current_pool, "current_checkpoint": current_checkpoint,
++            }
++        finally:
++            repo.close()
++
++    try:
++        with monkeypatch.context() as lifetime_patch:
++            lifetime_patch.setattr(InMemoryEventAutonomyRepository, "__init__", observed_init)
++            lifetime_patch.setattr(InMemoryEventAutonomyRepository, "close", observed_close)
++            try:
++                result = build_legacy_sources()
++            except BaseException as error:
++                failures.append(error)
++            finally:
++                for instance, record in tracked:
++                    if not record["successful_close_observed"]:
++                        required_present = all(
++                            hasattr(instance, name) for name in close_required_fields
++                        )
++                        record["safe_real_close_available"] = required_present
++                        if not required_present:
++                            error = AssertionError(
++                                "Memory initialization incomplete; genuine close requires missing fields"
++                            )
++                            record["incomplete_cleanup"] = error_details(error)
++                            failures.append(error)
++                            continue
++                        try:
++                            instance.close()
++                        except BaseException as error:
++                            failures.append(error)
++                instance = record = None
++    except BaseException as error:
++        failures.append(error)
++    finally:
++        restored = {
++            "__init__": InMemoryEventAutonomyRepository.__init__ is original_init,
++            "close": InMemoryEventAutonomyRepository.close is original_close,
++        }
++        counts = {
++            "allocation_attempts": sum(record["init_attempted"] for record in records),
++            "initialized": sum(record["initialized"] for record in records),
++            "init_failed": sum(record["init_error"] is not None for record in records),
++            "primary": sum(record["role"] == "primary" for record in records),
++            "transitive": sum(record["role"] == "transitive" for record in records),
++            "close_attempts": sum(len(record["close_calls"]) for record in records),
++            "close_returns": sum(attempt["returned"] for record in records for attempt in record["close_calls"]),
++            "close_errors": sum(attempt["error"] is not None for record in records for attempt in record["close_calls"]),
++            "initialized_successfully_closed": sum(
++                record["initialized"] and record["successful_close_observed"] for record in records
++            ),
++        }
++        local_checks = {
++            "all_initialized_successfully_closed": counts["initialized"] == counts["initialized_successfully_closed"],
++            "no_init_failures": counts["init_failed"] == 0,
++            "no_close_errors": counts["close_errors"] == 0,
++            "primary_exactly_one": counts["primary"] == 1,
++            "transitive_at_least_one": counts["transitive"] >= 1,
++            "methods_restored": all(restored.values()),
++        }
++        for name, passed in local_checks.items():
++            if not passed:
++                failures.append(AssertionError("R175 Memory lifecycle check failed: " + name))
++        observation = {
++            "schema_version": "bigsmall.r175-memory-lifecycle.v1",
++            "call_id": call_id, "pid": call_pid, "thread": call_thread,
++            "native_thread": threading.get_native_id(), "PYTEST_CURRENT_TEST": current_test,
++            "nodeid": None if current_test is None else current_test.rsplit(" (", 1)[0],
++            "repository_class_module": InMemoryEventAutonomyRepository.__module__,
++            "repository_class_qualname": InMemoryEventAutonomyRepository.__qualname__,
++            "original_method_ids": {"__init__": id(original_init), "close": id(original_close)},
++            "restored_method_ids": {
++                "__init__": id(InMemoryEventAutonomyRepository.__init__),
++                "close": id(InMemoryEventAutonomyRepository.close),
++            },
++            "observed_fields": list(observed_fields), "counts": counts,
++            "objects": records, "untracked_close_calls": untracked_close_calls,
++            "methods_restored": restored, "local_checks": local_checks,
++            "failures": [error_details(error) for error in failures],
++            "success": not failures and all(local_checks.values()),
++            "unobserved": {"worker_lifecycles": None, "broker_threads": None,
++                "heartbeat_threads": None, "model_calls": None, "network_calls": None,
++                "GPU_native_calls": None},
++            "scope": "Only actual Memory allocation/init/close and method restoration observed.",
++        }
++        try:
++            sink = os.environ.get("BIGSMALL_R175_RESOURCE_DIR")
++            if sink:
++                directory = Path(sink)
++                assert directory.is_absolute() and directory.is_dir() and not directory.is_symlink()
++                assert all(not parent.is_symlink() for parent in directory.parents)
++                sidecar = directory / (call_id + ".json")
++                encoded = (json.dumps(observation, allow_nan=False, sort_keys=True,
++                    ensure_ascii=False, indent=2) + "\n").encode()
++                with sidecar.open("xb") as stream:
++                    stream.write(encoded)
++        except BaseException as error:
++            failures.append(error)
++        finally:
++            tracked.clear()
++            instance = record = None
++    if failures:
++        if len(failures) == 1:
++            raise failures[0]
++        raise BaseExceptionGroup("R175 Memory fixture lifecycle failures", failures)
++    return result
++
++
++def _b_fields():
++    """The fifteen exact semantic field sets in the frozen R158 schema contract."""
++    return {
++        "visual.bootstrap.definition.local.v1": "scope episode_id user_instruction task_timeout_s verification_limits role_bundle_hash model_snapshot_hash source_hashes".split(),
++        "visual.bootstrap.record.local.v1": "scope definition revision state initial_capture_claimed pending observation camera_descriptor_hash draft planning_source_usable proposal_hash terminal_reason adopted_original_hash history".split(),
++        "visual.bootstrap.transition.local.v1": "scope bootstrap_id definition_hash expected_record_hash kind event_key robot_state claim_id observation draft".split(),
++        "visual.bootstrap.promotion.local.v1": "scope bootstrap_id definition_hash expected_record_hash event_key original robot_state".split(),
++        "visual.supervision.definition.local.v1": "scope original publication task_timeout_s supervision_period_s model_snapshot_hash role_bundle job_configuration_hash".split(),
++        "visual.supervision.record.local.v1": "scope definition revision max_periodic_captures max_supervisor_calls captures_reserved supervisor_calls_reserved last_capture_cursor last_wait_cursor wait_seconds_reserved claims history".split(),
++        "visual.supervision.transition.local.v1": "scope task_id definition_hash expected_revision expected_record_hash original publication robot_state step_id cursor kind event_key model_snapshot_hash role_bundle claim_id observation context decision wait_duration_s wait_elapsed_s".split(),
++        "visual.owner.original.local.v1": "binding_scope identity contract contract_provenance proposal_hash role_bundle_hash compiler_source_hashes source_hashes requirements dependencies".split(),
++        "visual.owner.grounding.local.v1": "binding_scope original_plan_hash current_identity original_requirements owner_revision state_generation source_checkpoint_hash observation_id observation_checksum_sha256 calibration_version plan_version command_seq grounding_policy_hash grounding_inputs_hash duration_check_hash grounding_source_hashes grounded_step expected_duration_s".split(),
++        "visual.owner.publication.local.v1": "binding_scope mode_scope identity original_plan_hash contract_hash owner_revision state_generation checkpoint verification_budget retry_budget grounding operation_hash source_owner_revision publication_hash".split(),
++        "visual.verification.route-input.local.v1": "scope original publication online step_id attempt phase event_key execution_contract completion grounding_receipt".split(),
++        "visual.verification.route.local.v1": "scope input input_hash semantic_hash source_key route reasons verdicts before_verification_budget after_verification_budget produced_publication produced_publication_hash source_context_hash native_context_hash evidence_content_hash context_domains capture_claim_id camera_source_descriptor_sha256".split(),
++        "visual.verification.effect-completion.local.v1": "scope result task_id plan_id robot_id step_id attempt plan_version command_seq before_observation_id execution_payload_hash source_checkpoint_hash source_hashes".split(),
++        "recovery.verification-budget.local.v1": "task_id state revision content_hash".split(),
++        "recovery.retry-budget.local.v1": "budget_id task_id per_step_retry_limit per_skill_retry_limit task_total_retry_limit retry_count_used task_retry_count step_retry_counts skill_retry_counts event_retry_counts retry_cooldown_ms retry_backoff_policy effective_retry_limit remaining_retries scene_version".split(),
++    }
++
++
++def _b_detached_original(legacy):
++    """Caller-created strict descriptors: descriptive causality, no live owner."""
++    from dataclasses import asdict
++
++    from tests.test_operational_time_v1 import _clock, _event
++
++    app, _ = _clock([0, 0, 0, 0, 0, 0])
++    lease, _ = _clock([0, 0, 0, 0, 0, 0])
++    try:
++        token, bracket = _event(app)
++        lease_token, acquisition = _event(lease)
++        app_current = app.read_current(after=token)
++        identity = legacy["data"]["original"].identity.to_payload()
++        hashes = dict(legacy["data"]["original"].source_hashes)
++        domain = json.loads(json.dumps(asdict(app.domain)))
++        lease_domain = json.loads(json.dumps(asdict(lease.domain)))
++        source_identity = _b_sha({"identity": identity, "sources": hashes})
++        hard = [
++            {"origin_event_id": token.event_identity, "source_id": source_identity + ":task",
++             "budget_ns": 60_000_000_000, "deadline_ns": bracket.lower_ns + 60_000_000_000,
++             "end_exclusive": True},
++            {"origin_event_id": token.event_identity, "source_id": source_identity + ":verification",
++             "budget_ns": 40_000_000_000, "deadline_ns": bracket.lower_ns + 40_000_000_000,
++             "end_exclusive": True},
++        ]
++        task = {
++            "schema_version": "simulation.operational-window.local.v1",
++            "window_id": "r158-original-task", "kind": "bootstrap",
++            "kind_policy": "HARD_ORIGINAL_TASK_LIFECYCLE", "budget_semantics": "HARD_OPEN",
++            "budget_ns": 60_000_000_000, "domain": domain, "origin_domain": "ORIGINAL_TASK_D",
++            "task_origin_event_id": token.event_identity, "event_id": token.event_identity,
++            "source_hashes": hashes, "source_identity": source_identity,
++            **{key: identity[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")},
++            "fencing": legacy["data"]["original"].registered_at.isoformat(),
++            "episode_id": identity["episode_id"], "parents": [], "age_constraints": [],
++            "hard_deadlines": hard, "deadline_ns": hard[1]["deadline_ns"],
++            "deadline_semantics": "HARD_OPEN",
++            "effective_upper": {"value_ns": hard[1]["deadline_ns"], "inclusive": False},
++            "lease_deadline_domain": "SEPARATE_D_LEASE_DECISION", "live_authority": "NOT_EXPORTED",
++        }
++        provenance = {"kind": "EXTERNAL_UTC",
++                      "content_sha256": _b_sha(legacy["data"]["original"].contract.model_dump(mode="json"))}
++        original = {
++            "schema_version": "visual.local-original-time.v1", "app_domain": domain,
++            "task_origin_event_id": token.event_identity, "task_reference": task,
++            "verification_reference": copy.deepcopy(task), "recovery_reference": copy.deepcopy(task),
++            "lease_identity": {
++                **{key: identity[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")},
++                "epoch": identity["owner_epoch"], "source_identity": source_identity,
++                # Caller-created SOURCE_ONLY descriptor in the unchanged raw broker shape.
++                "original_acquisition": {
++                    "domain": lease_domain, "event_id": lease_token.event_identity,
++                    "lower_ns": acquisition.lower_ns, "upper_ns": acquisition.upper_ns,
++                    "budget_ns": 1_000_000_000,
++                    "deadline_ns": acquisition.lower_ns + 1_000_000_000,
++                    "end_exclusive": True,
++                },
++            },
++            "source_hashes": hashes, "contract_provenance": provenance,
++        }
++        return original, {
++            "domain": domain, "event_identity": app_current.event_identity,
++            "lower_ns": app_current.lower_ns, "upper_ns": app_current.upper_ns,
++        }
++    finally:
++        app.close()
++        lease.close()
++        assert app._closed and lease._closed
++
++
++def _b_decision(original, app_current, generation=1):
++    acquisition = original["lease_identity"]["original_acquisition"]
++    identity = original["lease_identity"]
++    # Caller-created UNKNOWN shape controls; these are not live broker receipts.
++    segment = copy.deepcopy(acquisition)
++    if generation > 1:
++        shift = (generation - 1) * 1_000_000
++        segment["event_id"] = "r158-caller-segment-" + str(generation)
++        segment["lower_ns"] = acquisition["lower_ns"] + shift
++        segment["upper_ns"] = acquisition["upper_ns"] + shift
++        segment["deadline_ns"] = segment["lower_ns"] + segment["budget_ns"]
++    exact_receipt_fields = {"domain", "event_id", "lower_ns", "upper_ns",
++                            "deadline_ns", "budget_ns", "end_exclusive"}
++    assert set(acquisition) == set(segment) == exact_receipt_fields
++    assert segment["budget_ns"] == acquisition["budget_ns"]
++    assert generation == 1 or segment != acquisition
++    assert acquisition == original["lease_identity"]["original_acquisition"]
++    lease_observation = {
++        "status": "UNKNOWN", "reasons": ["detached_codec_fixture_no_broker_authority"],
++        "domain": acquisition["domain"], "original_acquisition": acquisition,
++        "segment": segment,
++        "current": {"domain": acquisition["domain"],
++                    "lower_ns": segment["upper_ns"], "upper_ns": segment["upper_ns"]},
++        "job_id": identity["job_id"], "lease_id": identity["lease_id"],
++        "worker_id": identity["worker_id"], "attempt": identity["attempt"],
++        "generation": generation, "source_identity": identity["source_identity"],
++        "schema": "simulation.operational-lease-observation.v1",
++        "stage_label": "LEASE_FOUNDATION_WITH_LEGACY_UTC_VETO",
++    }
++    return {
++        "schema_version": "visual.local-two-authority-decision.v1",
++        "operation_id": "r158-detached-operation", "operation_sha256": "a" * 64,
++        "original_time_hash": _b_sha(original), "app_domain": original["app_domain"],
++        "app_current": app_current, "app_verdict": {"status": "UNKNOWN", "reasons": ["detached"]},
++        "app_references": [original["task_reference"]], "lease_observation": lease_observation,
++        "lease_epoch": identity["epoch"], "lease_generation": generation,
++        "lease_row_revision": generation, "lease_row_digest": "b" * 64,
++        "source_identity": identity["source_identity"],
++        **{key: identity[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")},
++        "disposition": "UNKNOWN", "reasons": ["detached_codec_fixture_no_private_scope"],
++    }
++
++
++def _b_transaction(decision):
++    return {
++        "schema_version": "visual.local-publication-transaction.v1",
++        "operation_id": decision["operation_id"], "operation_sha256": decision["operation_sha256"],
++        "job_id": decision["job_id"], "attempt": decision["attempt"], "lease_id": decision["lease_id"],
++        "epoch": decision["lease_epoch"], "generation": decision["lease_generation"],
++        "row_revision": decision["lease_row_revision"], "job_database_id": "r158-detached-job-db",
++        "event_repository_id": "r158-detached-event-repo", "event_kind": "codec_history",
++        "event_key": "r158-detached-history", "expected_event_revision": 0, "event_revision": 1,
++        "event_record_hash": "c" * 64, "job_receipt_hash": None, "event_receipt_hash": None,
++        "phase": "UNKNOWN", "failure_reason": "no_private_commit",
++    }
++
++
++def _b_local_cases(legacy, original, app_current):
++    """Semantic sources come from actual legacy codecs, never empty schema placeholders."""
++    import json
++
++    sources = legacy["sources"]
++    fields = _b_fields()
++    bootstrap_original = copy.deepcopy(original)
++    bootstrap_definition = sources["visual.bootstrap.definition.v1"].to_payload()
++    bootstrap_lease = bootstrap_definition["lease"]
++    task_ns = int(bootstrap_definition["task_timeout_s"] * 1_000_000_000)
++    verification_ns = int(min(
++        bootstrap_definition["task_timeout_s"], bootstrap_definition["verification_limits"]["deadline_s"]
++    ) * 1_000_000_000)
++    bootstrap_original["source_hashes"] = copy.deepcopy(bootstrap_definition["source_hashes"])
++    bootstrap_original["contract_provenance"] = {
++        "kind": "EXTERNAL_UTC",
++        "content_sha256": _b_sha(legacy["promoted_original"].contract.model_dump(mode="json")),
++    }
++    for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt"):
++        bootstrap_original["lease_identity"][key] = bootstrap_lease[key]
++    bootstrap_original["lease_identity"]["epoch"] = legacy["promoted_original"].identity.owner_epoch
++    bootstrap_original["lease_identity"]["source_identity"] = _b_sha({
++        "lease": {key: bootstrap_lease[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")},
++        "sources": bootstrap_original["source_hashes"],
++    })
++    for name in ("task_reference", "verification_reference", "recovery_reference"):
++        ref = bootstrap_original[name]
++        ref["budget_ns"] = task_ns
++        ref["source_hashes"] = copy.deepcopy(bootstrap_original["source_hashes"])
++        ref["source_identity"] = bootstrap_original["lease_identity"]["source_identity"]
++        ref["fencing"] = bootstrap_lease["acquired_at"]
++        ref["episode_id"] = bootstrap_definition["episode_id"]
++        for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt"):
++            ref[key] = bootstrap_lease[key]
++        for index, budget in enumerate((task_ns, verification_ns)):
++            ref["hard_deadlines"][index]["budget_ns"] = budget
++            ref["hard_deadlines"][index]["deadline_ns"] = budget
++            ref["hard_deadlines"][index]["source_id"] = ref["source_identity"] + (":task" if index == 0 else ":verification")
++        ref["deadline_ns"] = verification_ns
++        ref["effective_upper"]["value_ns"] = verification_ns
++    local = {}
++    for tag, exact in fields.items():
++        old_tag = tag.replace(".local.v1", ".v1")
++        if tag == "visual.verification.route-input.local.v1":
++            old_tag = "visual.verification.route-input.v2"
++        source = sources[old_tag]
++        bound_original = bootstrap_original if tag.startswith("visual.bootstrap.") else original
++        decision = _b_decision(bound_original, app_current)
++        transaction = _b_transaction(decision)
++        legacy_raw_payload = source.model_dump(mode="json") if old_tag == "recovery.retry-budget.v1" else source.to_payload()
++        raw = json.loads(json.dumps(
++            legacy_raw_payload, allow_nan=False, sort_keys=True,
++            separators=(",", ":"), ensure_ascii=False,
++        ))
++        diagnostics = {
++            "utc": {key: value for key, value in raw.items()
++                    if key.endswith("_at") or key in ("retry_deadline",)},
++            "monotonic": None,
++        }
++        body = {key: copy.deepcopy(raw[key]) for key in exact if key in raw}
++        if "contract_provenance" in exact:
++            body["contract_provenance"] = copy.deepcopy(bound_original["contract_provenance"])
++        if "state" in body:
++            body["state"].pop("deadline_at")
++            body["state"]["original_budget_reference"] = copy.deepcopy(bound_original["verification_reference"])
++        if tag == "recovery.verification-budget.local.v1":
++            legacy_budget_payload = copy.deepcopy(raw)
++            local_budget_binding = {
++                "schema_version": tag, "task_id": body["task_id"],
++                "state": body["state"], "revision": body["revision"],
++            }
++            body["content_hash"] = _b_sha(local_budget_binding)
++            assert body["content_hash"] != legacy_budget_payload["content_hash"]
++            assert set(local_budget_binding) == {"schema_version", "task_id", "state", "revision"}
++            assert source.to_payload() == legacy_raw_payload
++            assert json.loads(json.dumps(
++                source.to_payload(), allow_nan=False, sort_keys=True,
++                separators=(",", ":"), ensure_ascii=False,
++            )) == legacy_budget_payload
++            assert body["state"]["original_budget_reference"] == bound_original["verification_reference"]
++            assert body["state"]["limits"] == legacy_budget_payload["state"]["limits"]
++            for counter in (
++                "remaining_reobservations", "remaining_retries", "consecutive_no_progress",
++                "verification_rounds", "previous_conditions", "exhausted_reason",
++            ):
++                assert body["state"][counter] == legacy_budget_payload["state"][counter]
++            assert body["revision"] == legacy_budget_payload["revision"]
++        is_original = tag.endswith((".definition.local.v1", ".original.local.v1"))
++        is_request = tag.endswith((".transition.local.v1", ".promotion.local.v1", ".route-input.local.v1"))
++        local[tag] = {
++            "schema_version": tag, "payload": body, "original_time": copy.deepcopy(bound_original),
++            "decision": None if is_original or is_request else copy.deepcopy(decision),
++            "transaction": None if is_original or is_request else copy.deepcopy(transaction),
++            "diagnostics": diagnostics,
++        }
++        assert set(body) == set(exact), (tag, set(exact) - set(body))
++    return local
++
++
++def _b_decode_domain(tag, payload):
++    import importlib
++
++    decoders = {
++        "visual.bootstrap.definition.local.v1": ("repositories.event_autonomy.visual_bootstrap", "VisualBootstrapDefinition", "from_payload"),
++        "visual.bootstrap.record.local.v1": ("repositories.event_autonomy.visual_bootstrap", "VisualBootstrapRecord", "from_payload"),
++        "visual.bootstrap.transition.local.v1": ("repositories.event_autonomy.visual_bootstrap", "VisualBootstrapTransitionInput", "from_payload"),
++        "visual.bootstrap.promotion.local.v1": ("repositories.event_autonomy.visual_bootstrap", "VisualBootstrapPromotionInput", "from_payload"),
++        "visual.supervision.definition.local.v1": ("repositories.event_autonomy.visual_supervision", "VisualSupervisionDefinition", "from_payload"),
++        "visual.supervision.record.local.v1": ("repositories.event_autonomy.visual_supervision", "VisualSupervisionRecord", "from_payload"),
++        "visual.supervision.transition.local.v1": ("repositories.event_autonomy.visual_supervision", "VisualSupervisionTransitionInput", "from_payload"),
++        "visual.owner.original.local.v1": ("repositories.event_autonomy.visual_owner", None, "original_from_payload"),
++        "visual.owner.grounding.local.v1": ("repositories.event_autonomy.visual_owner", None, "grounding_from_payload"),
++        "visual.owner.publication.local.v1": ("repositories.event_autonomy.visual_owner", "VisualOwnerPublicationRecord", "from_payload"),
++        "visual.verification.route-input.local.v1": ("repositories.event_autonomy.visual_verification", "VisualVerificationRouteInput", "from_payload"),
++        "visual.verification.route.local.v1": ("repositories.event_autonomy.visual_verification", "VisualVerificationRouteRecord", "__call__"),
++        "visual.verification.effect-completion.local.v1": ("repositories.event_autonomy.visual_verification", "VisualEffectCompletion", "from_payload"),
++        "recovery.verification-budget.local.v1": ("edge.recovery.lifecycle", "LocalVerificationBudgetRecord", "from_payload"),
++        "recovery.retry-budget.local.v1": ("vision.local_temporal", "LocalEnvelope", "from_payload"),
++    }
++    suffix, type_name, method = decoders[tag]
++    module = importlib.import_module("cloud_edge_robot_arm." + suffix)
++    assert type_name is None or hasattr(module, type_name), f"R158 missing local domain type {tag}"
++    target = module if type_name is None else getattr(module, type_name)
++    if method == "__call__":
++        return target(payload)
++    assert hasattr(target, method), f"R158 missing local domain decoder {tag}"
++    return getattr(target, method)(payload)
++
++
++def _b_duplicate_mapping(value):
++    from collections.abc import Mapping
++
++    pairs = list(value.items())
++    pairs.append(pairs[0])
++
++    class DuplicateMapping(Mapping):
++        def __getitem__(self, key):
++            return value[key]
++
++        def __iter__(self):
++            return (key for key, _ in pairs)
++
++        def __len__(self):
++            return len(pairs)
++
++        def items(self):
++            return iter(pairs)
++
++    return DuplicateMapping()
++
++
++@pytest.mark.parametrize("family", ["bootstrap", "supervision", "owner_grounding", "route_completion_budget"])
++def test_b_local_temporal_schema_roundtrip(monkeypatch, tmp_path, family):
++    api = _b_api()
++    legacy = _b_legacy_sources(monkeypatch)
++    original, current = _b_detached_original(legacy)
++    cases = _b_local_cases(legacy, original, current)
++    prefixes = {
++        "bootstrap": ("visual.bootstrap.",),
++        "supervision": ("visual.supervision.",),
++        "owner_grounding": ("visual.owner.",),
++        "route_completion_budget": ("visual.verification.", "recovery."),
++    }
++    selected = {tag: payload for tag, payload in cases.items() if tag.startswith(prefixes[family])}
++    assert len(selected) == {"bootstrap": 4, "supervision": 3, "owner_grounding": 3, "route_completion_budget": 5}[family]
++    for tag, payload in selected.items():
++        envelope = api.LocalEnvelope.from_payload(payload)
++        assert envelope.to_payload() == payload
++        assert len(envelope.digest()) == 64
++        assert api.LocalEnvelope.from_payload(envelope.to_payload()).digest() == envelope.digest()
++        domain = _b_decode_domain(tag, payload)
++        assert domain.to_payload() == payload, f"domain codec lost local semantic envelope: {tag}"
++        assert set(payload) == {"schema_version", "payload", "original_time", "decision", "transaction", "diagnostics"}
++        assert set(payload["payload"]) == set(_b_fields()[tag])
++        assert _b_canonical(domain.to_payload()) == _b_canonical(payload)
++        exported = envelope.to_payload()
++        exported["original_time"]["source_hashes"]["caller.py"] = "f" * 64
++        assert envelope.to_payload() == payload
++        for section in (None, "payload", "original_time", "diagnostics"):
++            for key in payload if section is None else payload[section]:
++                bad = copy.deepcopy(payload)
++                del (bad if section is None else bad[section])[key]
++                with pytest.raises((ValueError, TypeError)):
++                    api.LocalEnvelope.from_payload(bad)
++            bad = copy.deepcopy(payload)
++            (bad if section is None else bad[section])["unexpected"] = None
++            with pytest.raises((ValueError, TypeError)):
++                api.LocalEnvelope.from_payload(bad)
++        for section in (None, "payload"):
++            bad = copy.deepcopy(payload)
++            if section is None:
++                bad = _b_duplicate_mapping(bad)
++            else:
++                bad[section] = _b_duplicate_mapping(bad[section])
++            with pytest.raises((ValueError, TypeError)):
++                api.LocalEnvelope.from_payload(bad)
++        for value in (float("nan"), float("inf"), float("-inf"), object()):
++            bad = copy.deepcopy(payload)
++            bad["diagnostics"]["monotonic"] = value
++            with pytest.raises((ValueError, TypeError)):
++                api.LocalEnvelope.from_payload(bad)
++        for mutate in (
++            lambda p: p["original_time"]["app_domain"].__setitem__("startup_counter_ns", True),
++            lambda p: p["original_time"]["task_reference"].__setitem__("budget_ns", True),
++            lambda p: p["original_time"]["verification_reference"]["domain"].__setitem__("startup_nonce", "foreign-equal-ns"),
++            lambda p: p["original_time"]["task_reference"]["parents"].append("unissued-parent"),
++        ):
++            bad = copy.deepcopy(payload)
++            mutate(bad)
++            with pytest.raises((ValueError, TypeError)):
++                api.LocalEnvelope.from_payload(bad)
++    (tmp_path / f"local-{family}.json").write_bytes(_b_canonical(selected) + b"\n")
++
++
++def test_b_local_codec_cannot_mint_live_authority(monkeypatch, tmp_path):
++    api = _b_api()
++    from cloud_edge_robot_arm.simulation_runtime import operational_lease
++    from cloud_edge_robot_arm.vision import operational_windows
++
++    registries = [
++        operational_windows._OWNERS, operational_windows._PENDING, operational_windows._HANDOFFS,
++        operational_windows._SCOPES, operational_windows._TRANSITIONS,
++        operational_lease._SESSIONS, operational_lease._VIEWS, operational_lease._PROPOSALS,
++        operational_lease._ACKS,
++    ]
++    before = [dict(registry) for registry in registries]
++    legacy = _b_legacy_sources(monkeypatch)
++    original, current = _b_detached_original(legacy)
++    for tag, payload in _b_local_cases(legacy, original, current).items():
++        detached = _b_decode_domain(tag, api.LocalEnvelope.from_payload(payload).to_payload())
++        for symbol in ("execution_permission", "method_admitted", "execution_admitted",
++                       "evaluate_locked", "confirm_locked", "NEW_COMMIT"):
++            assert not hasattr(detached, symbol), (tag, symbol)
++        for reference in (original["task_reference"], original["verification_reference"]):
++            assert operational_windows._check_reference(reference).status == "UNKNOWN"
++        assert [dict(registry) for registry in registries] == before
++    assert operational_windows._current_owner() is None
++    assert [dict(registry) for registry in registries] == before
++    (tmp_path / "codec-registry-denial.json").write_bytes(
++        _b_canonical({"registries_unchanged": True, "private_owner": None, "new_commit": False}) + b"\n"
++    )
++
++
++def test_b_local_original_hash_stable_across_lease_renewal(monkeypatch, tmp_path):
++    api = _b_api()
++    legacy = _b_legacy_sources(monkeypatch)
++    original, current = _b_detached_original(legacy)
++    detached = api.LocalOriginalTime.from_payload(original)
++    old_digest = detached.digest()
++    first = api.LocalAuthorityDecision.from_payload(_b_decision(original, current, 1))
++    renewed = api.LocalAuthorityDecision.from_payload(_b_decision(original, current, 2))
++    assert first.to_payload()["lease_generation"] == 1
++    assert renewed.to_payload()["lease_generation"] == 2
++    assert first.to_payload()["original_time_hash"] == renewed.to_payload()["original_time_hash"] == old_digest
++    assert detached.digest() == old_digest and detached.to_payload() == original
++    assert set(original["lease_identity"]) == {
++        "job_id", "run_id", "worker_id", "lease_id", "attempt", "epoch", "source_identity", "original_acquisition"
++    }
++    envelope = _b_local_cases(legacy, original, current)["recovery.verification-budget.local.v1"]
++    for mutate in (
++        lambda p: p["original_time"]["lease_identity"].__setitem__("generation", 2),
++        lambda p: p["original_time"].__setitem__("task_origin_event_id", "renewed-task-origin"),
++        lambda p: p["original_time"]["verification_reference"].__setitem__("event_id", "renewed-verification-origin"),
++        lambda p: p["original_time"]["source_hashes"].__setitem__("caller.py", "f" * 64),
++        lambda p: p["original_time"]["verification_reference"]["hard_deadlines"][1].__setitem__("budget_ns", 41_000_000_000),
++        lambda p: p["original_time"]["recovery_reference"]["domain"].__setitem__("startup_nonce", "foreign-equal-ns"),
++        lambda p: p["payload"]["state"]["limits"].__setitem__("max_reobservations", 4),
++        lambda p: p["decision"].__setitem__("original_time_hash", "d" * 64),
++    ):
++        bad = copy.deepcopy(envelope)
++        mutate(bad)
++        with pytest.raises((ValueError, TypeError)):
++            api.LocalEnvelope.from_payload(bad)
++    (tmp_path / "original-renewal.json").write_bytes(
++        _b_canonical({"original_digest": old_digest, "first": first.to_payload(), "renewed": renewed.to_payload()}) + b"\n"
++    )
++
++
++def test_b_legacy_v1_v2_codec_bytes_and_utc_rules(monkeypatch, tmp_path):
++    import os
++    from pathlib import Path
++    from datetime import timedelta
++
++    from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
++    from cloud_edge_robot_arm.edge.recovery import verification_router
++    from cloud_edge_robot_arm.repositories.event_autonomy import visual_owner, visual_verification
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from tests import test_visual_verification_repository as route_fixture
++
++    legacy = _b_legacy_sources(monkeypatch)
++    goldens = {}
++    for tag, source in legacy["sources"].items():
++        raw = source.model_dump(mode="json") if tag == "recovery.retry-budget.v1" else source.to_payload()
++        if tag == "recovery.retry-budget.v1":
++            replay = type(source).model_validate_json(_b_canonical(raw))
++            actual = replay.model_dump(mode="json")
++        elif tag == "visual.owner.original.v1":
++            actual = visual_owner.original_from_payload(raw).to_payload()
++        elif tag == "visual.owner.grounding.v1":
++            actual = visual_owner.grounding_from_payload(raw).to_payload()
++        elif tag == "visual.verification.route.v1":
++            actual = visual_verification.VisualVerificationRouteRecord(raw).to_payload()
++        else:
++            actual = type(source).from_payload(raw).to_payload()
++        assert _b_canonical(actual) == _b_canonical(raw), tag
++        goldens[tag] = _b_canonical(raw).decode()
++    destination = Path(os.environ["BIGSMALL_R158_LEGACY_GOLDENS"])
++    phase = os.environ["BIGSMALL_R158_COMMAND"]
++    if phase != "t1_red":
++        assert phase in {"t1_green", "final_new23"}
++        assert destination.read_bytes() == _b_canonical(goldens) + b"\n"
++    data = legacy["data"]
++    request = route_fixture.request_for(data)
++    original = data["original"]
++    state = legacy["state"]
++    at_deadline = state.deadline_at
++    _b_utc(monkeypatch, at_deadline)
++    assert verification_router.route_verification([], state, {DecisionAction.REOBSERVE}) == DecisionAction.STOP
++    assert state.exhausted_reason == "deadline_exhausted"
++    with pytest.raises(ValueError, match="deadline expired"):
++        visual_owner.publication(
++            original, data["source_checkpoint"], data["publication"].verification_budget,
++            legacy["retry"], revision=2, generation=1, source_revision=1, operation_hash="a" * 64,
++        )
++    for offset, expected in ((timedelta(seconds=1), None), (timedelta(seconds=-6), "frame_ttl_expired")):
++        changed = copy.deepcopy(request.to_payload())
++        changed["online"]["observation"]["captured_at"] = (legacy["basis"] + offset).isoformat()
++        changed["online"]["observation"]["checksum_sha256"] = ""
++        changed["online"]["observation"] = RGBDObservation.model_validate(
++            changed["online"]["observation"]
++        ).model_dump(mode="json")
++        checked = visual_verification.VisualVerificationRouteInput.from_payload(changed)
++        assert checked.online().observation.captured_at == legacy["basis"] + offset
++        _b_utc(monkeypatch, legacy["basis"])
++        from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
++        repo = InMemoryEventAutonomyRepository()
++        try:
++            repo.initialize_visual_owner_if_absent(
++                original, data["source_checkpoint"], legacy["sources"]["visual.owner.publication.v1"].verification_budget.state,
++                legacy["retry"],
++            )
++            # Rejoin the actual repository publication rather than forge a CAS.
++            checked_payload = checked.to_payload()
++            checked_payload["publication"] = repo.get_visual_owner_publication(original.identity.task_id).to_payload()
++            before_hash = checked_payload["publication"]["publication_hash"]
++            result = repo.route_visual_verification_if_current(
++                request=visual_verification.VisualVerificationRouteInput.from_payload(checked_payload)
++            )
++            if expected is None:
++                assert result is None, "strict legacy route rejects a future frame before write"
++                assert repo.get_visual_owner_publication(original.identity.task_id).digest() == before_hash
++            else:
++                assert result is not None and result.record.route == "STOP"
++                assert expected in result.record.reasons
++        finally:
++            repo.close()
++    if phase == "t1_red":
++        with destination.open("xb") as out:
++            out.write(_b_canonical(goldens) + b"\n")
++    (tmp_path / "legacy-golden-control.json").write_bytes(_b_canonical({"tags": sorted(goldens), "golden_byte_match": True}) + b"\n")

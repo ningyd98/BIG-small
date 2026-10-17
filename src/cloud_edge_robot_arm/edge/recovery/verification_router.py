@@ -16,6 +16,7 @@ from math import isfinite
 
 from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
 from cloud_edge_robot_arm.edge.evidence.conditions import ConditionStatus, ConditionVerdict
+from cloud_edge_robot_arm.vision.local_temporal import LocalVerificationBudgetState
 
 
 @dataclass(frozen=True)
@@ -84,10 +85,14 @@ class VerificationBudgetState:
 
 def route_verification(
     verdicts: Sequence[ConditionVerdict],
-    budget: VerificationBudgetState,
+    budget: VerificationBudgetState | LocalVerificationBudgetState,
     capabilities: set[DecisionAction],
 ) -> DecisionAction:
     """UNKNOWN only reobserves; FAIL may use a supported, budgeted recovery."""
+    if isinstance(budget, LocalVerificationBudgetState):
+        # T1 only decodes detached history. A recorded VALID decision cannot
+        # supply the private coupled job/event consumer introduced by T2/T3.
+        return DecisionAction.STOP
     if budget.exhausted_reason is not None:
         return DecisionAction.STOP
     if datetime.now(UTC) >= budget.deadline_at:

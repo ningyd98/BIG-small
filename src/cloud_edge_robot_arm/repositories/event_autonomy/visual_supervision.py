@@ -45,6 +45,12 @@ from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import
     current_models_exact,
 )
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
+from cloud_edge_robot_arm.vision.local_temporal import (
+    LocalDomainEnvelope,
+    _array as local_array,
+    _integer as local_integer,
+    _object as local_object,
+)
 from cloud_edge_robot_arm.vision.owner_registration import VisualOriginalPlan
 from cloud_edge_robot_arm.vision.role_models import RoleModelBundle, RoleProviderSnapshot
 from cloud_edge_robot_arm.vision.supervision import SupervisionContext, SupervisionDecision
@@ -110,6 +116,7 @@ class VisualSupervisionDefinition:
         model_snapshot_hash: str,
         role_bundle: RoleModelBundle,
         job_configuration_hash: str | None = None,
+        operational_windows: list[dict[str, Any]] | None = None,
     ) -> None:
         if (
             type(original) is not VisualOriginalPlan
@@ -133,12 +140,18 @@ class VisualSupervisionDefinition:
                 job_configuration_hash=job_configuration_hash,
             )
         )
+        if operational_windows is not None:
+            body["operational_windows"] = operational_windows
         self._validate(body)
         object.__setattr__(self, "_json", canonical(body))
 
     @staticmethod
     def _validate(body: dict[str, Any]) -> None:
-        if set(body) != {
+        if "operational_windows" in body:
+            from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+
+            _validate_references(body["operational_windows"])
+        if set(body) - {"operational_windows"} != {
             "schema_version",
             "scope",
             "original",
@@ -202,6 +215,8 @@ class VisualSupervisionDefinition:
 
     @classmethod
     def from_payload(cls, body: dict[str, Any]) -> VisualSupervisionDefinition:
+        if body.get("schema_version") == "visual.supervision.definition.local.v1":
+            return LocalVisualSupervisionDefinition.from_payload(body)
         copied = _load(canonical(_plain(body)))
         cls._validate(copied)
         result = object.__new__(cls)
@@ -264,6 +279,7 @@ class VisualSupervisionTransitionInput:
         decision: SupervisionDecision | None = None,
         wait_duration_s: float | None = None,
         wait_elapsed_s: float | None = None,
+        operational_windows: list[dict[str, Any]] | None = None,
     ) -> None:
         if (
             type(record) is not VisualSupervisionRecord
@@ -301,12 +317,18 @@ class VisualSupervisionTransitionInput:
                 wait_elapsed_s=wait_elapsed_s,
             )
         )
+        if operational_windows is not None:
+            body["operational_windows"] = operational_windows
         self._validate(body)
         object.__setattr__(self, "_json", canonical(body))
 
     @staticmethod
     def _validate(body: dict[str, Any]) -> None:
-        if set(body) != {
+        if "operational_windows" in body:
+            from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+
+            _validate_references(body["operational_windows"])
+        if set(body) - {"operational_windows"} != {
             "schema_version",
             "scope",
             "task_id",
@@ -387,6 +409,8 @@ class VisualSupervisionTransitionInput:
 
     @classmethod
     def from_payload(cls, body: dict[str, Any]) -> VisualSupervisionTransitionInput:
+        if body.get("schema_version") == "visual.supervision.transition.local.v1":
+            return LocalVisualSupervisionTransitionInput.from_payload(body)
         copied = _load(canonical(_plain(body)))
         cls._validate(copied)
         result = object.__new__(cls)
@@ -464,6 +488,8 @@ class VisualSupervisionRecord:
 
     @classmethod
     def from_payload(cls, body: dict[str, Any]) -> VisualSupervisionRecord:
+        if body.get("schema_version") == "visual.supervision.record.local.v1":
+            return LocalVisualSupervisionRecord.from_payload(body)
         copied = _load(canonical(_plain(body)))
         definition = VisualSupervisionDefinition.from_payload(copied["definition"])
         expected = _start(definition)
@@ -501,6 +527,72 @@ class VisualSupervisionRecord:
     @property
     def definition(self) -> VisualSupervisionDefinition:
         return VisualSupervisionDefinition.from_payload(self.to_payload()["definition"])
+
+
+class LocalVisualSupervisionDefinition(LocalDomainEnvelope, VisualSupervisionDefinition):
+    _tag = "visual.supervision.definition.local.v1"
+
+    @property
+    def original(self) -> VisualOriginalPlan:
+        # Embedded external/legacy sources are audit inputs, never current authority.
+        return original_from_payload(self.object("original"))
+
+    @property
+    def task_id(self) -> str:
+        return self.original.identity.task_id
+
+    @property
+    def deadline_at(self) -> datetime:
+        return self.legacy_deadline()
+
+    @property
+    def max_periodic_captures(self) -> int:
+        period = self.semantic["supervision_period_s"]
+        if period is None:
+            return 0
+        reference = local_object(self.local_time.to_payload()["verification_reference"])
+        lengths = [local_integer(local_object(raw)["budget_ns"], positive=True)
+                   for raw in local_array(reference["hard_deadlines"])]
+        return max(0, math.ceil(min(lengths) / 1_000_000_000 / self.number("supervision_period_s", positive=True)) - 1)
+
+
+class LocalVisualSupervisionTransitionInput(LocalDomainEnvelope, VisualSupervisionTransitionInput):
+    _tag = "visual.supervision.transition.local.v1"
+
+    @property
+    def task_id(self) -> str:
+        return self.string("task_id")
+
+    def semantic_hash(self) -> str:
+        body = self.semantic
+        for name in ("event_key", "expected_revision", "expected_record_hash"):
+            body.pop(name)
+        return digest({"schema_version": self._tag, "payload": body,
+                       "original_time": self.local_time.to_payload()})
+
+
+class LocalVisualSupervisionRecord(LocalDomainEnvelope, VisualSupervisionRecord):
+    _tag = "visual.supervision.record.local.v1"
+
+    @property
+    def revision(self) -> int:
+        return self.counter("revision")
+
+    @property
+    def definition(self) -> VisualSupervisionDefinition:
+        return VisualSupervisionDefinition.from_payload(self.object("definition"))
+
+    @property
+    def captures_reserved(self) -> int:
+        return self.counter("captures_reserved")
+
+    @property
+    def supervisor_calls_reserved(self) -> int:
+        return self.counter("supervisor_calls_reserved")
+
+    @property
+    def wait_seconds_reserved(self) -> float:
+        return self.number("wait_seconds_reserved")
 
 
 @dataclass(frozen=True)
@@ -824,6 +916,11 @@ def derive_supervision(
             return VisualSupervisionTransitionResult(
                 record, _claim_key(body), "HISTORICAL_DUPLICATE"
             )
+    from cloud_edge_robot_arm.vision.operational_windows import _consume_transition
+
+    _consume_transition(
+        body, required="operational_windows" in record.definition.to_payload()
+    )
     if (
         cancelled
         or not current_models_exact(active, checkpoint, retry)

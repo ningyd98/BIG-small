@@ -1,0 +1,43 @@
+{
+  "round": "R173",
+  "date": "2026-10-14",
+  "kind": "ROOT_PRE_GREEN_SOURCE_INTERFACE_FINDING_PENDING_ACTUAL_ASTRA_DISPOSITION",
+  "actual_test_failure": false,
+  "T1_GREEN_executed": false,
+  "R158": {
+    "used": 2,
+    "remaining": 13,
+    "t1_green_used": 0,
+    "t1_green_remaining": 1
+  },
+  "finding": "A new local publication carrier's verification_budget getter calls the legacy VerificationBudgetRecord.from_payload, whose unchanged decoder rejects any tag other than recovery.verification-budget.v1. Its retry_budget getter passes the whole nested value to the legacy RecoveryBudget model. Determine whether supported local nested budget envelopes must be exposed through these getters at T1, whether a distinct tagged dispatcher is missing, or whether the parent task intentionally defers this interface to T2; do not assume a verdict.",
+  "observations": [
+    {
+      "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+      "bytes": 30156,
+      "sha256": "8a958ba9c3113e8465936c66d1f7a154dde3b17d014beff7a8065edf6bd34f38",
+      "source": "class LocalVisualOwnerPublicationRecord(LocalDomainEnvelope, VisualOwnerPublicationRecord):\n    _tag = \"visual.owner.publication.local.v1\"\n    @property\n    def verification_budget(self) -> VerificationBudgetRecord:\n        from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord\n        return VerificationBudgetRecord.from_payload(self.object(\"verification_budget\"))\n    @property\n    def retry_budget(self) -> RecoveryBudget:\n        return self.model(\"retry_budget\", RecoveryBudget)\n"
+    },
+    {
+      "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+      "bytes": 42191,
+      "sha256": "c59fef117801c807eee3da9eee9c990a4ddda4f7a1854815ac373d4f88dec61a",
+      "source": "148:     @classmethod\n149:     def from_payload(cls, payload: dict[str, Any]) -> VerificationBudgetRecord:\n150:         values = dict(payload)\n151:         if values.pop(\"schema_version\") != \"recovery.verification-budget.v1\":\n152:             raise ValueError(\"unknown verification budget schema\")\n153:         values[\"state\"] = _state_from_payload(values[\"state\"])\n154:         for name in (\"created_at\", \"updated_at\"):\n155:             values[name] = datetime.fromisoformat(values[name])\n156:         return cls(**values)\n167: class LocalVerificationBudgetRecord(LocalDomainEnvelope):\n170:     _tag = \"recovery.verification-budget.local.v1\"\n"
+    },
+    {
+      "file": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py",
+      "bytes": 124891,
+      "sha256": "6f366d63732893eee86ee0c0e1c1fdd60fa2812618a4448ae9d7b7f451e4174f",
+      "source": "2360:         \"recovery.verification-budget.local.v1\": (\"edge.recovery.lifecycle\", \"LocalVerificationBudgetRecord\", \"from_payload\"),"
+    }
+  ],
+  "parent_contract": "R158 T1: LocalVerificationBudgetRecord is a distinct strict new-schema history; copy_budget/record dispatch retain old bytes for legacy. Local retry envelope wraps actual RecoveryBudget semantic counts/policies with original recovery reference, removing UTC authority only on this new route. Existing domain-specific types may expose the new envelope while retaining semantic accessors. T1 exposes no usable runtime; actual consumers belong to T2/T3.",
+  "metadata_independence": "R172 canonicalization/freeze preparation is unaffected: all product files stay unchanged while its sole new metadata source is prepared/gated/run. Do not edit product or release GREEN until actual Astra disposition. Any repair must activate after the independently pending R172 metadata action settles, preserving its snapshots; current R172 43 input pins cannot be invalidated by an early product edit.",
+  "evidence": {
+    "domain_diff_store": "r158_t1_root_complete_seven_domain_adapter_candidate_diffs_review",
+    "focused_read_store": "r158_t1_root_budget_record_dispatch_focused_source_check",
+    "scope_plan": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/plan.json",
+    "R172_plan": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round172-p6-t1-freeze-metadata-assertion-20261014/plan.json"
+  },
+  "no_runtime_or_permission_claim": true
+}

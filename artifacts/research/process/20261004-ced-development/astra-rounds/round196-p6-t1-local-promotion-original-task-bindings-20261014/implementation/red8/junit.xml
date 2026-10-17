@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="7" skipped="0" tests="8" time="8.791" timestamp="2026-10-14T22:42:08.440271+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_local_temporal_promotion_bindings" name="test_r196_full_promotion_history[local]" time="1.044"><failure message="ValueError: local history has no UTC authority deadline">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7583121bbcb0&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r196-red8/test_r196_full_promotion_histo0')
+request = &lt;FixtureRequest for &lt;Function test_r196_full_promotion_history[local]&gt;&gt;
+source = 'local'
+
+    @pytest.mark.parametrize("source", ["local", "legacy"])
+    def test_r196_full_promotion_history(monkeypatch, tmp_path, request, source):
+        with _r196_case(request, tmp_path, "full-promotion:" + source) as evidence:
+            fixture = _frozen._r179_fixture(monkeypatch)
+            planned, promotion, final = _r196_promotion(fixture, source == "local", evidence)
+            evidence.update(baseline_payload=planned, changed_payload=final,
+                            mutation="append complete typed PROMOTE to four accepted capture/plan phases")
+&gt;           restored = _r196_decode(final, evidence, "complete promotion replay")
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_local_temporal_promotion_bindings.py:236: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_local_temporal_promotion_bindings.py:62: in _r196_decode
+    generic = LocalEnvelope.from_payload(copy.deepcopy(raw))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:1750: in from_payload
+    _semantic(tag, body, original, diagnostics,
+src/cloud_edge_robot_arm/vision/local_temporal.py:1405: in _semantic
+    if _integer(body["revision"]) != _history(
+src/cloud_edge_robot_arm/vision/local_temporal.py:1327: in _history
+    _replay_bootstrap(state, raw_request, original, current_decision, phases)
+src/cloud_edge_robot_arm/vision/local_temporal.py:990: in _replay_bootstrap
+    _bootstrap_promotion_source(prior, source, budget, state["observation"], descriptor)
+src/cloud_edge_robot_arm/vision/local_temporal.py:854: in _bootstrap_promotion_source
+    or prior.contract.timestamp != prior.registered_at
+                                   ^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/owner_registration.py:549: in registered_at
+    return self.legacy_deadline()
+           ^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = LocalVisualOriginalPlan(_json='{"decision":null,"diagnostics":{"monotonic":null,"utc":{}},"original_time":{"app_domain...66666666666666666666666666666666666666666666"}},"schema_version":"visual.owner.original.local.v1","transaction":null}')
+
+    def legacy_deadline(self) -&gt; datetime:
+&gt;       raise ValueError("local history has no UTC authority deadline")
+E       ValueError: local history has no UTC authority deadline
+
+src/cloud_edge_robot_arm/vision/local_temporal.py:1877: ValueError</failure></testcase><testcase classname="tests.test_local_temporal_promotion_bindings" name="test_r196_full_promotion_history[legacy]" time="0.589" /><testcase classname="tests.test_local_temporal_promotion_bindings" name="test_r196_semantic_original_join_rejects[route_input]" time="0.488"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x75830ff42000&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r196-red8/test_r196_semantic_original_jo0')
+request = &lt;FixtureRequest for &lt;Function test_r196_semantic_original_join_rejects[route_input]&gt;&gt;
+edge = 'route_input'
+
+    @pytest.mark.parametrize("edge", ["route_input", "supervision_definition", "supervision_transition"])
+    def test_r196_semantic_original_join_rejects(monkeypatch, tmp_path, request, edge):
+        with _r196_case(request, tmp_path, "semantic-original:" + edge) as evidence:
+            fixture = _frozen._r179_fixture(monkeypatch)
+            baseline = _r196_request(fixture, edge)
+            _r196_decode(baseline, evidence, "complete baseline")
+            changed = copy.deepcopy(baseline)
+            prior = _r196_alternate_original(changed["payload"]["original"])
+            _r196_decode(prior, evidence, "independent alternate original")
+            changed["payload"]["original"] = prior
+            _r196_publication_original(changed["payload"]["publication"], prior)
+            _r196_decode(changed["payload"]["publication"], evidence, "coherent dependent publication")
+            assert prior["original_time"] != changed["original_time"]
+            evidence.update(baseline_payload=baseline, changed_payload=changed,
+                            mutation="only embedded original verification window identity plus dependent publication hashes")
+&gt;           with pytest.raises(ValueError, match="original|reference|binding|time"):
+E           Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_local_temporal_promotion_bindings.py:257: Failed</failure></testcase><testcase classname="tests.test_local_temporal_promotion_bindings" name="test_r196_semantic_original_join_rejects[supervision_definition]" time="0.467"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x75830ff100b0&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r196-red8/test_r196_semantic_original_jo1')
+request = &lt;FixtureRequest for &lt;Function test_r196_semantic_original_join_rejects[supervision_definition]&gt;&gt;
+edge = 'supervision_definition'
+
+    @pytest.mark.parametrize("edge", ["route_input", "supervision_definition", "supervision_transition"])
+    def test_r196_semantic_original_join_rejects(monkeypatch, tmp_path, request, edge):
+        with _r196_case(request, tmp_path, "semantic-original:" + edge) as evidence:
+            fixture = _frozen._r179_fixture(monkeypatch)
+            baseline = _r196_request(fixture, edge)
+            _r196_decode(baseline, evidence, "complete baseline")
+            changed = copy.deepcopy(baseline)
+            prior = _r196_alternate_original(changed["payload"]["original"])
+            _r196_decode(prior, evidence, "independent alternate original")
+            changed["payload"]["original"] = prior
+            _r196_publication_original(changed["payload"]["publication"], prior)
+            _r196_decode(changed["payload"]["publication"], evidence, "coherent dependent publication")
+            assert prior["original_time"] != changed["original_time"]
+            evidence.update(baseline_payload=baseline, changed_payload=changed,
+                            mutation="only embedded original verification window identity plus dependent publication hashes")
+&gt;           with pytest.raises(ValueError, match="original|reference|binding|time"):
+E           Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_local_temporal_promotion_bindings.py:257: Failed</failure></testcase><testcase classname="tests.test_local_temporal_promotion_bindings" name="test_r196_semantic_original_join_rejects[supervision_transition]" time="0.458"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7583119e6660&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r196-red8/test_r196_semantic_original_jo2')
+request = &lt;FixtureRequest for &lt;Function test_r196_semantic_original_join_rejects[supervision_transition]&gt;&gt;
+edge = 'supervision_transition'
+
+    @pytest.mark.parametrize("edge", ["route_input", "supervision_definition", "supervision_transition"])
+    def test_r196_semantic_original_join_rejects(monkeypatch, tmp_path, request, edge):
+        with _r196_case(request, tmp_path, "semantic-original:" + edge) as evidence:
+            fixture = _frozen._r179_fixture(monkeypatch)
+            baseline = _r196_request(fixture, edge)
+            _r196_decode(baseline, evidence, "complete baseline")
+            changed = copy.deepcopy(baseline)
+            prior = _r196_alternate_original(changed["payload"]["original"])
+            _r196_decode(prior, evidence, "independent alternate original")
+            changed["payload"]["original"] = prior
+            _r196_publication_original(changed["payload"]["publication"], prior)
+            _r196_decode(changed["payload"]["publication"], evidence, "coherent dependent publication")
+            assert prior["original_time"] != changed["original_time"]
+            evidence.update(baseline_payload=baseline, changed_payload=changed,
+                            mutation="only embedded original verification window identity plus dependent publication hashes")
+&gt;           with pytest.raises(ValueError, match="original|reference|binding|time"):
+E           Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_local_temporal_promotion_bindings.py:257: Failed</failure></testcase><testcase classname="tests.test_local_temporal_promotion_bindings" name="test_r196_route_task_join_rejects[local_pair]" time="1.815"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x75830ff54c50&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r196-red8/test_r196_route_task_join_reje0')
+request = &lt;FixtureRequest for &lt;Function test_r196_route_task_join_rejects[local_pair]&gt;&gt;
+target = 'local_pair'
+
+    @pytest.mark.parametrize("target", ["local_pair", "legacy_pair", "produced_publication"])
+    def test_r196_route_task_join_rejects(monkeypatch, tmp_path, request, target):
+        with _r196_case(request, tmp_path, "route-task:" + target) as evidence:
+            fixture = _frozen._r179_fixture(monkeypatch)
+            baseline = _r196_route(fixture, "legacy" if target == "legacy_pair" else "local")
+            _r196_decode(baseline, evidence, "complete route baseline")
+            changed = copy.deepcopy(baseline)
+            task = changed["payload"]["input"]["payload"]["original"]["identity"]["task_id"] + ":foreign-r196"
+            if target == "produced_publication":
+                publication = _r196_foreign_publication(changed["payload"]["produced_publication"], task)
+                _r196_decode(publication, evidence, "independent coherent foreign publication")
+                changed["payload"]["produced_publication"] = publication
+                changed["payload"]["produced_publication_hash"] = publication["payload"]["publication_hash"]
+            else:
+                for name in ("before_verification_budget", "after_verification_budget"):
+                    pool = _r196_pool_task(changed["payload"][name], task)
+                    _r196_pool_decode(pool, evidence, "independent foreign " + name)
+                    changed["payload"][name] = pool
+            evidence.update(baseline_payload=baseline, changed_payload=changed,
+                            mutation="foreign task in " + target + "; independent children and hashes remain coherent")
+&gt;           with pytest.raises(ValueError, match="task|original|publication|binding"):
+E           Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_local_temporal_promotion_bindings.py:281: Failed</failure></testcase><testcase classname="tests.test_local_temporal_promotion_bindings" name="test_r196_route_task_join_rejects[legacy_pair]" time="1.706"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x75830fe7eba0&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r196-red8/test_r196_route_task_join_reje1')
+request = &lt;FixtureRequest for &lt;Function test_r196_route_task_join_rejects[legacy_pair]&gt;&gt;
+target = 'legacy_pair'
+
+    @pytest.mark.parametrize("target", ["local_pair", "legacy_pair", "produced_publication"])
+    def test_r196_route_task_join_rejects(monkeypatch, tmp_path, request, target):
+        with _r196_case(request, tmp_path, "route-task:" + target) as evidence:
+            fixture = _frozen._r179_fixture(monkeypatch)
+            baseline = _r196_route(fixture, "legacy" if target == "legacy_pair" else "local")
+            _r196_decode(baseline, evidence, "complete route baseline")
+            changed = copy.deepcopy(baseline)
+            task = changed["payload"]["input"]["payload"]["original"]["identity"]["task_id"] + ":foreign-r196"
+            if target == "produced_publication":
+                publication = _r196_foreign_publication(changed["payload"]["produced_publication"], task)
+                _r196_decode(publication, evidence, "independent coherent foreign publication")
+                changed["payload"]["produced_publication"] = publication
+                changed["payload"]["produced_publication_hash"] = publication["payload"]["publication_hash"]
+            else:
+                for name in ("before_verification_budget", "after_verification_budget"):
+                    pool = _r196_pool_task(changed["payload"][name], task)
+                    _r196_pool_decode(pool, evidence, "independent foreign " + name)
+                    changed["payload"][name] = pool
+            evidence.update(baseline_payload=baseline, changed_payload=changed,
+                            mutation="foreign task in " + target + "; independent children and hashes remain coherent")
+&gt;           with pytest.raises(ValueError, match="task|original|publication|binding"):
+E           Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_local_temporal_promotion_bindings.py:281: Failed</failure></testcase><testcase classname="tests.test_local_temporal_promotion_bindings" name="test_r196_route_task_join_rejects[produced_publication]" time="1.825"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x75830ff0e720&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r196-red8/test_r196_route_task_join_reje2')
+request = &lt;FixtureRequest for &lt;Function test_r196_route_task_join_rejects[produced_publication]&gt;&gt;
+target = 'produced_publication'
+
+    @pytest.mark.parametrize("target", ["local_pair", "legacy_pair", "produced_publication"])
+    def test_r196_route_task_join_rejects(monkeypatch, tmp_path, request, target):
+        with _r196_case(request, tmp_path, "route-task:" + target) as evidence:
+            fixture = _frozen._r179_fixture(monkeypatch)
+            baseline = _r196_route(fixture, "legacy" if target == "legacy_pair" else "local")
+            _r196_decode(baseline, evidence, "complete route baseline")
+            changed = copy.deepcopy(baseline)
+            task = changed["payload"]["input"]["payload"]["original"]["identity"]["task_id"] + ":foreign-r196"
+            if target == "produced_publication":
+                publication = _r196_foreign_publication(changed["payload"]["produced_publication"], task)
+                _r196_decode(publication, evidence, "independent coherent foreign publication")
+                changed["payload"]["produced_publication"] = publication
+                changed["payload"]["produced_publication_hash"] = publication["payload"]["publication_hash"]
+            else:
+                for name in ("before_verification_budget", "after_verification_budget"):
+                    pool = _r196_pool_task(changed["payload"][name], task)
+                    _r196_pool_decode(pool, evidence, "independent foreign " + name)
+                    changed["payload"][name] = pool
+            evidence.update(baseline_payload=baseline, changed_payload=changed,
+                            mutation="foreign task in " + target + "; independent children and hashes remain coherent")
+&gt;           with pytest.raises(ValueError, match="task|original|publication|binding"):
+E           Failed: DID NOT RAISE &lt;class 'ValueError'&gt;
+
+tests/test_local_temporal_promotion_bindings.py:281: Failed</failure></testcase></testsuite></testsuites>

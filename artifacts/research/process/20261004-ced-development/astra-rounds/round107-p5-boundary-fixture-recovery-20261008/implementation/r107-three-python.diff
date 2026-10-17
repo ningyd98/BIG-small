@@ -1,0 +1,266 @@
+--- R107-before/src/cloud_edge_robot_arm/vision/operational_windows.py
++++ current/src/cloud_edge_robot_arm/vision/operational_windows.py
+@@ -260,7 +260,11 @@
+ 
+     @classmethod
+     def from_worker(cls, worker: SimulationWorker, *, job_id: str) -> OperationalWindowOwner:
+-        if cls is not OperationalWindowOwner or worker not in _PENDING:
++        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
++
++        if cls is not OperationalWindowOwner or type(worker) is not SimulationWorker:
++            raise OperationalTimeError("unissued or already consumed startup capability")
++        if worker not in _PENDING:
+             raise OperationalTimeError("unissued or already consumed startup capability")
+         startup = _PENDING.pop(worker)
+         if startup.worker is not worker or startup.job_id != job_id:
+--- R107-before/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py
++++ current/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py
+@@ -280,7 +280,8 @@
+ 
+     @classmethod
+     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapDefinition:
+-        body = dict(_plain(raw))
++        normalized = _plain(raw)
++        body = dict(normalized)
+         if (
+             body.pop("schema_version", None) != "visual.bootstrap.definition.v1"
+             or body.pop("scope", None) != cls.scope
+@@ -296,7 +297,7 @@
+         for name in ("task_started_at", "registered_at"):
+             body[name] = aware(datetime.fromisoformat(body[name]))
+         result = cls(**body)
+-        if canonical(result.to_payload()) != canonical(raw):
++        if canonical(result.to_payload()) != canonical(normalized):
+             raise ValueError("bootstrap definition changed during decoding")
+         return result
+ 
+--- R107-before/tests/test_operational_windows.py
++++ current/tests/test_operational_windows.py
+@@ -3,10 +3,13 @@
+ from __future__ import annotations
+ 
+ import copy
++import gzip
++import hashlib
+ import importlib
+ import json
+ import sqlite3
+ import threading
++from contextlib import contextmanager
+ from contextvars import copy_context
+ from dataclasses import replace
+ from datetime import UTC, datetime, timedelta
+@@ -22,6 +25,71 @@
+     _open_clock_for_test,
+ )
+ from tests.test_operational_time_v1 import _identity
++
++
++def marker_cpu_inputs():
++    """Pinned historical pixels for CPU logic only; never new live/admission evidence."""
++    from cloud_edge_robot_arm.contracts.models import TaskTarget
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++    root = Path(__file__).resolve().parents[1]
++    fixture = root / "tests/fixtures/p5_marker_source_v1"
++    provenance = json.loads((fixture / "provenance.json").read_text())
++    assert provenance["scope"] == "SOFTWARE_ONLY_DEVELOPMENT_DIAGNOSTIC_REUSE_NOT_NEW_ACTUAL"
++    compressed = (fixture / "observation-full.json.gz").read_bytes()
++    assert hashlib.sha256(compressed).hexdigest() == (
++        "21bf6d3787eca744af20c205469b8c56c51b46cd14e53068f12d7dbf1f251fca"
++    )
++    pixels = gzip.decompress(compressed)
++    assert hashlib.sha256(pixels).hexdigest() == provenance["original_frame"]["sha256"]
++    module = importlib.import_module("cloud_edge_robot_arm.vision.marker_association")
++    observation = RGBDObservation.model_validate_json(pixels)
++    registration = module.load_marker_registration(
++        fixture / "registration.json",
++        expected_registry_sha256="3e9cf0c1d44116cec83d913e003b53ec8157d09acf36164078825ae6c836c5bc",
++        root=root,
++    )
++    assert registration.sources_valid()
++    assert registration.admission_scope == "DEVELOPMENT_ONLY"
++    context = module.marker_frame_context(
++        observation,
++        registration,
++        task_id="diagnostic-task",
++        task_target=TaskTarget(
++            object_id="object", object_class="cube", target_region_id="target_region"
++        ),
++        instruction="pick the red cube and place it in the green target region",
++        context_hash="1" * 64,
++        role_bundle_hash="2" * 64,
++        active_asset_sha256=registration.pose_marker.marked_asset_sha256,
++        plan_version=1,
++        command_seq=1,
++    )
++    return module, observation, registration, context
++
++
++@contextmanager
++def supervision_cpu_utc(monkeypatch, runtime, claim):
++    """One software node's UTC basis; real SQL/source/lease and TTL gates still run."""
++    stored = runtime.source.event_repository.get_visual_supervision(runtime.episode_id)
++    payload = stored.to_payload()
++    basis = datetime.now(UTC)
++    assert basis >= datetime.fromisoformat(payload["claims"][claim.claim_id]["reserved_at"])
++    assert all(basis >= datetime.fromisoformat(item["committed_at"]) for item in payload["history"])
++
++    class CpuUtcDateTime(datetime):
++        @classmethod
++        def now(cls, tz=None):
++            return basis.replace(tzinfo=None) if tz is None else basis.astimezone(tz)
++
++    with monkeypatch.context() as local:
++        for name in (
++            "cloud_edge_robot_arm.vision.worker_owner",
++            "cloud_edge_robot_arm.vision.worker_runtime",
++            "cloud_edge_robot_arm.repositories.event_autonomy.sqlite",
++        ):
++            local.setattr(importlib.import_module(name), "datetime", CpuUtcDateTime)
++        yield basis
+ 
+ 
+ def frozen_json(value):
+@@ -338,7 +406,7 @@
+         )
+ 
+         evidence = OnlineEvidenceSnapshot(
+-            observation, RobotState(connected=True), operational_reference=reference
++            observation, RobotState(connected=True, stopped=True), operational_reference=reference
+         )
+         for delta in (-1000, 1000):
+             verdict = evaluate_conditions(
+@@ -387,6 +455,8 @@
+         public = runtime.source
+         with pytest.raises(OperationalTimeError):
+             module.OperationalWindowOwner.from_worker(public, job_id=job.job_id)
++        with pytest.raises(OperationalTimeError):
++            module.OperationalWindowOwner.from_worker({}, job_id=job.job_id)
+         from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+ 
+         replay = VisualWorkerRuntime(
+@@ -503,7 +573,9 @@
+             )
+ 
+             evidence = OnlineEvidenceSnapshot(
+-                observation, RobotState(connected=True), operational_reference=reference
++                observation,
++                RobotState(connected=True, stopped=True),
++                operational_reference=reference,
+             )
+             assert (
+                 evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+@@ -517,45 +589,50 @@
+             runtime.adopt_plan(RobotState(connected=True))
+             runtime.initialize_supervision(0.000001, RobotState(connected=True))
+             claim = runtime.reserve_supervision_capture(1, RobotState(connected=True))
+-            payload = observation.model_dump(mode="json")
+-            payload.update(
+-                captured_at=datetime.now(UTC).isoformat(),
+-                observation_id="p5-supervisor",
+-                frame_id="p5-supervisor",
+-                checksum_sha256="",
+-            )
+-            fresh = RGBDObservation.model_validate(payload)
+-            context = context_for(claim, fresh).model_copy(
+-                update={
+-                    "task_instruction": runtime.bootstrap.definition.user_instruction,
+-                }
+-            )
+-            runtime.complete_supervision_capture(claim, fresh, context, RobotState(connected=True))
+-            frame = runtime.reserve_supervision_plan(claim, RobotState(connected=True))
+-            reply = decision_for(frame)
+-            reference = module._reference_for_observation(fresh, "supervision")
+-            assert (
+-                decide_supervision(
+-                    reply,
+-                    frame.context,
+-                    frame.context,
+-                    maximum_age_s=5,
+-                    operational_reference=frozen_json(reference),
++            with supervision_cpu_utc(monkeypatch, runtime, claim) as software_now:
++                payload = observation.model_dump(mode="json")
++                payload.update(
++                    captured_at=software_now.isoformat(),
++                    observation_id="p5-supervisor",
++                    frame_id="p5-supervisor",
++                    checksum_sha256="",
+                 )
+-                == "CONTINUE"
+-            )
+-            assert (
+-                decide_supervision(
+-                    reply,
+-                    frame.context,
+-                    frame.context,
+-                    maximum_age_s=6,
+-                    operational_reference=frozen_json(reference),
++                fresh = RGBDObservation.model_validate(payload)
++                context = context_for(claim, fresh).model_copy(
++                    update={
++                        "task_instruction": runtime.bootstrap.definition.user_instruction,
++                    }
+                 )
+-                == "DISCARD"
+-            )
+-            record = runtime.complete_supervision_plan(frame, reply, RobotState(connected=True))
+-            assert record.to_payload()["claims"][frame.claim_id]["plan_completed_at"] is not None
++                runtime.complete_supervision_capture(
++                    claim, fresh, context, RobotState(connected=True)
++                )
++                frame = runtime.reserve_supervision_plan(claim, RobotState(connected=True))
++                reply = decision_for(frame)
++                reference = module._reference_for_observation(fresh, "supervision")
++                assert (
++                    decide_supervision(
++                        reply,
++                        frame.context,
++                        frame.context,
++                        maximum_age_s=5,
++                        operational_reference=frozen_json(reference),
++                    )
++                    == "CONTINUE"
++                )
++                assert (
++                    decide_supervision(
++                        reply,
++                        frame.context,
++                        frame.context,
++                        maximum_age_s=6,
++                        operational_reference=frozen_json(reference),
++                    )
++                    == "DISCARD"
++                )
++                record = runtime.complete_supervision_plan(frame, reply, RobotState(connected=True))
++                assert (
++                    record.to_payload()["claims"][frame.claim_id]["plan_completed_at"] is not None
++                )
+         elif category == "grounding":
+             usable_plan(runtime, observation)
+             contract, publication = runtime.adopt_plan(RobotState(connected=True))
+@@ -591,9 +668,8 @@
+             # Real marker consumer's freshness gate over an actual CPU image source.
+             from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+             from cloud_edge_robot_arm.vision.observations import RGBDObservation
+-            from tests.test_marker_association import inputs
+-
+-            marker, original, registration, context = inputs()
++
++            marker, original, registration, context = marker_cpu_inputs()
+             payload = original.model_dump(mode="json")
+             payload.update(
+                 episode_id=runtime.episode_id,
+@@ -616,9 +692,9 @@
+             assert isinstance(frozen, MappingProxyType)
+             assert isinstance(frozen["domain"], MappingProxyType)
+             assert type(frozen["hard_deadlines"]) is tuple
+-            assert (
+-                associate_marker_target(fresh, registration, context).status == "OBSERVED_CANDIDATE"
+-            )
++            positive = associate_marker_target(fresh, registration, context)
++            assert positive.status == "OBSERVED_CANDIDATE"
++            assert positive.admission_status == "NOT_ADMITTED"
+             changed = module._descriptor_plain(frozen)
+             changed["source_identity"] = "0" * 64
+             assert (

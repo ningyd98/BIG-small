@@ -1,0 +1,48 @@
+--- R106-before/src/cloud_edge_robot_arm/vision/operational_windows.py
++++ current/src/cloud_edge_robot_arm/vision/operational_windows.py
+@@ -790,6 +790,9 @@
+             "accuracy_status",
+             "worker_authority",
+             "lease_authority",
++            "native_authority",
++            "future_horizon",
++            "restart_suspend_hostpause",
+         },
+     )
+     for name in (
+@@ -834,6 +837,9 @@
+         "accuracy_status": "UNVERIFIED",
+         "worker_authority": "UNAVAILABLE",
+         "lease_authority": "UNAVAILABLE",
++        "native_authority": "UNAVAILABLE",
++        "future_horizon": "UNKNOWN",
++        "restart_suspend_hostpause": "NOT_TESTED_OC3_GATE",
+     }
+     if any(domain[name] != expected for name, expected in constants.items()):
+         raise ValueError("unsupported descriptive operational domain")
+--- R106-before/tests/test_operational_windows.py
++++ current/tests/test_operational_windows.py
+@@ -814,6 +814,23 @@
+         assert module._check_reference(evidence.operational_reference).status == "VALID"
+         assert module._check_reference(immutable).status == "VALID"
+         malformed = []
++        limits = {
++            "native_authority": ("UNAVAILABLE", "AVAILABLE"),
++            "future_horizon": ("UNKNOWN", "FINITE_CERTIFIED"),
++            "restart_suspend_hostpause": ("NOT_TESTED_OC3_GATE", "VALIDATED"),
++        }
++        for key, (original_value, forged_value) in limits.items():
++            assert record["domain"][key] == original_value
++            missing = copy.deepcopy(record)
++            del missing["domain"][key]
++            malformed.append(missing)
++            for value in (forged_value, True):
++                changed = copy.deepcopy(record)
++                changed["domain"][key] = value
++                malformed.append(changed)
++        extra = copy.deepcopy(record)
++        extra["domain"]["unknown_extra_field"] = "UNAVAILABLE"
++        malformed.append(extra)
+         for key, value in (("attempt", True), ("budget_ns", True), ("budget_ns", 2.5)):
+             changed = copy.deepcopy(record)
+             changed[key] = value

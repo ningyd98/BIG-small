@@ -1,0 +1,78 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round210-p6-t2-local-fixture-utc-accessor-20261015/implementation/before-test.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -3961,7 +3961,6 @@
+         "scope": "BOOTSTRAP_SOURCE_ONLY", "bootstrap_id": definition.bootstrap_id,
+         "definition_hash": _b_t2_digest(raw["payload"]["definition"]),
+         "expected_record_hash": _r179_state_hash(raw), "kind": kind, "event_key": key,
+-        "current_lease": definition.lease.to_payload(),
+         "robot_state": RobotState(connected=True).model_dump(mode="json"),
+         "claim_id": claim, "observation": _b_t2_plain(observation),
+         "draft": _b_t2_plain(draft),
+@@ -3986,25 +3985,34 @@
+ 
+ 
+ def _b_t2_capture_and_unusable_plan(runtime, events, key):
++    from datetime import UTC, datetime
+     from cloud_edge_robot_arm.cloud.planning.models import PlannerDraft
++    from cloud_edge_robot_arm.contracts import RobotState
+     from tests.test_visual_bootstrap import frame
+ 
++    assert runtime.source.event_repository is events
+     record = runtime.bootstrap
+-    reserved = _b_t2_transition(runtime, events, _b_t2_bootstrap_request(
+-        record, "RESERVE_INITIAL_CAPTURE", key + ":capture-reserve"
+-    ))
+-    claim = reserved.to_payload()["payload"]["pending"]["claim_id"]
+-    source = (record.definition.lease, record.definition, record.definition.task_started_at)
+-    observation = frame(source, frame_id=key + ":frame", at=record.definition.task_started_at)
+-    observation = observation.model_copy(update={"episode_id": record.definition.episode_id})
+-    observation = type(observation).model_validate(observation.model_dump())
+-    captured = _b_t2_transition(runtime, events, _b_t2_bootstrap_request(
+-        reserved, "COMPLETE_CAPTURE", key + ":capture-complete", claim=claim, observation=observation
+-    ))
+-    planned = _b_t2_transition(runtime, events, _b_t2_bootstrap_request(
+-        captured, "RESERVE_PLAN", key + ":plan-reserve"
+-    ))
+-    claim = planned.to_payload()["payload"]["pending"]["claim_id"]
++    original = copy.deepcopy(record.to_payload()["original_time"])
++    assert record.to_payload()["schema_version"] == "visual.bootstrap.record.local.v1"
++    robot_state = RobotState(connected=True)
++    claim = runtime.reserve_capture(robot_state, initial=True)
++    reserved = runtime.bootstrap
++    assert reserved.to_payload()["schema_version"] == "visual.bootstrap.record.local.v1"
++    assert reserved.to_payload()["payload"]["pending"]["claim_id"] == claim
++    assert reserved.to_payload()["original_time"] == original
++    # CPU model diagnostic only: this UTC input is never a local lease/origin/deadline.
++    capture_timestamp = datetime.now(UTC)
++    observation = frame((None, None, capture_timestamp), frame_id=key + ":frame", at=capture_timestamp)
++    observation_payload = observation.model_dump(mode="json")
++    observation_payload.update(episode_id=record.definition.episode_id, checksum_sha256="")
++    observation = type(observation).model_validate(observation_payload)
++    runtime.complete_capture(claim, observation, robot_state)
++    captured = runtime.bootstrap
++    assert captured.to_payload()["original_time"] == original
++    claim = runtime.reserve_plan(robot_state)
++    planned = runtime.bootstrap
++    assert planned.to_payload()["payload"]["pending"]["claim_id"] == claim
++    assert planned.to_payload()["original_time"] == original
+     draft = PlannerDraft(
+         raw_text="R158 T2 CPU fixture: request another observation",
+         parsed_json={"_sentinel": "REQUEST_MORE_OBSERVATION"},
+@@ -4012,12 +4020,13 @@
+                               "model_snapshot_hash": record.definition.model_snapshot_hash,
+                               "role_bundle_hash": record.definition.role_bundle_hash},
+     )
+-    finished = _b_t2_transition(runtime, events, _b_t2_bootstrap_request(
+-        planned, "COMPLETE_PLAN", key + ":plan-complete", claim=claim, draft=draft
+-    ))
++    runtime.complete_plan(claim, draft, robot_state)
++    finished = runtime.bootstrap
++    assert finished.to_payload()["schema_version"] == "visual.bootstrap.record.local.v1"
+     assert finished.to_payload()["payload"]["planning_source_usable"] is False
+     assert finished.to_payload()["payload"]["state"]["original_budget_reference"] == (
+-        record.to_payload()["original_time"]["verification_reference"])
++        original["verification_reference"])
++    assert finished.to_payload()["original_time"] == original
+     return finished
+ 
+ 

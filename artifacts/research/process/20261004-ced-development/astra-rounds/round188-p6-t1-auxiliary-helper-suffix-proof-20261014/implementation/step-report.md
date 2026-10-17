@@ -1,0 +1,1 @@
+R188: restored exactly one final LF and independently proved the complete original prefix/suffix. R187 false report remains unchanged. Source scope recovery only; no test or product execution. T1/T12/native/formal remain unaccepted.

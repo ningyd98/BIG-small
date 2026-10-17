@@ -1052,3 +1052,299 @@ def test_secret_store_failure_name_is_opaque_before_key_can_be_read(tmp_path):
     assert all(
         secret.encode() not in path.read_bytes() for path in output.rglob("*") if path.is_file()
     )
+
+
+def _p3_snapshot_for_wire(provider="openai_compatible", think=None):
+    from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+
+    generation = {"temperature": 0, "num_predict": 512}
+    if think is not None:
+        generation["think"] = think
+    local = provider == "ollama"
+    return ModelConfigSnapshot(
+        provider=provider,
+        model="qwen3.5:4b" if local else "generic-vision-model",
+        endpoint="http://127.0.0.1:11434" if local else "https://example.invalid",
+        weight_digest="b" * 64 if local else None,
+        quantization="Q4_K_M" if local else None,
+        image_size=(320, 240),
+        generation_parameters=generation,
+        timeout_s=30,
+    )
+
+
+def _p3_wire_boundary(monkeypatch, tmp_path, timeout_attempts=0):
+    """Replace only external HTTP; keep exact CPU request/response bytes."""
+    import io
+    import urllib.request
+
+    captured = []
+    inference_count = 0
+
+    class ExternalBoundary:
+        def open(self, request, timeout):
+            nonlocal inference_count
+            endpoint = request.full_url.rsplit("/", 1)[-1]
+            sent = request.data or b""
+            directory = tmp_path / f"wire-{len(captured):02d}"
+            directory.mkdir()
+            (directory / "request.raw").write_bytes(sent)
+            row = {"endpoint": endpoint, "sent": sent, "received": b"", "status": "SUCCESS"}
+            captured.append(row)
+            if endpoint == "show":
+                response = {"capabilities": ["vision"], "details": {"quantization_level": "Q4_K_M"}}
+            elif endpoint == "tags":
+                response = {"models": [{"name": "qwen3.5:4b", "digest": "b" * 64}]}
+            else:
+                inference_count += 1
+                response = {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "target_pixel": None,
+                                        "destination_pixel": None,
+                                        "target_label": "missing",
+                                        "reported_confidence": 0,
+                                        "skills": [],
+                                        "reason": "software boundary reply",
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+                if inference_count <= timeout_attempts:
+                    row["status"] = "TIMEOUT"
+                    (directory / "response.raw").write_bytes(b"")
+                    (directory / "receipt.json").write_text(
+                        json.dumps(
+                            {
+                                "scope": "CPU_SIMULATED_HTTP",
+                                "endpoint": endpoint,
+                                "sent_bytes": len(sent),
+                                "received_bytes": 0,
+                                "status": "TIMEOUT",
+                            }
+                        )
+                    )
+                    raise TimeoutError("software-only timeout")
+            raw = json.dumps(response).encode()
+            row["received"] = raw
+            (directory / "response.raw").write_bytes(raw)
+            (directory / "receipt.json").write_text(
+                json.dumps(
+                    {
+                        "scope": "CPU_SIMULATED_HTTP",
+                        "endpoint": endpoint,
+                        "sent_bytes": len(sent),
+                        "received_bytes": len(raw),
+                        "status": "SUCCESS",
+                    }
+                )
+            )
+            return io.BytesIO(raw)
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
+    return captured
+
+
+def test_ced_max_reuses_successful_normalized_transport(monkeypatch, tmp_path):
+    import io
+    import struct
+    from pathlib import Path
+
+    from PIL import Image
+    from scripts.probe_rgbd_roles import read_role_config
+
+    from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
+    from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
+    from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
+    from cloud_edge_robot_arm.model_control.service import ModelControlService
+    from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
+    from cloud_edge_robot_arm.vision.messages import model_to_observation_pixel
+    from cloud_edge_robot_arm.vision.observations import RGBDObservation
+
+    config = read_role_config(Path("configs/research/ced_roles.yaml"))
+    assert config["cloud"]["coordinate_system"] == "normalized_1000"
+    service = ModelControlService(
+        repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
+        secret_store=InMemorySecretStore(),
+    )
+    profile = service.create_profile(
+        display_name="P3 software-only Max",
+        provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
+        model_name="qwen3.8-max",
+        base_url="https://example.invalid",
+        temperature=0,
+        max_tokens=512,
+    )
+    planner, snapshot = roles().resolve_cloud_role(
+        service,
+        profile.profile_id,
+        source_hashes={"software-fixture.py": "a" * 64},
+        allow_paid=True,
+        image_size=tuple(config["cloud"]["image_size"]),
+        coordinate_system=config["cloud"]["coordinate_system"],
+        grasp_profile=config["cloud"]["grasp_profile"],
+        available_model_ids=config["cloud"]["available_model_ids"],
+    )
+    rgb = io.BytesIO()
+    Image.new("RGB", (320, 240), (255, 0, 0)).save(rgb, format="PNG")
+    observation = RGBDObservation(
+        frame_id="P3-synthetic-camera",
+        captured_at=datetime.now(UTC),
+        sim_time_s=0,
+        width=320,
+        height=240,
+        rgb_png_base64=base64.b64encode(rgb.getvalue()).decode(),
+        depth_float32_base64=base64.b64encode(struct.pack("<76800f", *([0.4] * 76800))).decode(),
+        intrinsics=(320, 320, 160, 120),
+        camera_to_world=(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
+        source="mujoco_camera",
+    )
+    captured = _p3_wire_boundary(monkeypatch, tmp_path)
+    draft = planner.plan(
+        InitialPlanningRequest(
+            request_id="P3-software-normalized",
+            user_instruction="pick missing target",
+            scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
+            observation=observation,
+        )
+    )
+    assert draft.parse_error is None
+    body = json.loads(captured[0]["sent"])
+    assert body["model"] == "qwen3.8-max" == snapshot.model_id
+    assert body["temperature"] == 0
+    assert body["max_tokens"] == 512
+    assert body.get("enable_thinking") is False
+    assert body["response_format"] == {"type": "json_object"}
+    images = [
+        part["image_url"]["url"]
+        for message in body["messages"]
+        if isinstance(message["content"], list)
+        for part in message["content"]
+        if part["type"] == "image_url"
+    ]
+    blobs = [base64.b64decode(image.split(",", 1)[1], validate=True) for image in images]
+    assert len(blobs) == 2 and blobs[0] != blobs[1]
+    assert all(Image.open(io.BytesIO(blob)).size == (320, 240) for blob in blobs)
+    assert "normalized integer coordinates 0 to 1000" in body["messages"][0]["content"]
+    assert model_to_observation_pixel(
+        (500, 500),
+        observation,
+        image_size=planner.model_snapshot.image_size,
+        coordinate_system=planner.model_snapshot.coordinate_system,
+    ) == (160, 120)
+    assert planner.model_snapshot.grasp_profile == "mujoco_upright_box_v2"
+    assert snapshot.weight_digest is None and snapshot.revision is None
+    assert snapshot.request_config_hash == roles().configuration_hash(
+        roles().cloud_request_settings(planner)
+    )
+    assert service.repository.get_active_profile_id() == ""
+
+
+def test_role_cost_delta_preserves_all_sent_requests(monkeypatch, tmp_path):
+    from cloud_edge_robot_arm.research.cost_ledger import CostLedger
+    from cloud_edge_robot_arm.vision.model_resolver import resolve_visual_planner
+    from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable
+
+    captured = _p3_wire_boundary(monkeypatch, tmp_path, timeout_attempts=2)
+    ledger = CostLedger()
+    planner = resolve_visual_planner(_p3_snapshot_for_wire(), allow_paid=True)
+    planner.cost_ledger = ledger
+    for _ in range(2):
+        with pytest.raises(RGBDModelUnavailable):
+            planner._request_visual([{"role": "user", "content": "software-only retry"}], {})
+    planner._request_visual([{"role": "user", "content": "software-only retry"}], {})
+    rows = ledger.requests()
+    assert len(rows) == len({row.request_id for row in rows}) == 3
+    assert [row.status for row in rows] == ["TIMEOUT", "TIMEOUT", "SUCCESS"]
+    assert all(row.sent_at is not None and row.finished_at is not None for row in rows)
+    assert all(
+        row.monetary_cost is None and row.provider_location == "REMOTE_SERVICE" for row in rows
+    )
+    assert [row.serialized_sent_bytes for row in rows] == [len(row["sent"]) for row in captured]
+    assert [row.serialized_received_bytes for row in rows] == [
+        len(row["received"]) for row in captured
+    ]
+    summary = ledger.snapshot()
+    assert summary.cloud_model_requests == summary.model_requests == 3
+    assert summary.requests_by_role == {"PLANNER": 3}
+    assert summary.application_bytes == sum(
+        len(row["sent"]) + len(row["received"]) for row in captured
+    )
+    assert all(row["monetary_cost"] is None for row in ledger.export()["requests"])
+    (tmp_path / "cost-export.json").write_text(json.dumps(ledger.export()))
+
+
+@pytest.mark.parametrize("think", [False, True], ids=["false", "true"])
+def test_role_compatible_thinking_reaches_serialized_request(monkeypatch, tmp_path, think):
+    from cloud_edge_robot_arm.vision.model_resolver import resolve_visual_planner
+
+    snapshot = _p3_snapshot_for_wire(think=think)
+    frozen = snapshot.evidence()
+    planner = resolve_visual_planner(snapshot, allow_paid=True)
+    captured = _p3_wire_boundary(monkeypatch, tmp_path)
+    planner._request_visual([{"role": "user", "content": "software-only thinking"}], {})
+    body = json.loads(captured[0]["sent"])
+    assert "enable_thinking" in body
+    assert body["enable_thinking"] is think
+    assert "think" not in body
+    assert body["max_tokens"] == 512
+    assert snapshot.evidence() == frozen
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "compatible_without_setting",
+        "compatible_without_snapshot",
+        "ollama_default",
+        "ollama_true",
+        "paid_disabled",
+    ],
+)
+def test_role_thinking_provider_controls(monkeypatch, tmp_path, case):
+    from cloud_edge_robot_arm.research.cost_ledger import CostLedger
+    from cloud_edge_robot_arm.vision.model_resolver import resolve_visual_planner
+    from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
+
+    captured = _p3_wire_boundary(monkeypatch, tmp_path)
+    ledger = CostLedger()
+    if case == "compatible_without_snapshot":
+        planner = RGBDPlannerAdapter(
+            base_url="https://example.invalid",
+            model="generic-vision-model",
+            provider="openai_compatible",
+            allow_paid=True,
+        )
+    elif case.startswith("ollama"):
+        planner = resolve_visual_planner(
+            _p3_snapshot_for_wire(
+                provider="ollama",
+                think=True if case == "ollama_true" else None,
+            )
+        )
+    else:
+        planner = resolve_visual_planner(
+            _p3_snapshot_for_wire(), allow_paid=case != "paid_disabled"
+        )
+    planner.cost_ledger = ledger
+    if case == "paid_disabled":
+        with pytest.raises(RGBDModelUnavailable, match="requires"):
+            planner._request_visual([{"role": "user", "content": "software-only"}], {})
+        assert captured == [] and ledger.requests() == ()
+        return
+    frozen = planner.model_snapshot.evidence() if planner.model_snapshot is not None else None
+    planner._request_visual([{"role": "user", "content": "software-only"}], {})
+    body = json.loads(captured[-1]["sent"])
+    assert "enable_thinking" not in body
+    if case.startswith("ollama"):
+        assert body["think"] is (case == "ollama_true")
+        assert "think" not in body["options"]
+        assert body["options"]["num_predict"] == 512
+    else:
+        assert set(body) == {"model", "messages", "temperature", "max_tokens", "response_format"}
+    assert planner.model_snapshot is None or planner.model_snapshot.evidence() == frozen

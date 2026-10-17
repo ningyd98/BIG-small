@@ -1,0 +1,152 @@
+...FF..                                                                  [100%]
+=================================== FAILURES ===================================
+_______ test_b_local_temporal_schema_roundtrip[route_completion_budget] ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x748075199d90>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r158-t1_green/test_b_local_temporal_schema_r3')
+family = 'route_completion_budget'
+
+    @pytest.mark.parametrize("family", ["bootstrap", "supervision", "owner_grounding", "route_completion_budget"])
+    def test_b_local_temporal_schema_roundtrip(monkeypatch, tmp_path, family):
+        api = _b_api()
+        legacy = _b_legacy_sources(monkeypatch)
+        original, current = _b_detached_original(legacy)
+        cases = _b_local_cases(legacy, original, current)
+        prefixes = {
+            "bootstrap": ("visual.bootstrap.",),
+            "supervision": ("visual.supervision.",),
+            "owner_grounding": ("visual.owner.",),
+            "route_completion_budget": ("visual.verification.", "recovery."),
+        }
+        selected = {tag: payload for tag, payload in cases.items() if tag.startswith(prefixes[family])}
+        assert len(selected) == {"bootstrap": 4, "supervision": 3, "owner_grounding": 3, "route_completion_budget": 5}[family]
+        for tag, payload in selected.items():
+>           envelope = api.LocalEnvelope.from_payload(payload)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_runtime_closure.py:2410: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/vision/local_temporal.py:936: in from_payload
+    raw = _object(payload, OUTER_FIELDS)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:72: in _object
+    copied = _copy(value)
+             ^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:64: in _copy
+    result[key] = _copy(item)
+                  ^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:64: in _copy
+    result[key] = _copy(item)
+                  ^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:64: in _copy
+    result[key] = _copy(item)
+                  ^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:64: in _copy
+    result[key] = _copy(item)
+                  ^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = ('UNKNOWN', None)
+
+    def _copy(value: object) -> JSONValue:
+        if value is None or type(value) in (bool, str):
+            if isinstance(value, (bool, str)) or value is None:
+                return value
+        if type(value) is int:
+            if not -(2**63) < value < 2**63:
+                raise ValueError("bounded integral JSON required")
+            return value
+        if type(value) is float:
+            if not isfinite(value):
+                raise ValueError("finite JSON required")
+            return value
+        if isinstance(value, Mapping):
+            result: dict[str, JSONValue] = {}
+            for key, item in value.items():
+                if type(key) is not str or key in result:
+                    raise ValueError("unique strict JSON keys required")
+                result[key] = _copy(item)
+            return result
+        if type(value) is list:
+            return [_copy(item) for item in value]
+>       raise ValueError("detached JSON data required; live objects are forbidden")
+E       ValueError: detached JSON data required; live objects are forbidden
+
+src/cloud_edge_robot_arm/vision/local_temporal.py:68: ValueError
+________________ test_b_local_codec_cannot_mint_live_authority _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x74807519b470>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r158-t1_green/test_b_local_codec_cannot_mint0')
+
+    def test_b_local_codec_cannot_mint_live_authority(monkeypatch, tmp_path):
+        api = _b_api()
+        from cloud_edge_robot_arm.simulation_runtime import operational_lease
+        from cloud_edge_robot_arm.vision import operational_windows
+    
+        registries = [
+            operational_windows._OWNERS, operational_windows._PENDING, operational_windows._HANDOFFS,
+            operational_windows._SCOPES, operational_windows._TRANSITIONS,
+            operational_lease._SESSIONS, operational_lease._VIEWS, operational_lease._PROPOSALS,
+            operational_lease._ACKS,
+        ]
+        before = [dict(registry) for registry in registries]
+        legacy = _b_legacy_sources(monkeypatch)
+        original, current = _b_detached_original(legacy)
+        for tag, payload in _b_local_cases(legacy, original, current).items():
+>           detached = _b_decode_domain(tag, api.LocalEnvelope.from_payload(payload).to_payload())
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_runtime_closure.py:2473: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/vision/local_temporal.py:936: in from_payload
+    raw = _object(payload, OUTER_FIELDS)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:72: in _object
+    copied = _copy(value)
+             ^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:64: in _copy
+    result[key] = _copy(item)
+                  ^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:64: in _copy
+    result[key] = _copy(item)
+                  ^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:64: in _copy
+    result[key] = _copy(item)
+                  ^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:64: in _copy
+    result[key] = _copy(item)
+                  ^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = ('UNKNOWN', None)
+
+    def _copy(value: object) -> JSONValue:
+        if value is None or type(value) in (bool, str):
+            if isinstance(value, (bool, str)) or value is None:
+                return value
+        if type(value) is int:
+            if not -(2**63) < value < 2**63:
+                raise ValueError("bounded integral JSON required")
+            return value
+        if type(value) is float:
+            if not isfinite(value):
+                raise ValueError("finite JSON required")
+            return value
+        if isinstance(value, Mapping):
+            result: dict[str, JSONValue] = {}
+            for key, item in value.items():
+                if type(key) is not str or key in result:
+                    raise ValueError("unique strict JSON keys required")
+                result[key] = _copy(item)
+            return result
+        if type(value) is list:
+            return [_copy(item) for item in value]
+>       raise ValueError("detached JSON data required; live objects are forbidden")
+E       ValueError: detached JSON data required; live objects are forbidden
+
+src/cloud_edge_robot_arm/vision/local_temporal.py:68: ValueError
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1_green/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_operational_runtime_closure.py::test_b_local_temporal_schema_roundtrip[route_completion_budget]
+FAILED tests/test_operational_runtime_closure.py::test_b_local_codec_cannot_mint_live_authority
+2 failed, 5 passed in 3.82s

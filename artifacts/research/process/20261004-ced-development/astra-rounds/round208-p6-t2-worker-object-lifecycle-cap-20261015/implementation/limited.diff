@@ -1,0 +1,369 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/implementation/before-run-budgeted-command.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py
+@@ -103,6 +103,13 @@
+     expected = [arg for arg in argv if "::" in arg]
+     records, errors, nodes = [], [], Counter()
+     counts = Counter()
++    scenario_caps = {
++        "test_memory_sqlite_publication_wait_requires_current_d": 2,
++        "test_dual_database_order_and_partial_commit": 6,
++        "test_original_budget_debit_not_refilled_by_retry": 2,
++        "test_b_local_writer_requires_private_scope": 2,
++    }
++    peak_active_polls = 0
+     paths = sorted(directory.iterdir()) if directory.is_dir() else []
+     if len(paths) > 10000:
+         raise ValueError("T2 resource directory exceeds finite evidence cap")
+@@ -132,6 +139,76 @@
+                 raise ValueError("resource attempts do not match actual object records")
+             if value["cleanup_errors"]:
+                 raise ValueError("actual T2 resource cleanup errors retained")
++            by_id = {}
++            for resource in resources:
++                key = resource["resource_id"]
++                if type(key) is not int or key <= 0 or key in by_id:
++                    raise ValueError("unique actual resource identities required")
++                if resource["pid"] != process_pid:
++                    raise ValueError("resource child identity differs")
++                by_id[key] = resource
++            lifecycles = value["worker_lifecycles"]
++            if type(lifecycles) is not list:
++                raise ValueError("actual worker lifecycle records required")
++            poll_ids, linked, intervals = set(), Counter(), []
++            observed_sequences, previous_start = set(), 0
++            for ordinal, call in enumerate(lifecycles, 1):
++                poll_id = call["poll_id"]
++                if type(poll_id) is not int or poll_id != ordinal or poll_id in poll_ids:
++                    raise ValueError("unique monotonic poll IDs required")
++                poll_ids.add(poll_id)
++                worker = by_id[call["worker_resource_id"]]
++                if worker["kind"] != "worker" or poll_id not in worker["poll_ids"]:
++                    raise ValueError("poll must resolve to the same actual worker")
++                linked[worker["resource_id"]] += 1
++                if call["attempted"] is not True:
++                    raise ValueError("actual poll attempt required")
++                if type(call["entered"]) is not bool or type(call["returned_normally"]) is not bool:
++                    raise ValueError("strict poll entry/return observations required")
++                start, end = call["start_sequence"], call["end_sequence"]
++                if type(start) is not int or type(end) is not int or not 0 < start < end:
++                    raise ValueError("finished poll attempt sequence required")
++                if start <= previous_start or start in observed_sequences or end in observed_sequences:
++                    raise ValueError("unique ordered observation sequences required")
++                previous_start = start
++                observed_sequences.update((start, end))
++                counts["attempted_poll_lifecycles"] += 1
++                if call["entered"]:
++                    entry = call["entry_sequence"]
++                    if type(entry) is not int or not start < entry < end:
++                        raise ValueError("actual poll entry must precede its finish")
++                    if entry in observed_sequences:
++                        raise ValueError("poll entry sequence duplicated")
++                    observed_sequences.add(entry)
++                    if (type(call["thread_id"]) is not int
++                            or type(call["native_thread_id"]) is not int):
++                        raise ValueError("actual poll thread coordinates required")
++                    counts["entered_poll_lifecycles"] += 1
++                    intervals.extend(((entry, 1), (end, -1)))
++                elif (call["entry_sequence"] is not None or call["thread_id"] is not None
++                      or call["native_thread_id"] is not None):
++                    raise ValueError("unentered poll cannot invent entry/thread observations")
++                if call["returned_normally"]:
++                    if (not call["entered"] or type(call["return_value"]) is not bool
++                            or call["exception"] is not None):
++                        raise ValueError("normal poll return must preserve actual bool and entry")
++                    counts["normally_returned_poll_lifecycles"] += 1
++                elif (call["return_value"] is not None or type(call["exception"]) is not dict
++                      or set(call["exception"]) != {"type", "message"}
++                      or any(type(item) is not str for item in call["exception"].values())):
++                    raise ValueError("failed poll must preserve its actual exception")
++            family = value["nodeid"].split("::")[-1].split("[")[0]
++            if family not in scenario_caps or len(lifecycles) > scenario_caps[family]:
++                raise ValueError("actual scenario poll lifecycle cap exceeded")
++            active, local_peak = 0, 0
++            for _, delta in sorted(intervals):
++                active += delta
++                if active < 0:
++                    raise ValueError("poll interval ordering differs")
++                local_peak = max(local_peak, active)
++            if active != 0 or local_peak > 2:
++                raise ValueError("actual concurrent poll cap exceeded or unfinished")
++            peak_active_polls = max(peak_active_polls, local_peak)
+             counts["allocation_attempts"] += len(resources)
+             for resource in resources:
+                 if resource["initialization_attempted"] is not True:
+@@ -142,6 +219,69 @@
+                 counts["kind:" + resource["kind"]] += 1
+                 if resource["cleanup_observed"] is not True:
+                     raise ValueError("resource cleanup unavailable or failed")
++                if resource["kind"] == "worker":
++                    counts["constructed_worker_attempts"] += 1
++                    counts["initialized_workers"] += int(resource["initialized"])
++                    ids = resource["poll_ids"]
++                    actual_ids = [call["poll_id"] for call in lifecycles
++                                  if call["worker_resource_id"] == resource["resource_id"]]
++                    if (type(ids) is not list or any(type(item) is not int for item in ids)
++                            or ids != actual_ids or len(ids) != linked[resource["resource_id"]]):
++                        raise ValueError("worker poll associations differ")
++                    if resource["final_active_job_id"] != "":
++                        raise ValueError("actual worker idle state must be empty string")
++                    if (type(resource["session_observed"]) is not bool
++                            or type(resource["heartbeat_observed"]) is not bool):
++                        raise ValueError("worker runtime allocation observation missing")
++                    for key, kind, peak_key in (
++                        ("broker_resource_ids", "broker_thread", "broker_peak_alive"),
++                        ("heartbeat_resource_ids", "heartbeat_thread", "heartbeat_peak_alive"),
++                    ):
++                        thread_ids = resource[key]
++                        if (type(thread_ids) is not list or len(set(thread_ids)) != len(thread_ids)
++                                or type(resource[peak_key]) is not int
++                                or not 0 <= resource[peak_key] <= 1):
++                            raise ValueError("worker thread identity/concurrency observation differs")
++                        for thread_id in thread_ids:
++                            thread = by_id[thread_id]
++                            if (thread["kind"] != kind
++                                    or thread["worker_resource_id"] != resource["resource_id"]
++                                    or thread["cleanup_observed"] is not True
++                                    or thread["alive_after_join"] is not False
++                                    or type(thread["thread_ident"]) is not int
++                                    or type(thread["native_thread_id"]) is not int
++                                    or thread["session_resource_id"] not in resource["session_resource_ids"]):
++                                raise ValueError("actual worker thread link or termination differs")
++                    sessions = resource["session_resource_ids"]
++                    if type(sessions) is not list or len(set(sessions)) != len(sessions):
++                        raise ValueError("actual session identities required")
++                    for session_id in sessions:
++                        session = by_id[session_id]
++                        if (session["kind"] != "lease_session"
++                                or session["worker_resource_id"] != resource["resource_id"]
++                                or session["cleanup_observed"] is not True
++                                or session["broker_alive"] is not False):
++                            raise ValueError("worker session ownership/release differs")
++                    if (resource["session_observed"] != bool(sessions)
++                            or resource["heartbeat_observed"] != bool(resource["heartbeat_resource_ids"])):
++                        raise ValueError("runtime presence and actual resource links differ")
++                    if not ids:
++                        if (resource["cleanup_basis"] != "never_polled_no_owned_runtime"
++                                or resource["initial_active_job_id"] != ""
++                                or resource["session_observed"] is not False
++                                or resource["heartbeat_observed"] is not False
++                                or sessions or resource["broker_resource_ids"]
++                                or resource["heartbeat_resource_ids"] or resource["close_attempts"]):
++                            raise ValueError("unpolled worker cannot invent runtime execution/close")
++                        counts["never_polled_workers"] += 1
++                    elif resource["cleanup_basis"] != "poll_finished_runtime_released":
++                        raise ValueError("polled worker must preserve actual runtime cleanup basis")
++                elif resource["kind"] in {"broker_thread", "heartbeat_thread"}:
++                    owner = by_id[resource["worker_resource_id"]]
++                    key = ("broker_resource_ids" if resource["kind"] == "broker_thread"
++                           else "heartbeat_resource_ids")
++                    if owner["kind"] != "worker" or resource["resource_id"] not in owner[key]:
++                        raise ValueError("thread cannot omit its real owning worker")
+                 counts["cleanup_observed"] += 1
+             if value["observations"]["observers_restored"] is not True:
+                 raise ValueError("T2 observer restoration not observed")
+@@ -155,13 +295,15 @@
+     if not mapping_match:
+         errors.append({"stage": "helper map", "type": "MissingOrDuplicateNode",
+                        "message": "exactly one actual attempt sidecar per selected node required"})
+-    if counts["kind:worker"] > 18:
+-        errors.append({"stage": "cap", "type": "WorkerLifecycleCap", "message": "T2 maximum18 exceeded"})
++    if counts["attempted_poll_lifecycles"] > 18 or counts["attempted_poll_lifecycles"] > 64:
++        errors.append({"stage": "cap", "type": "WorkerLifecycleCap",
++                       "message": "T2 attempted poll18/parent64 cap exceeded"})
+     valid = not errors and mapping_match
+     return {"schema_version": "bigsmall.r158-t2-resource-summary.v1",
+             "command_id": command_id, "actual_node_attempts": len(records),
+             "actual_node_counts": dict(nodes), "records": records,
+             "counts": dict(counts), "all_records_valid": valid, "validation_errors": errors,
++            "peak_active_polls_per_node": peak_active_polls,
+             "interpretation": "Interface RED may reject before allocation; never behavioral proof.",
+             "unobserved": {"OS_handles": None, "external_models": None, "GPU_native": None,
+                            "network_calls": None}}
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round208-p6-t2-worker-object-lifecycle-cap-20261015/implementation/before-test-operational-runtime-closure.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -3486,6 +3486,7 @@
+         "nodeid": request.node.nodeid, "pid": os.getpid(),
+         "scenario": request.node.name, "entered_contract_guard": True,
+         "entered_behavior": False, "allocation_attempts": 0, "resources": [],
++        "worker_lifecycles": [],
+         "cleanup_errors": [], "observations": {"assertions_completed": False,
+                                               "observers_restored": False, "scenarios": []},
+         "unobserved": {"OS_handles": None, "external_models": None, "GPU_native": None,
+@@ -3529,8 +3530,18 @@
+ 
+     guard = threading.RLock()
+     objects, methods, clocks, release_events, worker_refs, session_refs = {}, {}, [], [], [], []
++    sequence = 0
++    poll_context = threading.local()
++    real_poll = SimulationWorker.poll_once
++    poll_code = real_poll.__code__
+     fault = {"operation_id": None, "database": None, "phase": None, "fired": False}
+     previous_profile, previous_thread_profile = sys.getprofile(), threading.getprofile()
++
++    def tick():
++        nonlocal sequence
++        with guard:
++            sequence += 1
++            return sequence
+ 
+     def add(obj, kind, **details):
+         with guard:
+@@ -3544,6 +3555,12 @@
+                 "initialization_attempted": True, "initialized": False, "initialization_error": None,
+                 "close_attempts": [], "cleanup_observed": None, **details,
+             }
++            if kind == "worker":
++                record.update(poll_ids=[], initial_active_job_id=None, final_active_job_id=None,
++                              session_observed=None, heartbeat_observed=None, cleanup_basis=None,
++                              session_resource_ids=[], broker_resource_ids=[], heartbeat_resource_ids=[],
++                              broker_peak_alive=None, heartbeat_peak_alive=None)
++                worker_refs.append(obj)
+             objects[key] = (obj, record)
+             value["resources"].append(record)
+             return record
+@@ -3572,13 +3589,79 @@
+                 result = original(obj, *args, **kwargs)
+             except BaseException as error:
+                 record["initialization_error"] = {"type": type(error).__name__, "message": str(error)}
++                if kind == "worker":
++                    record["initial_active_job_id"] = getattr(obj, "active_job_id", None)
++                    record["initial_state_observation"] = "constructor_exception"
++                    sample_runtime(obj)
+                 raise
+             else:
+                 record["initialized"] = True
+                 if kind == "worker":
+-                    worker_refs.append(obj)
++                    record["initial_active_job_id"] = getattr(obj, "active_job_id", None)
++                    record["initial_state_observation"] = "constructor_return"
++                    sample_runtime(obj)
+                 return result
+         return initialize
++
++    def sample_runtime(worker):
++        with guard:
++            sample_runtime_locked(worker)
++
++    def sample_runtime_locked(worker):
++        record = objects[id(worker)][1]
++        session = getattr(worker, "_operational_lease_session", None)
++        heartbeat = None if session is None else getattr(session, "_heartbeat_thread", None)
++        # Presence is observed separately from constructor success and from a close call.
++        if hasattr(worker, "_operational_lease_session"):
++            record["session_observed"] = session is not None or record["session_observed"] is True
++        if hasattr(worker, "_operational_lease_session"):
++            record["heartbeat_observed"] = heartbeat is not None or record["heartbeat_observed"] is True
++        if session is not None:
++            session_record = add(session, "lease_session")
++            if id(session) not in record["session_resource_ids"]:
++                record["session_resource_ids"].append(id(session))
++            session_record["worker_resource_id"] = id(worker)
++        for thread, kind, key, peak_key in (
++            (None if session is None else getattr(session, "_broker", None),
++             "broker_thread", "broker_resource_ids", "broker_peak_alive"),
++            (heartbeat, "heartbeat_thread", "heartbeat_resource_ids", "heartbeat_peak_alive"),
++        ):
++            if thread is not None:
++                thread_record = add(thread, kind)
++                thread_record["initialized"] = thread.ident is not None
++                thread_record["worker_resource_id"] = id(worker)
++                thread_record["session_resource_id"] = None if session is None else id(session)
++                if id(thread) not in record[key]:
++                    record[key].append(id(thread))
++            if hasattr(worker, "_operational_lease_session"):
++                alive = sum(int(objects[item][0].is_alive()) for item in record[key])
++                record[peak_key] = max(record[peak_key] or 0, alive)
++
++    def poll_once(worker, *args, **kwargs):
++        record = add(worker, "worker")
++        with guard:
++            call = {"poll_id": len(value["worker_lifecycles"]) + 1,
++                    "worker_resource_id": id(worker), "attempted": True, "entered": False,
++                    "returned_normally": False, "return_value": None, "exception": None,
++                    "start_sequence": tick(), "entry_sequence": None, "end_sequence": None,
++                    "thread_id": None, "native_thread_id": None}
++            value["worker_lifecycles"].append(call)
++            record["poll_ids"].append(call["poll_id"])
++        previous_call = getattr(poll_context, "call", None)
++        poll_context.call = call
++        try:
++            result = real_poll(worker, *args, **kwargs)
++        except BaseException as error:
++            call["exception"] = {"type": type(error).__name__, "message": str(error)}
++            raise
++        else:
++            call["returned_normally"] = True
++            call["return_value"] = result
++            return result
++        finally:
++            sample_runtime(worker)
++            call["end_sequence"] = tick()
++            poll_context.call = previous_call
+ 
+     def after_commit(conn, entrance):
+         if fault["fired"] or fault["operation_id"] is None:
+@@ -3685,6 +3768,15 @@
+     session_code = lease_module.OperationalLeaseSession.__init__.__code__
+ 
+     def profile(frame, event, arg):
++        if frame.f_code is poll_code and event == "call":
++            call = getattr(poll_context, "call", None)
++            if call is not None and frame.f_locals.get("self") is objects[call["worker_resource_id"]][0]:
++                call["entered"] = True
++                call["entry_sequence"] = tick()
++                call["thread_id"] = threading.get_ident()
++                call["native_thread_id"] = threading.get_native_id()
++        for worker in tuple(worker_refs):
++            sample_runtime(worker)
+         if frame.f_code is session_code and event == "call":
+             session = frame.f_locals["self"]
+             add(session, "lease_session")
+@@ -3712,6 +3804,7 @@
+             (SimulationWorker, "worker"),
+         ):
+             patch(cls, "__init__", init_wrapper(cls.__init__, kind))
++        patch(SimulationWorker, "poll_once", poll_once)
+         for cls, kind in ((InMemoryEventAutonomyRepository, "memory_repository"),
+                           (SQLiteEventAutonomyRepository, "event_repository")):
+             patch(cls, "close", close_wrapper(cls.close, kind))
+@@ -3761,12 +3854,36 @@
+                     record["cleanup_observed"] = not record["TLS_connection"] and all(
+                         row["cleanup_observed"] is True for row in owned)
+                 elif kind == "worker":
++                    sample_runtime(obj)
+                     session = getattr(obj, "_operational_lease_session", None)
+-                    heartbeat = getattr(obj, "_heartbeat_thread", None)
++                    heartbeat = None if session is None else getattr(session, "_heartbeat_thread", None)
+                     record["heartbeat_alive"] = None if heartbeat is None else heartbeat.is_alive()
+-                    record["cleanup_observed"] = (
+-                        session is None or getattr(session, "_closed", False) is True
+-                    ) and (heartbeat is None or not heartbeat.is_alive()) and obj.active_job_id is None
++                    record["final_active_job_id"] = getattr(obj, "active_job_id", None)
++                    calls = [call for call in value["worker_lifecycles"]
++                             if call["worker_resource_id"] == id(obj)]
++                    if not calls:
++                        record["cleanup_basis"] = "never_polled_no_owned_runtime"
++                        record["cleanup_observed"] = (
++                            record["initial_active_job_id"] == ""
++                            and record["final_active_job_id"] == ""
++                            and record["session_observed"] is False
++                            and record["heartbeat_observed"] is False
++                            and session is None and heartbeat is None
++                            and not record["close_attempts"])
++                    else:
++                        record["cleanup_basis"] = "poll_finished_runtime_released"
++                        sessions = [objects[item][0] for item in record["session_resource_ids"]]
++                        threads = [objects[item][0] for item in
++                                   record["broker_resource_ids"] + record["heartbeat_resource_ids"]]
++                        record["cleanup_observed"] = (
++                            all(call["end_sequence"] is not None for call in calls)
++                            and record["final_active_job_id"] == ""
++                            and record["session_observed"] is not None
++                            and record["heartbeat_observed"] is not None
++                            and all(getattr(item, "_closed", False) is True for item in sessions)
++                            and all(not item.is_alive() for item in threads)
++                            and (session is None or getattr(session, "_closed", False) is True)
++                            and (heartbeat is None or not heartbeat.is_alive()))
+                 elif kind in {"helper_thread", "broker_thread", "heartbeat_thread"}:
+                     if obj.ident is not None and obj is not threading.current_thread():
+                         obj.join(timeout=2)

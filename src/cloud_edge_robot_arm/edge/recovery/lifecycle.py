@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
 from datetime import UTC, datetime
 from math import isfinite
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, overload
 
 from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
 from cloud_edge_robot_arm.contracts.models import (
@@ -38,6 +38,11 @@ from cloud_edge_robot_arm.edge.evidence.validator import validate_decision_commi
 from cloud_edge_robot_arm.edge.recovery.verification_router import (
     VerificationBudget,
     VerificationBudgetState,
+)
+from cloud_edge_robot_arm.vision.local_temporal import (
+    JSONValue,
+    LocalDomainEnvelope,
+    LocalVerificationBudgetState,
 )
 
 if TYPE_CHECKING:
@@ -69,7 +74,9 @@ def _aware(value: datetime) -> None:
         raise ValueError("aware source clock required")
 
 
-def _state_payload(state: VerificationBudgetState) -> dict[str, Any]:
+def _state_payload(state: VerificationBudgetState | LocalVerificationBudgetState) -> dict[str, Any]:
+    if type(state) is LocalVerificationBudgetState:
+        return state.to_payload()
     state.__post_init__()
     if any(
         not isinstance(name, str) or status not in {"UNKNOWN", "FAIL", "PASS"}
@@ -91,7 +98,19 @@ def _state_from_payload(payload: dict[str, Any]) -> VerificationBudgetState:
     return state
 
 
-def copy_budget(state: VerificationBudgetState) -> VerificationBudgetState:
+@overload
+def copy_budget(state: VerificationBudgetState) -> VerificationBudgetState: ...
+
+
+@overload
+def copy_budget(state: LocalVerificationBudgetState) -> LocalVerificationBudgetState: ...
+
+
+def copy_budget(
+    state: VerificationBudgetState | LocalVerificationBudgetState,
+) -> VerificationBudgetState | LocalVerificationBudgetState:
+    if isinstance(state, LocalVerificationBudgetState):
+        return LocalVerificationBudgetState.from_payload(state.to_payload())
     return _state_from_payload(json.loads(json.dumps(_state_payload(state), allow_nan=False)))
 
 
@@ -148,6 +167,109 @@ class VerificationBudgetRecord:
         return type(self).from_payload(self.to_payload())
 
 
+class LocalVerificationBudgetRecord(LocalDomainEnvelope):
+    """Strict detached pool history; construction cannot initialize a live pool."""
+
+    _tag = "recovery.verification-budget.local.v1"
+
+    @property
+    def task_id(self) -> str:
+        return self.string("task_id")
+
+    @property
+    def state(self) -> LocalVerificationBudgetState:
+        return LocalVerificationBudgetState.from_payload(self.object("state"))
+
+    @property
+    def revision(self) -> int:
+        return self.counter("revision")
+
+    @property
+    def content_hash(self) -> str:
+        return self.string("content_hash")
+
+
+class LocalRetryBudgetRecord(LocalDomainEnvelope):
+    """Immutable retry history; decoding cannot create or replenish a live budget."""
+
+    _tag = "recovery.retry-budget.local.v1"
+
+    @property
+    def budget_id(self) -> str:
+        return self.string("budget_id")
+
+    @property
+    def task_id(self) -> str:
+        return self.string("task_id")
+
+    @property
+    def per_step_retry_limit(self) -> int:
+        return self.counter("per_step_retry_limit")
+
+    @property
+    def per_skill_retry_limit(self) -> int:
+        return self.counter("per_skill_retry_limit")
+
+    @property
+    def task_total_retry_limit(self) -> int:
+        return self.counter("task_total_retry_limit")
+
+    @property
+    def retry_count_used(self) -> int:
+        return self.counter("retry_count_used")
+
+    @property
+    def task_retry_count(self) -> int:
+        return self.counter("task_retry_count")
+
+    def _retry_counts(self, name: str) -> dict[str, int]:
+        result: dict[str, int] = {}
+        for key, value in self.object(name).items():
+            if type(value) is not int or value < 0:
+                raise ValueError("strict nonnegative retry history counter required")
+            result[key] = value
+        return result
+
+    @property
+    def step_retry_counts(self) -> dict[str, int]:
+        return self._retry_counts("step_retry_counts")
+
+    @property
+    def skill_retry_counts(self) -> dict[str, int]:
+        return self._retry_counts("skill_retry_counts")
+
+    @property
+    def event_retry_counts(self) -> dict[str, int]:
+        return self._retry_counts("event_retry_counts")
+
+    @property
+    def retry_cooldown_ms(self) -> int:
+        return self.counter("retry_cooldown_ms")
+
+    @property
+    def retry_backoff_policy(self) -> str:
+        return self.string("retry_backoff_policy")
+
+    @property
+    def effective_retry_limit(self) -> int:
+        return self.counter("effective_retry_limit")
+
+    @property
+    def remaining_retries(self) -> int:
+        return self.counter("remaining_retries")
+
+    @property
+    def scene_version(self) -> int:
+        return self.counter("scene_version")
+
+    @property
+    def original_recovery_reference(self) -> dict[str, JSONValue]:
+        reference = self.local_time.to_payload()["recovery_reference"]
+        if not isinstance(reference, dict):
+            raise ValueError("original recovery reference must be a JSON object")
+        return dict(reference)
+
+
 # Keep the ten roadmap fields positional; binding/CAS metadata is keyword-only.
 @dataclass(frozen=True)
 class RecoveryRecord:
@@ -156,7 +278,7 @@ class RecoveryRecord:
     task_id: str
     attempt_id: str
     state: str
-    budget_state: VerificationBudgetState
+    budget_state: VerificationBudgetState | LocalVerificationBudgetState
     progress_signature: str
     last_verified_at: datetime | None
     resolution_observation_id: str
@@ -252,7 +374,12 @@ class RecoveryRecord:
         values = dict(payload)
         if values.pop("schema_version") != "recovery.record.v1":
             raise ValueError("unknown recovery record schema")
-        values["budget_state"] = _state_from_payload(values["budget_state"])
+        budget_payload = values["budget_state"]
+        values["budget_state"] = (
+            LocalVerificationBudgetState.from_payload(budget_payload)
+            if "original_budget_reference" in budget_payload
+            else _state_from_payload(budget_payload)
+        )
         values["conditions"] = tuple(ConditionSpec(**item) for item in values["conditions"])
         if values["execution_completion"] is not None:
             values["execution_completion"] = SkillExecutionResult.model_validate_json(

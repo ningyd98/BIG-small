@@ -1,0 +1,24 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round251-p6-t2-event3-entry-fence-continuation-20261017/implementation/prepared-sqlite-source.txt
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round253-p6-t2-checkpoint-prelock-read-candidate-20261017/implementation/prepared-sqlite-source.txt
+@@ -2068,15 +2068,15 @@
+         expected_checkpoint_hash: str,
+         new_checkpoint: ExecutionCheckpoint,
+     ) -> bool:
+-        existing = self.get_checkpoint(checkpoint_id)
+-        if existing is None or existing.checkpoint_hash != expected_checkpoint_hash:
+-            return False
+-        h = new_checkpoint.checkpoint_hash or _checkpoint_hash(new_checkpoint)
+-        saved = new_checkpoint.model_copy(update={"checkpoint_hash": h}, deep=True)
+-        payload = saved.model_dump_json()
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
+             _local_legacy_write_guard_unlocked(self, "compare_and_set_checkpoint", (), {'checkpoint_id': checkpoint_id, 'expected_checkpoint_hash': expected_checkpoint_hash, 'new_checkpoint': new_checkpoint})
++            existing = self.get_checkpoint(checkpoint_id)
++            if existing is None or existing.checkpoint_hash != expected_checkpoint_hash:
++                return False
++            h = new_checkpoint.checkpoint_hash or _checkpoint_hash(new_checkpoint)
++            saved = new_checkpoint.model_copy(update={"checkpoint_hash": h}, deep=True)
++            payload = saved.model_dump_json()
+             if saved.checkpoint_id == checkpoint_id:
+                 cursor = self._conn.execute(
+                     """UPDATE execution_checkpoints

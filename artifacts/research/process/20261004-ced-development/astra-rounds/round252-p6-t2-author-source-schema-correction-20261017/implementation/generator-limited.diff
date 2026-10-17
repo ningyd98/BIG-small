@@ -1,0 +1,36 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round252-p6-t2-author-source-schema-correction-20261017/before/failed-generator.py.txt
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round252-p6-t2-author-source-schema-correction-20261017/implementation/prepared-generator.py
+@@ -2,6 +2,24 @@
+ import json,hashlib,re,difflib,base64
+ R=Path("/home/ningyd/文档/ChatGPT/BIGsmall");D=Path("/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round251-p6-t2-event3-entry-fence-continuation-20261017");I=D/'implementation';I.mkdir(exist_ok=True)
+ o=json.loads((D/'input-observation.json').read_text());names=o['writer_names']
++
++# R252: validate the observed source-record level before any candidate is saved.
++assert type(o['current_sources']) is list and len(o['current_sources']) == 27
++for row in o['current_sources']:
++ assert type(row) is dict and set(row) == {'original', 'physical'}
++ for level in ('original', 'physical'):
++  value = row[level]
++  assert type(value) is dict
++  assert type(value['path']) is str and type(value['bytes']) is int and value['bytes'] >= 0
++  assert type(value['sha256']) is str and re.fullmatch(r'[0-9a-f]{64}', value['sha256'])
++  actual_bytes = Path(value['path']).read_bytes()
++  assert len(actual_bytes) == value['bytes'] and hashlib.sha256(actual_bytes).hexdigest() == value['sha256']
++ assert row['original']['bytes'] == row['physical']['bytes']
++ assert row['original']['sha256'] == row['physical']['sha256']
++assert len({row['original']['path'] for row in o['current_sources']}) == 27
++for target_name in ('protocol', 'memory', 'sqlite'):
++ target_path = str(R/'src/cloud_edge_robot_arm/repositories/event_autonomy'/f'{target_name}.py')
++ assert sum(row['original']['path'] == target_path for row in o['current_sources']) == 1
+ def pin(p,b):return dict(path=str(p),bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
+ def save(p,b):
+  with p.open('xb') as f:f.write(b)
+@@ -26,7 +44,7 @@
+ entries=[];changes=[];patch='*** Begin Patch\n'
+ for name in ('protocol','memory','sqlite'):
+  p=R/'src/cloud_edge_robot_arm/repositories/event_autonomy'/f'{name}.py';b=p.read_bytes();s=b.decode()
+- expected=next(x for x in o['current_sources'] if x['path']==str(p))
++ expected=next(x['original'] for x in o['current_sources'] if x['original']['path']==str(p))
+  assert pin(p,b)=={k:expected[k] for k in ('path','bytes','sha256')}
+  before=D/'before'/p.relative_to(R);assert before.read_bytes()==b
+  t=s

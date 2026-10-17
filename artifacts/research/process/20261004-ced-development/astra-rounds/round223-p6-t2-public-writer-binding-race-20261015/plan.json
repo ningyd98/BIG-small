@@ -1,0 +1,389 @@
+{
+  "schema_version": "astra-repair-plan.v1",
+  "round": "R223",
+  "actual_author": {
+    "agent": "/root/astra_status_plan",
+    "model": "gpt-6-astra"
+  },
+  "status": "FROZEN_PLAN_ONLY_NOT_ACTIVATED",
+  "issue": {
+    "classification": "CONFIRMED_STATIC_CHECK_UNLOCK_RELOCK_BINDING_RACE; no executed reproducer",
+    "evidence": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/original-root-source-finding.json",
+    "actual_source_reads": [
+      "ROOT 347694 exit 0",
+      "ROOT 914f68 exit 0",
+      "Astra 9c9efe exit 0",
+      "Astra 2a57c8 exit 0",
+      "Astra 317eb0 exit 0",
+      "Astra c1d998 exit 0",
+      "Astra 72853f exit 0"
+    ],
+    "cause": "local_event_repository.dispatch observes no local target while holding the actual event lock, releases it and invokes original. A genuine private bootstrap can persist binding before the original legacy writer obtains its own lock. Original save_state then mutates positive legacy storage without another binding check. SQLite needs the binding check inside the same write transaction, not merely under one instance's Python lock.",
+    "observed_runtime_bypass": false,
+    "original_failure_numeric_exit": null,
+    "source_tool_exits_are_not_product_runs": true,
+    "inventory": "36 named public writers exist in each backend. Memory mark_event_handled currently has no lock and no mutation; include it in the explicit fence inventory rather than invent a mutation. Several SQLite methods already BEGIN IMMEDIATE; others have only an implicit DML transaction or delegate to *_locked helpers."
+  },
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/original-root-source-finding.json",
+      "bytes": 23619,
+      "sha256": "d3de7472df2c2326c09378818b2ab027c448bb4fbaaa0aeefc64a793b77ec2e9"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/manifest.json",
+      "bytes": 19606,
+      "sha256": "95f0f301c45aeaa07864ddffc1676cf290c08167b33fba80ec5d6143b0fb3d60"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/plan.json",
+      "bytes": 40588,
+      "sha256": "499a6cdd34efd3af6b81f3216555b488579a00834f750f52bc3fe1ddb411cdec"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/plan.json",
+      "bytes": 114866,
+      "sha256": "70f51381f8f401c5456304d9eb12f019e7f903a582407ab7819447b8cd1f871b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/input-pins.json",
+      "bytes": 157886,
+      "sha256": "94454311381670c81874abbdfb31d8239ad6e14d7316a9e1888df9ea3e9bedb9"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/command-ledger.json",
+      "bytes": 33161,
+      "sha256": "902b7e59ee8bebd9f1453e9dc4f9b58efd1b9bdfd32a0204e15a65dcd20b7d70"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/root-command-ledger.json",
+      "bytes": 76862,
+      "sha256": "475ebe8b47fec9539b24fd19f7431b2803e45ecf3340964c3645c18f7fda1516"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/run-budgeted-command.py",
+      "bytes": 31818,
+      "sha256": "13304d13376054c42441eda1060dcd926984498bafaea98243edf1c27f839808"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t2/fixture-map.json",
+      "bytes": 79476,
+      "sha256": "42b3ee109277a2f0987789c5f3116943f7e68499f247f66e29d0cb7e96f35271"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py",
+      "bytes": 254018,
+      "sha256": "ed602dc9ba5c0b15af20fbe8ca4d9b58d2e4e45fac621dc6f5e5e2cd4a94e7d3"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_visual_worker_factory.py",
+      "bytes": 15847,
+      "sha256": "5f99a6bf6e9850875423a5a9eca5f47bbe88e4ff12b97048f218de19b76c57f9"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "bytes": 28032,
+      "sha256": "1fc0e95949ec2bbd22e8cd3e7f50686f36839e3f05dbf3451abb753c4b188d4b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "bytes": 28032,
+      "sha256": "1fc0e95949ec2bbd22e8cd3e7f50686f36839e3f05dbf3451abb753c4b188d4b"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "bytes": 85437,
+      "sha256": "5886098928b58f51bd3190148a27e574f96115ed25a51e2bf7fc78d7d803c94e"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "bytes": 85437,
+      "sha256": "5886098928b58f51bd3190148a27e574f96115ed25a51e2bf7fc78d7d803c94e"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "bytes": 141326,
+      "sha256": "b8250b2ef86c9dda18d4c4db3a51729dedcff9894a12a2e09b297b4119dbfc98"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "bytes": 141326,
+      "sha256": "b8250b2ef86c9dda18d4c4db3a51729dedcff9894a12a2e09b297b4119dbfc98"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round222-p6-t2-local-lease-dispatch-patch-recovery-20261015/before/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "bytes": 106062,
+      "sha256": "adb1d0ea1bad455279a8f05872d78b53f314580f7654758764727d2f80373576"
+    }
+  ],
+  "input_roles": {
+    "current_fixed_until_R223_edit": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py"
+    ],
+    "immutable_context": "The R222 before copies and raw ROOT evidence are historical. worker_runtime.py is pinned ONLY as the R222 physical archive, not as a future live-byte invariant. R222 simulation_runtime three-path implementation and remaining approved parent T2 work may proceed independently.",
+    "protected": "Frozen whole original T2 test, parent runner and factory stay byte-identical. The R158 protected211 exact path/bytes/sha256 records remain mandatory; preserve other record metadata rather than comparing whole dict shapes.",
+    "mutable": "Parent role ledgers may advance only under already approved independent actions; archive actual before bytes, reconcile used counts with actual receipts and never reset. STATE/PHASE are not immutable product inputs and this plan grants no edits to them.",
+    "activation_generation": "Before RED, ROOT must freeze a new complete actual parent T2 19-product baseline after the real private bootstrap chain is source-ready. Event3 must still equal the present plan pins. Other legally changed parent inputs require their actual approved provenance and a new activation receipt, not a fabricated equality with R222 history. From RED baseline through GREEN only event3 may change under this round; freeze other relevant source generations."
+  },
+  "scope": {
+    "product": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py"
+    ],
+    "test_new": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_local_public_writer_binding_race.py",
+    "author_metadata": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/prepare-evidence.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/run-command.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/command-ledger.json"
+    ],
+    "root_metadata": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/root-settlement.py",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/root-command-ledger.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/root-activation.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/script-gate.json"
+    ],
+    "forbidden": "No changes to frozen original7 bodies/helpers, old runner, P5/broker/job/worker/runtime contracts, schema tags, SQL table schemas, old evidence, original plans or original command budgets. No new decoded authority or new modes. No Git/network/native/physical commands.",
+    "implementation_contract": {
+      "common_helper": "Add protocol._local_legacy_write_guard_unlocked(repo, name, args, kwargs) -> None. It never acquires a lock, begins/commits a transaction, grants a private scope, dispatches a positive mutation, or caches a negative lookup. Under the caller's actual storage critical section it re-evaluates the existing _local_target against actual current binding/key storage; if local, raise ValueError with the existing private/operational/scope rejection contract. Otherwise return normally.",
+      "memory": "For every one of the 36 inventoried original writer methods, invoke the helper inside the existing real self._lock before any observable write, CAS, spend or mutable lookup that controls writing. Pass actual method arguments explicitly, not guessed task IDs or a public capability token. mark_event_handled receives a real self._lock section and fence before its existing membership result. No RLock, lock replacement, lock skipping or holding the outer dispatch lock while calling an original that locks again.",
+      "sqlite": "For every one of the 36 original writers, enforce the fence after obtaining self._write_lock AND the actual SQLite write transaction (BEGIN IMMEDIATE), before any mutation or mutation-controlling read. Reuse each existing BEGIN IMMEDIATE exactly once; for the implicit-transaction writers use with self._write_lock, self._conn and a single BEGIN IMMEDIATE before the fence. Keep their original SQL predicates, parameter tuples, data values, CAS/idempotency outcomes and commit ownership. For *_locked delegates establish the transaction/fence at the public outer caller; do not add a second BEGIN inside a delegate. Exceptions/early returns must rollback/finish the introduced transaction. Never commit a caller's private active transaction or recursively invoke a public writer. If actual source cannot satisfy this within these three files, STOP instead of adding authority or silently changing transaction ownership.",
+      "dispatch": "Keep the existing private registered-scope branch. Its early public precheck may remain an optimization, but cannot be the only fence. Preserve the current exact bound CANCELLED exception and its actual storage effect under the real event lock; positive fallback is always fenced. An invocation initially unbound but losing the binding race may fail closed, including a late CANCELLED fallback; it must never perform a legacy write after binding. This does not expand accepted cancellation argument shapes.",
+      "source_proof": "A literal/text inventory must map each of 36 names in both backends to its actual lock and, for SQLite, its BEGIN/transaction location and guard-before-first-effect location. Inventory is 72 entries, not 72 runtime tests. Non-owned definitions and every original business SQL literal/parameter expression stay identical except the explicitly added BEGIN IMMEDIATE control statement. No blanket source waiver or assertions removed."
+    }
+  },
+  "tests": {
+    "new_file": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_local_public_writer_binding_race.py",
+    "red_nodes": [
+      "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]",
+      "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[sqlite]",
+      "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer_second_connection"
+    ],
+    "red_count": 3,
+    "green_nodes": [
+      "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]",
+      "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[sqlite]",
+      "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer_second_connection",
+      "tests/test_local_public_writer_binding_race.py::test_writer_committed_before_binding_is_legacy[memory]",
+      "tests/test_local_public_writer_binding_race.py::test_writer_committed_before_binding_is_legacy[sqlite]",
+      "tests/test_local_public_writer_binding_race.py::test_bound_negative_cancellation_remains_supported[memory]",
+      "tests/test_local_public_writer_binding_race.py::test_bound_negative_cancellation_remains_supported[sqlite]",
+      "tests/test_local_public_writer_binding_race.py::test_unbound_legacy_writer_roundtrip[memory]",
+      "tests/test_local_public_writer_binding_race.py::test_unbound_legacy_writer_roundtrip[sqlite]"
+    ],
+    "green_count": 9,
+    "deterministic_seam": "Use a bounded test-only call/profile observer which delegates to/restores any existing resource profile. Match the actual original save_state.__wrapped__.__code__ and actual self/task, after wrapper precheck and before its real inner lock. It only pauses that writer thread via Events and records identity/order; it must not replace _local_target, locks, persistence, decisions, private scope validation or return values. Start the writer before the genuine bootstrap local scope, from a matched actual runtime bootstrap entry while no event lock is held. Then allow the original bootstrap path to execute and COMMIT; release the writer only after the real during_episode callback has observed COMPLETE bootstrap/binding and actual job/event publication consistency. No direct binding INSERT, _local_tasks assignment or replay of detached authority.",
+    "sqlite_second_connection": "Construct the second actual SQLiteEventAutonomyRepository against the same database before the tested private job/event lock; initialize it before the race. Invoke its real public save_state from its properly owned writer thread, using its actual connection and lock. Same-instance and second-connection cases must both observe the committed binding; do not fake a shared Python lock.",
+    "red_assertions": "Record both barriers and actual commit/readback order, full relevant before/after legacy/local rows, writer exception or successful return, real private bootstrap result and cleanup before final assertions. On current vulnerable sources expect the writer to return and a positive legacy row to be present after a completed binding; assertion 'R223 late local binding was not rejected' must fail in exactly 3 cases. Setup ValueError, missing mode/API, AttributeError, SQLite locked error, barrier timeout, observer error or deadlock is NOT legal RED; preserve and stop for a new Astra plan.",
+    "green_assertions": "Race3 must raise the private-scope ValueError, keep all legacy mutation rows unchanged and preserve real bootstrap COMPLETE binding and normal private publication. Writer-before-binding2 allows the writer to finish/commit first and then observes genuine binding success, demonstrating serialization rather than reject-all. Bound-negative-cancellation2 exercises the already allowed bound positional CANCELLED route and checks only its intended negative effect. Unbound-legacy2 verifies ordinary save_state/readback and a subsequent writer/transaction remain usable. All cases use true Memory/SQLite, no mocked guard/authority.",
+    "prerequisites": "The parent T2 bootstrap/private producer chain is still under implementation. Source readiness of that chain and R222 activation/completion must be resolved before these tests run. Do not consume RED while setup is known incomplete. Test-only source preparation can proceed first; do not repair event3 before the legal RED has been accepted.",
+    "resource_contract": "Use genuine CPU factory and existing frozen observer APIs by import, without modifying them. Additional writer thread and second SQLite connection are explicitly registered, joined/closed in finally. Preserve all transitive and partial-init object denominators, distinguish never-polled objects from active sessions, and never fabricate close methods. Each case has at most one polled worker and one adversarial writer thread; at most two constructed active event repositories for second-connection case, one broker and one heartbeat per polled worker. Existing 18 active lifecycle and 64 ceiling are not raised; concurrency of polled workers <=2. Individual Event waits and joins <=10s, overall child600s and process termination/reap total<=15s. Counts are observed, not assumed per node. Record thread/native IDs, issuer-thread cleanup, real locks/transactions/connections, TLS/registries and method/profile restoration. Unknown OS/native/physical measurements remain null."
+  },
+  "execution": {
+    "new_slots": [
+      {
+        "key": "prepare_red",
+        "argv": [
+          "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+          "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/prepare-evidence.py",
+          "red"
+        ],
+        "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "finite_env": {
+          "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+          "LANG": "C.UTF-8",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONPATH": "src:."
+        },
+        "timeout_seconds": 120,
+        "actor": "sole Sol",
+        "expected": "exit 0; complete physical baseline and exact source/test/script gates",
+        "authorized": 1,
+        "used": 0,
+        "remaining": 1,
+        "state": "HELD_PENDING_ROOT_FULL_SOURCE_AND_INPUT_GATE",
+        "evidence_directory": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/prepare_red"
+      },
+      {
+        "key": "red",
+        "argv": [
+          "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+          "-m",
+          "pytest",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]",
+          "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[sqlite]",
+          "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer_second_connection",
+          "--basetemp=/tmp/bigsmall-p6-r223-red",
+          "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/red/junit.xml"
+        ],
+        "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "finite_env": {
+          "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+          "LANG": "C.UTF-8",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONPATH": "src:.",
+          "BIGSMALL_R223_RESOURCE_ROOT": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/red/resources",
+          "BIGSMALL_R223_CASE_ROOT": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/red/cases"
+        },
+        "timeout_seconds": 600,
+        "actor": "sole Sol",
+        "expected": "child exit 1, exactly 3 assertion failures R223 late local binding was not rejected; 0 errors/skips; genuine binding COMPLETE and writer returned on vulnerable baseline",
+        "authorized": 1,
+        "used": 0,
+        "remaining": 1,
+        "state": "HELD_PENDING_ROOT_FULL_SOURCE_AND_INPUT_GATE",
+        "evidence_directory": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/red"
+      },
+      {
+        "key": "prepare_green",
+        "argv": [
+          "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+          "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/prepare-evidence.py",
+          "green"
+        ],
+        "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "finite_env": {
+          "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+          "LANG": "C.UTF-8",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONPATH": "src:."
+        },
+        "timeout_seconds": 120,
+        "actor": "sole Sol",
+        "expected": "exit 0; exact three-file delta and 72 critical-section coverage entries",
+        "authorized": 1,
+        "used": 0,
+        "remaining": 1,
+        "state": "HELD_PENDING_ROOT_FULL_SOURCE_AND_INPUT_GATE",
+        "evidence_directory": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/prepare_green"
+      },
+      {
+        "key": "ruff",
+        "argv": [
+          "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+          "-m",
+          "ruff",
+          "check",
+          "--no-cache",
+          "--select",
+          "E9,F63,F7,F82",
+          "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+          "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+          "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+          "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_local_public_writer_binding_race.py"
+        ],
+        "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "finite_env": {
+          "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+          "LANG": "C.UTF-8",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONPATH": "src:."
+        },
+        "timeout_seconds": 120,
+        "actor": "sole Sol",
+        "expected": "exit 0; limited syntax/undefined-name lint, not full typing or full repository static acceptance",
+        "authorized": 1,
+        "used": 0,
+        "remaining": 1,
+        "state": "HELD_PENDING_ROOT_FULL_SOURCE_AND_INPUT_GATE",
+        "evidence_directory": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/ruff"
+      },
+      {
+        "key": "green",
+        "argv": [
+          "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+          "-m",
+          "pytest",
+          "-q",
+          "-p",
+          "no:cacheprovider",
+          "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]",
+          "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[sqlite]",
+          "tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer_second_connection",
+          "tests/test_local_public_writer_binding_race.py::test_writer_committed_before_binding_is_legacy[memory]",
+          "tests/test_local_public_writer_binding_race.py::test_writer_committed_before_binding_is_legacy[sqlite]",
+          "tests/test_local_public_writer_binding_race.py::test_bound_negative_cancellation_remains_supported[memory]",
+          "tests/test_local_public_writer_binding_race.py::test_bound_negative_cancellation_remains_supported[sqlite]",
+          "tests/test_local_public_writer_binding_race.py::test_unbound_legacy_writer_roundtrip[memory]",
+          "tests/test_local_public_writer_binding_race.py::test_unbound_legacy_writer_roundtrip[sqlite]",
+          "--basetemp=/tmp/bigsmall-p6-r223-green",
+          "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/green/junit.xml"
+        ],
+        "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "finite_env": {
+          "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+          "LANG": "C.UTF-8",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONPATH": "src:.",
+          "BIGSMALL_R223_RESOURCE_ROOT": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/green/resources",
+          "BIGSMALL_R223_CASE_ROOT": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/green/cases"
+        },
+        "timeout_seconds": 600,
+        "actor": "sole Sol",
+        "expected": "child and wrapper exit 0; exactly 9 PASS, 0 failure/error/skip",
+        "authorized": 1,
+        "used": 0,
+        "remaining": 1,
+        "state": "HELD_PENDING_ROOT_FULL_SOURCE_AND_INPUT_GATE",
+        "evidence_directory": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/green"
+      },
+      {
+        "key": "root_settlement",
+        "argv": [
+          "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+          "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/root-settlement.py"
+        ],
+        "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "finite_env": {
+          "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+          "LANG": "C.UTF-8",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONPATH": "src:."
+        },
+        "timeout_seconds": 120,
+        "actor": "ROOT",
+        "expected": "exit 0; all actual raw/source/role/resource checks true",
+        "authorized": 1,
+        "used": 0,
+        "remaining": 1,
+        "state": "HELD_PENDING_ROOT_FULL_SOURCE_AND_INPUT_GATE",
+        "evidence_directory": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/root_settlement"
+      }
+    ],
+    "slot_count": 6,
+    "no_retries": true,
+    "launchers": "Every exact child argv above is executed only through the new sole-author run-command.py --command red|ruff|green; freeze its full source and exact argv/env/timeout at ROOT gate. Prepare and ROOT settlement are direct stdlib scripts as listed. The wrapper is part of the corresponding slot, not an uncounted extra validation. Python is the absolute workspace .venv/bin/python only.",
+    "capture": "Before each command archive actual source/script/gate/role pins, reserve its sole slot, and capture independent subprocess stdout/stderr bytes in exclusive evidence paths. Persist invocation.json, result.json, actual-tool-return.json, stdout.txt, stderr.txt; pytest additionally junit.xml, full resource-summary.json, case records and regular-file/symlink metadata index. Record real numeric child/wrapper exits separately, timeout and bounded process-group cleanup even on failure. Never rewrite original failed results; missing captures remain null. stdout is scalar/path/hash summary <=6000 UTF8 bytes, full data goes to files.",
+    "gates": [
+      "ROOT full plan and applicable input review; create separate R223 roles all HELD0/1",
+      "Sole Sol writes new tests and metadata runner sources only, archives all before bytes",
+      "ROOT full test/script review and parent T2 real bootstrap source-ready gate",
+      "prepare_red once, ROOT accepts complete baseline/transport/source proof",
+      "RED3 once and ROOT verifies exact intended assertion failures and actual binding/cleanup",
+      "Only then sole Sol performs three-file guard repair",
+      "prepare_green once; ROOT accepts full delta/72-entry fence inventory and unchanged frozen sources",
+      "narrow Ruff once then GREEN9 once, each after separate reservation and prior actual success",
+      "ROOT settlement once; record narrow software evidence only; parent T2 GREEN7 still needs its original independent gate"
+    ],
+    "historical_slots": "R158 T2 RED author SPENT1/0 and ROOT SPENT_EXPECTED_INTERFACE_RED_ACCEPTED1/0 remain immutable history; original T2 GREEN author HELD0/1 and ROOT HELD_PENDING_ROOT_GATE0/1 are not released by this round. R222 patch/readback and all other spent rounds retain their own identities and counts.",
+    "review": "No new reviewer seat or reset. ROOT performs full source/evidence gates described here; this is not independent final review. Include this fix and actual9 evidence in the parent T2 independent review under its separately approved remaining allocation. If that allocation is insufficient, obtain an explicit further review plan rather than silently adding reads."
+  },
+  "outputs": {
+    "before": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/before/manifest.json",
+    "red_baseline": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/prepare_red/source-index.json",
+    "green_candidate": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/prepare_green/source-index.json",
+    "limited_diff": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/limited.diff",
+    "writer_scope": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/writer-fence-scope.json",
+    "change_report": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/change-report.json",
+    "settlement": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/implementation/root_settlement/settlement.json",
+    "step_json": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/step-report.json",
+    "step_md": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round223-p6-t2-public-writer-binding-race-20261015/step-report.md"
+  },
+  "acceptance": "Plan only. Successful RED/GREEN/resource proof establishes this bounded software race closure, not full 36 runtime scenario coverage, parent T2 completion, B9, T12, native/physics or formal evidence. Parent seven-node GREEN and independent review remain required. No product/test/validation command has been run by this planner.",
+  "stop": "Any new root cause, unexpected test/metadata failure, inability to preserve lock/transaction ownership, expanded source scope, changed frozen old7/runner/protected bytes, unauthorized generation or missing exact raw must STOP; preserve first and obtain genuine Astra plan. No automatic retries."
+}

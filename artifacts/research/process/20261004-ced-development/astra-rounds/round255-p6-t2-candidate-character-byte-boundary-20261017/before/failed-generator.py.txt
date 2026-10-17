@@ -1,0 +1,62 @@
+from pathlib import Path
+import json,hashlib,re,difflib,copy
+R=Path("/home/ningyd/文档/ChatGPT/BIGsmall");D=Path("/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round253-p6-t2-checkpoint-prelock-read-candidate-20261017");S=Path("/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round251-p6-t2-event3-entry-fence-continuation-20261017")
+p=json.loads((D/'plan.json').read_text());I=D/'implementation'
+def pin(q,b):return dict(path=str(q),bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
+def fixed(row):
+ q=Path(row['path']);b=q.read_bytes()
+ assert pin(q,b)=={k:row[k] for k in ('path','bytes','sha256')} and not q.is_symlink()
+ return b
+def save(q,b):
+ q.parent.mkdir(parents=True,exist_ok=True)
+ with q.open('xb') as f:f.write(b)
+ assert q.read_bytes()==b
+ return pin(q,b)
+for row in p['inputs']:fixed(row)
+for pair in p['before']:assert fixed(pair['original'])==fixed(pair['archive'])
+o=json.loads((S/'input-observation.json').read_text())
+for row in o['current_sources']:assert fixed(row['original'])==fixed(row['physical'])
+for row in o['protected']:fixed(row)
+before=fixed(p['scope']['candidate_input']);s=before.decode()
+methods=list(re.finditer(r'^    def (\w+)\(',s,re.M))
+ix=next(i for i,m in enumerate(methods) if m[1]=='compare_and_set_checkpoint')
+a=methods[ix].start();z=methods[ix+1].start();oldmethod=s[a:z]
+prefix='        existing = self.get_checkpoint(checkpoint_id)\n        if existing is None or existing.checkpoint_hash != expected_checkpoint_hash:\n            return False\n        h = new_checkpoint.checkpoint_hash or _checkpoint_hash(new_checkpoint)\n        saved = new_checkpoint.model_copy(update={"checkpoint_hash": h}, deep=True)\n        payload = saved.model_dump_json()\n'
+assert oldmethod.count(prefix)==1
+guard='            _local_legacy_write_guard_unlocked(self, "compare_and_set_checkpoint", (), {\'checkpoint_id\': checkpoint_id, \'expected_checkpoint_hash\': expected_checkpoint_hash, \'new_checkpoint\': new_checkpoint})\n'
+assert oldmethod.count(guard)==1
+moved=''.join('    '+line for line in prefix.splitlines(keepends=True))
+newmethod=oldmethod.replace(prefix,'',1).replace(guard,guard+moved,1)
+after=(s[:a]+newmethod+s[z:]).encode()
+assert newmethod.count('self._conn.execute("BEGIN IMMEDIATE")')==1
+assert after[:a]==before[:a] and after[a+len(newmethod.encode()):]==before[z:]
+cp=save(Path(p['outputs']['candidate']),after)
+values=json.loads((S/'implementation/prepared-product-values.json').read_text())
+updated=copy.deepcopy(values)
+entry_identity=p['inventory_correction']['entry_identity']
+positions=[i for i,row in enumerate(values['entries']) if row['path']==entry_identity['path'] and row['method']==entry_identity['method']]
+assert len(positions)==1;ei=positions[0]
+updated['entries'][ei].update(candidate_method_sha256=hashlib.sha256(newmethod.encode()).hexdigest(),
+ first_effect_or_controlling_read=p['inventory_correction']['first_effect_or_controlling_read'],
+ guard_position=p['inventory_correction']['guard_position'],
+ transaction_owner='outer public method single BEGIN before guard and get_checkpoint; unchanged get_checkpoint is undecorated and has no lock/BEGIN/commit; connection context closes early False/exception; existing commits unchanged')
+assert all(updated['entries'][i]==row for i,row in enumerate(values['entries']) if i!=ei)
+patch='*** Begin Patch\n'
+for change in updated['changes']:
+ logical=Path(change['before']['path']);old=fixed(change['before'])
+ new=after if str(logical)==entry_identity['path'] else fixed(change['candidate'])
+ if str(logical)==entry_identity['path']:
+  change['candidate']=cp;change['after']=pin(logical,after)
+ u=list(difflib.unified_diff(old.decode().splitlines(keepends=True),new.decode().splitlines(keepends=True),n=5))
+ patch+='*** Update File: '+str(logical)+'\n'+''.join('@@\n' if line.startswith('@@ ') else line for line in u[2:])
+patch+='*** End Patch'
+pp=save(Path(p['outputs']['patch']),patch.encode())
+vp=save(Path(p['outputs']['values']),(json.dumps(updated,ensure_ascii=False,indent=2)+'\n').encode())
+dp=save(Path(p['outputs']['limited_diff']),''.join(difflib.unified_diff(s.splitlines(keepends=True),after.decode().splitlines(keepends=True),fromfile=p['scope']['candidate_input']['path'],tofile=cp['path'])).encode())
+report=dict(round='R253',status='SOURCE_CANDIDATE_PREPARED_NOT_APPLIED',candidate_before=p['scope']['candidate_input'],candidate_before_physical=next(row['archive'] for row in p['before'] if row['original']==p['scope']['candidate_input']),candidate_after=cp,patch=pp,values=vp,limited_diff=dp,source_before=[row['original'] for row in o['current_sources']],protected_count=211,proof=dict(exact_six_line_move=True,added_spaces_per_moved_line=4,outside_method_equal=True,other_71_entries_deep_equal=True,entry_index=ei,single_existing_BEGIN=True,guard_arguments_unchanged=True,SQL_parameters_predicates_and_explicit_commits_unchanged=True),method_before_sha256=hashlib.sha256(oldmethod.encode()).hexdigest(),method_after_sha256=hashlib.sha256(newmethod.encode()).hexdigest(),getter_dispatch_rationale=p['precise_change']['getter'],product_native_applications=0,product_commands=0,validation_slots_consumed=0,runtime_evidence=None)
+rp=save(Path(p['outputs']['report']),(json.dumps(report,ensure_ascii=False,indent=2)+'\n').encode())
+step=dict(round='R253',status='SOURCE_PREPARATION_ONLY_AWAIT_ROOT',report=rp,product_commands=0,product_native_applications=0,validation_slots_consumed=0,runtime_evidence=None)
+sp=save(Path(p['outputs']['steps'][0]),(json.dumps(step,ensure_ascii=False,indent=2)+'\n').encode())
+md='# R253 source preparation\n\nOnly the exact six-line checkpoint prefix moved under the existing lock, BEGIN and guard. Other 71 inventory entries remain unchanged. Product sources and all four runtime slots remain unchanged. No behavioral execution or PASS claim.\n'
+mp=save(Path(p['outputs']['steps'][1]),md.encode())
+print(json.dumps(dict(candidate=cp,patch=pp,values=vp,diff=dp,report=rp,step=sp,step_md=mp),ensure_ascii=False))

@@ -1,0 +1,95 @@
+{
+  "round": "R273",
+  "status": "ONE_ORIGINAL_R268_METADATA_GATE_RELEASED",
+  "actual_correction": {
+    "args": {
+      "cmd": "env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=5s 120s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round273-p6-t2-root-gate-manifest-reference-20261017/root-correct-gate-reference.py'",
+      "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "max_output_tokens": 1800,
+      "yield_time_ms": 10000
+    },
+    "actual": {
+      "chunk_id": "3961e7",
+      "wall_time_seconds": 0.00000915,
+      "exit_code": 0,
+      "original_token_count": 244,
+      "output": "{\"all11_inputs_verified_before_change\": true, \"before_manifest\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round273-p6-t2-root-gate-manifest-reference-20261017/before/manifest.json\", \"bytes\": 13158, \"sha256\": \"2dfa8132ad09671942d6c7296ce3c1be3ff25b6578781403656e71f07d326353\"}, \"after\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-final-source-input-argv-gate.py\", \"bytes\": 9394, \"sha256\": \"ffd270db8dc8e232a7a2fd44e6d3502f9325ed512bd32d08f6d37accdba1bbd0\"}, \"report\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round273-p6-t2-root-gate-manifest-reference-20261017/root-correction-result.json\", \"bytes\": 15110, \"sha256\": \"40e54de0b3e8a4b911b59dbcbfb9cda80cd59816c46ebe5f1ef90b5befb02332\"}, \"gate_executed\": false}\n"
+    }
+  },
+  "full_corrected_source": {
+    "status": "fulfilled",
+    "value": {
+      "key": "gate_full",
+      "args": {
+        "cmd": "cat artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-final-source-input-argv-gate.py",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "max_output_tokens": 5000,
+        "yield_time_ms": 10000
+      },
+      "actual": {
+        "chunk_id": "b46742",
+        "wall_time_seconds": 0.00001063,
+        "exit_code": 0,
+        "original_token_count": 2349,
+        "output": "\"\"\"R268 ROOT finite metadata/source/native/argv gate; no imports of reviewed sources.\"\"\"\nfrom pathlib import Path\nimport base64, hashlib, json, shlex, stat\nROOT=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall\")\nB=ROOT/\"artifacts/research/process/20261004-ced-development/astra-rounds\"\nD=B/\"round268-p6-t2-targeted-failure-evidence-20261017\"\nD272=B/\"round272-p6-t2-plugin-timeout-ini-normalization-20261017\"\nREPORT={\"path\":str(D/\"implementation/change-report.json\"),\"bytes\":15532,\"sha256\":\"6eeec1ab8649f55cfe09955054625af71d5fcba49b0b8bfb54a0b722407f358d\"}\nchecks=0\ndef identity(p):\n return {k:p[k] for k in (\"path\",\"bytes\",\"sha256\")}\ndef check(p):\n global checks\n q=Path(p[\"path\"]); before=q.lstat()\n assert stat.S_ISREG(before.st_mode),str(q)\n raw=q.read_bytes(); after=q.lstat()\n assert (before.st_ino,before.st_mode,before.st_size,before.st_mtime_ns,before.st_ctime_ns)==(after.st_ino,after.st_mode,after.st_size,after.st_mtime_ns,after.st_ctime_ns)\n assert len(raw)==p[\"bytes\"] and hashlib.sha256(raw).hexdigest()==p[\"sha256\"],str(q)\n checks+=1\n return raw\ndef record(q,raw):\n return {\"path\":str(q),\"bytes\":len(raw),\"sha256\":hashlib.sha256(raw).hexdigest()}\ndef absent(q):\n q=Path(q); assert not q.exists() and not q.is_symlink(),str(q)\ndef full_before(row):\n raw=base64.b64decode(row[\"base64\"],validate=True)\n assert check(row[\"archive\"])==raw and record(row[\"original\"][\"path\"],raw)==identity(row[\"original\"])\n return raw\nr=json.loads(check(REPORT)); fixed={REPORT[\"path\"]:REPORT}\ndef fixed_check(pin):\n raw=check(pin); fixed[pin[\"path\"]]=identity(pin); return raw\nfor group in (\"sources\",\"candidates\",\"before\",\"authority\",\"component_reports\"):\n for pin in r[group].values(): fixed_check(pin)\nfixed_check(r[\"native\"]); fixed_check(r[\"limited_diff\"])\np=json.loads(check(r[\"authority\"][\"plan\"]))\nassert p[\"round\"]==\"R268\"\nobs_pin=p[\"input_observation\"]; o=json.loads(fixed_check(obs_pin))\ncontext=json.loads(check(r[\"authority\"][\"context_manifest\"])); mapped={}\nfor row in context[\"changes\"]:\n raw=full_before(row[\"before\"]); old=identity(row[\"before\"][\"original\"])\n assert old[\"path\"]==row[\"after\"][\"path\"] and old[\"path\"] not in mapped\n check(row[\"after\"]); assert Path(old[\"path\"]).lstat().st_mode==row[\"mode\"]\n mapped[old[\"path\"]]=(old,raw)\nassert set(mapped)=={p[\"history_and_context\"][\"state_path\"],p[\"history_and_context\"][\"phase_path\"]}\nassert len(o[\"inputs\"])==45\nfor pin in o[\"inputs\"]:\n if pin[\"path\"] in mapped:\n  old,raw=mapped[pin[\"path\"]]; assert identity(pin)==old and record(pin[\"path\"],raw)==old\n else: check(pin)\nfor key in (\"whitelist_supplement\",\"ini_normalization_plan\"):\n s=json.loads(check(r[\"authority\"][key]))\n for pin in s[\"inputs\"]: fixed_check(pin)\n observation=s[\"input_observation\"] if key==\"whitelist_supplement\" else s[\"observation\"]\n fixed_check(observation)\np272=json.loads(check(r[\"authority\"][\"ini_normalization_plan\"]))\nold=check(p272[\"source_scope\"][\"old_candidate\"])\na=p272[\"source_scope\"][\"old_line\"].encode(); b=p272[\"source_scope\"][\"new_line\"].encode()\nassert old.count(a)==1\nexpected=old.replace(a,b,1)\nassert expected==check(r[\"candidates\"][\"plugin_current\"])==check(r[\"sources\"][\"plugin\"])\nassert len(expected)==19919 and hashlib.sha256(expected).hexdigest()==\"6ab2b3ac36f511337ff740ee99866307f315c7d1ec73d0a6f204c3703f48a711\"\nassert check(r[\"sources\"][\"runner\"])==check(r[\"candidates\"][\"runner\"])\nassert r[\"sources\"][\"runner\"][\"sha256\"]==\"12f00855102f3818d5abf4093041d3701ba83234cd8d1930f4633ee49043d4fd\"\nfor key,pin in r[\"sources\"].items(): assert Path(pin[\"path\"]).lstat().st_mode==r[\"source_modes\"][key]==33204\nrunner_report=json.loads(check(r[\"component_reports\"][\"runner\"]))\nfor pin in runner_report[\"records\"]: fixed_check(pin)\nfixed_check(runner_report[\"limited_diff\"])\nplugin_report=json.loads(check(r[\"component_reports\"][\"plugin\"]))\nfor key in (\"plan\",\"release\",\"original_candidate\",\"before\",\"before_manifest\",\"candidate\",\"installed_target\",\"native_receipt\",\"limited_diff\"):\n fixed_check(plugin_report[key])\nrunner_manifest=json.loads(check(r[\"before\"][\"runner_manifest\"]))\nfull_before(runner_manifest[\"template\"])\nplugin_manifest=json.loads(check(r[\"before\"][\"plugin_manifest\"]))\nassert full_before(plugin_manifest)==old\nassert plugin_manifest[\"mode\"]==33204\nfixed_check(plugin_manifest[\"original_native_receipt\"])\nnative=json.loads(check(r[\"native\"]))\nrunner_native=json.loads(check(next(pin for pin in runner_report[\"records\"] if pin[\"path\"].endswith(\"/runner-implementation-native-tool-return.json\"))))\nplugin_native=json.loads(check(plugin_report[\"native_receipt\"]))\nassert native[\"runner\"]==runner_native and native[\"plugin\"]==plugin_native\nassert native[\"numeric_exit\"] is None and native[\"independent_stdout\"] is None and native[\"independent_stderr\"] is None\ndef native_add(stage,target):\n assert stage[\"tool\"]==\"tools.apply_patch\" and stage[\"actual_tool_return\"]=={}\n assert stage[\"numeric_exit\"] is None and stage[\"independent_stdout\"] is None and stage[\"independent_stderr\"] is None\n lines=stage[\"arguments\"].splitlines()\n assert lines[0]==\"*** Begin Patch\" and lines[1]==\"*** Add File: \"+target[\"path\"] and lines[-1]==\"*** End Patch\"\n assert all(line.startswith(\"+\") for line in lines[2:-1])\n raw=(\"\\n\".join(line[1:] for line in lines[2:-1])+\"\\n\").encode()\n assert raw==check(target)\nassert len(runner_native[\"stages\"])==2\nnative_add(runner_native[\"stages\"][0],r[\"candidates\"][\"runner\"])\nnative_add(runner_native[\"stages\"][1],r[\"sources\"][\"runner\"])\nnative_add(plugin_native,r[\"sources\"][\"plugin\"])\nnative_add(native[\"historical_plugin_candidate\"],r[\"candidates\"][\"plugin_historical\"])\nparent=B/\"round258-p6-t2-parent-green7-continuation-20261017\"\nresult=json.loads(check(next(pin for pin in o[\"inputs\"] if pin[\"path\"]==str(parent/\"implementation/green/result.json\"))))\nsi=json.loads(check(result[\"source_before\"]))\nassert len(si[\"sources\"])==27 and len(si[\"protected\"])==211\nfor row in si[\"sources\"]:\n raw=check(row); assert raw==check(row[\"physical\"])==base64.b64decode(row[\"base64\"],validate=True)\n assert Path(row[\"path\"]).lstat().st_mode==row[\"mode\"]\nfor pin in si[\"protected\"]: check(pin)\nparent_plan=json.loads(check(next(pin for pin in o[\"inputs\"] if pin[\"path\"]==str(parent/\"plan.json\"))))\nh=json.loads(check(parent_plan[\"inputs\"][\"complete_manifest\"]))\nassert len(h[\"missing_registry35\"])==35 and len(h[\"old_absent_sidecars90\"])==90\nfor row in h[\"missing_registry35\"]: absent(row[\"original\"][\"path\"])\nfor row in h[\"old_absent_sidecars90\"]: absent(row[\"path\"])\nfor group,count in ((\"R242_R248\",12),(\"R251\",18)):\n assert len(h[\"retained_workspace_databases\"][group])==count\n for row in h[\"retained_workspace_databases\"][group]:\n  check(row[\"pin\"]); assert len(row[\"sidecars\"])==3\n  for side in row[\"sidecars\"]:\n   assert side[\"exists\"] is False and side[\"is_symlink\"] is False and side[\"pin\"] is None\n   absent(side[\"path\"])\nassert len(result[\"new_retained_databases\"])==10\npresent=missing=0\nfor row in result[\"new_retained_databases\"]:\n assert check(row[\"pin\"])==check(row[\"archive\"]) and len(row[\"sidecars\"])==3\n for side in row[\"sidecars\"]:\n  if side[\"exists\"]:\n   assert side[\"is_symlink\"] is False and check(side[\"pin\"])==check(side[\"archive\"]); present+=1\n  else:\n   assert side[\"is_symlink\"] is False and side[\"pin\"] is None; absent(side[\"path\"]); missing+=1\nassert (present,missing)==(2,28)\nsettlement=json.loads(check(next(pin for pin in o[\"inputs\"] if pin[\"path\"]==str(parent/\"root-parent-green7-failure-settlement.json\"))))\nfull_before(settlement[\"root_before\"])\nargv={}\nassert set(p[\"commands\"])=={\"wait_memory_failure\",\"dual_progress\"}\nfor name,c in p[\"commands\"].items():\n assert c[\"authorized\"]==1 and c[\"used\"]==0 and c[\"remaining\"]==1 and c[\"node_count\"]==1\n assert [a for a in c[\"child_argv\"] if \"::\" in a]==[c[\"node\"]]\n assert c[\"limits\"][\"child_wall_seconds\"]==600 and c[\"limits\"][\"cleanup_total_seconds\"]==15\n assert c[\"limits\"][\"faulthandler_one_shot_seconds\"]==540 and c[\"limits\"][\"attempts\"]==1 and c[\"limits\"][\"retries\"]==0\n assert c[\"outputs\"]==r[\"command_outputs\"][name]\n for path in c[\"outputs\"].values(): absent(path)\n literal=\"env -i \"+\" \".join(shlex.quote(k+\"=\"+v) for k,v in c[\"launcher_env\"].items())+\" \"+\" \".join(shlex.quote(x) for x in c[\"launcher_argv\"])\n argv[name]={\"cmd\":literal,\"workdir\":c[\"cwd\"],\"yield_time_ms\":c[\"tool_yield_time_ms\"],\"max_output_tokens\":c[\"tool_max_output_tokens\"]}\nfor path in p[\"runner_contract\"][\"role_files\"].values(): absent(path)\nfor path in (D/\"source-gate.json\",D/\"script-gate.json\",D/\"root-reservations\",D/\"root-final-input-check.json\"): absent(path)\nout={\"round\":\"R268\",\"status\":\"ROOT_FINAL_SOURCE_NATIVE_INPUT_ARGV_VERIFIED_NO_RUNTIME\",\"checks\":checks,\"sources\":r[\"sources\"],\"report\":REPORT,\"fixed_inputs\":list(fixed.values()),\"context_manifest\":r[\"authority\"][\"context_manifest\"],\"interface\":r[\"authority\"][\"role_gate_interface\"],\"native\":r[\"native\"],\"plan\":r[\"authority\"][\"plan\"],\"observation\":obs_pin,\"exact_tool_arguments\":argv,\"T2_complete\":False,\"runtime_executed\":False}\nraw=(json.dumps(out,ensure_ascii=False,indent=2)+\"\\n\").encode()\nsummary=json.dumps({\"checks\":checks,\"input_records\":45,\"full_sources\":27,\"protected\":211,\"old_DB\":30,\"R258_DB_pairs\":10,\"R258_sidecars\":[present,missing],\"native_Add_reconstructions\":4,\"exact_tool_arguments\":argv,\"runtime_released\":False},ensure_ascii=False)\nassert len(summary.encode())<=6000\nwith (D/\"root-final-input-check.json\").open(\"xb\") as handle: assert handle.write(raw)==len(raw)\nprint(summary)\n"
+      }
+    }
+  },
+  "source_hash_read": {
+    "status": "fulfilled",
+    "value": {
+      "key": "gate_pin",
+      "args": {
+        "cmd": "sha256sum -- artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-final-source-input-argv-gate.py",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "max_output_tokens": 300,
+        "yield_time_ms": 10000
+      },
+      "actual": {
+        "chunk_id": "a90c31",
+        "wall_time_seconds": 0.00000768,
+        "exit_code": 0,
+        "original_token_count": 55,
+        "output": "ffd270db8dc8e232a7a2fd44e6d3502f9325ed512bd32d08f6d37accdba1bbd0  artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-final-source-input-argv-gate.py\n"
+      }
+    }
+  },
+  "full_limited_diff": {
+    "status": "fulfilled",
+    "value": {
+      "key": "gate_diff_full",
+      "args": {
+        "cmd": "cat artifacts/research/process/20261004-ced-development/astra-rounds/round273-p6-t2-root-gate-manifest-reference-20261017/implementation/limited.diff",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "max_output_tokens": 1000,
+        "yield_time_ms": 10000
+      },
+      "actual": {
+        "chunk_id": "58a745",
+        "wall_time_seconds": 0.00000713,
+        "exit_code": 0,
+        "original_token_count": 275,
+        "output": "--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-final-source-input-argv-gate.py\n+++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-final-source-input-argv-gate.py (R273)\n@@ -100,7 +100,8 @@\n  raw=check(row); assert raw==check(row[\"physical\"])==base64.b64decode(row[\"base64\"],validate=True)\n  assert Path(row[\"path\"]).lstat().st_mode==row[\"mode\"]\n for pin in si[\"protected\"]: check(pin)\n-h=json.loads(check(next(pin for pin in o[\"inputs\"] if pin[\"path\"]==str(parent/\"input-observation.json\"))))\n+parent_plan=json.loads(check(next(pin for pin in o[\"inputs\"] if pin[\"path\"]==str(parent/\"plan.json\"))))\n+h=json.loads(check(parent_plan[\"inputs\"][\"complete_manifest\"]))\n assert len(h[\"missing_registry35\"])==35 and len(h[\"old_absent_sidecars90\"])==90\n for row in h[\"missing_registry35\"]: absent(row[\"original\"][\"path\"])\n for row in h[\"old_absent_sidecars90\"]: absent(row[\"path\"])\n"
+      }
+    }
+  },
+  "source_pin": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-final-source-input-argv-gate.py",
+    "bytes": 9394,
+    "sha256": "ffd270db8dc8e232a7a2fd44e6d3502f9325ed512bd32d08f6d37accdba1bbd0",
+    "status": "derived expected bytes only; not written or executed"
+  },
+  "full_source_native_delta_reviewed": true,
+  "exact_tool_arguments": {
+    "cmd": "env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=5s 120s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-final-source-input-argv-gate.py'",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "yield_time_ms": 10000,
+    "max_output_tokens": 2000
+  },
+  "attempts": 1,
+  "retries": 0,
+  "diagnostic_execution_authorized_by_this_record": false,
+  "role_creation_authorized_by_this_record": false,
+  "independent_stdout": null,
+  "independent_stderr": null
+}

@@ -1,0 +1,142 @@
+--- source-before/tests/test_operational_capture_v1.py
++++ tests/test_operational_capture_v1.py
+@@ -486,3 +486,139 @@
+     saved = json.loads((app.output / "runner-failure.json").read_bytes())
+     assert saved["primary_error"] == receipt["primary_error"]
+     assert saved["source_prefix_complete"] is False
++
++
++@pytest.mark.parametrize("entry", ["direct", "worker"])
++def test_preregistration_primary_survives_startup_report_failure_cpu(
++    tmp_path, monkeypatch, entry
++):
++    from tests.test_operational_prefix_v1 import activate
++
++    require_task2()
++    app = application(tmp_path)
++    _, calls = cpu_components(monkeypatch, app)
++    original = ValueError("CPU preregistration primary")
++    startup_writes = []
++    original_write = module._write_exclusive_v1
++
++    def construct():
++        raise original
++
++    def write(path, raw):
++        if path.name == "startup-failures.json":
++            startup_writes.append(path)
++            raise OSError("CPU startup report secondary")
++        original_write(path, raw)
++
++    monkeypatch.setattr(module, "_new_prefix_backend_v1", construct)
++    monkeypatch.setattr(module, "_write_exclusive_v1", write)
++    if entry == "direct":
++        job, _, start = activate(app)
++        with pytest.raises(BaseException) as caught:
++            module._prepare_source_v1(app, app.worker, job, start_monotonic=start)
++        assert caught.value is original
++        failures = module._live(app).failures
++        with pytest.raises(RuntimeError, match="cannot be allocated twice"):
++            module._prepare_source_v1(app, app.worker, job, start_monotonic=start)
++    else:
++        receipt = app.execute_once()
++        assert receipt["primary_error"] == {
++            "error_type": "ValueError",
++            "error": "CPU preregistration primary",
++        }
++        failures = receipt["failures"]
++        job = app.repository.list_jobs()[0]
++        assert job.status == RuntimeJobStatus.FAILED
++        assert len(app.repository.list_attempts(job.run_id)) == 1
++        saved = json.loads((app.output / "runner-failure.json").read_bytes())
++        assert saved["primary_error"] == receipt["primary_error"]
++        assert saved["durable_failure_evidence_complete"] is False
++    primary = [row for row in failures if row["role"] == "PRIMARY"]
++    assert len(primary) == 1
++    assert primary[0]["error_type"] == "ValueError"
++    assert primary[0]["error"] == "CPU preregistration primary"
++    assert primary[0]["phase"] == "preregistration"
++    secondary = [row for row in failures if row["role"] == "SECONDARY"]
++    assert secondary
++    assert all(row["primary_failure_id"] == primary[0]["failure_id"] for row in secondary)
++    assert any(
++        row["error_type"] == "OSError"
++        and row["error"] == "CPU startup report secondary"
++        and row["phase"] == "startup_failure_persistence"
++        for row in secondary
++    )
++    assert len({row["failure_id"] for row in failures}) == len(failures)
++    assert module._live(app).durable_failure_evidence_complete is False
++    stages = sorted(app.output.glob("stage-failures-*.json"))
++    assert stages
++    stage = json.loads(stages[0].read_bytes())
++    assert stage["primary_failure_id"] == primary[0]["failure_id"]
++    assert stage["durable_failure_evidence_complete"] is False
++    assert stage["failures"][:2] == failures[:2]
++    assert len(startup_writes) == 1
++    assert calls == []
++    assert not (app.output / "capture-catalog.json").exists()
++    with pytest.raises(RuntimeError, match="no live operational source-only publication"):
++        app.catalog_entry()
++
++
++@pytest.mark.parametrize("tamper", ["missing_returned", "wrong_source_relation"])
++def test_reader_rejects_broken_returned_acquisition_join_cpu(tmp_path, monkeypatch, tamper):
++    require_task2()
++    app = application(tmp_path)
++    cpu_components(monkeypatch, app)
++    receipt = app.execute_once()
++    assert receipt["source_prefix_complete"] is True
++    root = app.output / "prefix-originals"
++    path = root / "operational-originals.json"
++    slab = json.loads(path.read_bytes())
++    if tamper == "missing_returned":
++        returned_id = "CPU-absent-returned-acquisition"
++    else:
++        frames = json.loads((root / "frozen-originals.json").read_bytes())["frames"]
++        frame = next(
++            row
++            for row in frames
++            if row["acquisition_id"] != slab["current"]["source_acquisition_id"]
++            and (row["source_acquisition_id"] or row["acquisition_id"])
++            != slab["current"]["source_acquisition_id"]
++        )
++        returned_id = frame["acquisition_id"]
++    slab["current"]["returned_acquisition_id"] = returned_id
++    raw = module.canonical_bytes_v1(slab)
++    path.write_bytes(raw)
++    receipt["original_files"][path.name] = {
++        "sha256": hashlib.sha256(raw).hexdigest(),
++        "bytes": len(raw),
++    }
++    monkeypatch.setattr(module, "_open_clock_v1", lambda: pytest.fail("reader minted live D"))
++    monkeypatch.setattr(
++        module, "_new_prefix_backend_v1", lambda: pytest.fail("reader initialized backend")
++    )
++    view = module.verify_operational_prefix_originals_v1(root, receipt)
++    assert view["original_integrity"] == "INVALID"
++    assert view["source_prefix_complete"] is False
++    assert view["live_authority"] == "UNAVAILABLE"
++
++
++@pytest.mark.parametrize("returned_kind", ["direct", "derived"])
++def test_current_source_event_join_accepts_direct_and_derived_ids(returned_kind):
++    source = {
++        "acquisition_id": "source-1",
++        "source_acquisition_id": None,
++        "interval_id": "operation-7",
++    }
++    event = {"kind": "CAPTURE", "acquisition_id": "source-1", "operation_id": 7}
++    frames = [source]
++    returned_id = "source-1"
++    if returned_kind == "derived":
++        returned_id = "returned-1"
++        frames.append(
++            {
++                "acquisition_id": returned_id,
++                "source_acquisition_id": "source-1",
++                "interval_id": "operation-7",
++            }
++        )
++    current = {"returned_acquisition_id": returned_id, "source_acquisition_id": "source-1"}
++    assert module._current_source_event_v1(current, frames, [event]) is event

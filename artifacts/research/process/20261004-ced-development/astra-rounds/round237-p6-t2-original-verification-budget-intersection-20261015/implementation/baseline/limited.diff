@@ -1,0 +1,241 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py (before)
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py (after)
+@@ -18,6 +18,7 @@
+ from collections.abc import Mapping
+ from dataclasses import asdict, dataclass
+ from datetime import UTC, datetime
++from decimal import ROUND_FLOOR, Decimal
+ from pathlib import Path
+ from threading import RLock
+ from typing import Literal, Protocol, cast
+@@ -74,11 +75,16 @@
+ from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation
+ from cloud_edge_robot_arm.vision.operational_windows import (
++    OperationalWindowOwner,
++    _LOCAL_ORIGINALS,
++    _OWNERS,
+     _bind_observation_policy,
+     _check_observation,
+     _consume_handoff,
++    _json,
+     _reference_for_observation,
+     _register_observation,
++    _seconds_ns,
+     _transition_scope,
+ )
+ from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding, VisualOriginalPlan
+@@ -427,14 +433,46 @@
+         lease = self._read_lease()
+         self._frozen_job_configuration_hash = digest(self._job_configuration())
+         self._bootstrap_id = digest(["visual.bootstrap.job-run.v1", self.source.job_id, self.source.run_id])
++        reference = _descriptor_plain(owner.export_record(owner.task_window))
++        domain = _descriptor_plain(asdict(owner._clock.domain))
++        origin_event_id = owner.task_origin_token.event_identity
++        effective = self._local_definition_limits(limits, reference)
++        startup = owner._startup
++        if (type(owner) is not OperationalWindowOwner or not self._local_mode
++                or startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1" or owner._closed
++                or _OWNERS.get(startup.worker) is not owner
++                or startup.thread_id != threading.get_ident()
++                or startup.binding is not self.role_binding
++                or startup.worker.visual_role_binding is not self.role_binding
++                or startup.repository is not self.source.job_repository
++                or startup.worker.repository is not startup.repository
++                or startup.worker.active_job_id != startup.job_id
++                or startup.worker._frozen_operational_time_mode != startup.mode
++                or (self.source.job_id, self.source.run_id, self.source.worker_id, self.source.lease_id)
++                != (startup.job_id, startup.run_id, startup.worker.worker_id, startup.lease_id)
++                or reference["domain"] != domain
++                or reference["task_origin_event_id"] != origin_event_id
++                or reference["episode_id"] != episode_id
++                or reference["source_hashes"] != dict(self.source.source_hashes)
++                or reference["source_identity"] != owner._source_identity
++                or (reference["job_id"], reference["run_id"], reference["worker_id"],
++                    reference["lease_id"], reference["attempt"], reference["fencing"])
++                != (startup.job_id, startup.run_id, startup.worker.worker_id,
++                    startup.lease_id, startup.attempt, str(startup.acquired_at))
++                or _seconds_ns(self.source.task_timeout_s) != startup.task_ns
++                or _seconds_ns(limits.deadline_s) != startup.verification_ns
++                or reference["budget_ns"] != startup.task_ns
++                or {row["source_id"]: row["budget_ns"] for row in reference["hard_deadlines"]}
++                != {startup.job_source + ":task": startup.task_ns,
++                    startup.binding_hash + ":verification": startup.verification_ns}):
++            raise ValueError("local definition requires the exact original startup obligations")
+         definition_body = {"scope": "BOOTSTRAP_SOURCE_ONLY", "episode_id": episode_id,
+                            "user_instruction": instruction, "task_timeout_s": self.source.task_timeout_s,
+-                           "verification_limits": asdict(limits), "role_bundle_hash": self._role_hash,
++                           "verification_limits": asdict(effective), "role_bundle_hash": self._role_hash,
+                            "model_snapshot_hash": model_hash, "source_hashes": dict(self.source.source_hashes)}
+-        reference = owner.export_record(owner.task_window)
+         self._local_original = _descriptor_plain({
+-            "schema_version": "visual.local-original-time.v1", "app_domain": asdict(owner._clock.domain),
+-            "task_origin_event_id": owner.task_origin_token.event_identity,
++            "schema_version": "visual.local-original-time.v1", "app_domain": domain,
++            "task_origin_event_id": origin_event_id,
+             "task_reference": reference, "verification_reference": reference, "recovery_reference": reference,
+             "lease_identity": {"job_id": self.source.job_id, "run_id": self.source.run_id,
+                                "worker_id": self.source.worker_id, "lease_id": self.source.lease_id,
+@@ -1011,7 +1049,73 @@
+         except (ValueError, TypeError, KeyError) as error:
+             raise RuntimeError("live worker lease source unavailable") from error
+ 
+-    def _validate_role_sources(self, limits: VerificationBudget) -> None:
++    @staticmethod
++    def _local_definition_limits(
++        configured: VerificationBudget, reference: Mapping[str, object]
++    ) -> VerificationBudget:
++        """Pure projection of the retained original HARD_OPEN duration intersection."""
++        if type(configured) is not VerificationBudget or not isinstance(reference, Mapping):
++            raise ValueError("concrete original verification configuration and reference required")
++        if (reference.get("schema_version") != "simulation.operational-window.local.v1"
++                or reference.get("kind") != "bootstrap"
++                or reference.get("kind_policy") != "HARD_ORIGINAL_TASK_LIFECYCLE"
++                or reference.get("budget_semantics") != "HARD_OPEN"
++                or reference.get("deadline_semantics") != "HARD_OPEN"
++                or reference.get("origin_domain") != "ORIGINAL_TASK_D"
++                or reference.get("lease_deadline_domain") != "SEPARATE_D_LEASE_DECISION"
++                or reference.get("live_authority") != "NOT_EXPORTED"
++                or reference.get("parents") != [] or reference.get("age_constraints") != []):
++            raise ValueError("original local hard task reference required")
++        origin = reference.get("task_origin_event_id")
++        domain, hard = reference.get("domain"), reference.get("hard_deadlines")
++        if (type(origin) is not str or not origin or reference.get("event_id") != origin
++                or type(domain) is not dict or not domain or type(hard) is not list or len(hard) != 2):
++            raise ValueError("complete original same-domain task obligations required")
++        budgets, origins, identifiers, deadlines = [], [], set(), []
++        for row in hard:
++            if (type(row) is not dict
++                    or set(row) != {"origin_event_id", "source_id", "budget_ns", "deadline_ns", "end_exclusive"}
++                    or row["origin_event_id"] != origin or row["end_exclusive"] is not True
++                    or type(row["source_id"]) is not str or not row["source_id"]
++                    or row["source_id"] in identifiers
++                    or type(row["budget_ns"]) is not int or row["budget_ns"] <= 0
++                    or type(row["deadline_ns"]) is not int or row["deadline_ns"] < row["budget_ns"]):
++                raise ValueError("exact positive original hard budget rows required")
++            identifiers.add(row["source_id"])
++            budgets.append(row["budget_ns"])
++            deadlines.append(row["deadline_ns"])
++            origins.append(row["deadline_ns"] - row["budget_ns"])
++        upper = reference.get("effective_upper")
++        if (len(set(origins)) != 1 or type(reference.get("budget_ns")) is not int
++                or reference["budget_ns"] <= 0 or reference["budget_ns"] not in budgets
++                or type(reference.get("deadline_ns")) is not int or reference["deadline_ns"] != min(deadlines)
++                or type(upper) is not dict or set(upper) != {"value_ns", "inclusive"}
++                or type(upper["value_ns"]) is not int or upper["value_ns"] != min(deadlines)
++                or upper["inclusive"] is not False):
++            raise ValueError("same-origin original hard intersection required")
++        bound = min(min(budgets), _seconds_ns(configured.deadline_s))
++        duration = configured.deadline_s
++        scale = Decimal(1_000_000_000)
++        if Decimal(str(duration)) * scale > bound or int(duration * 1_000_000_000) > bound:
++            duration = float(Decimal(bound) / scale)
++            if (Decimal(str(duration)) * scale > bound
++                    or int(duration * 1_000_000_000) > bound):
++                duration = math.nextafter(duration, 0.0)
++        if (type(duration) not in {int, float} or not math.isfinite(duration) or duration <= 0
++                or Decimal(str(duration)) * scale > bound
++                or int(duration * 1_000_000_000) > bound
++                or int((Decimal(str(duration)) * scale).to_integral_value(rounding=ROUND_FLOOR)) <= 0):
++            raise ValueError("original hard intersection has no conservative supported duration")
++        return VerificationBudget(
++            max_reobservations=configured.max_reobservations,
++            max_retries=configured.max_retries,
++            max_no_progress=configured.max_no_progress,
++            deadline_s=duration,
++        )
++
++    def _validate_role_sources(
++        self, limits: VerificationBudget, *, local_definition: bool = False
++    ) -> None:
+         binding = self.role_binding
+         if binding.root.resolve() != self.source.source_root.resolve():
+             raise ValueError("role and worker source roots differ")
+@@ -1019,7 +1123,59 @@
+             raise RuntimeError("role bundle source changed")
+         policy = cast(dict[str, object], binding.evidence()["edge_policy"])
+         capabilities = policy.get("capabilities")
+-        if policy["verification_budget"] != asdict(limits):
++        if local_definition:
++            owner = self._operational_owner
++            if (not self._local_mode or type(owner) is not OperationalWindowOwner
++                    or owner._closed or owner._startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1"):
++                raise ValueError("registered local definition provenance required")
++            startup = owner._startup
++            registered = _LOCAL_ORIGINALS.get(owner)
++            if (registered is None or registered != _json(owner._local_original)
++                    or registered != _json(self._local_original)
++                    or _OWNERS.get(startup.worker) is not owner
++                    or startup.thread_id != threading.get_ident()
++                    or startup.binding is not binding or startup.worker.visual_role_binding is not binding
++                    or startup.repository is not self.source.job_repository
++                    or startup.worker.repository is not startup.repository
++                    or startup.worker.active_job_id != startup.job_id
++                    or startup.worker._frozen_operational_time_mode != startup.mode
++                    or self._local_session is not startup.worker._operational_lease_session
++                    or (self.source.job_id, self.source.run_id, self.source.worker_id, self.source.lease_id)
++                    != (startup.job_id, startup.run_id, startup.worker.worker_id, startup.lease_id)):
++                raise ValueError("immutable local owner/runtime/startup description differs")
++            original = json.loads(registered)
++            reference = original["verification_reference"]
++            raw_limits = policy["verification_budget"]
++            if type(raw_limits) is not dict:
++                raise ValueError("complete original role verification policy required")
++            configured = VerificationBudget(**raw_limits)
++            expected = self._local_definition_limits(configured, reference)
++            if (reference != original["task_reference"] or reference != original["recovery_reference"]
++                    or reference["domain"] != original["app_domain"]
++                    or reference["task_origin_event_id"] != original["task_origin_event_id"]
++                    or original["task_origin_event_id"] != owner.task_origin_token.event_identity
++                    or reference["episode_id"] != self._local_task_id
++                    or reference["source_hashes"] != original["source_hashes"]
++                    or original["source_hashes"] != dict(self.source.source_hashes)
++                    or reference["source_identity"] != owner._source_identity
++                    or (reference["job_id"], reference["run_id"], reference["worker_id"],
++                        reference["lease_id"], reference["attempt"], reference["fencing"])
++                    != (startup.job_id, startup.run_id, startup.worker.worker_id,
++                        startup.lease_id, startup.attempt, str(startup.acquired_at))
++                    or (original["lease_identity"]["job_id"], original["lease_identity"]["run_id"],
++                        original["lease_identity"]["worker_id"], original["lease_identity"]["lease_id"],
++                        original["lease_identity"]["attempt"], original["lease_identity"]["epoch"])
++                    != (startup.job_id, startup.run_id, startup.worker.worker_id,
++                        startup.lease_id, startup.attempt, self._local_session.epoch)
++                    or _seconds_ns(self.source.task_timeout_s) != startup.task_ns
++                    or _seconds_ns(configured.deadline_s) != startup.verification_ns
++                    or reference["budget_ns"] != startup.task_ns
++                    or {row["source_id"]: row["budget_ns"] for row in reference["hard_deadlines"]}
++                    != {startup.job_source + ":task": startup.task_ns,
++                        startup.binding_hash + ":verification": startup.verification_ns}
++                    or asdict(limits) != asdict(expected)):
++                raise ValueError("local definition limits/original obligations changed")
++        elif policy["verification_budget"] != asdict(limits):
+             raise ValueError("original verification limits differ from role policy")
+         if (
+             configuration_hash(policy) != binding.edge_snapshot.request_config_hash
+@@ -1102,7 +1258,7 @@
+         ).status != "VALID":
+             raise RuntimeError("original operational task/verification window unavailable")
+         record = self.bootstrap
+-        self._validate_role_sources(record.definition.verification_limits)
++        self._validate_role_sources(record.definition.verification_limits, local_definition=self._local_mode)
+         if type(robot_state) is not RobotState or (
+             not robot_state.connected or robot_state.estop_engaged or robot_state.collision_detected
+         ):
+@@ -1175,7 +1331,7 @@
+     def _check_optional_sources(self) -> WorkerLeaseObservation:
+         lease = self._read_lease()
+         bootstrap = self.bootstrap
+-        self._validate_role_sources(bootstrap.definition.verification_limits)
++        self._validate_role_sources(bootstrap.definition.verification_limits, local_definition=self._local_mode)
+         self._runtime_option_sources()
+         if self.source.event_repository.get_state(self.episode_id) in {
+             "CANCELLED",
+@@ -1876,7 +2032,7 @@
+             # STOP is a durable outcome, returned for owner logging; live cancellation
+             # and source drift are still checked after publication without refilling.
+             self._read_lease()
+-            self._validate_role_sources(self.bootstrap.definition.verification_limits)
++            self._validate_role_sources(self.bootstrap.definition.verification_limits, local_definition=self._local_mode)
+             if (
+                 typed_result.write_disposition == "HISTORICAL_DUPLICATE"
+                 and typed_result.record.route == "REOBSERVE"

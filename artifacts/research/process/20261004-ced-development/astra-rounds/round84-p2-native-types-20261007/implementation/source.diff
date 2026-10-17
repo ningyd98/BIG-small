@@ -1,0 +1,51 @@
+--- R84/source-before/src/cloud_edge_robot_arm/vision/native_references.py
++++ src/cloud_edge_robot_arm/vision/native_references.py
+@@ -25,7 +25,30 @@
+ from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
+ 
+ if TYPE_CHECKING:
++    from typing import TypedDict
++
+     from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
++
++    class _NativeActionReferenceValues(TypedDict):
++        semantics_version: Literal["native.action_reference.v1"]
++        kind: Literal["OBJECT_CONTACT", "FIXED_WORLD_TCP_GOAL"]
++        reference_id: str
++        execution_payload_digest: str
++        contract_digest: str
++        grounding_digest: str
++        online_digest: str
++        source_digest: str
++        observation_id: str
++        observation_sha256: str
++        plan_version: int
++        command_seq: int
++        context_hash: str
++        role_bundle_hash: str
++        full_horizon_s: float
++        endpoint_xyz: tuple[float, float, float] | None
++        orientation_wxyz: tuple[float, float, float, float] | None
++        fixed_goal_coordinate_invariant: bool
++
+ 
+ _REFERENCE_SOURCES = (
+     "src/cloud_edge_robot_arm/vision/native_references.py",
+@@ -149,7 +172,7 @@
+         binding.bundle,
+         binding.edge_snapshot,
+         dict(binding.device_source_hashes),
+-        binding.evidence()["edge_policy"],
++        cast(Mapping[str, object], binding.evidence()["edge_policy"]),
+         root=binding.root,
+     )
+     for inventory in (
+@@ -263,7 +286,7 @@
+         "validated_parameters": parameters.model_dump(mode="json"),
+         "motion_target": {"position": endpoint, "orientation_wxyz": orientation},
+     }
+-    values = dict(
++    values: _NativeActionReferenceValues = dict(
+         semantics_version="native.action_reference.v1",
+         kind="FIXED_WORLD_TCP_GOAL" if fixed else "OBJECT_CONTACT",
+         reference_id=f"{command.task_id}:{original.step_id}:{command.plan_version}:{command.command_seq}",

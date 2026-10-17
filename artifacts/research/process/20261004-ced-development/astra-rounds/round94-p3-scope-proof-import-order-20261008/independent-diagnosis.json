@@ -1,0 +1,84 @@
+{
+  "status": "ASTRA_R94_READ_ONLY_AST_DIAGNOSIS",
+  "generated_at_utc": "2026-10-07T16:15:04.114255+00:00",
+  "original_report_sha256": "2472d5f165260ac17a692127babe5127f8c29b38ab0133143bddb0c1105867fd",
+  "observed_failure": {
+    "original_line": 83,
+    "first_path_by_actual_owned_order": "src/cloud_edge_robot_arm/vision/role_models.py",
+    "exact_restored_AST_differences": [
+      {
+        "path": "Module.type_ignores[0].lineno",
+        "before": 206,
+        "after": 207,
+        "tag": "[attr-defined]",
+        "statement": "planner.role_config_version = profile.config_version"
+      },
+      {
+        "path": "Module.type_ignores[1].lineno",
+        "before": 224,
+        "after": 225,
+        "tag": "[attr-defined]",
+        "statement": "planner.role_snapshot = snapshot"
+      }
+    ],
+    "meaning": "ast.dump(include_attributes=False) still includes TypeIgnore.lineno because it is an AST field. The added think dict entry shifts each same statement+same ignore by one line."
+  },
+  "other_confirmed_defects": [
+    {
+      "kind": "LATENT_NOT_ORIGINAL_EXECUTED_FAILURE",
+      "path": "tests/test_rgbd_role_models.py",
+      "predicate": "name.endswith(\"role_models.py\")",
+      "outcome": "True; dispatches to production resolve_cloud_role lookup, absent in test module. Would StopIteration if reached; original execution stopped earlier."
+    },
+    {
+      "kind": "OBSERVED_RUFF_I001",
+      "path": "tests/test_rgbd_role_models.py",
+      "function": "test_ced_max_reuses_successful_normalized_transport",
+      "line": 1154,
+      "cause": "from scripts.probe_rgbd_roles import read_role_config appears before the cloud_edge_robot_arm first-party group and with a spurious group blank line."
+    },
+    {
+      "kind": "FAILURE_SEQUENCING",
+      "observed": "Original sequential exec consumed Ruff after proof failure; preserved author admission. command-runner.py additionally does not propagate result.returncode via process exit; this is confirmed source behavior, not claimed sole historical cause."
+    }
+  ],
+  "bounded_AST_results": [
+    {
+      "path": "src/cloud_edge_robot_arm/vision/role_models.py",
+      "R92_semantic_vs_R92_formatted_AST_type_comments_equal": true,
+      "formatter_comments_equal": true,
+      "original_comments_equal": true,
+      "current_equals_frozen_R92_source_after": true,
+      "after_exact_semantic_reversion_differences": "Only the two documented TypeIgnore line positions"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/planner.py",
+      "R92_semantic_vs_R92_formatted_AST_type_comments_equal": true,
+      "formatter_comments_equal": true,
+      "original_comments_equal": true,
+      "current_equals_frozen_R92_source_after": true,
+      "after_exact_semantic_reversion_differences": "none"
+    },
+    {
+      "path": "tests/test_rgbd_role_models.py",
+      "R92_semantic_vs_R92_formatted_AST_type_comments_equal": true,
+      "formatter_comments_equal": true,
+      "original_comments_equal": true,
+      "current_equals_frozen_R92_source_after": true,
+      "after_exact_semantic_reversion_differences": "none"
+    },
+    {
+      "path": "tests/test_ced_runtime_binding.py",
+      "R92_semantic_vs_R92_formatted_AST_type_comments_equal": true,
+      "formatter_comments_equal": true,
+      "original_comments_equal": true,
+      "current_equals_frozen_R92_source_after": true,
+      "after_exact_semantic_reversion_differences": "none"
+    }
+  ],
+  "method": "Standard-library ast.parse(type_comments=True), recursive field comparison after exact path-specific removal of original R92 authorized nodes, tokenize comments, frozen/current byte comparison. Did not execute original prove-scope.py or import product modules. This is diagnosis, not a substitute for the authorized corrected proof run.",
+  "product_test_edits": 0,
+  "tests_static_runs": 0,
+  "original_proof_reruns": 0,
+  "network_actual_Git": 0
+}

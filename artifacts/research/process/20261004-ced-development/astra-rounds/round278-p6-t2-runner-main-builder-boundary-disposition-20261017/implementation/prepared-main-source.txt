@@ -1,0 +1,266 @@
+def main():
+    context = preconditions()
+    name, command, reservation = context["name"], context["command"], context["reservation"]
+    paths = context["paths"]
+    require(sys.argv == command["runner_argv"][1:], "exact runner argv required")
+    basetemps = [a.split("=", 1)[1] for a in command["child_argv"] if a.startswith("--basetemp=")]
+    require(basetemps == [str(paths["directory"] / "persistent-basetemp")],
+            "one exact new persistent basetemp required")
+    temp = Path(basetemps[0])
+    before_pin = save_before(context)
+    author = copy.deepcopy(context["author_before"])
+    entry = author["commands"][name]
+    entry.update(state="RESERVED", used=1, remaining=0, reservation_id=reservation["reservation_id"])
+    entry.setdefault("continuation", {})["R276"] = context["continuation"]
+    reserved_raw = author_bytes(author)
+    spent = copy.deepcopy(author)
+    spent["commands"][name].update(state="SPENT", result_path=str(paths["result"]))
+    spent_raw = author_bytes(spent)
+    mode = stat.S_IMODE(context["author_path"].lstat().st_mode)
+    progress = {"replace_attempted": False, "replaced": False, "readback_verified": False}
+    spent_progress = {"replace_attempted": False, "replaced": False, "readback_verified": False}
+    process, previous_term, handler_installed = None, signal.getsignal(signal.SIGTERM), False
+    started, captured = time.monotonic(), {}
+    outcome = {
+        "round": "R276", "command_id": name, "budget_identity": command["budget_identity"],
+        "reservation_id": reservation["reservation_id"], "attempt": 1, "retry": 0,
+        "started": False, "pid": None, "child_exit": None, "wrapper_exit": 2,
+        "timed_out": False, "interrupted": False, "output_limited": False,
+        "raw_stream_threshold_bytes_each": 33554432, "raw_size_observations": [],
+        "errors": [], "cleanup": None, "JUnit": None, "resources": None, "cases": None,
+        "passive": None, "index": None, "before": before_pin, "after": None,
+        "prerequisite": None, "new_retained_databases": None,
+        "kind": command["kind"], "capture_integrity_complete": False,
+        "behavior_accepted": False, "diagnostic_complete": False, "evidence_may_be_partial": True,
+        "legal_RED": False, "GREEN": False, "T2_complete": False,
+        "author_reserved": None, "author_spent": None, "author_generation_observations": [],
+        "reservation_progress": progress, "spent_progress": spent_progress,
+        "known_author_generations": {
+            "mode": mode,
+            "before": {"pin": bytes_pin(context["author_path"], context["author_raw"]),
+                       "base64": base64.b64encode(context["author_raw"]).decode("ascii")},
+            "reserved": {"pin": bytes_pin(context["author_path"], reserved_raw),
+                         "base64": base64.b64encode(reserved_raw).decode("ascii")},
+            "spent": {"pin": bytes_pin(context["author_path"], spent_raw),
+                      "base64": base64.b64encode(spent_raw).decode("ascii")}},
+        "unobserved": {"OS_handles": None, "external_models": None, "GPU_native": None,
+                       "network_calls": None, "terminated_node_whole_resource_denominator": None}}
+
+    def capture_error(stage, error):
+        outcome["errors"].append({"stage": stage, "type": type(error).__name__,
+                                   "message": str(error), "traceback": traceback.format_exc()})
+
+    def capture(stage, action):
+        try:
+            return action()
+        except BaseException as error:
+            capture_error(stage, error)
+            return None
+
+    def generation(stage):
+        raw = stable_bytes(context["author_path"])
+        actual_mode = stat.S_IMODE(context["author_path"].lstat().st_mode)
+        label = "UNKNOWN"
+        if actual_mode == mode:
+            if raw == context["author_raw"]:
+                label = "BEFORE"
+            elif raw == reserved_raw:
+                label = "RESERVED"
+            elif raw == spent_raw:
+                label = "SPENT"
+        outcome["author_generation_observations"].append({
+            "stage": stage, "state": label, "mode": actual_mode,
+            "pin": bytes_pin(context["author_path"], raw),
+            "base64": base64.b64encode(raw).decode("ascii")})
+        return label
+
+    def on_term(signum, frame):
+        outcome["interrupted"] = True
+        raise InterruptedError("outer TERM: same owned-group cleanup, no rerun")
+
+    try:
+        signal.signal(signal.SIGTERM, on_term)
+        handler_installed = True
+        cas_author(context["author_path"], context["author_raw"], author, mode, progress)
+        outcome["author_reserved"] = bytes_pin(context["author_path"], reserved_raw)
+        write_bytes(paths["directory"] / "before/author-reserved.json", reserved_raw, mode)
+        invocation = {
+            "round": "R276", "command_id": name, "budget_identity": command["budget_identity"],
+            "reservation_id": reservation["reservation_id"], "command": command,
+            "argv": command["child_argv"], "cwd": command["cwd"],
+            "actual_environment": command["child_env"], "shell": False, "start_new_session": True,
+            "stdin": "DEVNULL", "timeout_seconds": 600, "cleanup_total_seconds": 15,
+            "TERM_grace_seconds": 5, "faulthandler_one_shot_seconds": 540,
+            "stream_monitor_interval_max_seconds": 0.1, "raw_stream_threshold_bytes_each": 33554432,
+            "exact_tool_arguments": reservation["exact_tool_arguments"],
+            "source_gate": reservation["source_gate"], "script_gate": reservation["script_gate"],
+            "sources": context["sources"], "source_before": before_pin,
+            "role_before": reservation["role_before"],
+            "author_reserved": outcome["author_reserved"], "author_mode": mode,
+            "context_manifest": reservation["context_manifest"],
+            "independent_tool_stdout": None, "independent_tool_stderr": None,
+            "old_R158_budget_mutated": False}
+        write_json(paths["invocation"], invocation)
+        with paths["stdout"].open("xb") as stdout, paths["stderr"].open("xb") as stderr:
+            before_spawn = time.monotonic()
+            process = subprocess.Popen(command["child_argv"], cwd=command["cwd"],
+                                       env=command["child_env"], stdin=subprocess.DEVNULL,
+                                       stdout=stdout, stderr=stderr, shell=False, start_new_session=True)
+            outcome.update(started=True, pid=process.pid, monotonic_before_spawn=before_spawn,
+                           monotonic_after_spawn=time.monotonic())
+            # A conservative deadline starts before Popen, never later than actual spawn.
+            deadline = before_spawn + 600
+            while process.poll() is None:
+                sizes = {"stdout": os.fstat(stdout.fileno()).st_size,
+                         "stderr": os.fstat(stderr.fileno()).st_size}
+                if any(value > 33554432 for value in sizes.values()):
+                    outcome["output_limited"] = True
+                    outcome["raw_size_observations"].append({
+                        "monotonic": time.monotonic(), "observed_bytes": sizes,
+                        "observed_overshoot_bytes": {k: max(0, v - 33554432) for k, v in sizes.items()}})
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    outcome["timed_out"] = True
+                    break
+                try:
+                    process.wait(timeout=min(0.1, remaining))
+                except subprocess.TimeoutExpired:
+                    pass
+    except BaseException as error:
+        capture_error("reserved diagnostic lifecycle", error)
+    finally:
+        if handler_installed:
+            capture("protect bounded cleanup", lambda: signal.signal(signal.SIGTERM, signal.SIG_IGN))
+        try:
+            if process is not None:
+                outcome["cleanup"] = capture("owned process group", lambda: _t2_cleanup(process))
+                outcome["child_exit"] = process.returncode
+            outcome["JUnit"] = capture("actual optional JUnit", lambda: junit_observation(
+                paths["JUnit"], command["node"]))
+            prerequisite_path = Path(command["child_env"]["BIGSMALL_R235_PREREQUISITE_RECORD"])
+            outcome["prerequisite"] = capture("actual R235 prerequisite", lambda: prerequisite(
+                prerequisite_path, {"module": MODULE_PIN}, outcome["pid"]))
+            captured["resources"] = capture("actual frozen sidecars", lambda: diagnostic_resources(
+                paths["directory"] / "resources", "t2_green", command["child_argv"], outcome["pid"]))
+            if captured["resources"] is not None:
+                outcome["resources"] = capture("resource summary persistence", lambda: write_json(
+                    paths["resources"], captured["resources"]))
+            if command["kind"] == "diagnostic_only":
+                captured["passive"] = capture("bounded session evidence", lambda: session_observations(
+                    paths["passive"], outcome["pid"], command["node"], outcome["timed_out"],
+                    captured.get("resources"), context))
+                outcome["passive"] = captured["passive"]
+            index = capture("new persistent nofollow index", lambda: strict_index(temp))
+            if index is not None:
+                outcome["new_retained_databases"] = capture("new raw DB/sidecar retention",
+                    lambda: retained_new_databases(index, paths["directory"]))
+                outcome["index"] = capture("new persistent index persistence", lambda: write_json(
+                    paths["index"], {"round": "R276", "command_id": name, "root": str(temp),
+                                     "records": index, "new_retained_databases": outcome["new_retained_databases"],
+                                     "SQL_executed": False, "old_missing_recovered": False}))
+            outcome["cases"] = capture("available actual cases persistence", lambda: write_json(
+                paths["cases"], case_observations(captured["resources"], index, outcome["pid"],
+                                                 command["node"], temp)))
+            after = capture("strict fixed source/history/old DB postconditions", lambda: authority(context))
+            if after is not None:
+                capture("authority before/after equality", lambda: require(
+                    after == context["before_check"], "fixed authority observation changed"))
+                outcome["after"] = capture("source-after persistence", lambda: write_json(paths["after"], after))
+            for stream in ("stdout", "stderr"):
+                outcome.setdefault("streams", {})[stream] = capture("raw " + stream, lambda stream=stream:
+                    _t2_pin(paths[stream]))
+            if outcome.get("streams", {}).get("stderr") is not None:
+                def markers():
+                    raw_stderr = stable_bytes(paths["stderr"])
+                    return {"timeout_text_marker": b"Timeout (" in raw_stderr,
+                            "thread_text_marker": b"Thread 0x" in raw_stderr,
+                            "interpretation": "Raw textual markers only, not proof of deadlock/CPU/time origin"}
+                outcome["faulthandler_raw_markers"] = capture("raw native stack markers", markers)
+            for stream, row in outcome.get("streams", {}).items():
+                if row is not None and row["bytes"] > 33554432:
+                    outcome["output_limited"] = True
+                    outcome["raw_size_observations"].append({
+                        "stage": "after_cleanup", "stream": stream, "observed_bytes": row["bytes"],
+                        "observed_overshoot_bytes": row["bytes"] - 33554432})
+            outcome["file_index"] = capture("evidence nofollow index", lambda: _t2_index(paths["directory"]))
+        finally:
+            try:
+                label = capture("observe reserved generation", lambda: generation("before-spend"))
+                if label == "RESERVED":
+                    outcome["author_reserved"] = bytes_pin(context["author_path"], reserved_raw)
+                    capture("optional before-spend archive", lambda: write_bytes(
+                        paths["directory"] / "before/author-before-spend.json", reserved_raw, mode))
+                    capture("selected-key SPENT CAS", lambda: cas_author(
+                        context["author_path"], reserved_raw, spent, mode, spent_progress))
+                    label = capture("observe spent generation", lambda: generation("after-spend"))
+                if label == "SPENT":
+                    outcome["author_spent"] = bytes_pin(context["author_path"], spent_raw)
+                    capture("optional spent archive", lambda: write_bytes(
+                        paths["directory"] / "author-spent.json", spent_raw, mode))
+                elif label == "BEFORE" and not progress["replaced"]:
+                    outcome["author_consumption"] = "NOT_CONSUMED_NO_RETRY"
+                else:
+                    outcome["errors"].append({"stage": "author generation", "type": "UnresolvedGeneration",
+                                              "message": "ROOT reconciliation required; no refund/retry/overwrite"})
+            except BaseException as error:
+                capture_error("independent author finalization", error)
+            finally:
+                if handler_installed:
+                    capture("restore TERM handler", lambda: signal.signal(signal.SIGTERM, previous_term))
+                cleanup = outcome["cleanup"]
+                resource = captured.get("resources") or {}
+                passive = captured.get("passive") or {}
+                junit = outcome["JUnit"] or {}
+                dual = command["kind"] == "diagnostic_only"
+                integrity = bool(
+                    outcome["started"] and not outcome["errors"] and not outcome["interrupted"]
+                    and not outcome["output_limited"] and outcome["author_spent"] is not None
+                    and cleanup is not None and cleanup["leader_reaped"]
+                    and cleanup["group_remaining"] is False and not cleanup["cleanup_errors"]
+                    and (outcome["timed_out"] or outcome["child_exit"] in {0, 1})
+                    and resource.get("all_records_valid") is True
+                    and (outcome["timed_out"] or junit.get("available") is True)
+                    and (outcome["prerequisite"] or {}).get("accepted") is True
+                    and outcome["before"] is not None and outcome["after"] is not None
+                    and outcome["index"] is not None and outcome["cases"] is not None
+                    and outcome.get("streams", {}).get("stdout") is not None
+                    and outcome.get("streams", {}).get("stderr") is not None)
+                if dual and (captured.get("passive") is None or passive.get("observer_errors")):
+                    integrity = False
+                outcome["capture_integrity_complete"] = integrity
+                outcome["diagnostic_complete"] = bool(dual and integrity and passive.get("complete") is True)
+                outcome["behavior_accepted"] = bool(
+                    not dual and integrity and not outcome["timed_out"] and outcome["child_exit"] == 0
+                    and junit.get("available") is True and junit.get("tests") == 1
+                    and junit.get("failures") == junit.get("errors") == junit.get("skips") == 0
+                    and behavior_resources_complete(captured.get("resources")))
+                outcome["evidence_may_be_partial"] = bool(
+                    outcome["timed_out"] or not resource.get("complete_sidecar_set")
+                    or (dual and passive.get("complete") is not True))
+                outcome["wrapper_exit"] = (
+                    2 if not integrity else 0 if dual or outcome["behavior_accepted"] else 1)
+                outcome["elapsed_seconds"] = time.monotonic() - started
+                outcome["classification"] = (
+                    "EVIDENCE_OR_INFRASTRUCTURE_FAILURE_STOP_NEXT_ASTRA" if not integrity else
+                    "DIAGNOSTIC_FACTS_ONLY_REQUIRES_ROOT_INTEGRITY_REVIEW" if dual else
+                    "SELECTED_WAIT_BEHAVIOR_ACCEPTED_PENDING_ROOT_REVIEW" if outcome["behavior_accepted"] else
+                    "SELECTED_WAIT_UNEXPECTED_OUTCOME_STOP_NEXT_ASTRA")
+                result_pin = capture("best-available result persistence", lambda: write_json(paths["result"], outcome))
+                if result_pin is None:
+                    outcome["wrapper_exit"] = 2
+                display = {"round": "R276", "command_id": name, "child_exit": outcome["child_exit"],
+                           "wrapper_exit": outcome["wrapper_exit"], "timed_out": outcome["timed_out"],
+                           "output_limited": outcome["output_limited"],
+                           "diagnostic_complete": outcome["diagnostic_complete"] if result_pin else False,
+                           "capture_integrity_complete": outcome["capture_integrity_complete"] if result_pin else False,
+                           "behavior_accepted": outcome["behavior_accepted"] if result_pin else False,
+                           "result": result_pin, "legal_RED": False, "GREEN": False}
+                rendered = json.dumps(display, ensure_ascii=False)
+                require(len((rendered + "\n").encode()) <= 6000, "bounded diagnostic console exceeded")
+                print(rendered)
+    return outcome["wrapper_exit"]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

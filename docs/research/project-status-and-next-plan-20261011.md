@@ -1,0 +1,106 @@
+# BIGsmall 项目完成情况与下一步工作计划
+
+编制日期：2026年10月11日，北京时间。本次核对的最新研发阶段记录为10月8日；10月11日新增的是状态核对和计划文档。
+
+**项目已形成可运行的软件与仿真研发平台，云端调用、端侧视觉和部分运行时机制已有实际证据；当前处于 T12 收敛阶段，尚未完成完整动作资格、可靠任务闭环和正式研究验收。** 下一步应先打通时间、事务、动作来源与执行边界，再开展共同基线和策略比较。当前 `full_objective_complete=false`、`formal_accepted=false`，真实机械臂仍为 `NOT_STARTED`。
+
+本计划沿用现有云、边、端路线：云端采用用户指定的 Qwen3.8-Max，端侧采用 OpenCV 与 RGB-D，保留可见姿态标记、顶视相机、技能控制器和 SafetyShield；边缘近期使用规则与成本判断，模型选型后置。总任务编号 T1—T18 与本次 T12 收敛子任务 P1—P12 是两层编号，“T12/18”不表示已经完成12项，也不能换算成项目完成百分比。[总计划](../superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)
+
+## 已完成的主要工作
+
+| 工作范围 | 已完成与已有证据 | 验收边界 |
+|---|---|---|
+| 工程平台 | 核心契约、云边运行时、安全盾、MuJoCo、仿真工作台、SQLite任务与租约、模型控制中心、统计和论文资产管线已有阶段交付 | 历史软件与仿真验收保留，不能直接覆盖新云边端路径 |
+| 数据与视觉工作台 | T17a限定验收完成；数据作业、取消、RGB/深度预览与在线/独立物理结果区分已实现，真实 EGL＋Chromium 三条路径通过 | 正式研究结果展示和研究结论仍需真实实验来源 |
+| 基础技能和教师 | T1/T2/T3/T4/T5/T6a/T7保留历史限定DONE；夹爪修复后，原20例中19个正常案例全部成功、无接触负控正确失败；新40个随机案例39成功、1碰撞安全失败 | 教师为离线真值脚本；此成功率不能当作视觉模型在线成功率 |
+| 云端 Max | 历史闭环完成35次真实请求，全部HTTP200，独立复核有效；当前T12角色归一化及请求字段软件已交付 | 当前角色的新source绑定仍待P8后探测；请求成功不等于机器人任务成功 |
+| 可见标记与端侧感知 | 一次完整开发轨迹中，4,807/4,807保存帧均为OBSERVED，原189个UNKNOWN时刻恢复；完整raw与记录轨迹核验通过 | 仅证明该保存轨迹的逐帧可观测性，连续运动、未来支持界和native动作资格未成立 |
+| 运行时来源与时间窗口 | P1/P2限定软件与合同、P3角色软件、P4实际来源正分支、P5窗口软件已交付 | P6持久事务和执行边界未完成，不能开放完整实际策略资格 |
+
+主要依据：[工作台验收](../../artifacts/research/process/20261004-t17a-workbench/acceptance.md)、[夹爪修复验收](../../artifacts/research/process/20261004-t5-gripper-fix/acceptance.md)、[Max闭环验收](../../artifacts/research/process/20261004-qwen38max-closed-loop/acceptance.md)、[标记完整轨迹终审（主工作区本地证据）](../../artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/implementation/post-terminal-independent-review/round62/final-review.md)。上述是各自版本的既有结果，本次没有重跑或累加重叠测试数。
+
+## 当前质量与研究结果
+
+**主要缺口已从“平台是否能运行”转向“在线证据能否支持可靠、可复核的动作与策略决策”。** 已有负结果必须继续保留。
+
+| 已完成实验 | 实际结果 | 对下一步的含义 |
+|---|---|---|
+| 历史Max闭环20场景 | 正常任务1/12成功，全分配1/20成功；缺目标4/4拒绝且无动作；存在1例在线完成但物理不合格 | 通道可用，闭环质量未达标；视觉保持和完整放置判定仍是重点 |
+| T8第二批基础先导120组 | 总体5/120成功，静态4/40成功；只验证2秒周期候选，INITIAL冻结被拒绝 | 不能声明已有合格基线，也不能推断其他三个周期均不可行 |
+| P4当前来源正分支 | 累计2次实际采集：1失败、1成功；成功运行RESET1、CONTROL120、PHYSICS120、CAPTURE3，执行动作0 | 已证明限定启动与采集来源；尚未证明完整动作或正常任务正链 |
+| 标记全时域开发采集 | 4,807帧全部可观测，最大相邻记录间隔约0.004167模拟秒 | 需要另建独立校准支持，不能直接将当前开发轨迹作为正式校准组 |
+
+P4新63份原件与旧失败68份原件均保留，独立审查22项通过。开发故障来源目前只有历史1组，不能替代所需200组离线可恢复性证据。正式G1—G5及成本收益结论尚未成立；研究页面的4,200条软件BLOCKED记录不计为物理实验结果。[T8先导报告](../../artifacts/research/process/20261004-t8-foundation/foundation-v2-assessment.md)、[P4验收](../../artifacts/research/process/20261004-ced-development/t12-convergence-execution/P4/final-acceptance-round93.json)
+
+## T12 收敛子任务进度
+
+| 子任务 | 当前状态 | 尚欠工作 |
+|---|---|---|
+| P1 既有失败与来源软件闭合 | 限定软件已交付 | 不包含真实恢复及后续完整研究验收 |
+| P2 动作参考与双时间域合同 | 可行性合同已交付，R91完整支持设计已接受 | 完整动作支持实现与校准；缺少未来或接触支持的动作仍为UNKNOWN |
+| P3 Max角色与成本绑定 | 软件90个唯一用例已验收并交付 | P8相关源码冻结后核验现行角色probe |
+| P4 启动到当前采集的来源 | 限定真实来源正分支已验收并交付 | 旧owner不可借用为后续活动权限；不等于动作资格 |
+| P5 时间生产者与窗口 | 软件已验收并交付 | P6事务、lease及执行端仍须继续闭合 |
+| P6 持久事务与执行边界 | R113阶段A已激活、派单；未见已完成的验证结果 | A/B/C/D全部出口仍须按各自证据验收 |
+| P7 完整动作校准 | 已有设计及recipe准备，实际资格未成立 | 先单组完整生产与读出，再按预登记取得至少九独立支持组 |
+| P8 三个native消费者 | 待P6对应来源及P7 | 动作前安全检查、技能提交前和动作后效果三入口统一验证 |
+| P9 基础证据与INITIAL | 未完成 | 固定机会、200故障证明、四周期筛选、新120基础先导及冻结 |
+| P10 风险校准与共同策略输入 | 软件合同可复用，实际证据未完成 | INITIAL后的独立校准、真实成本与有限候选预登记 |
+| P11 真实开发准入与策略选择 | 新准入尚未实现 | 建立合法正分支，完成有限候选selection并保持拒绝路径 |
+| P12 T12a实际决策验收 | 未完成 | 8新场景×4方法，共32个episode及独立读出 |
+
+P5的32个唯一通过用例为R107适用29项、R110新2项和R111新1项的并集，旧OC1的60项另行复用；不是本次新跑92项或全仓通过。P6的A20/B9/C16/D2合计47项是计划分母，不能写成已通过47项。[P5验收](../../artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/p5-final-acceptance-round111.json)
+
+以上状态以主工作区活动记录和R113激活收据为准。本轮保存了两份[原始状态精确副本](../../artifacts/research/process/20261004-ced-development/astra-rounds/round117-project-status-plan-20261011/original-state/source-index.json)，便于区分“已激活”与交付分支较早文档中的“未激活”。派单记录不证明进程此刻仍在执行，历史状态页保持原样。
+
+## 下一步工作计划
+
+按验收出口推进，不预设无法由现有证据支持的完工日期。近期优先完成第一、第二阶段；后续批量实验必须满足对应前置条件。
+
+| 阶段与优先级 | 工作安排 | 交付与通过条件 |
+|---|---|---|
+| 第一阶段 P0：完成P6 A/B/C | 先核对原R113执行现场、输入hash及已用验证次数，恢复阶段A；随后分别由Astra制定B、C限定计划。A完成真实租约与事务基础；B完成发布、grounding和预算的一致事务；C覆盖handler、动作队列、夹爪写入、每个physics循环与D/S观察 | A的20项规定用例和独审先闭合；B9、C16分别验收。原任务预算不刷新，取消、租约失效和独立急停保持有效；A保留UTC附加否决的范围须明示 |
+| 第二阶段 P0：完成P7/P8并收尾P6 D | 落实P2/R91完整动作支持，先做校准CPU准备；C提供source/time出口后，运行一个完整实际校准组及独立reader，成立后再推进预登记剩余组。将同一来源接到P8三个消费者；最后完成P6 D | 至少九个独立组件的完整horizon原件，适用误差界有限且≤10mm；缺组/未来支持不足仍UNKNOWN。三消费者无旁路，Memory与SQLite两条完整native正链均通过，方可关闭P6 |
+| 第三阶段 P1：冻结来源与现行Max角色 | P8受影响源码静止后核对实际profile与secret引用、角色及成本绑定；优先复用合格的现行probe原件，无合格原件时按现有合同执行cold＋3warm四请求 | 角色、normalized_1000、双图、请求配置和source一致；全部发送及失败计入成本，未知账单保持null。历史35调用不重做，也不当作现行冻结 |
+| 第四阶段 P1：完成P9及T8 | 完整固定机会与200组离线故障证明；在120个selection组上配对筛选0.5/1/2/5秒B0；胜出后另跑120个互斥基础先导，补齐预算并冻结INITIAL | 静态成功≥90%、总体≥80%、安全违规≤1%；无合格候选记NO_FEASIBLE_BASELINE。原件、角色、成本与来源齐全才接受INITIAL |
+| 第五阶段 P2：完成P10/P11 | 在INITIAL后做独立风险校准、共同运行策略输入及有限候选预登记；实现真实开发准入验证器与joint-selection入口，选择结果独审后重新认证 | 真值不进入在线判断；缺证/篡改拒绝；合法输入可到达正常决策，不能只删除固定STOP。T12开发不额外等待METHOD/FINAL，LOCAL_RECOVER继续禁用 |
+| 第六阶段 P2：完成P12 | 预登记8个新场景、4种方法，先验证正常完整正链，再执行其余对照。保存决策、提交、动作、新帧效果与全成本来源 | 共32个episode；2正常场景及6类拒绝/失效场景按原计划覆盖。正常2×4条有失败则如实判未满足正链；独立读出通过后仅登记T12a限定验收 |
+
+P6完整依赖必须是 **A → B → C → P7/P8 → D**。P7的CPU准备可提前；P7实际采集依赖C提供的私有教师采集来源出口，D依赖P7/P8资格。不得把D放到P7之前造成循环，也不得因绕开循环而删掉D。上述细化继承[R113计划](../../artifacts/research/process/20261004-ced-development/astra-rounds/round113-p6-operational-runtime-closure-20261008/plan.md)。
+
+P8来源冻结后的主链为 **P3现行角色probe → P9 INITIAL → P10风险 → P11策略selection → P12实际决策验收**。P9离线故障准备可在共享源码和资源不冲突时推进，不需要等待T13在线恢复。[T12原执行计划](../superpowers/plans/2026-10-07-t12-sol-execution.md)
+
+## T12 之后的工作
+
+T13继续完成在线恢复与局部修复的真实来源及G4要求；边缘模型T12b按用户安排后置，启用新模型前独立验收受影响能力。随后按总计划推进方法冻结、新120组功效先导、FINAL、正式实验、统计、研究结果看板及复现交付。正式N仍须由规定功效流程从600/1200/1800/2400中确定，本次不提前选定样本量。
+
+真实机械臂、S3/S4和扩展硬件验证继续按独立门禁处理；近期资源用于现有仿真核心闭环。每一阶段保留失败和未执行分母，分别记录开发验证、实际运行和正式研究验收。
+
+## 交付与执行约束
+
+本报告编制前，已交付分支 `codex/research-20261007-p1-delivery` 的本地、上游与实时远端均为 `c053db9cd101bcc6a7d5ebb43880f9ff1cc55635`，交付工作区干净；其中P5产品提交为 `a08794857dc6ec40cec897250c62d845f396493c`。主研发分支仍为用户提交 `34c7a5595b72a3b23f4d0ca4d31aa4154cd6f24e`，其上游/实时远端为 `4d40a65059ab75292fa1842bacf62653829808e6`。这说明交付成果位于隔离研发分支，不能仅凭主树状态推断未交付，也不能称主树已同步干净。
+
+后续每轮新问题先由实际gpt-6-astra生成限定计划，核对输入SHA256后再实施；实施继续沿既有指定执行安排。只运行计划要求及新增问题所需验证，保留原始失败；真实GPU/渲染按资源情况串行。完成的独立交付按明确路径提交推送，并核对本地、上游和远端SHA。
+
+本轮按[Astra R117计划](../../artifacts/research/process/20261004-ced-development/astra-rounds/round117-project-status-plan-20261011/plan.md)仅新增状态与计划文档，未运行产品测试、云模型或仿真实验。主树既有改动和嵌套工作区保持。完整批量raw、运行数据库、凭据、模型权重和SDK仍按原交付边界管理；本轮远端小型报告与元数据不是完整复现包。部分历史终审资料仅在主工作区，来源可用性与SHA见本轮验证记录。
+
+本文件同时作为本轮阶段总结；限定实施和核对结果见[R117步骤报告](../../artifacts/research/process/20261004-ced-development/astra-rounds/round117-project-status-plan-20261011/step-report.md)。
+
+
+## 2026-10-12 当前 P6 A 阶段状态（R155）
+
+本段更新并覆盖此前正文中 P6 A 待执行、待终审或未验收的当前状态描述；此前正文和各轮记录保留为历史。
+
+ROOT 已依据 R152 独立终审限定接受 A 阶段软件交付，上限为 LEASE_FOUNDATION_WITH_LEGACY_UTC_VETO。终审在此范围内 Critical、Important、Minor 已确认问题均为0，24/24读取已用尽。
+
+40个唯一通过节点来自四次实际运行：历史 GREEN20 的19 PASS（原1 FAIL完整保留）、R147修正foreign单例1 PASS、new19的19 PASS、R141 CPU受控正链1 PASS。这不是一次40节点运行；R145类型变更和R147夹具变更仅按已核精确证明沿用证据。原静态失败与过程工具失败未删除。
+
+CPU正链先调用原episode一次，仅注入六项结局flags，22个自然文件hash已核；模型调用、动作和物理量证据均为0。legacy UTC veto保留。B9公开确认与SQL历史区分仍为OPEN，精确terminal COMMIT成功后失确认组合未实际执行。B/C/D为NOT_ACTIVATED，P6_complete=false；native、physics、硬件真实运行与formal验收均未提升。
+
+下一步依既定顺序推进B9/B、C、P7/P8、D；B9需显式区分SQL事实与已确认发布，并先按Astra计划限定验证。R153旧HEAD前置失败原件保留；R154只读诊断的文本覆盖限制及eligible=false未改写。R155明确采用315fd不相交基线，保全100个开题文档相关既有文件，不对其语义作本轮判断。本段编制时Git交付待执行，实际提交、推送与三SHA结果以本轮提交外postpush-receipt.json为准。远端选定载荷不是完整raw/数据库复现包。
+
+验收记录：/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round155-p6-disjoint-head-finite-delivery-20261012/acceptance.json
+
+终审原件：/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round152-p6-review-recovery-index-schema-20261012/review/final-review.json SHA256 db83f79f83f9fd50e56b965949a913da90f7c485776c16f15aa75e7c812b5bf4
+
+交付实际收据：/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round155-p6-disjoint-head-finite-delivery-20261012/postpush-receipt.json

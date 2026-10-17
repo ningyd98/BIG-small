@@ -1,0 +1,141 @@
+
+def session_observations(directory, pid, node, timed_out, resources, context):
+    expected_names = {"events.json", "summary.json"}
+    files = sorted(directory.iterdir())
+    require(len(files) <= 2 and all(p.name in expected_names for p in files),
+            "only two R276 passive files permitted")
+    records, contents, total, errors = [], {}, 0, []
+    for path in files:
+        raw = stable_bytes(path)
+        total += len(raw)
+        require(total <= 131072, "R276 total passive128KiB exceeded")
+        value = decode_json(raw)
+        require(value["round"] == "R276" and value["command_id"] == "dual_first_invalidation"
+                and value["nodeid"] == node and value["pid"] == pid,
+                "passive actual command/node/PID differs")
+        require(value["bounds"] == context["plan"]["passive_observer"]["bounds"],
+                "passive finite bounds differ")
+        expected_sources = {"plugin": context["sources"]["plugin"],
+                            "lease": next(x for x in context["plan"]["inputs"]
+                                          if x["path"] == str(ROOT / "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py")),
+                            "test": next(x for x in context["plan"]["inputs"]
+                                         if x["path"] == str(ROOT / "tests/test_operational_runtime_closure.py")),
+                            "plan": context["source_gate"]["plan"],
+                            "source_gate": _t2_pin(D / "source-gate.json")}
+        require(set(value["sources"]) == set(expected_sources)
+                and all(pin_identity(value["sources"][key]) == pin_identity(q)
+                        for key, q in expected_sources.items()), "passive pinned source generation differs")
+        records.append({"pin": bytes_pin(path, raw), "data": value})
+        contents[path.name] = value
+        errors.extend(value["observer_errors"])
+    event_file, summary = contents.get("events.json"), contents.get("summary.json")
+    if event_file is None or summary is None:
+        if not timed_out:
+            errors.append({"type": "MissingPassivePersistence", "message": "Normal child produced no complete two-file capture"})
+        return {"records": records, "summary": summary, "total_utf8_bytes": total,
+                "complete": False, "incomplete": True, "observer_errors": errors,
+                "unavailable": "One or both real passive files absent", "first_cause": None,
+                "normal_finish_observed": summary is not None, "legal_RED": False, "GREEN": False}
+    require(event_file["schema_version"] == "bigsmall.r276.session-events.v1"
+            and summary["schema_version"] == "bigsmall.r276.session-summary.v1",
+            "exact two passive schemas required")
+    for key in ("events_count", "dropped_events", "first_observed", "hooks_before", "hooks_after",
+                "hooks_equal", "cap_hit", "incomplete", "observer_errors", "omitted_observer_errors"):
+        require(event_file[key] == summary[key], "two passive metadata envelopes differ")
+    events, sessions = event_file["records"], event_file["first_observed"]
+    require(type(events) is list and len(events) == event_file["events_count"] <= 6 * 64 + 3
+            and type(sessions) is list and len(sessions) <= 6, "passive session/event cap differs")
+    session_map = {q["session_id"]: q for q in sessions}
+    require(len(session_map) == len(sessions), "duplicate passive session identity")
+    resource_map, threads = {}, set()
+    for side in (resources or {}).get("records", []):
+        data = side["data"]
+        if type(data) is not dict:
+            continue
+        require(data["pid"] == pid and data["nodeid"] == node, "actual resource sidecar identity differs")
+        for q in data["resources"]:
+            resource_map[q["resource_id"]] = (q, side["pin"])
+            if q["kind"] in {"broker_thread", "heartbeat_thread"}:
+                if type(q.get("thread_ident")) is int and type(q.get("native_thread_id")) is int:
+                    threads.add((q["thread_ident"], q["native_thread_id"]))
+        for q in data["worker_lifecycles"]:
+            if q["entered"]:
+                threads.add((q["thread_id"], q["native_thread_id"]))
+    counts, first, witnesses, unavailable = {}, {}, [], []
+    target_events = {
+        ("__init__", 417): {"call", "line455", "return"},
+        ("invalidate", 640): {"call"},
+        ("_check_ingress", 468): {"line471", "exception"},
+        ("_close_worker_lease_session", 982): {"call", "line987", "return"},
+    }
+    for ordinal, row in enumerate(events):
+        require(row["ordinal"] == ordinal, "passive event ordinal differs")
+        if row["category"] == "post_unwind_original_exception":
+            require(len(row["actual_target_tracebacks"]) <= 12, "post-unwind traceback cap differs")
+            for loc in row["actual_target_tracebacks"]:
+                require((loc["code_name"], loc["code_firstlineno"]) in target_events
+                        and loc["code_filename"] == str(ROOT / "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py")
+                        and type(loc["tb_lineno"]) is int and type(loc["post_unwind_frame_lineno"]) is int,
+                        "real selected traceback location differs")
+            continue
+        code = (row["code_name"], row["code_firstlineno"])
+        selected = "line" + str(row["trace_lineno"]) if row["trace_event"] == "line" else row["trace_event"]
+        require(code in target_events and selected in target_events[code]
+                and row["category"] == row["code_name"] + ":" + selected
+                and row["pid"] == pid
+                and row["code_filename"] == str(ROOT / "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py")
+                and len(row["stack"]["locations"]) <= 12,
+                "actual traced function/event/identity differs")
+        snapshot = row["snapshot"]
+        sid = snapshot["session_id"]
+        require(type(sid) is int and sid in session_map, "event lacks its actual session identity")
+        counts[sid] = counts.get(sid, 0) + 1
+        require(counts[sid] <= 64, "per-session64 event cap exceeded")
+        first.setdefault(sid, {}).setdefault(row["category"], ordinal)
+        if sid in resource_map:
+            resource, side_pin = resource_map[sid]
+            require(resource["kind"] == "lease_session", "traced session ID resolves to wrong actual resource")
+            worker = snapshot.get("worker_object_id")
+            observed_worker = resource.get("worker_resource_id")
+            if worker is not None and observed_worker is not None:
+                require(worker == observed_worker, "traced and sidecar actual worker IDs differ")
+                witnesses.append({"event_ordinal": ordinal, "session_resource_id": sid,
+                                  "worker_resource_id": observed_worker, "sidecar": side_pin})
+            else:
+                unavailable.append({"event_ordinal": ordinal, "reason": "partial session worker ownership unavailable"})
+        else:
+            unavailable.append({"event_ordinal": ordinal, "reason": "no completed actual session sidecar witness"})
+        if (row["thread_id"], row["native_thread_id"]) not in threads:
+            unavailable.append({"event_ordinal": ordinal, "reason": "actual thread pair not witnessed by completed sidecar"})
+    for sid, session in session_map.items():
+        require(session["event_count"] == counts.get(sid, 0)
+                and session["first_observed"] == first.get(sid, {}), "first observed event was changed or lost")
+        if "first_observed_invalidate" in session:
+            original = session["first_observed_invalidate"]
+            n = first[sid]["invalidate:call"]
+            require(original == {"ordinal": n, "original_reason": events[n]["original_reason"]},
+                    "first invalidation reason overwritten by later cleanup")
+    restored = (summary["call_finally_observed"] is True and summary["hooks_equal"] is True
+                and summary["hooks_before"] == summary["hooks_after"]
+                and summary["new_threads_still_live"] == [])
+    if not restored:
+        errors.append({"type": "TraceRestorationIncomplete", "message": "Real trace/profile/thread restoration unavailable"})
+    complete = bool(restored and not errors and not unavailable and not event_file["cap_hit"]
+                    and event_file["dropped_events"] == 0 and event_file["incomplete"] is False
+                    and summary["normal_sessionfinish_observed"] is True and sessions)
+    return {"records": records, "summary": summary, "total_utf8_bytes": total,
+            "complete": complete, "incomplete": not complete, "observer_errors": errors,
+            "cap_hit": event_file["cap_hit"], "dropped_events": event_file["dropped_events"],
+            "session_resource_witnesses": witnesses, "unavailable_witnesses": unavailable,
+            "first_cause": "UNKNOWN_REQUIRES_ROOT_EVENT_INTERPRETATION",
+            "normal_finish_observed": True, "legal_RED": False, "GREEN": False}
+
+
+def behavior_resources_complete(summary):
+    if summary is None or not summary["all_records_valid"] or not summary["complete_sidecar_set"]:
+        return False
+    return bool(summary["records"] and all(
+        row["data"]["entered_behavior"] is True and row["data"]["assertions_completed"] is True
+        for row in summary["records"]))
+
+

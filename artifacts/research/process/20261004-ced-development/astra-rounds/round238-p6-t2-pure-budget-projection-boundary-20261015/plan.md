@@ -1,0 +1,19 @@
+# R238 — 纯预算投影与原始引用取得边界
+
+实际规划者：gpt-6-astra。R237源准备前发现静态计划矛盾，尚无产品/作者脚本编辑或运行。原两次source读取exit0，native保全{}没有numeric exit。
+
+已确认export_record→_check_live→local _check_app_live会get_job并读源清单，不能在声称纯的预算helper内调用。原R237计划、补充、观察与原件全部保留。本轮仅修订这一边界，不改变预算交集算法或产品范围。
+
+纯helper改为staticmethod `_local_definition_limits(configured, reference)`：只接收明确detached原引用并做类型/原始约束与ns/float计算，无self/owner/registry/DB/clock/I/O，不修改输入。R237原有保守转换和计数不变规则继续。
+
+首次_initialize_local仍使用原来唯一的export_record调用，保留全部live/source检查；caller取返回值并detach，在definition/commitment前传入helper。同一原引用进入original_time，既有注册方式不改，不再加export或采时。
+
+后续三处local-definition验证从现存_LOCAL_ORIGINALS的完整canonical注册原件取得verification_reference。先核该字符串与owner/runtime原描述逐字一致，并核现有owner/startup身份、注册归属、issuer线程及原source/预算关系；不调用export/_check_live/_check_app_live或新get_job。只读注册原件是来源比对，不是缓存权能；不写注册表，不新建缓存，不替代任何既存lease/current-app/locked-view/broker检查。缺失或不符fail closed，无fallback。
+
+仍只改worker_runtime一个产品文件、R237五个既有区域和一个新helper/必要imports。其它26源、211保护、strictcodec/P5/windows/旧测试observer不变。初始raw role校验保持；local_definition=True才比较原role配置的确定性派生值，完整角色来源验证不放宽。
+
+沿用R237原两作者脚本路径及三个未用once槽：baseline120、Ruff120、RED600+15；每槽ROOT先reserve再literal发送。R238新增执行/测试/静态/Git/审查槽0，无重复ledger。ROOT保存R237当前gates/roles/activation完整before+CAS后仅增加接续来源；预算仍HELD0/1。原source门与脚本门需实际新全文/精确diff复核。
+
+输入观察66822B SHA573db4369f01da40f6d84caba6d8fe6fd52f03dfe4e6476764c5f5a63bac169c，含12完整输入pin、27+211全match、两作者脚本确实未创建和六role视图。原seam8882B SHAe5df1280c3c0468cfe0b3a125e155e54cf72527f3b14b77dfd9a6df0d0a98204；native保存回执414B SHA668c2f5c386fdb9799e15ed6a926016b296ac0d0e6a7f83c2caf54f16638d7a0。
+
+ROOT可保存R237静态seam step与R238接续step；STATE仅planning.R237/R238事实、PHASE追加，先完整before/CAS，其余字段和原始报告不变。合法RED仍须真正bootstrap/双COMPLETE后原竞态断言失败。T2/T12/native/formal未通过，event3/旧held槽不放行。交付计划后STOP。

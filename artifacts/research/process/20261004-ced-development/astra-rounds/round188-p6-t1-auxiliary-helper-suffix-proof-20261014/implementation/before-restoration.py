@@ -1,0 +1,276 @@
+"""R182 detached recursive projection tests; no old test functions are collected."""
+import copy
+
+import pytest
+
+from tests import test_operational_runtime_closure as _frozen
+
+
+def _r182_hash(value):
+    return _frozen._r179_hash(value)
+
+
+def _r182_projection(value):
+    # Frozen test-only recipe, independent of product semantic_projection.
+    return _frozen._r179_projection(value)
+
+
+def _r182_source_key(request):
+    body = request["payload"]
+    original = body["original"]
+    observation = body["online"]["observation"]
+    return _r182_hash({
+        "schema_version": "visual.verification.source-key.local.v1",
+        "original_time_hash": _r182_hash(request["original_time"]),
+        "original_plan_hash": _r182_hash(original),
+        "task_id": original["identity"]["task_id"],
+        "step_id": body["step_id"], "attempt": body["attempt"], "phase": body["phase"],
+        "frame_id": observation["observation_id"], "frame_checksum": observation["checksum_sha256"],
+        "plan_version": original["contract"]["plan_version"],
+        "command_seq": original["contract"]["command_seq"],
+        "requirements_hash": _r182_hash(original["requirements"][body["step_id"]]),
+    })
+
+
+def _r182_semantic_hash(request):
+    body = copy.deepcopy(request["payload"])
+    body.pop("event_key")
+    return _r182_hash({
+        "schema_version": "visual.verification.route-input.local.v1",
+        "payload": _r182_projection(body), "original_time": request["original_time"],
+    })
+
+
+def _r182_publication_hash(publication):
+    body = copy.deepcopy(publication["payload"])
+    body.pop("publication_hash")
+    return _r182_hash({
+        "schema_version": "visual.owner.publication.local.v1",
+        "payload": _r182_projection(body), "original_time": publication["original_time"],
+    })
+
+
+def _r182_refresh(value):
+    if isinstance(value, list):
+        return [_r182_refresh(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {key: _r182_refresh(item) for key, item in value.items()}
+    tag = result.get("schema_version")
+    if tag not in _frozen._b_fields() or set(result) != {
+            "schema_version", "payload", "original_time", "decision", "transaction", "diagnostics"}:
+        return result
+    body = result["payload"]
+    if tag == "visual.owner.publication.local.v1":
+        body["publication_hash"] = _r182_publication_hash(result)
+    elif tag == "recovery.verification-budget.local.v1":
+        body["content_hash"] = _r182_hash({
+            "schema_version": tag, "task_id": body["task_id"],
+            "state": body["state"], "revision": body["revision"],
+        })
+    elif tag == "visual.verification.route.local.v1":
+        request = body["input"]
+        body["input_hash"] = _r182_hash(request)
+        body["semantic_hash"] = _r182_semantic_hash(request)
+        body["source_key"] = _r182_source_key(request)
+        produced = body["produced_publication"]
+        if produced is not None and produced["schema_version"] == "visual.owner.publication.local.v1":
+            body["produced_publication_hash"] = produced["payload"]["publication_hash"]
+    return result
+
+
+def _r182_alternate(value):
+    """Same task, sources/fence/epoch/bounds; one distinct detached original label."""
+    if isinstance(value, list):
+        return [_r182_alternate(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {key: _r182_alternate(item) for key, item in value.items()}
+    tag = result.get("schema_version")
+    if tag not in _frozen._b_fields() or set(result) != {
+            "schema_version", "payload", "original_time", "decision", "transaction", "diagnostics"}:
+        return result
+    original = result["original_time"]
+    original["verification_reference"]["window_id"] += "-r182-independent-descriptor"
+    if result["decision"] is not None:
+        result["decision"]["original_time_hash"] = _r182_hash(original)
+    if tag == "recovery.verification-budget.local.v1":
+        result["payload"]["state"]["original_budget_reference"] = copy.deepcopy(
+            original["verification_reference"])
+    return _r182_refresh(result)
+
+
+def _r182_decode(value):
+    from cloud_edge_robot_arm.vision.local_temporal import LocalEnvelope
+
+    envelope = LocalEnvelope.from_payload(value)
+    assert envelope.to_payload() == value
+    domain = _frozen._b_decode_domain(value["schema_version"], value)
+    assert domain.to_payload() == value
+    return domain
+
+
+def _r182_retry_decode(child):
+    from cloud_edge_robot_arm.edge.recovery.lifecycle import LocalRetryBudgetRecord
+
+    envelope = _r182_decode(child)
+    typed = LocalRetryBudgetRecord.from_payload(child)
+    assert typed.to_payload() == envelope.to_payload() == child
+    return typed
+
+
+def _r182_path(request):
+    return request["payload"]["execution_contract"]["steps"][0]["parameters"][
+        "r182_descriptive"]["map"]["list"][0]["child"]
+
+
+def _r182_recursive_seed(monkeypatch):
+    fixture = _frozen._r179_fixture(monkeypatch)
+    request = copy.deepcopy(fixture["route"]["payload"]["input"])
+    child = copy.deepcopy(fixture["publication"]["payload"]["retry_budget"])
+    _r182_retry_decode(child)
+    request["payload"]["execution_contract"]["steps"][0]["parameters"]["r182_descriptive"] = {
+        "map": {"list": [{"child": child}]},
+        "ordinary": {"decision": "kept-as-semantic", "transaction": "kept-as-semantic",
+                     "diagnostics": "kept-as-semantic"},
+    }
+    return fixture, request
+
+
+def _r182_record(tmp_path, seed, changed, category, baseline_hash):
+    import json
+
+    with (tmp_path / "r182-case.json").open("x") as stream:
+        json.dump({
+            "category": category, "seed": seed, "mutation": changed,
+            "seed_sha256": _r182_hash(seed), "mutation_sha256": _r182_hash(changed),
+            "baseline_hash": baseline_hash,
+            "baseline_hash_kind": ("LOCAL_ENVELOPE_DIGEST" if category.startswith("semantic-edge:")
+                                   else "LOCAL_ROUTE_INPUT_SEMANTIC_HASH"),
+            "baseline_decode_and_accessor_returned": True,
+            "path": ("_r182_decode(changed): LocalEnvelope.from_payload then domain.from_payload"
+                     if category.startswith("semantic-edge:") else
+                     "LocalVisualVerificationRouteInput.semantic_hash -> execution_contract.steps[0].parameters"),
+            "claim": "Caller-created detached descriptive JSON; no authority/NEW_COMMIT/issuer claim.",
+        }, stream, allow_nan=False, sort_keys=True, indent=2)
+
+
+@pytest.mark.parametrize("mutation", [
+    "decision_null", "transaction_null", "diagnostics_shape", "retry_semantics",
+])
+def test_r182_recursive_projection_rejects(monkeypatch, tmp_path, mutation):
+    _, seed = _r182_recursive_seed(monkeypatch)
+    baseline = _r182_decode(seed)
+    _r182_retry_decode(_r182_path(seed))
+    baseline_hash = baseline.semantic_hash()
+    assert baseline_hash == _r182_semantic_hash(seed)
+    changed = copy.deepcopy(seed)
+    child = _r182_path(changed)
+    if mutation == "decision_null":
+        child["decision"] = None
+    elif mutation == "transaction_null":
+        child["transaction"] = None
+    elif mutation == "diagnostics_shape":
+        child["diagnostics"] = {"utc": [], "monotonic": None}
+    else:
+        child["payload"]["remaining_retries"] = child["payload"]["effective_retry_limit"] + 1
+    _r182_record(tmp_path, seed, changed, "recursive:" + mutation, baseline_hash)
+    with pytest.raises(ValueError):
+        _r182_decode(changed).semantic_hash()
+
+
+def _r182_edge_seed(monkeypatch, edge):
+    fixture = _frozen._r179_fixture(monkeypatch)
+    if edge == "route_input":
+        seed = copy.deepcopy(fixture["route"])
+        position = "input"
+    elif edge == "publication_grounding":
+        seed = copy.deepcopy(fixture["publication"])
+        position = "grounding"
+        seed["payload"][position] = copy.deepcopy(fixture["cases"][
+            "visual.owner.grounding.local.v1"])
+    else:
+        seed = copy.deepcopy(fixture["route"]["payload"]["input"])
+        position = "completion" if edge == "input_completion" else "grounding_receipt"
+        tag = ("visual.verification.effect-completion.local.v1" if edge == "input_completion"
+               else "visual.owner.grounding.local.v1")
+        seed["payload"][position] = copy.deepcopy(fixture["cases"][tag])
+    return _r182_refresh(seed), position
+
+
+@pytest.mark.parametrize("edge", [
+    "route_input", "publication_grounding", "input_completion", "input_grounding",
+])
+def test_r182_semantic_edge_original_rejects(monkeypatch, tmp_path, edge):
+    seed, position = _r182_edge_seed(monkeypatch, edge)
+    baseline = _r182_decode(seed)
+    child = seed["payload"][position]
+    _r182_decode(child)
+    alternate = _r182_alternate(child)
+    _r182_decode(alternate)
+    assert alternate["original_time"] != child["original_time"]
+    assert alternate["original_time"]["lease_identity"] == child["original_time"]["lease_identity"]
+    assert alternate["original_time"]["source_hashes"] == child["original_time"]["source_hashes"]
+    changed = copy.deepcopy(seed)
+    changed["payload"][position] = alternate
+    changed = _r182_refresh(changed)
+    assert changed["original_time"] == seed["original_time"]
+    assert changed["payload"][position]["original_time"] != changed["original_time"]
+    if edge == "route_input":
+        assert changed["payload"]["input_hash"] == _r182_hash(alternate)
+        assert changed["payload"]["semantic_hash"] == _r182_semantic_hash(alternate)
+        assert changed["payload"]["source_key"] == _r182_source_key(alternate)
+    elif edge == "publication_grounding":
+        assert changed["payload"]["publication_hash"] == _r182_publication_hash(changed)
+    _r182_record(tmp_path, seed, changed, "semantic-edge:" + edge, baseline.digest())
+    with pytest.raises(ValueError, match="original|reference|binding|parent"):
+        _r182_decode(changed)
+
+
+@pytest.mark.parametrize("case", [
+    "recursive_valid", "diagnostics_invariant", "renewal_invariant",
+    "semantic_change", "independent_descriptive_original",
+])
+def test_r182_recursive_projection_positive(monkeypatch, tmp_path, case):
+    registries = _frozen._r179_registries()
+    before = [dict(registry) for registry in registries]
+    fixture, seed = _r182_recursive_seed(monkeypatch)
+    baseline = _r182_decode(seed)
+    _r182_retry_decode(_r182_path(seed))
+    baseline_hash = baseline.semantic_hash()
+    assert baseline_hash == _r182_semantic_hash(seed)
+    changed = copy.deepcopy(seed)
+    child = _r182_path(changed)
+    if case == "diagnostics_invariant":
+        child["diagnostics"]["monotonic"] = 123.0
+    elif case == "renewal_invariant":
+        child["decision"] = _frozen._b_decision(child["original_time"], fixture["current"], 2)
+        child["transaction"] = _frozen._b_transaction(child["decision"])
+        assert child["decision"]["lease_observation"]["segment"] != child[
+            "original_time"]["lease_identity"]["original_acquisition"]
+    elif case == "semantic_change":
+        child["payload"]["retry_cooldown_ms"] += 1
+    elif case == "independent_descriptive_original":
+        changed["payload"]["execution_contract"]["steps"][0]["parameters"][
+            "r182_descriptive"]["map"]["list"][0]["child"] = _r182_alternate(child)
+    _r182_retry_decode(_r182_path(changed))
+    domain = _r182_decode(changed)
+    expected = _r182_semantic_hash(changed)
+    assert domain.semantic_hash() == expected
+    assert domain.to_payload() == changed
+    if case in {"recursive_valid", "diagnostics_invariant", "renewal_invariant"}:
+        assert expected == baseline_hash
+    else:
+        assert expected != baseline_hash
+    if case != "recursive_valid":
+        assert domain.digest() != baseline.digest()
+    if case == "diagnostics_invariant":
+        substantive = copy.deepcopy(changed)
+        substantive["payload"]["execution_contract"]["steps"][0]["parameters"][
+            "r182_descriptive"]["ordinary"]["diagnostics"] = "changed-semantic-value"
+        assert _r182_decode(substantive).semantic_hash() == _r182_semantic_hash(substantive)
+        assert _r182_semantic_hash(substantive) != expected
+    if case == "independent_descriptive_original":
+        assert _r182_path(changed)["original_time"] != changed["original_time"]
+    assert [dict(registry) for registry in registries] == before
+    _r182_record(tmp_path, seed, changed, "positive:" + case, baseline_hash)

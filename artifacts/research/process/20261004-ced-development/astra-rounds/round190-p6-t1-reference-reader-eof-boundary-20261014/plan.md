@@ -1,0 +1,184 @@
+# R190 — 参考读取 EOF 边界处置
+
+实际规划者：gpt-6-astra（/root/astra_status_plan）。冻结，待 ROOT 复核；未执行恢复或产品修复。
+
+原 reader edaa3d 实际退出1。第一段555–635完整返回；第二段1120–1250仅标题，join生成器越界，因此正文保持缺失。实际受保护 visual_bootstrap.py 为1238行，_proposal_usable起于570，_promote起于1133。“短于1120”和“supervision参考”的口头推断均不成立，已明确保留纠正。
+
+ROOT先前真实5f12b7输出已原样保存。独立比对其中171行与当前受保护源码逐行完全相等，覆盖570–634及1133–1238。因此取消重复目标读取，零重试、零替代reader、零新执行额度。原记录没有原命令/路径标签，这些缺口保持null；当前比对仅确立内容与当前文件的关系。
+
+ROOT复核后可把已有参考内容交给同一Sol，恢复已批准的shared源码修复。原RED8/RED19不重跑，其余门继续HELD。门控中的旧命令计数字段不作为额度，实际两角色账本各1/0为准。本轮不修改旧门控或账本。
+
+完整限定合同：
+
+```json
+{
+  "schema_version": 1,
+  "round": "R190",
+  "date": "2026-10-14",
+  "actual_author": "/root/astra_status_plan",
+  "author_model": "gpt-6-astra",
+  "status": "FROZEN_PENDING_ROOT_DISPOSITION_GATE",
+  "problem": {
+    "type": "READ_ONLY_REFERENCE_EOF_BOUNDARY_FAILURE",
+    "original_evidence": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round190-p6-t1-reference-reader-eof-boundary-20261014/original-reader-failure.json",
+    "actual_exit": 1,
+    "exception": "IndexError: list index out of range",
+    "cause": "Unbounded range indexes1250 into1238-line file; generator join throws before printing any second body. First555..635 body fully returned.",
+    "not_a_product_failure": true,
+    "no_source_edit_before_stop": true
+  },
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round190-p6-t1-reference-reader-eof-boundary-20261014/original-reader-failure.json",
+      "bytes": 5864,
+      "sha256": "635acdeaf314c202887b9a5c557903f6826b41b9fce7fbcb223c772390a8e8b6",
+      "role": "immutable_original_failure"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round190-p6-t1-reference-reader-eof-boundary-20261014/prior-actual-root-policy-reference.json",
+      "bytes": 9357,
+      "sha256": "e9bf8d9ed58b4033406d67bf220c895b7df7366babbf493ed6adbf70eebcf2b1",
+      "role": "immutable_prior_actual_output"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "bytes": 49436,
+      "sha256": "6128bb81934b18f66c83ce0aec02f2965e056ccfd11165f090172b26bdcf0f66",
+      "role": "protected_fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+      "bytes": 38150,
+      "sha256": "37c08edf440bd7e5f3bf1d43f726ac12fd66a21654b938657f67243ae99c41f1",
+      "role": "protected_fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "bytes": 104539,
+      "sha256": "8090c6d7a7e3911ecbd9cc13678f950980dc35834174dc762ca3d507e6aa866b",
+      "role": "pre_resume_current_shared_not_post_repair_pin"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/script-gate.json",
+      "bytes": 171476,
+      "sha256": "9bf8a07925d88ae49e05bf1bc19f7f409d395f510416c217922b7cd458d60f73",
+      "role": "current_role_snapshot_no_R190_mutation"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/root-command-ledger.json",
+      "bytes": 15406,
+      "sha256": "c5fa2b356f130d5ef27fca77b3733aa67914edbde7620dd0fdb2171114488bef",
+      "role": "current_role_snapshot_no_R190_mutation"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/command-ledger.json",
+      "bytes": 12373,
+      "sha256": "77f8b499850f2e1c35a8f5b4a38bda3e826ff42864bfa49fd24f0439acca6b34",
+      "role": "current_role_snapshot_no_R190_mutation"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round179-p6-t1-detached-causality-hash-audit-20261014/plan.json",
+      "bytes": 118709,
+      "sha256": "dc0cae1b743d6244469625e3f9a4fd14200efbb3e3669c422f1639f59b4be05e",
+      "role": "immutable_parent_contract"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.json",
+      "bytes": 136098,
+      "sha256": "82100de3713beccb61ceeb0da87d40d3cbb6a4552890c6c72337d899fad96c5d",
+      "role": "immutable_parent_contract"
+    }
+  ],
+  "disposition": {
+    "decision": "ABANDON_DUPLICATE_REFERENCE_READ_REUSE_PRESERVED_ACTUAL_OUTPUT",
+    "failed_reader_retries": 0,
+    "replacement_source_readers": 0,
+    "new_executable_metadata_actions": 0,
+    "why": "Prior actual5f12b7 packet supplies full _proposal_usable570..634 and _promote1133..1238. Independent current-file comparison confirms171/171 exact numbered lines, no mismatches.",
+    "source_identity": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+    "actual_line_count": 1238,
+    "missing_failed_body_stays_null": true,
+    "original_invocation_gaps_stay_null": true,
+    "corrected_handoff_errors": [
+      {
+        "statement": "proposal/promotion called supervision",
+        "disposition": "Incorrect; independently matched actual protected visual_bootstrap.py."
+      },
+      {
+        "statement": "current visual_bootstrap.py shorter than1120",
+        "disposition": "Incorrect; actual1238 lines. Requested1250 exceedsEOF. ROOT explicitly withdrew inference."
+      }
+    ]
+  },
+  "reference_handoff": {
+    "packet": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round190-p6-t1-reference-reader-eof-boundary-20261014/prior-actual-root-policy-reference.json",
+    "field": "actual_tool_return.output",
+    "allowed": "ROOT supplies existing packet text/content to same Sol in dispatch; no replacement filesystem source reader or original failed command replay.",
+    "interpretation": "Legacy bootstrap policy reference under existing R179/R182 constraints; not new implementation specification, not runtime evidence."
+  },
+  "preconditions": [
+    "ROOT fully reads R190 plan/raw/reference packet and confirms applicability of10 exact input pins before resumption.",
+    "Current shared104539/SHA8090c6d7a7e3911ecbd9cc13678f950980dc35834174dc762ca3d507e6aa866b remains pre-repair baseline; no unobserved product edits accepted.",
+    "Keep original accepted R182 prepare_red and RED8 spent as two actual1/0 commands, and accepted R179 RED19 spent. Script-gate copied numeric0/1 values are historical command-template fields, not authoritative remaining allowance; actual author/ROOT ledgers govern.",
+    "ROOT acceptance of actual RED8 and prior repair authorization must remain applicable. R190 does not independently re-verify full runtime evidence or reopen gates.",
+    "No changes to tests/aux/verifier/protected211/six scripts/goldens; original source-scope protection under parentplans remains."
+  ],
+  "scope": {
+    "resuming_author": "/root/p6_stage_b_sol",
+    "author_model": "gpt-6.1-sol",
+    "allowed": "After ROOT explicit R190 disposition, resume ONLY already-authorized shared local_temporal.py repair under unchanged R179/R182 scope following accepted RED19/RED8. No new product delta authorized by this metadata round.",
+    "forbidden": [
+      "modify protected reference source",
+      "rewrite original failure/prior output",
+      "replay failed or replacement target reader",
+      "test/static/probe/AST/import/compile/SQL/Git/network commands",
+      "modify stage/role ledgers in R190 disposition",
+      "reset spent slots or automatically release remaining gates",
+      "new review seat or review budget reset"
+    ]
+  },
+  "root_metadata": {
+    "method": "Native structured exclusive saves only; no new executable recovery helper.",
+    "allowed_paths": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round190-p6-t1-reference-reader-eof-boundary-20261014/root-activation.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round190-p6-t1-reference-reader-eof-boundary-20261014/input-check.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round190-p6-t1-reference-reader-eof-boundary-20261014/disposition.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round190-p6-t1-reference-reader-eof-boundary-20261014/step-report.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round190-p6-t1-reference-reader-eof-boundary-20261014/step-report.md"
+    ],
+    "content": "Record pins, reused171-line reference provenance, no retry/no replacement, source-scope-only resumption and unchanged role budgets. Preserve actual tool objects and null streams honestly."
+  },
+  "budgets": {
+    "new_product": 0,
+    "new_pytest": 0,
+    "new_static": 0,
+    "new_Git": 0,
+    "new_metadata_execution": 0,
+    "reader_retry": 0,
+    "replacement_source_reader": 0,
+    "R182_prepare_red": "SPENT1/0 actual0",
+    "R182_RED8": "SPENT1/0 actual expected1,8DIDNOTRAISE",
+    "R182_remaining_four": "prepare_green/ruff/green/root_settlement HELD0/1",
+    "R179_remaining_four": "HELD; noreset",
+    "R158": "3spent12HELD",
+    "R175": "threeSPENT",
+    "fresh_review": "same reviewer remaining8reads under parents; not started/reset by R190"
+  },
+  "validation": {
+    "already_observed": "Exact pinned source length/signatures and preserved-output comparison171matches; original reader exit1 preserved.",
+    "acceptance": "Only redundant-reference disposition and existing shared-authority continuation. Remaining original source gate/prepare_green/static/GREEN/settlement/review still required.",
+    "future_unexpected": "Any new reference ambiguity, changed pin or broader rootcause stops affected work for genuine Astra; never fabricate missing failed output."
+  },
+  "boundaries": {
+    "T1_complete": false,
+    "T12_complete": false,
+    "B9": false,
+    "native": false,
+    "actual_research": false,
+    "formal": false,
+    "planned_green_union": 51,
+    "no_new_pass_claim": true
+  }
+}
+```
+

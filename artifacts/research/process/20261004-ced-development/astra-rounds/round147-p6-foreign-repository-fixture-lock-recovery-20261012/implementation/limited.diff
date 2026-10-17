@@ -1,0 +1,59 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/before-test.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -237,6 +237,8 @@
+         )
+ 
+         before = _all_sql(repo)
++        if variant == "foreign_repo":
++            other = SQLiteSimulationJobRepository(repo.database_path)
+         with repo.publication_guard():
+             with pytest.raises(module.OperationalLeaseError):
+                 session.evaluate_locked({"job_id": job.job_id})
+@@ -249,10 +251,19 @@
+                     copied = copy.copy(view)
+                     session.propose_locked(copied, ttl_ns=session.ttl_ns)
+             elif variant == "foreign_repo":
+-                other = SQLiteSimulationJobRepository(repo.database_path)
+-                with pytest.raises(module.OperationalLeaseError):
++                assert other is not repo
++                assert other.database_path.resolve() == repo.database_path.resolve()
++                assert session.repository is repo
++                live_before = view._connection.in_transaction
++                assert live_before
++                with pytest.raises(
++                    module.OperationalLeaseError,
++                    match="session requires exact concrete repository/job",
++                ) as denial:
+                     with _tx(other, session, job) as foreign:
+                         session.propose_locked(foreign, ttl_ns=session.ttl_ns)
++                live_after = view._connection.in_transaction
++                assert live_after
+             else:
+                 rejected = []
+ 
+@@ -267,6 +278,25 @@
+                 thread.join(timeout=1)
+                 assert rejected and not thread.is_alive()
+         assert _all_sql(repo) == before
++        if variant == "foreign_repo":
++            _evidence(
++                tmp_path,
++                "foreign-repository-denial",
++                {
++                    "repository_id": id(repo),
++                    "other_repository_id": id(other),
++                    "different_repository_objects": other is not repo,
++                    "repository_database": str(repo.database_path.resolve()),
++                    "other_database": str(other.database_path.resolve()),
++                    "session_repository_is_original": session.repository is repo,
++                    "original_connection_id": id(view._connection),
++                    "original_connection_in_transaction_before": live_before,
++                    "original_connection_in_transaction_after": live_after,
++                    "denial_type": type(denial.value).__name__,
++                    "denial_message": str(denial.value),
++                    "whole_sql_equal_assertion_completed": True,
++                },
++            )
+         return variant
+ 
+     _exercise(monkeypatch, tmp_path, check)

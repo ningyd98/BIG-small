@@ -1,0 +1,11 @@
+# P3 软件实施停点
+
+状态：`NEEDS_ASTRA_P3_COMPATIBLE_WIRE_THINKING_FIELD`。9输入pins与brief/dispatch匹配；4owned前后字节完全相同，source.diff为空，尚未写测试或改配置/产品。
+
+旧成功case07真实HTTP200请求明确包含enable_thinking=false（request SHA 17635c77af0d589ab4c607b4e52b609c05b285e6433771239a950690f4010077）。现行planner.py SHA 0f1f31392c84f8db32535f6908e1d3e2bdae2d2265b7afec7e12a5492af96f66 的_request_visual兼容分支在403–409行只构造model/messages/temperature/max_tokens/response_format，没有thinking字段；完整方法原文和AST/行号已保存。既有role工厂仅绑定profile temperature/num_predict，其注解或hash不能使缺失wire字段出现。
+
+planner.py不属于当前四owned，满足Task3“保留成功thinkingfalse”需要先由实际Astra制定最小扩源修复/验证计划。已即时告ROOT，未写wrapper、未伪造thinkingfalse、未执行动态探针或请求。ROOT确认保持停止，并将修复派单排在P4actual/readout终态之后。
+
+原成功可用性、35请求与独立valid=true原件只读引用，不当现行source/角色冻结。坐标pixel→normalized_1000尚未实施；320×240双图不变；grasp v1→当前v2差异保留，旧成功不授新域资格。公开差异及相关source索引见role-delta.json。实际profile/secret不读取；最终cold+3warm四请求待P8源码静止与ROOT单独调度。
+
+RED/GREEN/formatter/static/mypy及新增CPU节点/fixture分母全0；模型/网络/渲染/physics/Git/子代理新增0。成本ledger保持只读，所有sent/超时/retry与未知账单null规则未改，未声称新测试通过。所有失败/历史证据不覆盖。源码静止，P3软件和正式验收未完成；交ROOT→实际Astra。

@@ -1,0 +1,1347 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/implementation/before/r258-run-parent-t2-green.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/implementation/run-diagnostic.py
+@@ -1,4 +1,4 @@
+-"""R258 green-only bridge: one original R158 t2_green allowance."""
++"""R268: two separate, once-only evidence captures; never GREEN/RED authority."""
+ from __future__ import annotations
+ 
+ import base64
+@@ -17,15 +17,15 @@
+ 
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+ ROUNDS = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds"
+-D = ROUNDS / "round258-p6-t2-parent-green7-continuation-20261017"
+-PARENT = ROUNDS / "round158-p6-stage-b-local-temporal-publication-20261013"
+-PLAN_SHA = "50970ee4e58d28f7732686ff11befd01f1d56a3657a200d97dba9b45ffa764e7"
+-OBS_SHA = "8213421ccb98f9bdc8370d909cda26a7366cc44c9f4fe12a9d463c5f5e2899d9"
+-PARENT_PLAN_SHA = "70f51381f8f401c5456304d9eb12f019e7f903a582407ab7819447b8cd1f871b"
+-COMMAND = "t2_green"
++D = ROUNDS / "round268-p6-t2-targeted-failure-evidence-20261017"
++PARENT = ROUNDS / "round258-p6-t2-parent-green7-continuation-20261017"
++PLAN_SHA = "ea92b785c2058e7f373ef444dc22655a043b9235f963e80098b4c015b4448c52"
++OBS_SHA = "b9bf488904254377daf32daa0ddaca61aafc5f24194c10605a1983e42a00c03e"
+ CASE_NAMES = {"after-both-lock-denial.json", "true-commit-loss.json",
+               "restart-no-authority.json", "same-owner-exact-history.json",
+               "one-CAS-no-refund.json", "complete-writer-inventory.json"}
++MODULE_PIN = {"path": str(ROOT / "tests/test_operational_time_v1.py"), "bytes": 24211,
++              "sha256": "ff226e9a616462c67d74d29931f8f9a7d21548f4f13f93ced64901b263229c0f"}
+ 
+ 
+ def require(condition, message):
+@@ -192,7 +192,7 @@
+             "cleanup_errors": errors, "cleanup_seconds_bound": 15}
+ 
+ 
+-def _t2_resources(directory: Path, command_id: str, argv: list[str], process_pid: int | None) -> dict:
++def diagnostic_resources(directory: Path, command_id: str, argv: list[str], process_pid: int | None) -> dict:
+     from collections import Counter
+ 
+     expected = [arg for arg in argv if "::" in arg]
+@@ -225,8 +225,6 @@
+             nodes[value["nodeid"]] += 1
+             if value["entered_contract_guard"] is not True:
+                 raise ValueError("T2 attempt must record the contract guard")
+-            if command_id == "t2_green" and value["entered_behavior"] is not True:
+-                raise ValueError("T2 GREEN must enter every behavioral body")
+             resources = value["resources"]
+             if type(resources) is not list or type(value["allocation_attempts"]) is not int:
+                 raise ValueError("actual resource allocation denominator required")
+@@ -380,26 +378,28 @@
+                 counts["cleanup_observed"] += 1
+             if value["observations"]["observers_restored"] is not True:
+                 raise ValueError("T2 observer restoration not observed")
+-            if command_id == "t2_green" and value["observations"]["assertions_completed"] is not True:
+-                raise ValueError("T2 behavioral assertions did not complete")
+         except (OSError, ValueError, TypeError, KeyError) as error:
+             record["error"] = {"type": type(error).__name__, "message": str(error)}
+             errors.append({"path": str(path), **record["error"]})
+         records.append(record)
+     mapping_match = nodes == Counter(expected)
+-    if not mapping_match:
+-        errors.append({"stage": "helper map", "type": "MissingOrDuplicateNode",
+-                       "message": "exactly one actual attempt sidecar per selected node required"})
++    missing_nodes = [node for node in expected if nodes[node] == 0]
++    if any(node not in expected or count != 1 for node, count in nodes.items()):
++        errors.append({"stage": "helper map", "type": "WrongOrDuplicateNode",
++                       "message": "actual sidecar must belong uniquely to selected diagnostic node"})
+     if counts["attempted_poll_lifecycles"] > 18 or counts["attempted_poll_lifecycles"] > 64:
+         errors.append({"stage": "cap", "type": "WorkerLifecycleCap",
+                        "message": "T2 attempted poll18/parent64 cap exceeded"})
+-    valid = not errors and mapping_match
+-    return {"schema_version": "bigsmall.r158-t2-resource-summary.v1",
++    valid = not errors
++    return {"schema_version": "bigsmall.r268.resource-observations.v1",
+             "command_id": command_id, "actual_node_attempts": len(records),
+             "actual_node_counts": dict(nodes), "records": records,
++            "complete_sidecar_set": mapping_match, "unavailable_nodes": missing_nodes,
++            "whole_run_allocation_denominator": (counts["allocation_attempts"] if mapping_match else None),
+             "counts": dict(counts), "all_records_valid": valid, "validation_errors": errors,
+             "peak_active_polls_per_node": peak_active_polls,
+-            "interpretation": "Interface RED may reject before allocation; never behavioral proof.",
++            "interpretation": "Diagnostic only. Missing sidecars leave whole-run resources unknown; "
++                              "ordinary assertion failure is not an observer failure.",
+             "unobserved": {"OS_handles": None, "external_models": None, "GPU_native": None,
+                            "network_calls": None}}
+ 
+@@ -439,332 +439,6 @@
+ 
+ 
+ 
+-def map_bytes(mappings, original, raw, evidence):
+-    require(bytes_pin(original["path"], raw) == pin_identity(original),
+-            "historical bytes do not match exact original")
+-    item = identity_key(original)
+-    if item in mappings:
+-        require(mappings[item]["raw"] == raw, "conflicting same-generation bytes")
+-    else:
+-        mappings[item] = {"original": pin_identity(original), "raw": raw, "evidence": evidence}
+-
+-
+-def resolved(record, mappings):
+-    item = pin_identity(record)
+-    if identity_key(item) in mappings:
+-        raw = mappings[identity_key(item)]["raw"]
+-        require(bytes_pin(item["path"], raw) == item, "historical mapping changed")
+-        return raw, "EXACT_PHYSICAL_OR_FULL_BASE64_GENERATION"
+-    return checked(item), "CURRENT_EXACT_IDENTITY"
+-
+-
+-def full_before_row(row, mappings):
+-    require(type(row) is dict and set(row) == {"original", "archive", "base64"},
+-            "exact full-before record required")
+-    raw = base64.b64decode(row["base64"], validate=True)
+-    require(checked(row["archive"]) == raw, "physical/full-base64 before mismatch")
+-    map_bytes(mappings, row["original"], raw, {"archive": row["archive"]})
+-    return raw
+-
+-
+-def verify_preserved_databases(groups):
+-    require(type(groups) is dict and set(groups) == {"R242_R248", "R251"},
+-            "two exact retained DB groups required")
+-    output = {}
+-    for name, count in (("R242_R248", 12), ("R251", 18)):
+-        rows = groups[name]
+-        require(type(rows) is list and len(rows) == count, "retained DB group count differs")
+-        observed = []
+-        for ordinal, row in enumerate(rows):
+-            require(type(row) is dict and set(row) == {"pin", "sidecars", "provenance"}
+-                    and type(row["provenance"]) is str, "retained DB record shape differs")
+-            checked(row["pin"])
+-            require(type(row["sidecars"]) is list and len(row["sidecars"]) == 3,
+-                    "retained DB sidecars differ")
+-            for side in row["sidecars"]:
+-                require(type(side) is dict and set(side) == {"path", "exists", "is_symlink", "pin"}
+-                        and side["exists"] is False and side["is_symlink"] is False
+-                        and side["pin"] is None, "exact absent old DB sidecar required")
+-                absence(side["path"])
+-            observed.append({"group": name, "ordinal": ordinal, "record": row,
+-                             "current_pin": pin_identity(row["pin"]), "hash_match": True})
+-        output[name] = observed
+-    return output
+-
+-
+-def verify_authorities(context):
+-    plan, obs, mappings = context["plan"], context["observation"], context["mappings"]
+-    records = []
+-    for origin, rows in (("observation.inputs", obs["inputs"]),
+-                         ("plan.inputs.fixed_metadata", plan["inputs"]["fixed_metadata"]),
+-                         ("source_gate.fixed_inputs", context["source_gate"]["fixed_inputs"])):
+-        require(type(rows) is list, "finite exact input list required")
+-        for ordinal, row in enumerate(rows):
+-            item = pin_identity(row)
+-            if identity_key(item) in context["missing"]:
+-                mode = "EXACT_REGISTERED_HISTORICAL_UNAVAILABLE"
+-            else:
+-                _, mode = resolved(item, mappings)
+-            records.append({"origin": origin, "ordinal": ordinal, "pin": item, "resolution": mode})
+-    for row in context["missing"].values():
+-        original, authority = row["original"], row["authority"]
+-        raw, _ = resolved(authority["pin"], mappings)
+-        container = decode_json(raw)
+-        selector, ordinal = authority["selector"], authority["ordinal"]
+-        require(type(ordinal) is int and ordinal >= 0, "registered ordinal required")
+-        if selector == "input_records":
+-            rows = container["input_records"]
+-            require(type(rows) is list and ordinal < len(rows), "input_records ordinal differs")
+-            selected = rows[ordinal]
+-        elif selector == "new_retained_databases.pin":
+-            rows = container["new_retained_databases"]
+-            require(type(rows) is list and ordinal < len(rows)
+-                    and type(rows[ordinal]) is dict, "new DB ordinal differs")
+-            selected = rows[ordinal]["pin"]
+-        else:
+-            raise ValueError("unapproved missing-authority selector")
+-        require(pin_identity(selected) == pin_identity(original), "missing authority identity differs")
+-        require(row["disposition"] == "HISTORICAL_BYTES_CURRENTLY_UNAVAILABLE_R245"
+-                and row["current_exists"] is False and row["current_is_symlink"] is False
+-                and row["current_bytes"] is None and row["current_sha256"] is None
+-                and row["hash_match"] is None, "missing registry disposition differs")
+-        absence(original["path"])
+-    require(len(obs["old_absent_sidecars90"]) == 90, "exact90 old sidecars required")
+-    sidecars = []
+-    for row in obs["old_absent_sidecars90"]:
+-        require(row["exists"] is False and row["is_symlink"] is False,
+-                "old sidecar absence declaration differs")
+-        sidecars.append(absence(row["path"]))
+-    sources = []
+-    require(len(obs["current_sources27"]) == 27 and len(obs["protected211"]) == 211,
+-            "exact current27/protected211 required")
+-    for row in obs["current_sources27"]:
+-        raw = checked(row)
+-        require(checked(row["physical"]) == raw
+-                and Path(row["path"]).lstat().st_mode == row["mode"],
+-                "current source/full physical/mode differ")
+-        sources.append({"pin": pin_identity(row), "mode": row["mode"], "physical": row["physical"]})
+-    for row in obs["protected211"]:
+-        checked(row)
+-    checked(plan["prerequisite"]["plugin"])
+-    checked(plan["prerequisite"]["module"])
+-    checked(context["source_gate"]["runner"])
+-    for row in context["stable_controls"]:
+-        checked(row)
+-    return {"input_records": records, "sources": sources, "protected": obs["protected211"],
+-            "missing_registry": list(context["missing"].values()), "old_sidecars": sidecars,
+-            "retained_workspace_databases": verify_preserved_databases(
+-                obs["retained_workspace_databases"]),
+-            "history_reaudited_as_current": False,
+-            "accepted_history_authority": plan["history"]["complete_source_authority"]}
+-
+-
+-def preconditions():
+-    require(sys.argv == [str(D / "implementation/run-parent-t2-green.py"), COMMAND],
+-            "one exact t2_green launcher required")
+-    require(Path.cwd() == ROOT and Path(sys.executable).absolute() == ROOT / ".venv/bin/python",
+-            "exact interpreter/cwd required")
+-    plan_raw = stable_bytes(D / "plan.json")
+-    obs_raw = stable_bytes(D / "input-observation.json")
+-    require(hashlib.sha256(plan_raw).hexdigest() == PLAN_SHA
+-            and hashlib.sha256(obs_raw).hexdigest() == OBS_SHA, "frozen R258 authority changed")
+-    plan, obs = decode_json(plan_raw), decode_json(obs_raw)
+-    parent_raw = stable_bytes(PARENT / "plan.json")
+-    require(hashlib.sha256(parent_raw).hexdigest() == PARENT_PLAN_SHA, "original R158 plan changed")
+-    original_plan = decode_json(parent_raw)
+-    require(type(original_plan["commands"]) is dict and len(original_plan["commands"]) == 15,
+-            "original15 keyed commands required")
+-    command = plan["command"]
+-    require(command["command_id"] == COMMAND and command["node_count"] == 7
+-            and command["original_record"] == original_plan["commands"][COMMAND],
+-            "original t2_green command differs")
+-    require(command["child_timeout_seconds"] == 600 and command["cleanup_total_seconds"] == 15
+-            and command["TERM_grace_within_cleanup_seconds"] == 5,
+-            "original600+15 timing required")
+-    require([a for a in command["effective_argv"] if "::" in a] == command["exact_nodes"]
+-            and len(set(command["exact_nodes"])) == 7, "exact seven child nodes required")
+-    require(command["launcher_argv"] == [str(ROOT / ".venv/bin/python"),
+-                                        str(Path(__file__)), COMMAND],
+-            "exact bridge launcher required")
+-    source_path, script_path = D / "source-gate.json", D / "script-gate.json"
+-    source_raw, script_raw = stable_bytes(source_path), stable_bytes(script_path)
+-    source_gate, script_gate = decode_json(source_raw), decode_json(script_raw)
+-    require(source_gate["round"] == "R258" and source_gate["status"] == "VERIFIED_SOURCE_ONLY"
+-            and script_gate["round"] == "R258" and script_gate["status"] == "VERIFIED_BY_ROOT"
+-            and script_gate["command_id"] == COMMAND, "ROOT source/runtime gate required")
+-    checked(source_gate["plan"])
+-    checked(source_gate["observation"])
+-    checked(source_gate["input_check"])
+-    checked(source_gate["native"])
+-    require(pin_identity(source_gate["plan"]) == bytes_pin(D / "plan.json", plan_raw)
+-            and pin_identity(source_gate["observation"]) == bytes_pin(
+-                D / "input-observation.json", obs_raw), "source gate authority differs")
+-    own = bytes_pin(Path(__file__), stable_bytes(Path(__file__)))
+-    require(pin_identity(source_gate["runner"]) == own
+-            and pin_identity(script_gate["runner"]) == own
+-            and pin_identity(script_gate["source_gate"]) == bytes_pin(source_path, source_raw)
+-            and pin_identity(script_gate["plan"]) == pin_identity(source_gate["plan"])
+-            and pin_identity(script_gate["observation"]) == pin_identity(source_gate["observation"])
+-            and script_gate["command"] == command
+-            and script_gate["original_command"] == command["original_record"],
+-            "exact ROOT script/runner/command binding required")
+-    require(type(source_gate["fixed_inputs"]) is list, "ROOT fixed_inputs list required")
+-    reservation_path = D / "root-parent-green7-reservation.json"
+-    require(script_gate["root_reservation_path"] == str(reservation_path),
+-            "exact root reservation path required")
+-    reservation_raw = stable_bytes(reservation_path)
+-    reservation = decode_json(reservation_raw)
+-    require(reservation["round"] == "R258" and reservation["command_id"] == COMMAND
+-            and type(reservation["reservation_id"]) is str and reservation["reservation_id"]
+-            and pin_identity(reservation["plan"]) == pin_identity(source_gate["plan"])
+-            and pin_identity(reservation["runner"]) == own
+-            and pin_identity(reservation["source_gate"]) == bytes_pin(source_path, source_raw)
+-            and pin_identity(reservation["script_gate"]) == bytes_pin(script_path, script_raw)
+-            and reservation["effective_command"] == command
+-            and reservation["original_command"] == command["original_record"]
+-            and reservation["exact_tool_arguments"] == command["exact_tool_arguments"],
+-            "ROOT reservation exact command/gate binding differs")
+-    mappings = {}
+-    require(len(obs["existing_exact_maps47"]) == 47
+-            and len(obs["R251_exact_invocation_generations"]) == 22,
+-            "finite historical mapping counts differ")
+-    for row in obs["existing_exact_maps47"]:
+-        raw = checked(row["archive"])
+-        map_bytes(mappings, row["original"], raw, {"archive": row["archive"]})
+-    for row in obs["R251_exact_invocation_generations"]:
+-        raw = base64.b64decode(pointer(decode_json(checked(row["container"])), row["pointer"]),
+-                               validate=True)
+-        map_bytes(mappings, row["original"], raw,
+-                  {"container": row["container"], "pointer": row["pointer"]})
+-    require(type(reservation["role_before"]) is list and len(reservation["role_before"]) == 2,
+-            "two original role full-before records required")
+-    role_bytes = {}
+-    for row in reservation["role_before"]:
+-        raw = full_before_row(row, mappings)
+-        role_bytes[row["original"]["path"]] = raw
+-    root_path, author_path = PARENT / "root-command-ledger.json", PARENT / "command-ledger.json"
+-    require(set(role_bytes) == {str(root_path), str(author_path)}, "exact two parent role paths required")
+-    require(type(reservation["context_history"]) is list
+-            and type(reservation["context_before"]) is list
+-            and len(reservation["context_before"]) == 2, "finite context full-before required")
+-    context_paths = {pin_identity(v)["path"] for v in obs["mutable_context_timepoint"].values()}
+-    for row in reservation["context_history"]:
+-        require(row["original"]["path"] in context_paths, "only STATE/PHASE context histories allowed")
+-        full_before_row(row, mappings)
+-    context_current = []
+-    for row in reservation["context_before"]:
+-        require(row["original"]["path"] in context_paths, "exact STATE/PHASE context path required")
+-        raw = full_before_row(row, mappings)
+-        require(checked(row["original"]) == raw, "current context differs from root before")
+-        context_current.append(pin_identity(row["original"]))
+-    require({v["path"] for v in context_current} == context_paths, "two distinct contexts required")
+-    root_before = decode_json(role_bytes[str(root_path)])
+-    author_before = decode_json(role_bytes[str(author_path)])
+-    continuation = {"reservation_id": reservation["reservation_id"], "plan": reservation["plan"],
+-                    "runner": reservation["runner"], "source_gate": reservation["source_gate"],
+-                    "script_gate": reservation["script_gate"], "command": command}
+-    expected_root = copy.deepcopy(root_before)
+-    root_entry = expected_root["commands"][COMMAND]
+-    require(root_entry["used"] == 0 and root_entry["remaining"] == 1
+-            and root_entry["authorized"] == 1
+-            and root_entry["state"] == "HELD_PENDING_ROOT_GATE", "original ROOT allowance not held")
+-    require(root_entry["argv"] == command["original_record"]["argv"]
+-            and root_entry["cwd"] == command["cwd"], "original ROOT entry contract changed")
+-    root_entry.update(state="RESERVED_BY_ROOT", used=1, remaining=0,
+-                      reservation_id=reservation["reservation_id"])
+-    root_entry.setdefault("continuation", {})["R258"] = continuation
+-    expected_root["active_task"] = "T2"
+-    root_current_raw = checked(reservation["root_role_after"])
+-    require(reservation["root_role_after"]["path"] == str(root_path)
+-            and decode_json(root_current_raw) == expected_root,
+-            "ROOT exact keyed reservation transition differs")
+-    author_raw = checked(reservation["author_role_before"])
+-    require(reservation["author_role_before"]["path"] == str(author_path)
+-            and author_raw == role_bytes[str(author_path)], "author full before generation changed")
+-    entry = author_before["commands"][COMMAND]
+-    require(entry["used"] == 0 and entry["remaining"] == 1 and entry["state"] == "HELD"
+-            and entry["argv"] == command["original_record"]["argv"]
+-            and entry["cwd"] == command["cwd"], "original author allowance not held")
+-    history_contract = plan["history"]["complete_source_authority"]
+-    history = decode_json(checked(history_contract["source_index"]))
+-    checked(history_contract["ROOT_settlement"])
+-    require(len(history["history_observations"]) == 1689
+-            and len(history["explicit_maps"]) == 47 and len(history["input_records"]) == 48,
+-            "accepted finite source-history counts differ")
+-    require(type(obs["missing_registry35"]) is list and len(obs["missing_registry35"]) == 35,
+-            "exact35 unavailable history records required")
+-    missing = {identity_key(v["original"]): v for v in obs["missing_registry35"]}
+-    require(len(missing) == 35, "registered missing identity duplicate")
+-    require(len(obs["inputs"]) == 388 and len(plan["inputs"]["fixed_metadata"]) == 105,
+-            "frozen input list counts differ")
+-    stable_controls = [bytes_pin(source_path, source_raw), bytes_pin(script_path, script_raw),
+-                       bytes_pin(reservation_path, reservation_raw),
+-                       reservation["root_role_after"], *context_current,
+-                       bytes_pin(D / "root-activation.json", stable_bytes(D / "root-activation.json"))]
+-    context = {"plan": plan, "observation": obs, "command": command,
+-               "source_gate": source_gate, "script_gate": script_gate,
+-               "reservation": reservation, "reservation_raw": reservation_raw,
+-               "mappings": mappings, "missing": missing, "history": history,
+-               "stable_controls": stable_controls, "author_before": author_before,
+-               "author_raw": author_raw, "author_path": author_path,
+-               "continuation": continuation, "own": own}
+-    context["before_check"] = verify_authorities(context)
+-    paths = command["output_paths"]
+-    require(paths["evidence"] == str(D / "implementation/green")
+-            and paths["basetemp"] == str(D / "implementation/green/persistent-basetemp"),
+-            "new persistent evidence paths differ")
+-    evidence = Path(paths["evidence"])
+-    absence(evidence)
+-    for name, descriptor in (("outer_stdout", 1), ("outer_stderr", 2)):
+-        path = Path(paths[name])
+-        require(path.parent == D / "implementation", "exact outer stream directory required")
+-        linked, opened = path.lstat(), os.fstat(descriptor)
+-        require(stat.S_ISREG(linked.st_mode) and stat.S_ISREG(opened.st_mode)
+-                and (linked.st_dev, linked.st_ino) == (opened.st_dev, opened.st_ino)
+-                and linked.st_size == opened.st_size == 0,
+-                "outer stream must be the initially empty exclusive actual fd")
+-    for ancestor in evidence.parents:
+-        if ancestor == ROOT:
+-            break
+-        require(ancestor.is_dir() and not ancestor.is_symlink(), "unsafe evidence ancestor")
+-    return context
+-
+-
+-def save_before(context):
+-    evidence = Path(context["command"]["output_paths"]["evidence"])
+-    evidence.mkdir(exist_ok=False)
+-    (evidence / "resources").mkdir(exist_ok=False)
+-    rows = []
+-    for row in context["observation"]["current_sources27"]:
+-        raw = checked(row)
+-        relative = Path(row["path"]).relative_to(ROOT)
+-        archive = write_bytes(evidence / "before/sources" / relative, raw, row["mode"])
+-        rows.append({**pin_identity(row), "mode": row["mode"], "physical": archive,
+-                     "base64": base64.b64encode(raw).decode("ascii")})
+-    generations = []
+-    for ordinal, value in enumerate(context["mappings"].values()):
+-        archive = write_bytes(evidence / "before/history" / (str(ordinal) + ".bin"), value["raw"])
+-        generations.append({"original": value["original"], "archive": archive,
+-                            "base64": base64.b64encode(value["raw"]).decode("ascii"),
+-                            "source": value["evidence"]})
+-    controls = []
+-    for ordinal, item in enumerate(context["stable_controls"] + [
+-            bytes_pin(context["author_path"], context["author_raw"])]):
+-        raw = checked(item)
+-        archive = write_bytes(evidence / "before/controls" / (str(ordinal) + ".bin"), raw)
+-        controls.append({"original": item, "archive": archive,
+-                         "base64": base64.b64encode(raw).decode("ascii")})
+-    value = {"round": "R258", "command_id": COMMAND, "sources": rows,
+-             "protected": context["observation"]["protected211"],
+-             "history_observations": context["history"]["history_observations"],
+-             "explicit_maps": context["history"]["explicit_maps"],
+-             "accepted_history_input_records": context["history"]["input_records"],
+-             "accepted_history_authority": context["plan"]["history"]["complete_source_authority"],
+-             "history_reaudited_as_current": False, "resolved_generations": generations,
+-             "control_before": controls, "preconditions": context["before_check"]}
+-    return write_json(Path(context["command"]["output_paths"]["source_before"]), value)
+-
+-
+ def author_bytes(value):
+     return (json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode()
+ 
+@@ -819,175 +493,6 @@
+     return rows
+ 
+ 
+-def parse_junit(path, expected):
+-    raw = stable_bytes(path)
+-    tree = ET.fromstring(raw)
+-    nodes, details = [], []
+-    for element in tree.iter("testcase"):
+-        node = element.attrib["classname"].replace(".", "/") + ".py::" + element.attrib["name"]
+-        nodes.append(node)
+-        errors = []
+-        for child in element:
+-            if child.tag in {"failure", "error", "skipped"}:
+-                errors.append({"tag": child.tag, "attributes": dict(child.attrib), "text": child.text})
+-        details.append({"nodeid": node, "attributes": dict(element.attrib), "outcomes": errors})
+-    failures = sum(any(v["tag"] == "failure" for v in row["outcomes"]) for row in details)
+-    errors = sum(any(v["tag"] == "error" for v in row["outcomes"]) for row in details)
+-    skips = sum(any(v["tag"] == "skipped" for v in row["outcomes"]) for row in details)
+-    passes = sum(not row["outcomes"] for row in details)
+-    return {"pin": bytes_pin(path, raw), "nodeids": nodes, "tests": len(nodes),
+-            "passes": passes, "failures": failures, "errors": errors, "skips": skips,
+-            "exact_order_unique": nodes == expected and len(set(nodes)) == 7,
+-            "all_passed": nodes == expected and len(set(nodes)) == 7
+-                          and passes == 7 and failures == errors == skips == 0,
+-            "failure_details": details}
+-
+-
+-def prerequisite(path, contract, pid):
+-    record = read_json(path)
+-    valid = (
+-        record["schema_version"] == "bigsmall.r235.startup-prerequisite.v1"
+-        and record["pid"] == pid and record["accepted_prerequisite"] is True
+-        and record["exception"] is None and record["expected_pin"] == contract["module"]
+-        and record["actual_file_pin"] == contract["module"]
+-        and record["same_sys_modules_object_after"] is True
+-        and record["pre_import_hooks_empty"] is True
+-        and record["profile_trace_before_after_equal"] is True
+-        and record["profile_trace_before"] == [None] * 4
+-        and record["profile_trace_after"] == [None] * 4
+-        and record["pre_observer_resource_measurement"] is None
+-        and (not record["already_loaded_before"] or record["same_previously_loaded_object"] is True)
+-        and type(record["elapsed_ns"]) is int and record["elapsed_ns"] >= 0)
+-    return {"pin": _t2_pin(path), "data": record, "accepted": valid}
+-
+-
+-def capture_cases(summary, index, pid):
+-    prefix = "tests/test_operational_runtime_closure.py::"
+-    expected = {}
+-    for backend in ("memory", "sqlite"):
+-        expected[prefix + "test_memory_sqlite_publication_wait_requires_current_d[" + backend + "]"] = {
+-            backend + "-wait-D_app": {"after-both-lock-denial.json"},
+-            backend + "-wait-D_lease": {"after-both-lock-denial.json"}}
+-        expected[prefix + "test_original_budget_debit_not_refilled_by_retry[" + backend + "]"] = {
+-            backend + "-one-CAS": {"one-CAS-no-refund.json"},
+-            backend + "-ack-loss": {"one-CAS-no-refund.json"}}
+-        expected[prefix + "test_b_local_writer_requires_private_scope[" + backend + "]"] = {
+-            backend + "-writer-fence": {"complete-writer-inventory.json"}}
+-    expected[prefix + "test_dual_database_order_and_partial_commit"] = {
+-        **{"commit-seam-" + str(i): {"true-commit-loss.json", "restart-no-authority.json"}
+-           for i in range(4)},
+-        "same-live-owner": {"same-owner-exact-history.json"}}
+-    wanted = {(node, leaf, name) for node, directories in expected.items()
+-              for leaf, names in directories.items() for name in names}
+-    root = D / "implementation/green/persistent-basetemp"
+-    records, files, errors, owners = [], [], [], {}
+-    seen_nodes, seen_pairs, seen_inodes = set(), set(), {}
+-    actual_directories, node_parents = set(), {}
+-
+-    def error(stage, message, path=None):
+-        errors.append({"stage": stage, "message": message, "path": path})
+-
+-    for row in summary["records"]:
+-        data = row["data"]
+-        node = data.get("nodeid") if type(data) is dict else None
+-        actual_pid = data.get("pid") if type(data) is dict else None
+-        records.append({"nodeid": node, "pid": actual_pid, "expected_child_pid": pid,
+-                        "sidecar_pin": row["pin"], "sidecar_full_data": data,
+-                        "scenarios": (data.get("observations", {}).get("scenarios")
+-                                      if type(data) is dict else None),
+-                        "observation_error": row["error"]})
+-        if (node not in expected or node in seen_nodes or actual_pid != pid or pid is None
+-                or row["error"] is not None or row["pin"] is None):
+-            error("sidecar identity", "unique actual expected node/child PID/valid sidecar required",
+-                  row["path"])
+-            continue
+-        seen_nodes.add(node)
+-        if type(data.get("resources")) is not list:
+-            error("resource witnesses", "actual resource list unavailable", row["path"])
+-            continue
+-        for resource in data["resources"]:
+-            if (resource.get("kind") != "sqlite_connection"
+-                    or resource.get("initialized") is not True):
+-                continue
+-            path_value = resource.get("path")
+-            if type(path_value) is not str:
+-                error("resource witness", "initialized SQLite connection has no real path", row["path"])
+-                continue
+-            path = Path(path_value)
+-            if path.name != "events.db":
+-                continue
+-            if (not path.is_absolute() or os.path.abspath(path) != str(path)
+-                    or not path.is_relative_to(root) or resource.get("pid") != actual_pid):
+-                error("resource witness", "SQLite events.db path/PID is not exact run authority",
+-                      path_value)
+-                continue
+-            directory = str(path.parent)
+-            owner = (node, row["pin"]["path"], actual_pid)
+-            owners.setdefault(directory, {}).setdefault(owner, {
+-                "nodeid": node, "pid": actual_pid, "sidecar_pin": row["pin"],
+-                "resource_witnesses": []})["resource_witnesses"].append(copy.deepcopy(resource))
+-    for row in index:
+-        path = Path(row["path"])
+-        if path.name not in CASE_NAMES:
+-            continue
+-        item = {"path": str(path), "pin": None, "base64": None,
+-                "relative_path": None, "exercise_directory": str(path.parent),
+-                "pytest_directory": str(path.parent.parent), "nodeid": None, "pid": None,
+-                "sidecar_pin": None, "resource_witnesses": [], "binding_errors": []}
+-        files.append(item)
+-        try:
+-            require(stat.S_ISREG(row["mode"]) and not row["symlink"],
+-                    "scenario file must be its own real regular file")
+-            require(path.is_relative_to(root) and os.path.abspath(path) == str(path),
+-                    "scenario file outside exact persistent root")
+-            raw = stable_bytes(path)
+-            require(bytes_pin(path, raw) == pin_identity(row), "scenario own index pin differs")
+-            item.update(pin=bytes_pin(path, raw), base64=base64.b64encode(raw).decode("ascii"),
+-                        relative_path=str(path.relative_to(root)))
+-            info = path.lstat()
+-            inode = (info.st_dev, info.st_ino)
+-            require(inode not in seen_inodes, "scenario file aliases another scenario inode")
+-            seen_inodes[inode] = str(path)
+-            matches = owners.get(str(path.parent), {})
+-            require(len(matches) == 1, "exercise directory has missing/ambiguous node/sidecar owner")
+-            owner = next(iter(matches.values()))
+-            item.update(nodeid=owner["nodeid"], pid=owner["pid"],
+-                        sidecar_pin=owner["sidecar_pin"],
+-                        resource_witnesses=owner["resource_witnesses"])
+-            require(item["pid"] == pid and item["resource_witnesses"],
+-                    "actual child/PID/resource witnesses required")
+-            pair = (item["nodeid"], path.parent.name, path.name)
+-            require(pair in wanted and pair not in seen_pairs,
+-                    "missing/extra/duplicate actual node-directory-filename association")
+-            seen_pairs.add(pair)
+-            actual_directories.add(str(path.parent))
+-            node_parents.setdefault(item["nodeid"], set()).add(str(path.parent.parent))
+-        except (OSError, ValueError, KeyError, TypeError) as caught:
+-            item["binding_errors"].append({"type": type(caught).__name__, "message": str(caught)})
+-            error("case file binding", str(caught), str(path))
+-    if seen_nodes != set(expected):
+-        error("case sidecar map", "exact seven unique actual node/PID sidecars unavailable")
+-    if seen_pairs != wanted:
+-        error("case pair map", "exact frozen19 associations differ")
+-    if len(files) != 19 or len(actual_directories) != 15:
+-        error("case counts", "complete success requires19 real files in15 witnessed directories")
+-    parents = [next(iter(v)) for v in node_parents.values() if len(v) == 1]
+-    if (set(node_parents) != set(expected) or any(len(v) != 1 for v in node_parents.values())
+-            or len(set(parents)) != 7):
+-        error("pytest parent directories", "each actual node must own one distinct witnessed pytest parent")
+-    return {"round": "R258", "command_id": COMMAND, "records": records,
+-            "scenario_files": files, "expected_pairs": [list(v) for v in sorted(wanted)],
+-            "actual_pairs": [list(v) for v in sorted(seen_pairs)],
+-            "actual_directories": sorted(actual_directories),
+-            "node_pytest_parents": {k: sorted(v) for k, v in node_parents.items()},
+-            "all_bindings_valid": not errors, "validation_errors": errors,
+-            "counts": {"actual_sidecars": len(records), "actual_files": len(files),
+-                       "witnessed_directories": len(actual_directories),
+-                       "bound_unique_pairs": len(seen_pairs)},
+-            "file_node_association": "Each own-byte file binds through initialized actual same-PID "
+-            "SQLite events.db connection paths to exactly one genuine sidecar/node; all witnesses retained."}
+-
+-
+ def retained_new_databases(index, evidence):
+     records = []
+     for row in index:
+@@ -1010,54 +515,402 @@
+             else:
+                 sides.append({"path": str(side), "exists": False, "is_symlink": False, "pin": None})
+         records.append({"pin": bytes_pin(path, raw), "archive": archive, "sidecars": sides,
+-                        "provenance": "This genuine new R258 run only; old bytes not recovered"})
++                        "provenance": "This genuine new R268 diagnostic run only; old bytes not recovered"})
+     return records
++
++
++def prerequisite(path, contract, pid):
++    record = read_json(path)
++    valid = (
++        record["schema_version"] == "bigsmall.r235.startup-prerequisite.v1"
++        and record["pid"] == pid and record["accepted_prerequisite"] is True
++        and record["exception"] is None and record["expected_pin"] == contract["module"]
++        and record["actual_file_pin"] == contract["module"]
++        and record["same_sys_modules_object_after"] is True
++        and record["pre_import_hooks_empty"] is True
++        and record["profile_trace_before_after_equal"] is True
++        and record["profile_trace_before"] == [None] * 4
++        and record["profile_trace_after"] == [None] * 4
++        and record["pre_observer_resource_measurement"] is None
++        and (not record["already_loaded_before"] or record["same_previously_loaded_object"] is True)
++        and type(record["elapsed_ns"]) is int and record["elapsed_ns"] >= 0)
++    return {"pin": _t2_pin(path), "data": record, "accepted": valid}
++
++
++def bytes_record(row):
++    raw = base64.b64decode(row["base64"], validate=True)
++    require(checked(row["archive"]) == raw
++            and bytes_pin(row["original"]["path"], raw) == pin_identity(row["original"]),
++            "full physical/base64 generation differs")
++    return raw
++
++
++def authority(context):
++    obs, source_gate = context["observation"], context["source_gate"]
++    context_rows = context["context_manifest"]["changes"]
++    require(type(context_rows) is list and len(context_rows) == 2, "two exact context generations required")
++    mapped, context_after = {}, []
++    expected_context = {context["plan"]["history_and_context"]["state_path"],
++                        context["plan"]["history_and_context"]["phase_path"]}
++    for row in context_rows:
++        raw = bytes_record(row["before"])
++        original = pin_identity(row["before"]["original"])
++        require(original["path"] in expected_context and row["after"]["path"] == original["path"],
++                "only exact STATE/PHASE generation mapping allowed")
++        require(original["path"] not in mapped, "duplicate context path")
++        mapped[original["path"]] = (original, raw)
++        checked(row["after"])
++        require(Path(row["after"]["path"]).lstat().st_mode == row["mode"], "context mode differs")
++        context_after.append(pin_identity(row["after"]))
++    require(set(mapped) == expected_context, "complete context mapping required")
++    records = []
++    require(type(obs["inputs"]) is list and len(obs["inputs"]) == 45, "exact45 observed inputs required")
++    for ordinal, row in enumerate(obs["inputs"]):
++        item = pin_identity(row)
++        if item["path"] in mapped:
++            original, raw = mapped[item["path"]]
++            require(item == original and bytes_pin(item["path"], raw) == item,
++                    "old context identity lacks exact before bytes")
++            resolution = "EXACT_AUTHORIZED_CONTEXT_BEFORE"
++        else:
++            checked(item)
++            resolution = "CURRENT_EXACT_IDENTITY"
++        records.append({"ordinal": ordinal, "pin": item, "resolution": resolution})
++    for row in source_gate["fixed_inputs"]:
++        checked(row)
++    for row in context["stable_controls"]:
++        checked(row)
++    old_result_pin = next(row for row in obs["inputs"]
++                          if row["path"] == str(PARENT / "implementation/green/result.json"))
++    old_result = decode_json(checked(old_result_pin))
++    source_index = decode_json(checked(old_result["source_before"]))
++    require(len(source_index["sources"]) == 27 and len(source_index["protected"]) == 211,
++            "accepted current27/protected211 authority required")
++    source_records = []
++    for row in source_index["sources"]:
++        raw = checked(row)
++        require(checked(row["physical"]) == base64.b64decode(row["base64"], validate=True) == raw
++                and Path(row["path"]).lstat().st_mode == row["mode"],
++                "current source/full physical/base64/mode differs")
++        source_records.append({**pin_identity(row), "mode": row["mode"], "physical": row["physical"]})
++    for row in source_index["protected"]:
++        checked(row)
++    parent_plan_pin = next(row for row in obs["inputs"] if row["path"] == str(PARENT / "plan.json"))
++    parent_plan = decode_json(checked(parent_plan_pin))
++    old = decode_json(checked(parent_plan["inputs"]["complete_manifest"]))
++    require(len(old["missing_registry35"]) == 35 and len(old["old_absent_sidecars90"]) == 90,
++            "exact old35/90 history sets required")
++    for row in old["missing_registry35"]:
++        require(row["disposition"] == "HISTORICAL_BYTES_CURRENTLY_UNAVAILABLE_R245"
++                and row["current_bytes"] is None and row["current_sha256"] is None
++                and row["hash_match"] is None, "old missing identity/null disposition differs")
++        absence(row["original"]["path"])
++    for row in old["old_absent_sidecars90"]:
++        require(row["exists"] is False and row["is_symlink"] is False, "old sidecar declaration differs")
++        absence(row["path"])
++    groups = old["retained_workspace_databases"]
++    require(type(groups) is dict and set(groups) == {"R242_R248", "R251"}, "two old DB groups required")
++    for name, count in (("R242_R248", 12), ("R251", 18)):
++        require(type(groups[name]) is list and len(groups[name]) == count, "old DB group count differs")
++        for row in groups[name]:
++            checked(row["pin"])
++            require(len(row["sidecars"]) == 3, "three exact old DB sidecar states required")
++            for side in row["sidecars"]:
++                require(side["exists"] is False and side["is_symlink"] is False
++                        and side["pin"] is None, "old DB sidecar must remain absent")
++                absence(side["path"])
++    new_old_dbs = old_result["new_retained_databases"]
++    require(type(new_old_dbs) is list and len(new_old_dbs) == 10, "ten retained R258 DB pairs required")
++    present, absent_count = 0, 0
++    for row in new_old_dbs:
++        require(checked(row["pin"]) == checked(row["archive"]), "R258 DB original/archive bytes differ")
++        require(len(row["sidecars"]) == 3, "three retained R258 sidecars required")
++        for side in row["sidecars"]:
++            if side["exists"]:
++                require(side["is_symlink"] is False
++                        and checked(side["pin"]) == checked(side["archive"]),
++                        "present R258 sidecar pair differs")
++                present += 1
++            else:
++                require(side["is_symlink"] is False and side["pin"] is None, "absent R258 sidecar differs")
++                absence(side["path"])
++                absent_count += 1
++    require((present, absent_count) == (2, 28), "R258 present/absent sidecar counts differ")
++    settlement_pin = next(row for row in obs["inputs"]
++                          if row["path"] == str(PARENT / "root-parent-green7-failure-settlement.json"))
++    settlement = decode_json(checked(settlement_pin))
++    root_old = settlement["root_before"]
++    bytes_record(root_old)
++    root_checks = [row for row in obs["checks"] if row["kind"] == "exact_historical_root_generation"]
++    require(len(root_checks) == 1
++            and pin_identity(root_old["original"]) == pin_identity(root_checks[0]["expected_original"])
++            and pin_identity(root_old["archive"]) == pin_identity(root_checks[0]["archive"]),
++            "R266 exact historical ROOT generation differs")
++    for role_path in (str(ROUNDS / "round158-p6-stage-b-local-temporal-publication-20261013"
++                          / "root-command-ledger.json"),
++                      str(ROUNDS / "round158-p6-stage-b-local-temporal-publication-20261013"
++                          / "command-ledger.json")):
++        record = next(row for row in obs["inputs"] if row["path"] == role_path)
++        entry = decode_json(checked(record))["commands"]["t2_green"]
++        require(entry["used"] == 1 and entry["remaining"] == 0 and entry["state"].startswith("SPENT"),
++                "old original GREEN7 must remain spent")
++    for row in context["sources"].values():
++        checked(row)
++    return {"input_records": records, "fixed_inputs": source_gate["fixed_inputs"],
++            "context_after": context_after, "sources": source_records,
++            "protected": source_index["protected"], "source_authority": old_result["source_before"],
++            "accepted_history_generations": source_index["resolved_generations"],
++            "history_reaudited_as_current": False, "missing_registry35": old["missing_registry35"],
++            "old_absent_sidecars90": old["old_absent_sidecars90"],
++            "old_retained_groups": groups, "R258_retained_DB_pairs": new_old_dbs,
++            "old_ROOT_generation": root_old}
++
++
++def preconditions():
++    require(len(sys.argv) == 2, "one R268 diagnostic key required")
++    name = sys.argv[1]
++    require(name in {"wait_memory_failure", "dual_progress"} and Path.cwd() == ROOT
++            and Path(sys.executable).absolute() == ROOT / ".venv/bin/python",
++            "exact R268 command/interpreter/cwd required")
++    plan_raw, obs_raw = stable_bytes(D / "plan.json"), stable_bytes(D / "input-observation.json")
++    require(hashlib.sha256(plan_raw).hexdigest() == PLAN_SHA
++            and hashlib.sha256(obs_raw).hexdigest() == OBS_SHA, "frozen R268 authority changed")
++    plan, observation = decode_json(plan_raw), decode_json(obs_raw)
++    command = plan["commands"][name]
++    require(command["limits"]["child_wall_seconds"] == 600
++            and command["limits"]["cleanup_total_seconds"] == 15
++            and command["limits"]["raw_stream_threshold_bytes_each"] == 33554432
++            and command["node_count"] == 1, "frozen diagnostic bounds differ")
++    require([a for a in command["child_argv"] if "::" in a] == [command["node"]]
++            and command["child_env"]["BIGSMALL_R158_COMMAND"] == "t2_green"
++            and command["child_env"]["BIGSMALL_R268_COMMAND"] == name,
++            "one exact diagnostic node/fixture sink required")
++    source_path, script_path = D / "source-gate.json", D / "script-gate.json"
++    source_gate, script_gate = read_json(source_path), read_json(script_path)
++    require(source_gate["round"] == script_gate["round"] == "R268"
++            and source_gate["status"] == "VERIFIED_SOURCE_ONLY"
++            and script_gate["status"] == "VERIFIED_BY_ROOT", "ROOT source/runtime gates required")
++    require(pin_identity(source_gate["plan"]) == bytes_pin(D / "plan.json", plan_raw)
++            and pin_identity(source_gate["observation"]) == bytes_pin(D / "input-observation.json", obs_raw)
++            and pin_identity(script_gate["plan"]) == pin_identity(source_gate["plan"])
++            and pin_identity(script_gate["source_gate"]) == _t2_pin(source_path),
++            "source/script plan binding differs")
++    sources = source_gate["sources"]
++    require(set(sources) == {"plugin", "runner"} and script_gate["sources"] == sources
++            and pin_identity(sources["runner"]) == _t2_pin(Path(__file__)),
++            "exact two reviewed R268 sources required")
++    require(script_gate["commands"] == plan["commands"]
++            and script_gate["role_files"] == plan["runner_contract"]["role_files"],
++            "ROOT exact command/role interface differs")
++    for row in (source_gate["input_check"], source_gate["native"], source_gate["interface"]):
++        checked(row)
++    context_manifest = decode_json(checked(source_gate["context_manifest"]))
++    require(context_manifest["round"] == "R268"
++            and context_manifest["status"] == "FACTUAL_CONTEXT_UPDATED"
++            and context_manifest["T2_complete"] is False, "ROOT exact context manifest required")
++    require(type(source_gate["fixed_inputs"]) is list, "finite fixed_inputs required")
++    reservation_dir = D / "root-reservations"
++    require(script_gate["reservation_directory"] == str(reservation_dir), "exact ROOT reservation path required")
++    reservation_path = reservation_dir / (name + ".json")
++    reservation = read_json(reservation_path)
++    require(reservation["round"] == "R268" and reservation["command_id"] == name
++            and type(reservation["reservation_id"]) is str and reservation["reservation_id"]
++            and reservation["command"] == command and reservation["sources"] == sources
++            and pin_identity(reservation["plan"]) == pin_identity(source_gate["plan"])
++            and pin_identity(reservation["source_gate"]) == _t2_pin(source_path)
++            and pin_identity(reservation["script_gate"]) == _t2_pin(script_path)
++            and pin_identity(reservation["context_manifest"]) == pin_identity(source_gate["context_manifest"]),
++            "exact ROOT per-command reservation required")
++    roles = plan["runner_contract"]["role_files"]
++    require(set(roles) == {"ROOT", "AUTHOR"} and len(reservation["role_before"]) == 2,
++            "two new R268 roles required")
++    full_before = {row["original"]["path"]: bytes_record(row) for row in reservation["role_before"]}
++    require(set(full_before) == set(roles.values()), "two exact role-before paths required")
++    root_before, author_before = (decode_json(full_before[roles[k]]) for k in ("ROOT", "AUTHOR"))
++    for role, value in (("ROOT", root_before), ("AUTHOR", author_before)):
++        require(value["round"] == "R268" and value["role"] == role
++                and pin_identity(value["plan"]) == pin_identity(source_gate["plan"])
++                and set(value["commands"]) == set(plan["commands"]), "exact new role identity required")
++        entry = value["commands"][name]
++        require(entry["authorized"] == 1 and entry["used"] == 0 and entry["remaining"] == 1
++                and entry["state"] == "HELD_PENDING_ROOT_SOURCE_INPUT_ARGV_GATE"
++                and entry["command"] == command, "selected new allowance not held")
++    continuation = {"reservation_id": reservation["reservation_id"], "plan": reservation["plan"],
++                    "source_gate": reservation["source_gate"], "script_gate": reservation["script_gate"],
++                    "sources": sources, "command": command}
++    root_expected = copy.deepcopy(root_before)
++    root_entry = root_expected["commands"][name]
++    root_entry.update(state="RESERVED_BY_ROOT", used=1, remaining=0,
++                      reservation_id=reservation["reservation_id"])
++    root_entry.setdefault("continuation", {})["R268"] = continuation
++    require(reservation["root_role_after"]["path"] == roles["ROOT"]
++            and decode_json(checked(reservation["root_role_after"])) == root_expected,
++            "ROOT selected-key transition differs")
++    author_raw = checked(reservation["author_role_before"])
++    require(reservation["author_role_before"]["path"] == roles["AUTHOR"]
++            and author_raw == full_before[roles["AUTHOR"]], "author exact current before differs")
++    stable_controls = [_t2_pin(source_path), _t2_pin(script_path), _t2_pin(reservation_path),
++                       reservation["root_role_after"], source_gate["context_manifest"]]
++    context = {"plan": plan, "observation": observation, "command": command, "name": name,
++               "source_gate": source_gate, "sources": sources, "reservation": reservation,
++               "context_manifest": context_manifest, "stable_controls": stable_controls,
++               "author_before": author_before, "author_raw": author_raw,
++               "author_path": Path(roles["AUTHOR"]), "continuation": continuation}
++    context["before_check"] = authority(context)
++    directory = Path(command["outputs"]["directory"])
++    require(directory == D / "implementation" / name, "exact new diagnostic output directory required")
++    absence(directory)
++    return context
++
++
++def save_before(context):
++    output = Path(context["command"]["outputs"]["directory"])
++    output.mkdir(exist_ok=False)
++    (output / "resources").mkdir(exist_ok=False)
++    Path(context["command"]["outputs"]["passive"]).mkdir(exist_ok=False)
++    sources = []
++    for row in context["before_check"]["sources"]:
++        raw = checked(row)
++        archive = write_bytes(output / "before/sources" / Path(row["path"]).relative_to(ROOT),
++                              raw, row["mode"])
++        sources.append({**row, "physical": archive, "base64": base64.b64encode(raw).decode("ascii")})
++    controls = []
++    for ordinal, row in enumerate(context["stable_controls"] + [
++            bytes_pin(context["author_path"], context["author_raw"])]):
++        raw = checked(row)
++        archive = write_bytes(output / "before/controls" / (str(ordinal) + ".bin"), raw)
++        controls.append({"original": row, "archive": archive, "base64": base64.b64encode(raw).decode("ascii")})
++    return write_json(Path(context["command"]["outputs"]["before"]), {
++        "round": "R268", "command_id": context["name"], "sources": sources,
++        "new_sources": context["sources"], "control_before": controls,
++        "authority_before": context["before_check"], "runtime_scope": "diagnostic only"})
++
++
++def junit_observation(path, node):
++    if not path.exists():
++        return {"pin": None, "available": False, "reason": "No JUnit file actually produced",
++                "tests": None, "failures": None, "errors": None, "skips": None}
++    raw = stable_bytes(path)
++    tree = ET.fromstring(raw)
++    rows = []
++    for element in tree.iter("testcase"):
++        rows.append({"nodeid": element.attrib["classname"].replace(".", "/") + ".py::" + element.attrib["name"],
++                     "attributes": dict(element.attrib),
++                     "outcomes": [{"tag": v.tag, "attributes": dict(v.attrib), "text": v.text}
++                                  for v in element if v.tag in {"failure", "error", "skipped"}]})
++    require([row["nodeid"] for row in rows] == [node], "JUnit selected-node identity differs")
++    return {"pin": bytes_pin(path, raw), "available": True, "records": rows, "tests": len(rows),
++            "failures": sum(any(v["tag"] == "failure" for v in r["outcomes"]) for r in rows),
++            "errors": sum(any(v["tag"] == "error" for v in r["outcomes"]) for r in rows),
++            "skips": sum(any(v["tag"] == "skipped" for v in r["outcomes"]) for r in rows)}
++
++
++def case_observations(summary, index, pid, node, root):
++    sidecars = summary["records"] if summary is not None else []
++    files = []
++    for row in index or []:
++        path = Path(row["path"])
++        if not stat.S_ISREG(row["mode"]) or path.name not in CASE_NAMES:
++            continue
++        raw = stable_bytes(path)
++        require(bytes_pin(path, raw) == pin_identity(row), "diagnostic scenario own pin changed")
++        witnesses = []
++        for sidecar in sidecars:
++            data = sidecar["data"]
++            if type(data) is not dict:
++                continue
++            require(data["pid"] == pid and data["nodeid"] == node, "actual sidecar identity differs")
++            for resource in data.get("resources", []):
++                if (resource.get("kind") == "sqlite_connection" and resource.get("initialized") is True
++                        and resource.get("path") == str(path.parent / "events.db")
++                        and resource.get("pid") == pid):
++                    witnesses.append({"nodeid": data["nodeid"], "pid": data["pid"],
++                                      "sidecar_pin": sidecar["pin"], "resource": resource})
++        files.append({"pin": bytes_pin(path, raw), "base64": base64.b64encode(raw).decode("ascii"),
++                      "relative_path": str(path.relative_to(root)), "witnesses": witnesses,
++                      "actual_owner": ({"nodeid": node, "pid": pid} if witnesses else None),
++                      "unavailable_reason": None if witnesses else "No completed matching actual sidecar witness"})
++    return {"round": "R268", "expected_node": node, "actual_sidecars": sidecars, "scenario_files": files,
++            "whole_run_resource_completeness": None if summary is None else summary["complete_sidecar_set"],
++            "interpretation": "Partial timeout files are actual bytes; no missing owner or resource record is invented."}
++
++
++def passive_observations(directory, pid, name, node, timed_out):
++    rows, summary, errors = [], None, []
++    paths = sorted(directory.iterdir())
++    require(len(paths) <= 25, "plugin file count exceeds24 events+1summary")
++    total = 0
++    for path in paths:
++        raw = stable_bytes(path)
++        total += len(raw)
++        require(total <= 262144, "plugin total byte bound exceeded")
++        data = decode_json(raw)
++        require(data["round"] == "R268" and data["pid"] == pid and data["command_id"] == name,
++                "plugin actual child/command identity differs")
++        if data.get("nodeid") is not None:
++            require(data["nodeid"] == node, "plugin actual node differs")
++        if data["kind"] == "summary":
++            require(summary is None, "duplicate plugin final summary")
++            summary = data
++        rows.append({"pin": bytes_pin(path, raw), "data": data})
++        errors.extend(data.get("observer_errors", []))
++    configured = any(row["data"]["kind"] == "configure" for row in rows)
++    require(configured, "actual plugin configure evidence missing")
++    if summary is None and not timed_out:
++        errors.append({"type": "MissingNormalSummary", "message": "No observed normal plugin finish"})
++    if summary is not None:
++        require(summary["hooks_equal"] is True, "plugin observed changed profile/trace identities")
++    return {"records": rows, "summary": summary, "total_utf8_bytes": total,
++            "observer_errors": errors, "normal_finish_observed": summary is not None,
++            "post_unwind_values_are_non_atomic": True, "legal_RED": False, "GREEN": False}
+ 
+ 
+ def main():
+     context = preconditions()
+-    command, reservation = context["command"], context["reservation"]
+-    paths = {name: Path(value) for name, value in command["output_paths"].items()}
+-    source_before = save_before(context)
++    name, command, reservation = context["name"], context["command"], context["reservation"]
++    paths = {key: Path(value) for key, value in command["outputs"].items()}
++    require(sys.argv == command["runner_argv"][1:], "exact runner argv required")
++    basetemps = [a.split("=", 1)[1] for a in command["child_argv"] if a.startswith("--basetemp=")]
++    require(basetemps == [str(paths["directory"] / "persistent-basetemp")],
++            "one exact new persistent basetemp required")
++    temp = Path(basetemps[0])
++    before_pin = save_before(context)
+     author = copy.deepcopy(context["author_before"])
+-    entry = author["commands"][COMMAND]
+-    entry.update(state="RESERVED", used=1, remaining=0,
+-                 reservation_id=reservation["reservation_id"])
+-    entry.setdefault("continuation", {})["R258"] = context["continuation"]
++    entry = author["commands"][name]
++    entry.update(state="RESERVED", used=1, remaining=0, reservation_id=reservation["reservation_id"])
++    entry.setdefault("continuation", {})["R268"] = context["continuation"]
+     reserved_raw = author_bytes(author)
+     spent = copy.deepcopy(author)
+-    spent["commands"][COMMAND].update(state="SPENT", result_path=str(paths["result"]))
++    spent["commands"][name].update(state="SPENT", result_path=str(paths["result"]))
+     spent_raw = author_bytes(spent)
+-    author_mode = stat.S_IMODE(context["author_path"].lstat().st_mode)
+-    reserved_pin = bytes_pin(context["author_path"], reserved_raw)
++    mode = stat.S_IMODE(context["author_path"].lstat().st_mode)
+     progress = {"replace_attempted": False, "replaced": False, "readback_verified": False}
+     spent_progress = {"replace_attempted": False, "replaced": False, "readback_verified": False}
+     process, previous_term, handler_installed = None, signal.getsignal(signal.SIGTERM), False
+-    captured, index = {}, None
+-    started = time.monotonic()
+-    outcome = {"round": "R258", "command_id": COMMAND, "reservation_id": reservation["reservation_id"],
+-               "attempt": 1, "retry": 0, "started": False, "pid": None,
+-               "child_exit": None, "wrapper_exit": 2, "accepted_command_outcome": False,
+-               "timed_out": False, "interrupted": False, "errors": [], "cleanup": None,
+-               "JUnit": None, "resource_summary": None, "cases": None,
+-               "persistent_index": None, "prerequisite": None, "source_before": source_before,
+-               "source_after": None, "new_retained_databases": None,
+-               "author_reserved": None, "author_spent": None, "author_generation_observations": [],
+-               "reservation_progress": progress, "spent_progress": spent_progress,
+-               "known_author_generations": {
+-                   "mode": author_mode,
+-                   "before": {"pin": bytes_pin(context["author_path"], context["author_raw"]),
+-                              "base64": base64.b64encode(context["author_raw"]).decode("ascii")},
+-                   "reserved": {"pin": reserved_pin, "base64": base64.b64encode(reserved_raw).decode("ascii")},
+-                   "spent": {"pin": bytes_pin(context["author_path"], spent_raw),
+-                             "base64": base64.b64encode(spent_raw).decode("ascii")}},
+-               "runtime_evidence": "One original GREEN7 child; subject to independent ROOT acceptance",
+-               "unobserved": {"OS_handles": None, "external_models": None,
+-                              "GPU_native": None, "network_calls": None}}
+-
+-    def on_term(signum, frame):
+-        outcome["interrupted"] = True
+-        raise InterruptedError("outer TERM: enter the same owned-group cleanup")
++    started, captured = time.monotonic(), {}
++    outcome = {
++        "round": "R268", "command_id": name, "budget_identity": command["budget_identity"],
++        "reservation_id": reservation["reservation_id"], "attempt": 1, "retry": 0,
++        "started": False, "pid": None, "child_exit": None, "wrapper_exit": 2,
++        "timed_out": False, "interrupted": False, "output_limited": False,
++        "raw_stream_threshold_bytes_each": 33554432, "raw_size_observations": [],
++        "errors": [], "cleanup": None, "JUnit": None, "resources": None, "cases": None,
++        "passive": None, "index": None, "before": before_pin, "after": None,
++        "prerequisite": None, "new_retained_databases": None,
++        "diagnostic_complete": False, "evidence_may_be_partial": True,
++        "legal_RED": False, "GREEN": False, "T2_complete": False,
++        "author_reserved": None, "author_spent": None, "author_generation_observations": [],
++        "reservation_progress": progress, "spent_progress": spent_progress,
++        "known_author_generations": {
++            "mode": mode,
++            "before": {"pin": bytes_pin(context["author_path"], context["author_raw"]),
++                       "base64": base64.b64encode(context["author_raw"]).decode("ascii")},
++            "reserved": {"pin": bytes_pin(context["author_path"], reserved_raw),
++                         "base64": base64.b64encode(reserved_raw).decode("ascii")},
++            "spent": {"pin": bytes_pin(context["author_path"], spent_raw),
++                      "base64": base64.b64encode(spent_raw).decode("ascii")}},
++        "unobserved": {"OS_handles": None, "external_models": None, "GPU_native": None,
++                       "network_calls": None, "terminated_node_whole_resource_denominator": None}}
+ 
+     def capture_error(stage, error):
+         outcome["errors"].append({"stage": stage, "type": type(error).__name__,
+@@ -1072,169 +925,188 @@
+ 
+     def generation(stage):
+         raw = stable_bytes(context["author_path"])
+-        mode = stat.S_IMODE(context["author_path"].lstat().st_mode)
+-        state = "UNKNOWN"
+-        if mode == author_mode:
++        actual_mode = stat.S_IMODE(context["author_path"].lstat().st_mode)
++        label = "UNKNOWN"
++        if actual_mode == mode:
+             if raw == context["author_raw"]:
+-                state = "BEFORE"
++                label = "BEFORE"
+             elif raw == reserved_raw:
+-                state = "RESERVED"
++                label = "RESERVED"
+             elif raw == spent_raw:
+-                state = "SPENT"
++                label = "SPENT"
+         outcome["author_generation_observations"].append({
+-            "stage": stage, "state": state, "mode": mode,
++            "stage": stage, "state": label, "mode": actual_mode,
+             "pin": bytes_pin(context["author_path"], raw),
+             "base64": base64.b64encode(raw).decode("ascii")})
+-        return state
+-
+-    # This try begins before reservation. No successful replace or failed readback
+-    # can strand post-consumption work outside same-key finalization.
++        return label
++
++    def on_term(signum, frame):
++        outcome["interrupted"] = True
++        raise InterruptedError("outer TERM: same owned-group cleanup, no rerun")
++
+     try:
+         signal.signal(signal.SIGTERM, on_term)
+         handler_installed = True
+-        cas_author(context["author_path"], context["author_raw"], author, author_mode, progress)
+-        outcome["author_reserved"] = reserved_pin
+-        write_bytes(paths["evidence"] / "before/author-reserved.json", reserved_raw, author_mode)
++        cas_author(context["author_path"], context["author_raw"], author, mode, progress)
++        outcome["author_reserved"] = bytes_pin(context["author_path"], reserved_raw)
++        write_bytes(paths["directory"] / "before/author-reserved.json", reserved_raw, mode)
+         invocation = {
+-            "round": "R258", "command_id": COMMAND, "reservation_id": reservation["reservation_id"],
+-            "argv": command["effective_argv"], "cwd": command["cwd"],
+-            "actual_environment": command["finite_child_environment"], "shell": False,
+-            "start_new_session": True, "stdin": "DEVNULL", "max_attempts": 1,
+-            "timeout_seconds": 600, "cleanup_total_seconds": 15, "TERM_grace_seconds": 5,
+-            "launcher_argv": command["launcher_argv"],
+-            "exact_outer_tool_arguments": reservation["exact_tool_arguments"],
+-            "stdout": str(paths["stdout"]), "stderr": str(paths["stderr"]),
+-            "source_before": source_before, "runner": context["own"],
+-            "root_reservation": _t2_pin(D / "root-parent-green7-reservation.json"),
++            "round": "R268", "command_id": name, "budget_identity": command["budget_identity"],
++            "reservation_id": reservation["reservation_id"], "command": command,
++            "argv": command["child_argv"], "cwd": command["cwd"],
++            "actual_environment": command["child_env"], "shell": False, "start_new_session": True,
++            "stdin": "DEVNULL", "timeout_seconds": 600, "cleanup_total_seconds": 15,
++            "TERM_grace_seconds": 5, "faulthandler_one_shot_seconds": 540,
++            "stream_monitor_interval_max_seconds": 0.1, "raw_stream_threshold_bytes_each": 33554432,
++            "exact_tool_arguments": reservation["exact_tool_arguments"],
+             "source_gate": reservation["source_gate"], "script_gate": reservation["script_gate"],
+-            "author_before": reservation["author_role_before"], "author_reserved": reserved_pin,
+-            "author_mode": author_mode, "control_before": reservation["role_before"],
+-            "context_before": reservation["context_before"],
+-            "context_history": reservation["context_history"],
+-            "input_records": context["before_check"]["input_records"],
+-            "fixture_map": str(PARENT / "implementation/t2/fixture-map.json"),
+-            "resource_sink": str(paths["evidence"] / "resources"),
+-            "resource_caps": context["plan"]["resources"],
+-            "independent_tool_stdout": None, "independent_tool_stderr": None}
++            "sources": context["sources"], "source_before": before_pin,
++            "role_before": reservation["role_before"],
++            "author_reserved": outcome["author_reserved"], "author_mode": mode,
++            "context_manifest": reservation["context_manifest"],
++            "independent_tool_stdout": None, "independent_tool_stderr": None,
++            "old_R158_budget_mutated": False}
+         write_json(paths["invocation"], invocation)
+         with paths["stdout"].open("xb") as stdout, paths["stderr"].open("xb") as stderr:
+-            process = subprocess.Popen(command["effective_argv"], cwd=str(ROOT),
+-                                       env=command["finite_child_environment"],
+-                                       stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+-                                       shell=False, start_new_session=True)
+-            outcome.update(started=True, pid=process.pid)
+-            try:
+-                process.wait(timeout=600)
+-            except subprocess.TimeoutExpired:
+-                outcome["timed_out"] = True
++            before_spawn = time.monotonic()
++            process = subprocess.Popen(command["child_argv"], cwd=command["cwd"],
++                                       env=command["child_env"], stdin=subprocess.DEVNULL,
++                                       stdout=stdout, stderr=stderr, shell=False, start_new_session=True)
++            outcome.update(started=True, pid=process.pid, monotonic_before_spawn=before_spawn,
++                           monotonic_after_spawn=time.monotonic())
++            # A conservative deadline starts before Popen, never later than actual spawn.
++            deadline = before_spawn + 600
++            while process.poll() is None:
++                sizes = {"stdout": os.fstat(stdout.fileno()).st_size,
++                         "stderr": os.fstat(stderr.fileno()).st_size}
++                if any(value > 33554432 for value in sizes.values()):
++                    outcome["output_limited"] = True
++                    outcome["raw_size_observations"].append({
++                        "monotonic": time.monotonic(), "observed_bytes": sizes,
++                        "observed_overshoot_bytes": {k: max(0, v - 33554432) for k, v in sizes.items()}})
++                    break
++                remaining = deadline - time.monotonic()
++                if remaining <= 0:
++                    outcome["timed_out"] = True
++                    break
++                try:
++                    process.wait(timeout=min(0.1, remaining))
++                except subprocess.TimeoutExpired:
++                    pass
+     except BaseException as error:
+-        capture_error("reserved lifecycle", error)
++        capture_error("reserved diagnostic lifecycle", error)
+     finally:
+-        # Ignore a further TERM only during the existing bounded cleanup and
+-        # metadata finalization; SIGKILL/host loss is never claimed recoverable.
+         if handler_installed:
+-            capture("protect owned cleanup", lambda: signal.signal(signal.SIGTERM, signal.SIG_IGN))
++            capture("protect bounded cleanup", lambda: signal.signal(signal.SIGTERM, signal.SIG_IGN))
+         try:
+             if process is not None:
+-                outcome["cleanup"] = capture("owned process-group cleanup", lambda: _t2_cleanup(process))
++                outcome["cleanup"] = capture("owned process group", lambda: _t2_cleanup(process))
+                 outcome["child_exit"] = process.returncode
+-            captured["JUnit"] = capture("JUnit", lambda: parse_junit(paths["JUnit"], command["exact_nodes"]))
+-            outcome["JUnit"] = captured["JUnit"]
+-            captured["prerequisite"] = capture("prerequisite", lambda: prerequisite(
+-                paths["prerequisite"], context["plan"]["prerequisite"], outcome["pid"]))
+-            outcome["prerequisite"] = captured["prerequisite"]
+-            captured["resource_summary"] = capture("actual resource sidecars", lambda: _t2_resources(
+-                paths["evidence"] / "resources", COMMAND, command["effective_argv"], outcome["pid"]))
+-            if captured["resource_summary"] is not None:
+-                outcome["resource_summary"] = capture("resource summary persistence", lambda: write_json(
+-                    paths["resource_summary"], captured["resource_summary"]))
+-            index = capture("persistent nofollow index", lambda: strict_index(paths["basetemp"]))
++            outcome["JUnit"] = capture("actual optional JUnit", lambda: junit_observation(
++                paths["JUnit"], command["node"]))
++            prerequisite_path = Path(command["child_env"]["BIGSMALL_R235_PREREQUISITE_RECORD"])
++            outcome["prerequisite"] = capture("actual R235 prerequisite", lambda: prerequisite(
++                prerequisite_path, {"module": MODULE_PIN}, outcome["pid"]))
++            captured["resources"] = capture("actual frozen sidecars", lambda: diagnostic_resources(
++                paths["directory"] / "resources", "t2_green", command["child_argv"], outcome["pid"]))
++            if captured["resources"] is not None:
++                outcome["resources"] = capture("resource summary persistence", lambda: write_json(
++                    paths["resources"], captured["resources"]))
++            captured["passive"] = capture("bounded passive evidence", lambda: passive_observations(
++                paths["passive"], outcome["pid"], name, command["node"], outcome["timed_out"]))
++            outcome["passive"] = captured["passive"]
++            index = capture("new persistent nofollow index", lambda: strict_index(temp))
+             if index is not None:
+-                outcome["new_retained_databases"] = capture("new actual DB retention", lambda:
+-                    retained_new_databases(index, paths["evidence"]))
+-                outcome["persistent_index"] = capture("persistent index persistence", lambda: write_json(
+-                    paths["file_database_index"], {
+-                        "round": "R258", "root": str(paths["basetemp"]), "records": index,
+-                        "new_retained_databases": outcome["new_retained_databases"], "SQL_executed": False,
+-                        "database_hash_policy": "Each real regular DB has its own stable full-byte SHA.",
+-                        "old_missing_recovered": False}))
+-            if captured["resource_summary"] is not None:
+-                captured["cases"] = capture("actual case binding", lambda: capture_cases(
+-                    captured["resource_summary"], [] if index is None else index, outcome["pid"]))
+-                if captured["cases"] is not None:
+-                    outcome["cases"] = capture("case persistence", lambda: write_json(
+-                        paths["cases"], captured["cases"]))
+-            after = capture("strict source/history/DB postconditions", lambda: verify_authorities(context))
++                outcome["new_retained_databases"] = capture("new raw DB/sidecar retention",
++                    lambda: retained_new_databases(index, paths["directory"]))
++                outcome["index"] = capture("new persistent index persistence", lambda: write_json(
++                    paths["index"], {"round": "R268", "command_id": name, "root": str(temp),
++                                     "records": index, "new_retained_databases": outcome["new_retained_databases"],
++                                     "SQL_executed": False, "old_missing_recovered": False}))
++            outcome["cases"] = capture("available actual cases persistence", lambda: write_json(
++                paths["cases"], case_observations(captured["resources"], index, outcome["pid"],
++                                                 command["node"], temp)))
++            after = capture("strict fixed source/history/old DB postconditions", lambda: authority(context))
+             if after is not None:
+-                capture("strict before-after observation equality",
+-                        lambda: require(after == context["before_check"],
+-                                        "pre/post frozen authority observation differs"))
+-                outcome["source_after"] = capture("source-after persistence",
+-                                                   lambda: write_json(paths["source_after"], after))
+-            for name in ("stdout", "stderr"):
+-                outcome.setdefault("streams", {})[name] = capture(
+-                    "independent child " + name, lambda name=name: _t2_pin(paths[name]))
+-            outcome["file_index"] = capture("full evidence index", lambda: _t2_index(paths["evidence"]))
++                capture("authority before/after equality", lambda: require(
++                    after == context["before_check"], "fixed authority observation changed"))
++                outcome["after"] = capture("source-after persistence", lambda: write_json(paths["after"], after))
++            for stream in ("stdout", "stderr"):
++                outcome.setdefault("streams", {})[stream] = capture("raw " + stream, lambda stream=stream:
++                    _t2_pin(paths[stream]))
++            if outcome.get("streams", {}).get("stderr") is not None:
++                def markers():
++                    raw_stderr = stable_bytes(paths["stderr"])
++                    return {"timeout_text_marker": b"Timeout (" in raw_stderr,
++                            "thread_text_marker": b"Thread 0x" in raw_stderr,
++                            "interpretation": "Raw textual markers only, not proof of deadlock/CPU/time origin"}
++                outcome["faulthandler_raw_markers"] = capture("raw native stack markers", markers)
++            for stream, row in outcome.get("streams", {}).items():
++                if row is not None and row["bytes"] > 33554432:
++                    outcome["output_limited"] = True
++                    outcome["raw_size_observations"].append({
++                        "stage": "after_cleanup", "stream": stream, "observed_bytes": row["bytes"],
++                        "observed_overshoot_bytes": row["bytes"] - 33554432})
++            outcome["file_index"] = capture("evidence nofollow index", lambda: _t2_index(paths["directory"]))
+         finally:
+-            # Optional archive failures are independent of the single actual
+-            # SPENT attempt. A replace/readback error is classified by bytes.
+             try:
+-                state = capture("observe reservation generation", lambda: generation("before-spend"))
+-                if state == "RESERVED":
+-                    outcome["author_reserved"] = reserved_pin
++                label = capture("observe reserved generation", lambda: generation("before-spend"))
++                if label == "RESERVED":
++                    outcome["author_reserved"] = bytes_pin(context["author_path"], reserved_raw)
+                     capture("optional before-spend archive", lambda: write_bytes(
+-                        paths["evidence"] / "before/author-before-spend.json", reserved_raw, author_mode))
+-                    capture("original-key SPENT CAS", lambda: cas_author(
+-                        context["author_path"], reserved_raw, spent, author_mode, spent_progress))
+-                    state = capture("observe spent generation", lambda: generation("after-spend"))
+-                if state == "SPENT":
++                        paths["directory"] / "before/author-before-spend.json", reserved_raw, mode))
++                    capture("selected-key SPENT CAS", lambda: cas_author(
++                        context["author_path"], reserved_raw, spent, mode, spent_progress))
++                    label = capture("observe spent generation", lambda: generation("after-spend"))
++                if label == "SPENT":
+                     outcome["author_spent"] = bytes_pin(context["author_path"], spent_raw)
+                     capture("optional spent archive", lambda: write_bytes(
+-                        paths["evidence"] / "author-spent.json", spent_raw, author_mode))
+-                elif state == "BEFORE" and not progress["replaced"]:
+-                    outcome["author_consumption"] = "NOT_CONSUMED_BEFORE_RESERVATION_FAILURE_NO_RETRY"
++                        paths["directory"] / "author-spent.json", spent_raw, mode))
++                elif label == "BEFORE" and not progress["replaced"]:
++                    outcome["author_consumption"] = "NOT_CONSUMED_NO_RETRY"
+                 else:
+-                    outcome["author_consumption"] = "UNKNOWN_OR_CONFLICTING_ROOT_RECONCILIATION_REQUIRED"
+-                    outcome["errors"].append({
+-                        "stage": "author generation", "type": "UnresolvedGeneration",
+-                        "message": "No retry, refund or overwrite of unknown/unreadable/conflicting role",
+-                        "traceback": None})
++                    outcome["errors"].append({"stage": "author generation", "type": "UnresolvedGeneration",
++                                              "message": "ROOT reconciliation required; no refund/retry/overwrite"})
+             except BaseException as error:
+-                capture_error("independent original-key finalization", error)
++                capture_error("independent author finalization", error)
+             finally:
+                 if handler_installed:
+-                    capture("restore original TERM handler",
+-                            lambda: signal.signal(signal.SIGTERM, previous_term))
++                    capture("restore TERM handler", lambda: signal.signal(signal.SIGTERM, previous_term))
+                 cleanup = outcome["cleanup"]
+-                outcome["accepted_command_outcome"] = bool(
+-                    outcome["started"] and outcome["child_exit"] == 0
+-                    and not outcome["timed_out"] and not outcome["interrupted"] and not outcome["errors"]
++                resource = captured.get("resources") or {}
++                passive = captured.get("passive") or {}
++                junit = outcome["JUnit"] or {}
++                outcome["diagnostic_complete"] = bool(
++                    outcome["started"] and not outcome["errors"] and not outcome["interrupted"]
++                    and not outcome["output_limited"] and outcome["author_spent"] is not None
+                     and cleanup is not None and cleanup["leader_reaped"]
+                     and cleanup["group_remaining"] is False and not cleanup["cleanup_errors"]
+-                    and (captured.get("JUnit") or {}).get("all_passed") is True
+-                    and (captured.get("prerequisite") or {}).get("accepted") is True
+-                    and (captured.get("resource_summary") or {}).get("all_records_valid") is True
+-                    and (captured.get("cases") or {}).get("all_bindings_valid") is True
+-                    and outcome["resource_summary"] is not None and outcome["cases"] is not None
+-                    and outcome["persistent_index"] is not None and outcome["new_retained_databases"] is not None
+-                    and outcome["source_after"] is not None and outcome["author_spent"] is not None)
+-                outcome["wrapper_exit"] = 0 if outcome["accepted_command_outcome"] else 2
++                    and (outcome["timed_out"] or outcome["child_exit"] in {0, 1})
++                    and resource.get("all_records_valid") is True
++                    and not passive.get("observer_errors") and passive.get("records")
++                    and (outcome["timed_out"] or junit.get("available") is True)
++                    and (outcome["prerequisite"] or {}).get("accepted") is True
++                    and outcome["before"] is not None and outcome["after"] is not None
++                    and outcome["index"] is not None and outcome["cases"] is not None
++                    and outcome["streams"]["stdout"] is not None and outcome["streams"]["stderr"] is not None)
++                outcome["evidence_may_be_partial"] = bool(
++                    outcome["timed_out"] or not resource.get("complete_sidecar_set")
++                    or not passive.get("normal_finish_observed"))
++                outcome["wrapper_exit"] = 0 if outcome["diagnostic_complete"] else 2
+                 outcome["elapsed_seconds"] = time.monotonic() - started
+                 outcome["classification"] = (
+-                    "GREEN7_CANDIDATE_REQUIRES_ROOT_INDEPENDENT_ACCEPTANCE"
+-                    if outcome["accepted_command_outcome"] else "UNEXPECTED_OUTCOME_STOP_NEXT_ASTRA")
+-                result_pin = capture("best-available result persistence",
+-                                     lambda: write_json(paths["result"], outcome))
++                    "DIAGNOSTIC_FACTS_ONLY_REQUIRES_ROOT_INTEGRITY_REVIEW"
++                    if outcome["diagnostic_complete"] else "EVIDENCE_OR_INFRASTRUCTURE_FAILURE_STOP_NEXT_ASTRA")
++                result_pin = capture("best-available result persistence", lambda: write_json(paths["result"], outcome))
+                 if result_pin is None:
+                     outcome["wrapper_exit"] = 2
+-                display = {"round": "R258", "command_id": COMMAND,
+-                           "child_exit": outcome["child_exit"], "wrapper_exit": outcome["wrapper_exit"],
+-                           "accepted_command_outcome": outcome["accepted_command_outcome"]
+-                                                       if result_pin is not None else False,
+-                           "timed_out": outcome["timed_out"], "error_count": len(outcome["errors"]),
+-                           "result": result_pin}
++                display = {"round": "R268", "command_id": name, "child_exit": outcome["child_exit"],
++                           "wrapper_exit": outcome["wrapper_exit"], "timed_out": outcome["timed_out"],
++                           "output_limited": outcome["output_limited"],
++                           "diagnostic_complete": outcome["diagnostic_complete"] if result_pin else False,
++                           "result": result_pin, "legal_RED": False, "GREEN": False}
+                 rendered = json.dumps(display, ensure_ascii=False)
+-                require(len((rendered + "\n").encode("utf-8")) <= 6000, "bounded summary exceeded")
++                require(len((rendered + "\n").encode()) <= 6000, "bounded diagnostic console exceeded")
+                 print(rendered)
+     return outcome["wrapper_exit"]
+ 

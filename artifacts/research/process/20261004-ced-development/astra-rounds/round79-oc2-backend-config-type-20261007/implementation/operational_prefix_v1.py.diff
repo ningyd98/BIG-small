@@ -1,0 +1,12 @@
+--- source-before/src/cloud_edge_robot_arm/research/operational_prefix_v1.py
++++ src/cloud_edge_robot_arm/research/operational_prefix_v1.py
+@@ -452,7 +452,8 @@
+         ):
+             raise ValueError("exact issued operational recorder/source handles required")
+         prereg = decode_original_json_v1(record.preregistration_bytes or b"")
+-        if source.backend._config.model_dump(mode="json") != prereg["recipe"]["simulator_config"]:
++        config = source.backend._config
++        if config is None or config.model_dump(mode="json") != prereg["recipe"]["simulator_config"]:
+             raise ValueError("original backend simulator configuration changed")
+         if recorder._current_asset_hash() != prereg["recipe"]["scene"]["sha256"]:
+             raise ValueError("original source scene asset changed")

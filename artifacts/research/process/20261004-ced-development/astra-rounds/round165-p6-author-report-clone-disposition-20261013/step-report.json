@@ -1,0 +1,98 @@
+{
+  "schema_version": "bigsmall.r165-author-step.v1",
+  "round": "R165",
+  "status": "PREPARATION_REPORTS_RESTORED_PENDING_ROOT_RED_GATE",
+  "author": {
+    "agent": "/root/p6_stage_b_sol",
+    "configured_model": "gpt-6.1-sol"
+  },
+  "metadata_patch": {
+    "batch_used": 1,
+    "paths": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/fixture-map.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/budget-report.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/step-report.json",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/executor-report.md"
+    ],
+    "tool": "tools.apply_patch",
+    "actual_return": {}
+  },
+  "metadata_verification": {
+    "used": 1,
+    "remaining": 0,
+    "retries": 0,
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-c",
+      "from pathlib import Path\nimport json, hashlib\ndirectory = Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round165-p6-author-report-clone-disposition-20261013\")\nplan = json.loads((directory / \"plan.json\").read_text())\ntargets = set(plan[\"update_paths\"])\nunchanged = []\nfor item in plan[\"inputs\"]:\n    if item[\"path\"] in targets:\n        continue\n    raw = Path(item[\"path\"]).read_bytes()\n    assert len(raw) == item[\"bytes\"] and hashlib.sha256(raw).hexdigest() == item[\"sha256\"], item[\"path\"]\n    unchanged.append(item[\"path\"])\nledger = json.loads(Path(plan[\"ledger_path\"]).read_text())\nassert len(ledger[\"commands\"]) == 15 and ledger[\"old_budget_resets\"] == 0\nfor name, item in ledger[\"commands\"].items():\n    expected = (1, 0, \"SPENT\") if name == \"mypy_baseline\" else (0, 1, \"HELD\")\n    assert (item[\"used\"], item[\"remaining\"], item[\"state\"]) == expected\ntest = Path(plan[\"test_path\"]).read_bytes()\nassert hashlib.sha256(test[:80556]).hexdigest() == \"c1a68fe0b5ff88bdf604e4859a17da73f61f56b1fd934897f0e66a484d9ae861\"\noutputs = []\nfor name in plan[\"update_paths\"]:\n    raw = Path(name).read_bytes()\n    if name.endswith(\".json\"):\n        report = json.loads(raw)\n        assert report[\"status\"] == \"FIXTURE_REPAIRED_SOURCE_ONLY_PENDING_ROOT_GATE\"\n        assert report[\"R158_budget\"] == {\"used\": 1, \"remaining\": 14, \"mypy_baseline_used\": 1, \"mypy_baseline_remaining\": 0, \"other_14\": \"HELD\"}\n        assert report[\"baseline\"][\"actual_exit\"] == 1 and report[\"baseline\"][\"errors\"] == 72 and report[\"baseline\"][\"files_with_errors\"] == 3 and report[\"baseline\"][\"checked_files\"] == 22\n        assert report[\"new_product_commands_in_R165\"] == 0\n    outputs.append({\"path\": name, \"bytes\": len(raw), \"sha256\": hashlib.sha256(raw).hexdigest()})\nprint(json.dumps({\"unchanged_inputs\": len(unchanged), \"all_valid\": True, \"A_prefix_unchanged\": True, \"R158_used\": 1, \"R158_remaining\": 14, \"new_product_commands_in_R165\": 0, \"outputs\": outputs}, ensure_ascii=False))\n"
+    ],
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "exact_tool_invocation": {
+      "cmd": "'/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '-c' 'from pathlib import Path\nimport json, hashlib\ndirectory = Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round165-p6-author-report-clone-disposition-20261013\")\nplan = json.loads((directory / \"plan.json\").read_text())\ntargets = set(plan[\"update_paths\"])\nunchanged = []\nfor item in plan[\"inputs\"]:\n    if item[\"path\"] in targets:\n        continue\n    raw = Path(item[\"path\"]).read_bytes()\n    assert len(raw) == item[\"bytes\"] and hashlib.sha256(raw).hexdigest() == item[\"sha256\"], item[\"path\"]\n    unchanged.append(item[\"path\"])\nledger = json.loads(Path(plan[\"ledger_path\"]).read_text())\nassert len(ledger[\"commands\"]) == 15 and ledger[\"old_budget_resets\"] == 0\nfor name, item in ledger[\"commands\"].items():\n    expected = (1, 0, \"SPENT\") if name == \"mypy_baseline\" else (0, 1, \"HELD\")\n    assert (item[\"used\"], item[\"remaining\"], item[\"state\"]) == expected\ntest = Path(plan[\"test_path\"]).read_bytes()\nassert hashlib.sha256(test[:80556]).hexdigest() == \"c1a68fe0b5ff88bdf604e4859a17da73f61f56b1fd934897f0e66a484d9ae861\"\noutputs = []\nfor name in plan[\"update_paths\"]:\n    raw = Path(name).read_bytes()\n    if name.endswith(\".json\"):\n        report = json.loads(raw)\n        assert report[\"status\"] == \"FIXTURE_REPAIRED_SOURCE_ONLY_PENDING_ROOT_GATE\"\n        assert report[\"R158_budget\"] == {\"used\": 1, \"remaining\": 14, \"mypy_baseline_used\": 1, \"mypy_baseline_remaining\": 0, \"other_14\": \"HELD\"}\n        assert report[\"baseline\"][\"actual_exit\"] == 1 and report[\"baseline\"][\"errors\"] == 72 and report[\"baseline\"][\"files_with_errors\"] == 3 and report[\"baseline\"][\"checked_files\"] == 22\n        assert report[\"new_product_commands_in_R165\"] == 0\n    outputs.append({\"path\": name, \"bytes\": len(raw), \"sha256\": hashlib.sha256(raw).hexdigest()})\nprint(json.dumps({\"unchanged_inputs\": len(unchanged), \"all_valid\": True, \"A_prefix_unchanged\": True, \"R158_used\": 1, \"R158_remaining\": 14, \"new_product_commands_in_R165\": 0, \"outputs\": outputs}, ensure_ascii=False))\n'",
+      "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "max_output_tokens": 2500
+    },
+    "actual_full_tool_return": {
+      "chunk_id": "7d873f",
+      "wall_time_seconds": 0.00000894,
+      "exit_code": 0,
+      "original_token_count": 336,
+      "output": "{\"unchanged_inputs\": 13, \"all_valid\": true, \"A_prefix_unchanged\": true, \"R158_used\": 1, \"R158_remaining\": 14, \"new_product_commands_in_R165\": 0, \"outputs\": [{\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/fixture-map.json\", \"bytes\": 21285, \"sha256\": \"f7417cdde6b35e4aa2cfb6ba9cf32675198c2b3521e2dfe6368e359fdd2367d8\"}, {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/budget-report.json\", \"bytes\": 11202, \"sha256\": \"3c4c5d3118eff95d0b17f35ffc65a9738c00ffe83d10152674c301d8c9b8f68d\"}, {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/step-report.json\", \"bytes\": 14812, \"sha256\": \"69cb7330c7abc8cb3fa735da18516eb4f87f97b93cc551efb59a874b9a79a229\"}, {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/executor-report.md\", \"bytes\": 1794, \"sha256\": \"5a690cc34b03504537a355b4bbceb81e71b7a1464e9fce47226ead00466f9a34\"}]}\n"
+    },
+    "independent_stdout": null,
+    "independent_stderr": null,
+    "capture_note": "Actual exec_command exposes combined output only; independent streams unavailable, not invented."
+  },
+  "receipt": {
+    "unchanged_inputs": 13,
+    "all_valid": true,
+    "A_prefix_unchanged": true,
+    "R158_used": 1,
+    "R158_remaining": 14,
+    "new_product_commands_in_R165": 0,
+    "outputs": [
+      {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/fixture-map.json",
+        "bytes": 21285,
+        "sha256": "f7417cdde6b35e4aa2cfb6ba9cf32675198c2b3521e2dfe6368e359fdd2367d8"
+      },
+      {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/budget-report.json",
+        "bytes": 11202,
+        "sha256": "3c4c5d3118eff95d0b17f35ffc65a9738c00ffe83d10152674c301d8c9b8f68d"
+      },
+      {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/t1/step-report.json",
+        "bytes": 14812,
+        "sha256": "69cb7330c7abc8cb3fa735da18516eb4f87f97b93cc551efb59a874b9a79a229"
+      },
+      {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/executor-report.md",
+        "bytes": 1794,
+        "sha256": "5a690cc34b03504537a355b4bbceb81e71b7a1464e9fce47226ead00466f9a34"
+      }
+    ]
+  },
+  "R158_budget": {
+    "used": 1,
+    "remaining": 14,
+    "mypy_baseline_used": 1,
+    "mypy_baseline_remaining": 0,
+    "other_14": "HELD"
+  },
+  "baseline": {
+    "actual_exit": 1,
+    "errors": 72,
+    "files_with_errors": 3,
+    "checked_files": 22,
+    "classification": "DIAGNOSTIC_CENSUS_ONLY_NOT_MYPY_PASS",
+    "result_path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/implementation/mypy_baseline/result.json"
+  },
+  "unchanged_scope": "test/helper candidate, runner, ledger, R163 before snapshots, source-index/change-report/diff, original failures and production were not changed by R165.",
+  "new_product_commands_in_R165": 0,
+  "RED_executions": 0,
+  "GREEN_executions": 0,
+  "legacy_PASS": false,
+  "acceptance": "Current preparation metadata restoration only; no T1/B9/native/actual/formal/Git result.",
+  "next": "STOP for ROOT report review and explicit original T1 RED gate."
+}

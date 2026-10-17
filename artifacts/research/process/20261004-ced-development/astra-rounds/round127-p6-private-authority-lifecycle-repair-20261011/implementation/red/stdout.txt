@@ -1,0 +1,1917 @@
+FFFFFFFFF.FFFFFFFF..FF.                                                  [100%]
+=================================== FAILURES ===================================
+__ test_operational_status_cas_cannot_grant_without_session[worker_mismatch] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72eaafcad040>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_operational_status_cas_ca0')
+variant = 'worker_mismatch'
+
+    @pytest.mark.parametrize("variant", ["worker_mismatch", "lease_mismatch", "revoked_cleanup"],
+                             ids=["worker_mismatch", "lease_mismatch", "revoked_cleanup"])
+    def test_operational_status_cas_cannot_grant_without_session(monkeypatch, tmp_path, variant):
+        from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+        from cloud_edge_robot_arm.simulation_runtime.state_machine import ALLOWED_TRANSITIONS
+    
+        def revoked_check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            current = repo.get_job(job.job_id)
+            assert current.status == RuntimeJobStatus.RUNNING
+            assert current.worker_id == worker.worker_id and current.lease_id == session.lease_id
+            assert RuntimeJobStatus.FINALIZING in ALLOWED_TRANSITIONS[current.status]
+            session.invalidate("negative-only-cleanup-test")
+            rejection = _denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
+                job.job_id, expected=current.status, next_status=RuntimeJobStatus.FINALIZING,
+                reason_code="forbidden-success", worker_id=worker.worker_id, lease_id=session.lease_id,
+                expected_worker_id=current.worker_id, expected_lease_id=current.lease_id),
+                status_none_allowed=True)
+            # The legal-state positive challenge is completed before negative cancellation.
+            repo.request_cancel(job.job_id)
+            operations = [
+                lambda: repo.save_metrics(job.job_id, [{"metric": "forbidden-success"}]),
+                lambda: repo.save_artifacts(job.job_id, {"result": "forbidden-success.json"}),
+                lambda: repo.finish_attempt(job.job_id, attempt=1, result="SUCCEEDED", error="",
+                                           artifact_paths={"result": "forbidden-success.json"}),
+            ]
+            payload_rejections = [_denied_with_unchanged_rows(repo, operation) for operation in operations]
+            repo.release_lease(session.lease_id)
+            _evidence(tmp_path, "revoked-legal-source-denials", {"source": current.model_dump(mode="json"),
+                      "positive_rejection": rejection, "payload_rejections": payload_rejections})
+            return variant
+    
+        if variant == "revoked_cleanup":
+            _exercise(monkeypatch, tmp_path, revoked_check)
+            return
+        trials = [(RuntimeJobStatus.RUNNING, RuntimeJobStatus.FINALIZING),
+                  (RuntimeJobStatus.FINALIZING, RuntimeJobStatus.SUCCEEDED)]
+        for source, target in trials:
+            trial_root = tmp_path / source.value.lower()
+            trial_root.mkdir()
+            def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+                current = repo.get_job(job.job_id)
+                assert current.status == RuntimeJobStatus.RUNNING
+                if source == RuntimeJobStatus.FINALIZING:
+                    # This preparation is actual authorized main-thread status CAS, never foreign success.
+                    prepared = repo.update_status_cas(job.job_id, expected=RuntimeJobStatus.RUNNING,
+                        next_status=RuntimeJobStatus.FINALIZING, reason_code="legal-positive-source-preparation",
+                        worker_id=worker.worker_id, lease_id=session.lease_id,
+                        expected_worker_id=current.worker_id, expected_lease_id=current.lease_id)
+                    assert prepared is not None and prepared.status == RuntimeJobStatus.FINALIZING
+                current = repo.get_job(job.job_id)
+                assert current.status == source and target in ALLOWED_TRANSITIONS[source]
+                assert current.worker_id == worker.worker_id and current.lease_id == session.lease_id
+                errors, results = [], []
+                def foreign():
+                    try:
+                        proposed_worker = "changed-worker" if variant == "worker_mismatch" else worker.worker_id
+                        proposed_lease = "changed-lease" if variant == "lease_mismatch" else session.lease_id
+                        results.append(_denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
+                            job.job_id, expected=source, next_status=target, reason_code="forbidden-positive-owner",
+                            worker_id=proposed_worker, lease_id=proposed_lease,
+                            expected_worker_id=current.worker_id, expected_lease_id=current.lease_id),
+                            status_none_allowed=True))
+                    except BaseException as error:
+                        errors.append(error)
+                thread = threading.Thread(target=foreign, name="owned-foreign-status")
+                thread.start()
+                try:
+                    thread.join(timeout=2)
+                    assert not thread.is_alive()
+                    if errors:
+                        raise errors[0]
+                    assert results
+                    _evidence(trial_root, "legal-source-positive-challenge", {
+                        "variant": variant, "source": current.model_dump(mode="json"),
+                        "target": target.value, "rejections": results})
+                finally:
+                    thread.join(timeout=2)
+                return variant
+>           _exercise(monkeypatch, trial_root, check)
+
+tests/test_operational_runtime_closure.py:759: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:143: in _exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+tests/test_operational_runtime_closure.py:751: in check
+    raise errors[0]
+tests/test_operational_runtime_closure.py:738: in foreign
+    results.append(_denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72eaab3d9d60>
+operation = <function test_operational_status_cas_cannot_grant_without_session.<locals>.check.<locals>.foreign.<locals>.<lambda> at 0x72ea826f9f80>
+
+    def _denied_with_unchanged_rows(repo, operation, *, status_none_allowed=False):
+        before = _all_sql(repo)
+        try:
+            value = operation()
+        except _api().OperationalLeaseError as error:
+            rejection = {"kind": "OperationalLeaseError", "reason": str(error)}
+        else:
+>           assert status_none_allowed and value is None, "authority exception required for void mutation"
+E           AssertionError: authority exception required for void mutation
+E           assert (True and SimulationJobRecord(job_id='job-4addd99f08174a5a', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test') is None)
+
+tests/test_operational_runtime_closure.py:675: AssertionError
+___ test_operational_status_cas_cannot_grant_without_session[lease_mismatch] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea8281f920>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_operational_status_cas_ca1')
+variant = 'lease_mismatch'
+
+    @pytest.mark.parametrize("variant", ["worker_mismatch", "lease_mismatch", "revoked_cleanup"],
+                             ids=["worker_mismatch", "lease_mismatch", "revoked_cleanup"])
+    def test_operational_status_cas_cannot_grant_without_session(monkeypatch, tmp_path, variant):
+        from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+        from cloud_edge_robot_arm.simulation_runtime.state_machine import ALLOWED_TRANSITIONS
+    
+        def revoked_check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            current = repo.get_job(job.job_id)
+            assert current.status == RuntimeJobStatus.RUNNING
+            assert current.worker_id == worker.worker_id and current.lease_id == session.lease_id
+            assert RuntimeJobStatus.FINALIZING in ALLOWED_TRANSITIONS[current.status]
+            session.invalidate("negative-only-cleanup-test")
+            rejection = _denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
+                job.job_id, expected=current.status, next_status=RuntimeJobStatus.FINALIZING,
+                reason_code="forbidden-success", worker_id=worker.worker_id, lease_id=session.lease_id,
+                expected_worker_id=current.worker_id, expected_lease_id=current.lease_id),
+                status_none_allowed=True)
+            # The legal-state positive challenge is completed before negative cancellation.
+            repo.request_cancel(job.job_id)
+            operations = [
+                lambda: repo.save_metrics(job.job_id, [{"metric": "forbidden-success"}]),
+                lambda: repo.save_artifacts(job.job_id, {"result": "forbidden-success.json"}),
+                lambda: repo.finish_attempt(job.job_id, attempt=1, result="SUCCEEDED", error="",
+                                           artifact_paths={"result": "forbidden-success.json"}),
+            ]
+            payload_rejections = [_denied_with_unchanged_rows(repo, operation) for operation in operations]
+            repo.release_lease(session.lease_id)
+            _evidence(tmp_path, "revoked-legal-source-denials", {"source": current.model_dump(mode="json"),
+                      "positive_rejection": rejection, "payload_rejections": payload_rejections})
+            return variant
+    
+        if variant == "revoked_cleanup":
+            _exercise(monkeypatch, tmp_path, revoked_check)
+            return
+        trials = [(RuntimeJobStatus.RUNNING, RuntimeJobStatus.FINALIZING),
+                  (RuntimeJobStatus.FINALIZING, RuntimeJobStatus.SUCCEEDED)]
+        for source, target in trials:
+            trial_root = tmp_path / source.value.lower()
+            trial_root.mkdir()
+            def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+                current = repo.get_job(job.job_id)
+                assert current.status == RuntimeJobStatus.RUNNING
+                if source == RuntimeJobStatus.FINALIZING:
+                    # This preparation is actual authorized main-thread status CAS, never foreign success.
+                    prepared = repo.update_status_cas(job.job_id, expected=RuntimeJobStatus.RUNNING,
+                        next_status=RuntimeJobStatus.FINALIZING, reason_code="legal-positive-source-preparation",
+                        worker_id=worker.worker_id, lease_id=session.lease_id,
+                        expected_worker_id=current.worker_id, expected_lease_id=current.lease_id)
+                    assert prepared is not None and prepared.status == RuntimeJobStatus.FINALIZING
+                current = repo.get_job(job.job_id)
+                assert current.status == source and target in ALLOWED_TRANSITIONS[source]
+                assert current.worker_id == worker.worker_id and current.lease_id == session.lease_id
+                errors, results = [], []
+                def foreign():
+                    try:
+                        proposed_worker = "changed-worker" if variant == "worker_mismatch" else worker.worker_id
+                        proposed_lease = "changed-lease" if variant == "lease_mismatch" else session.lease_id
+                        results.append(_denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
+                            job.job_id, expected=source, next_status=target, reason_code="forbidden-positive-owner",
+                            worker_id=proposed_worker, lease_id=proposed_lease,
+                            expected_worker_id=current.worker_id, expected_lease_id=current.lease_id),
+                            status_none_allowed=True))
+                    except BaseException as error:
+                        errors.append(error)
+                thread = threading.Thread(target=foreign, name="owned-foreign-status")
+                thread.start()
+                try:
+                    thread.join(timeout=2)
+                    assert not thread.is_alive()
+                    if errors:
+                        raise errors[0]
+                    assert results
+                    _evidence(trial_root, "legal-source-positive-challenge", {
+                        "variant": variant, "source": current.model_dump(mode="json"),
+                        "target": target.value, "rejections": results})
+                finally:
+                    thread.join(timeout=2)
+                return variant
+>           _exercise(monkeypatch, trial_root, check)
+
+tests/test_operational_runtime_closure.py:759: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:143: in _exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+tests/test_operational_runtime_closure.py:751: in check
+    raise errors[0]
+tests/test_operational_runtime_closure.py:738: in foreign
+    results.append(_denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea8281f9b0>
+operation = <function test_operational_status_cas_cannot_grant_without_session.<locals>.check.<locals>.foreign.<locals>.<lambda> at 0x72ea83156020>
+
+    def _denied_with_unchanged_rows(repo, operation, *, status_none_allowed=False):
+        before = _all_sql(repo)
+        try:
+            value = operation()
+        except _api().OperationalLeaseError as error:
+            rejection = {"kind": "OperationalLeaseError", "reason": str(error)}
+        else:
+>           assert status_none_allowed and value is None, "authority exception required for void mutation"
+E           AssertionError: authority exception required for void mutation
+E           assert (True and SimulationJobRecord(job_id='job-999e4e07f5ac402b', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test') is None)
+
+tests/test_operational_runtime_closure.py:675: AssertionError
+__ test_operational_status_cas_cannot_grant_without_session[revoked_cleanup] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea82842120>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_operational_status_cas_ca2')
+variant = 'revoked_cleanup'
+
+    @pytest.mark.parametrize("variant", ["worker_mismatch", "lease_mismatch", "revoked_cleanup"],
+                             ids=["worker_mismatch", "lease_mismatch", "revoked_cleanup"])
+    def test_operational_status_cas_cannot_grant_without_session(monkeypatch, tmp_path, variant):
+        from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+        from cloud_edge_robot_arm.simulation_runtime.state_machine import ALLOWED_TRANSITIONS
+    
+        def revoked_check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            current = repo.get_job(job.job_id)
+            assert current.status == RuntimeJobStatus.RUNNING
+            assert current.worker_id == worker.worker_id and current.lease_id == session.lease_id
+            assert RuntimeJobStatus.FINALIZING in ALLOWED_TRANSITIONS[current.status]
+            session.invalidate("negative-only-cleanup-test")
+            rejection = _denied_with_unchanged_rows(repo, lambda: repo.update_status_cas(
+                job.job_id, expected=current.status, next_status=RuntimeJobStatus.FINALIZING,
+                reason_code="forbidden-success", worker_id=worker.worker_id, lease_id=session.lease_id,
+                expected_worker_id=current.worker_id, expected_lease_id=current.lease_id),
+                status_none_allowed=True)
+            # The legal-state positive challenge is completed before negative cancellation.
+            repo.request_cancel(job.job_id)
+            operations = [
+                lambda: repo.save_metrics(job.job_id, [{"metric": "forbidden-success"}]),
+                lambda: repo.save_artifacts(job.job_id, {"result": "forbidden-success.json"}),
+                lambda: repo.finish_attempt(job.job_id, attempt=1, result="SUCCEEDED", error="",
+                                           artifact_paths={"result": "forbidden-success.json"}),
+            ]
+            payload_rejections = [_denied_with_unchanged_rows(repo, operation) for operation in operations]
+            repo.release_lease(session.lease_id)
+            _evidence(tmp_path, "revoked-legal-source-denials", {"source": current.model_dump(mode="json"),
+                      "positive_rejection": rejection, "payload_rejections": payload_rejections})
+            return variant
+    
+        if variant == "revoked_cleanup":
+>           _exercise(monkeypatch, tmp_path, revoked_check)
+
+tests/test_operational_runtime_closure.py:713: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:143: in _exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+tests/test_operational_runtime_closure.py:706: in revoked_check
+    payload_rejections = [_denied_with_unchanged_rows(repo, operation) for operation in operations]
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea82849f40>
+operation = <function test_operational_status_cas_cannot_grant_without_session.<locals>.revoked_check.<locals>.<lambda> at 0x72ea827337e0>
+
+    def _denied_with_unchanged_rows(repo, operation, *, status_none_allowed=False):
+        before = _all_sql(repo)
+        try:
+            value = operation()
+        except _api().OperationalLeaseError as error:
+            rejection = {"kind": "OperationalLeaseError", "reason": str(error)}
+        else:
+>           assert status_none_allowed and value is None, "authority exception required for void mutation"
+E           AssertionError: authority exception required for void mutation
+E           assert (False)
+
+tests/test_operational_runtime_closure.py:675: AssertionError
+_____ test_private_transaction_helpers_require_writer_owner[direct_legacy] _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea8272fb90>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_private_transaction_helpe0')
+variant = 'direct_legacy'
+
+    @pytest.mark.parametrize("variant", ["direct_legacy", "forged_tls", "nested_foreign_job"],
+                             ids=["direct_legacy", "forged_tls", "nested_foreign_job"])
+    def test_private_transaction_helpers_require_writer_owner(monkeypatch, tmp_path, variant):
+        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            if variant == "direct_legacy":
+                def operation():
+                    with repo.publication_guard(), repo._legacy_write_transaction():
+                        repo.save_metrics(job.job_id, [{"metric": "private-helper-bypass"}])
+                _denied_with_unchanged_rows(repo, operation)
+            elif variant == "forged_tls":
+                def operation():
+                    with repo.publication_guard(), closing(sqlite3.connect(repo.database_path)) as conn:
+                        conn.row_factory = sqlite3.Row
+                        conn.execute("BEGIN IMMEDIATE")
+                        repo._transactions.connection = conn  # connection-only descriptor, no issuer
+                        try:
+                            repo.save_metrics(job.job_id, [{"metric": "forged-tls"}])
+                            conn.commit()
+                        finally:
+                            repo._transactions.connection = None
+                            if conn.in_transaction:
+                                conn.rollback()
+                _denied_with_unchanged_rows(repo, operation)
+            else:
+                from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+                from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+                foreign = repo.create_job(run_id="actual-second-operational", batch_id="", backend="MUJOCO",
+                    scenario_id=job.scenario_id, control_mode=job.control_mode, seed=job.seed,
+                    manifest_id=job.manifest_id, reproducibility_hash=job.reproducibility_hash,
+                    draft=job.draft, timeout_seconds=job.timeout_seconds, max_attempts=1,
+                    artifact_root="actual-second-operational", source_commit=job.source_commit,
+                    source_tree_hash=job.source_tree_hash)
+                repo.update_status_cas(foreign.job_id, expected=RuntimeJobStatus.CREATED,
+                    next_status=RuntimeJobStatus.QUEUED, reason_code="second-actual-job",
+                    worker_id="", lease_id="")
+                second = SimulationWorker(worker_id="second-actual-worker", backend="MUJOCO", repository=repo,
+                    artifact_root=tmp_path, planner_factory=worker.planner_factory,
+                    visual_role_binding=worker.visual_role_binding, visual_event_repository=worker.visual_event_repository,
+                    visual_robot_id=worker.visual_robot_id, operational_time_mode=MODE)
+                # Stop only physical setup of this genuine second acquired/bound job.
+                backend = received_backend[0]
+                original_initialize = backend.initialize
+                def blocked_physical_setup(config):
+                    raise RuntimeError("SECOND_JOB_SOFTWARE_PHYSICAL_SETUP_BLOCKED")
+                monkeypatch.setattr(backend, "initialize", blocked_physical_setup)
+                try:
+                    try:
+                        second.poll_once()
+                    except module.OperationalLeaseError:
+                        pass  # negative-only cleanup may deny old publication tail
+                finally:
+                    monkeypatch.setattr(backend, "initialize", original_initialize)
+                    if second._operational_lease_session is not None:
+                        module._close_worker_lease_session(second._operational_lease_session, reason="second-test-finally")
+                assert any(r["job_id"] == foreign.job_id for r in _rows(repo))
+                with _tx(repo, session, job) as view:
+                    assert session.evaluate_locked(view).status == "VALID"
+                    before = tuple(tuple(view._connection.execute(f"SELECT * FROM {table} ORDER BY rowid"))
+                                   for table in ("simulation_metrics", "simulation_jobs"))
+                    with pytest.raises(module.OperationalLeaseError):
+                        repo.save_metrics(foreign.job_id, [{"metric": "cross-job-nested"}])
+                    after = tuple(tuple(view._connection.execute(f"SELECT * FROM {table} ORDER BY rowid"))
+                                  for table in ("simulation_metrics", "simulation_jobs"))
+                    assert after == before
+            return variant
+        received_backend = []
+>       _exercise(monkeypatch, tmp_path, check, configure=lambda data: received_backend.append(data[5]))
+
+tests/test_operational_runtime_closure.py:828: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:143: in _exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+tests/test_operational_runtime_closure.py:770: in check
+    _denied_with_unchanged_rows(repo, operation)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea8272f0e0>
+operation = <function test_private_transaction_helpers_require_writer_owner.<locals>.check.<locals>.operation at 0x72ea826f8540>
+
+    def _denied_with_unchanged_rows(repo, operation, *, status_none_allowed=False):
+        before = _all_sql(repo)
+        try:
+            value = operation()
+        except _api().OperationalLeaseError as error:
+            rejection = {"kind": "OperationalLeaseError", "reason": str(error)}
+        else:
+>           assert status_none_allowed and value is None, "authority exception required for void mutation"
+E           AssertionError: authority exception required for void mutation
+E           assert (False)
+
+tests/test_operational_runtime_closure.py:675: AssertionError
+______ test_private_transaction_helpers_require_writer_owner[forged_tls] _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea82849100>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_private_transaction_helpe1')
+variant = 'forged_tls'
+
+    @pytest.mark.parametrize("variant", ["direct_legacy", "forged_tls", "nested_foreign_job"],
+                             ids=["direct_legacy", "forged_tls", "nested_foreign_job"])
+    def test_private_transaction_helpers_require_writer_owner(monkeypatch, tmp_path, variant):
+        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            if variant == "direct_legacy":
+                def operation():
+                    with repo.publication_guard(), repo._legacy_write_transaction():
+                        repo.save_metrics(job.job_id, [{"metric": "private-helper-bypass"}])
+                _denied_with_unchanged_rows(repo, operation)
+            elif variant == "forged_tls":
+                def operation():
+                    with repo.publication_guard(), closing(sqlite3.connect(repo.database_path)) as conn:
+                        conn.row_factory = sqlite3.Row
+                        conn.execute("BEGIN IMMEDIATE")
+                        repo._transactions.connection = conn  # connection-only descriptor, no issuer
+                        try:
+                            repo.save_metrics(job.job_id, [{"metric": "forged-tls"}])
+                            conn.commit()
+                        finally:
+                            repo._transactions.connection = None
+                            if conn.in_transaction:
+                                conn.rollback()
+                _denied_with_unchanged_rows(repo, operation)
+            else:
+                from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+                from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+                foreign = repo.create_job(run_id="actual-second-operational", batch_id="", backend="MUJOCO",
+                    scenario_id=job.scenario_id, control_mode=job.control_mode, seed=job.seed,
+                    manifest_id=job.manifest_id, reproducibility_hash=job.reproducibility_hash,
+                    draft=job.draft, timeout_seconds=job.timeout_seconds, max_attempts=1,
+                    artifact_root="actual-second-operational", source_commit=job.source_commit,
+                    source_tree_hash=job.source_tree_hash)
+                repo.update_status_cas(foreign.job_id, expected=RuntimeJobStatus.CREATED,
+                    next_status=RuntimeJobStatus.QUEUED, reason_code="second-actual-job",
+                    worker_id="", lease_id="")
+                second = SimulationWorker(worker_id="second-actual-worker", backend="MUJOCO", repository=repo,
+                    artifact_root=tmp_path, planner_factory=worker.planner_factory,
+                    visual_role_binding=worker.visual_role_binding, visual_event_repository=worker.visual_event_repository,
+                    visual_robot_id=worker.visual_robot_id, operational_time_mode=MODE)
+                # Stop only physical setup of this genuine second acquired/bound job.
+                backend = received_backend[0]
+                original_initialize = backend.initialize
+                def blocked_physical_setup(config):
+                    raise RuntimeError("SECOND_JOB_SOFTWARE_PHYSICAL_SETUP_BLOCKED")
+                monkeypatch.setattr(backend, "initialize", blocked_physical_setup)
+                try:
+                    try:
+                        second.poll_once()
+                    except module.OperationalLeaseError:
+                        pass  # negative-only cleanup may deny old publication tail
+                finally:
+                    monkeypatch.setattr(backend, "initialize", original_initialize)
+                    if second._operational_lease_session is not None:
+                        module._close_worker_lease_session(second._operational_lease_session, reason="second-test-finally")
+                assert any(r["job_id"] == foreign.job_id for r in _rows(repo))
+                with _tx(repo, session, job) as view:
+                    assert session.evaluate_locked(view).status == "VALID"
+                    before = tuple(tuple(view._connection.execute(f"SELECT * FROM {table} ORDER BY rowid"))
+                                   for table in ("simulation_metrics", "simulation_jobs"))
+                    with pytest.raises(module.OperationalLeaseError):
+                        repo.save_metrics(foreign.job_id, [{"metric": "cross-job-nested"}])
+                    after = tuple(tuple(view._connection.execute(f"SELECT * FROM {table} ORDER BY rowid"))
+                                  for table in ("simulation_metrics", "simulation_jobs"))
+                    assert after == before
+            return variant
+        received_backend = []
+>       _exercise(monkeypatch, tmp_path, check, configure=lambda data: received_backend.append(data[5]))
+
+tests/test_operational_runtime_closure.py:828: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:143: in _exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+tests/test_operational_runtime_closure.py:784: in check
+    _denied_with_unchanged_rows(repo, operation)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea8288ee10>
+operation = <function test_private_transaction_helpers_require_writer_owner.<locals>.check.<locals>.operation at 0x72ea8271a2a0>
+
+    def _denied_with_unchanged_rows(repo, operation, *, status_none_allowed=False):
+        before = _all_sql(repo)
+        try:
+            value = operation()
+        except _api().OperationalLeaseError as error:
+            rejection = {"kind": "OperationalLeaseError", "reason": str(error)}
+        else:
+>           assert status_none_allowed and value is None, "authority exception required for void mutation"
+E           AssertionError: authority exception required for void mutation
+E           assert (False)
+
+tests/test_operational_runtime_closure.py:675: AssertionError
+__ test_private_transaction_helpers_require_writer_owner[nested_foreign_job] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea8274a2d0>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_private_transaction_helpe2')
+variant = 'nested_foreign_job'
+
+    @pytest.mark.parametrize("variant", ["direct_legacy", "forged_tls", "nested_foreign_job"],
+                             ids=["direct_legacy", "forged_tls", "nested_foreign_job"])
+    def test_private_transaction_helpers_require_writer_owner(monkeypatch, tmp_path, variant):
+        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            if variant == "direct_legacy":
+                def operation():
+                    with repo.publication_guard(), repo._legacy_write_transaction():
+                        repo.save_metrics(job.job_id, [{"metric": "private-helper-bypass"}])
+                _denied_with_unchanged_rows(repo, operation)
+            elif variant == "forged_tls":
+                def operation():
+                    with repo.publication_guard(), closing(sqlite3.connect(repo.database_path)) as conn:
+                        conn.row_factory = sqlite3.Row
+                        conn.execute("BEGIN IMMEDIATE")
+                        repo._transactions.connection = conn  # connection-only descriptor, no issuer
+                        try:
+                            repo.save_metrics(job.job_id, [{"metric": "forged-tls"}])
+                            conn.commit()
+                        finally:
+                            repo._transactions.connection = None
+                            if conn.in_transaction:
+                                conn.rollback()
+                _denied_with_unchanged_rows(repo, operation)
+            else:
+                from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+                from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+                foreign = repo.create_job(run_id="actual-second-operational", batch_id="", backend="MUJOCO",
+                    scenario_id=job.scenario_id, control_mode=job.control_mode, seed=job.seed,
+                    manifest_id=job.manifest_id, reproducibility_hash=job.reproducibility_hash,
+                    draft=job.draft, timeout_seconds=job.timeout_seconds, max_attempts=1,
+                    artifact_root="actual-second-operational", source_commit=job.source_commit,
+                    source_tree_hash=job.source_tree_hash)
+                repo.update_status_cas(foreign.job_id, expected=RuntimeJobStatus.CREATED,
+                    next_status=RuntimeJobStatus.QUEUED, reason_code="second-actual-job",
+                    worker_id="", lease_id="")
+                second = SimulationWorker(worker_id="second-actual-worker", backend="MUJOCO", repository=repo,
+                    artifact_root=tmp_path, planner_factory=worker.planner_factory,
+                    visual_role_binding=worker.visual_role_binding, visual_event_repository=worker.visual_event_repository,
+                    visual_robot_id=worker.visual_robot_id, operational_time_mode=MODE)
+                # Stop only physical setup of this genuine second acquired/bound job.
+                backend = received_backend[0]
+                original_initialize = backend.initialize
+                def blocked_physical_setup(config):
+                    raise RuntimeError("SECOND_JOB_SOFTWARE_PHYSICAL_SETUP_BLOCKED")
+                monkeypatch.setattr(backend, "initialize", blocked_physical_setup)
+                try:
+                    try:
+                        second.poll_once()
+                    except module.OperationalLeaseError:
+                        pass  # negative-only cleanup may deny old publication tail
+                finally:
+                    monkeypatch.setattr(backend, "initialize", original_initialize)
+                    if second._operational_lease_session is not None:
+                        module._close_worker_lease_session(second._operational_lease_session, reason="second-test-finally")
+                assert any(r["job_id"] == foreign.job_id for r in _rows(repo))
+                with _tx(repo, session, job) as view:
+                    assert session.evaluate_locked(view).status == "VALID"
+                    before = tuple(tuple(view._connection.execute(f"SELECT * FROM {table} ORDER BY rowid"))
+                                   for table in ("simulation_metrics", "simulation_jobs"))
+                    with pytest.raises(module.OperationalLeaseError):
+                        repo.save_metrics(foreign.job_id, [{"metric": "cross-job-nested"}])
+                    after = tuple(tuple(view._connection.execute(f"SELECT * FROM {table} ORDER BY rowid"))
+                                  for table in ("simulation_metrics", "simulation_jobs"))
+                    assert after == before
+            return variant
+        received_backend = []
+>       _exercise(monkeypatch, tmp_path, check, configure=lambda data: received_backend.append(data[5]))
+
+tests/test_operational_runtime_closure.py:828: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:141: in _exercise
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:217: in poll_once
+    self._execute(lease.job_id, lease.lease_id)
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+module = <module 'cloud_edge_robot_arm.simulation_runtime.operational_lease' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py'>
+session = <cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession object at 0x72ea8274c1a0>
+runtime = <cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x72ea82843260>
+lease_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea8274d070>
+app_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea827488f0>
+worker = <cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x72ea8274c980>
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea82749c40>
+job = SimulationJobRecord(job_id='job-d2b476a5b14e43d1', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+
+    def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+        if variant == "direct_legacy":
+            def operation():
+                with repo.publication_guard(), repo._legacy_write_transaction():
+                    repo.save_metrics(job.job_id, [{"metric": "private-helper-bypass"}])
+            _denied_with_unchanged_rows(repo, operation)
+        elif variant == "forged_tls":
+            def operation():
+                with repo.publication_guard(), closing(sqlite3.connect(repo.database_path)) as conn:
+                    conn.row_factory = sqlite3.Row
+                    conn.execute("BEGIN IMMEDIATE")
+                    repo._transactions.connection = conn  # connection-only descriptor, no issuer
+                    try:
+                        repo.save_metrics(job.job_id, [{"metric": "forged-tls"}])
+                        conn.commit()
+                    finally:
+                        repo._transactions.connection = None
+                        if conn.in_transaction:
+                            conn.rollback()
+            _denied_with_unchanged_rows(repo, operation)
+        else:
+            from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+            from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+            foreign = repo.create_job(run_id="actual-second-operational", batch_id="", backend="MUJOCO",
+                scenario_id=job.scenario_id, control_mode=job.control_mode, seed=job.seed,
+                manifest_id=job.manifest_id, reproducibility_hash=job.reproducibility_hash,
+                draft=job.draft, timeout_seconds=job.timeout_seconds, max_attempts=1,
+                artifact_root="actual-second-operational", source_commit=job.source_commit,
+                source_tree_hash=job.source_tree_hash)
+            repo.update_status_cas(foreign.job_id, expected=RuntimeJobStatus.CREATED,
+                next_status=RuntimeJobStatus.QUEUED, reason_code="second-actual-job",
+                worker_id="", lease_id="")
+            second = SimulationWorker(worker_id="second-actual-worker", backend="MUJOCO", repository=repo,
+                artifact_root=tmp_path, planner_factory=worker.planner_factory,
+                visual_role_binding=worker.visual_role_binding, visual_event_repository=worker.visual_event_repository,
+                visual_robot_id=worker.visual_robot_id, operational_time_mode=MODE)
+            # Stop only physical setup of this genuine second acquired/bound job.
+            backend = received_backend[0]
+            original_initialize = backend.initialize
+            def blocked_physical_setup(config):
+                raise RuntimeError("SECOND_JOB_SOFTWARE_PHYSICAL_SETUP_BLOCKED")
+            monkeypatch.setattr(backend, "initialize", blocked_physical_setup)
+            try:
+                try:
+                    second.poll_once()
+                except module.OperationalLeaseError:
+                    pass  # negative-only cleanup may deny old publication tail
+            finally:
+                monkeypatch.setattr(backend, "initialize", original_initialize)
+                if second._operational_lease_session is not None:
+                    module._close_worker_lease_session(second._operational_lease_session, reason="second-test-finally")
+            assert any(r["job_id"] == foreign.job_id for r in _rows(repo))
+            with _tx(repo, session, job) as view:
+                assert session.evaluate_locked(view).status == "VALID"
+                before = tuple(tuple(view._connection.execute(f"SELECT * FROM {table} ORDER BY rowid"))
+                               for table in ("simulation_metrics", "simulation_jobs"))
+>               with pytest.raises(module.OperationalLeaseError):
+E               Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError'>
+
+tests/test_operational_runtime_closure.py:821: Failed
+____ test_operational_failure_cleanup_closes_actual_attempt[bind_ack_lost] _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea82749ac0>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_operational_failure_clean0')
+variant = 'bind_ack_lost'
+
+    @pytest.mark.parametrize("variant", ["bind_ack_lost", "initial_heartbeat_failed", "acquire_ack_lost"],
+                             ids=["bind_ack_lost", "initial_heartbeat_failed", "acquire_ack_lost"])
+    def test_operational_failure_cleanup_closes_actual_attempt(monkeypatch, tmp_path, variant):
+        data, committed, sessions = _faulted_poll(monkeypatch, tmp_path, variant)
+        repo, job, worker, calls, received, backend, events = data
+        if variant == "bind_ack_lost":
+            assert committed[0]["attempts"] and committed[0]["attempts"][0].ended_at is None
+        else:
+            assert committed[0]["row"]["lifecycle"] == "ACQUIRED"
+>       assert all(a.ended_at is not None and a.result == "INTERRUPTED" for a in repo.list_attempts(job.run_id))
+E       assert False
+E        +  where False = all(<generator object test_operational_failure_cleanup_closes_actual_attempt.<locals>.<genexpr> at 0x72ea82884ad0>)
+
+tests/test_operational_runtime_closure.py:918: AssertionError
+_ test_operational_failure_cleanup_closes_actual_attempt[initial_heartbeat_failed] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea8274ab10>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_operational_failure_clean1')
+variant = 'initial_heartbeat_failed'
+
+    @pytest.mark.parametrize("variant", ["bind_ack_lost", "initial_heartbeat_failed", "acquire_ack_lost"],
+                             ids=["bind_ack_lost", "initial_heartbeat_failed", "acquire_ack_lost"])
+    def test_operational_failure_cleanup_closes_actual_attempt(monkeypatch, tmp_path, variant):
+        data, committed, sessions = _faulted_poll(monkeypatch, tmp_path, variant)
+        repo, job, worker, calls, received, backend, events = data
+        if variant == "bind_ack_lost":
+            assert committed[0]["attempts"] and committed[0]["attempts"][0].ended_at is None
+        else:
+            assert committed[0]["row"]["lifecycle"] == "ACQUIRED"
+        assert all(a.ended_at is not None and a.result == "INTERRUPTED" for a in repo.list_attempts(job.run_id))
+>       assert repo.get_job(job.job_id).status.value not in {"LEASED", "STARTING", "RUNNING", "FINALIZING"}
+E       AssertionError: assert 'LEASED' not in {'FINALIZING', 'LEASED', 'RUNNING', 'STARTING'}
+E        +  where 'LEASED' = <RuntimeJobStatus.LEASED: 'LEASED'>.value
+E        +    where <RuntimeJobStatus.LEASED: 'LEASED'> = SimulationJobRecord(job_id='job-eddb866e46b14659', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test').status
+E        +      where SimulationJobRecord(job_id='job-eddb866e46b14659', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test') = get_job('job-eddb866e46b14659')
+E        +        where get_job = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea8284c080>.get_job
+E        +        and   'job-eddb866e46b14659' = SimulationJobRecord(job_id='job-eddb866e46b14659', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test').job_id
+
+tests/test_operational_runtime_closure.py:919: AssertionError
+___ test_operational_failure_cleanup_closes_actual_attempt[acquire_ack_lost] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea8284c620>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_operational_failure_clean2')
+variant = 'acquire_ack_lost'
+
+    @pytest.mark.parametrize("variant", ["bind_ack_lost", "initial_heartbeat_failed", "acquire_ack_lost"],
+                             ids=["bind_ack_lost", "initial_heartbeat_failed", "acquire_ack_lost"])
+    def test_operational_failure_cleanup_closes_actual_attempt(monkeypatch, tmp_path, variant):
+        data, committed, sessions = _faulted_poll(monkeypatch, tmp_path, variant)
+        repo, job, worker, calls, received, backend, events = data
+        if variant == "bind_ack_lost":
+            assert committed[0]["attempts"] and committed[0]["attempts"][0].ended_at is None
+        else:
+            assert committed[0]["row"]["lifecycle"] == "ACQUIRED"
+>       assert all(a.ended_at is not None and a.result == "INTERRUPTED" for a in repo.list_attempts(job.run_id))
+                                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_runtime_closure.py:918: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:785: in list_attempts
+    rows = conn.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_operational_runtime_closure._CommitCloseConnection object at 0x72ea828514f0>
+sql = '\n                SELECT * FROM simulation_job_attempts\n                WHERE run_id = ?\n                ORDER BY attempt ASC\n                '
+args = (('terminal-test',),), kwargs = {}
+
+    def execute(self, sql, *args, **kwargs):
+>       value = self.connection.execute(sql, *args, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.ProgrammingError: Cannot operate on a closed database.
+
+tests/test_operational_runtime_closure.py:839: ProgrammingError
+__________ test_orphan_terminal_cleanup_covers_durable_phase[revoked] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea829080b0>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_orphan_terminal_cleanup_c1')
+variant = 'revoked'
+
+    @pytest.mark.parametrize("variant", ["committed", "revoked", "terminated"],
+                             ids=["committed", "revoked", "terminated"])
+    def test_orphan_terminal_cleanup_covers_durable_phase(monkeypatch, tmp_path, variant):
+        repo, job, session, original, crash = _unfinished_clone(monkeypatch, tmp_path)
+        module = _api()
+        phases = {"committed": "COMMITTED", "revoked": "REVOKED", "terminated": "TERMINATED"}
+        statuses = {"committed": "RUNNING", "revoked": "CANCEL_REQUESTED", "terminated": "FINALIZING"}
+        with repo.publication_guard(), closing(sqlite3.connect(repo.database_path)) as conn, conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("UPDATE simulation_jobs SET status=? WHERE job_id=?", (statuses[variant], job.job_id))
+            row = dict(conn.execute("SELECT * FROM simulation_operational_leases_v1").fetchone())
+            row.update(durable_phase=phases[variant], lifecycle="TERMINAL" if variant != "committed" else "ATTEMPT_BOUND")
+            row["job_snapshot_json"] = repo._job_snapshot(conn, job.job_id)
+            row["proposed_row_digest"] = module._canonical(row)
+            conn.execute("UPDATE simulation_operational_leases_v1 SET durable_phase=?,lifecycle=?,"
+                         "job_snapshot_json=?,proposed_row_digest=? WHERE job_id=?",
+                         (row["durable_phase"], row["lifecycle"], row["job_snapshot_json"], row["proposed_row_digest"], job.job_id))
+        assert repo.list_attempts(job.run_id)[0].ended_at is None
+        assert session._closed and session._unusable.is_set()
+>       assert repo.terminate_orphaned_operational_attempts() == [job.job_id]
+E       AssertionError: assert [] == ['job-77f1b20d2110455e']
+E         
+E         Right contains one more item: 'job-77f1b20d2110455e'
+E         Use -v to get more diff
+
+tests/test_operational_runtime_closure.py:947: AssertionError
+________ test_orphan_terminal_cleanup_covers_durable_phase[terminated] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea82853ad0>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_orphan_terminal_cleanup_c2')
+variant = 'terminated'
+
+    @pytest.mark.parametrize("variant", ["committed", "revoked", "terminated"],
+                             ids=["committed", "revoked", "terminated"])
+    def test_orphan_terminal_cleanup_covers_durable_phase(monkeypatch, tmp_path, variant):
+        repo, job, session, original, crash = _unfinished_clone(monkeypatch, tmp_path)
+        module = _api()
+        phases = {"committed": "COMMITTED", "revoked": "REVOKED", "terminated": "TERMINATED"}
+        statuses = {"committed": "RUNNING", "revoked": "CANCEL_REQUESTED", "terminated": "FINALIZING"}
+        with repo.publication_guard(), closing(sqlite3.connect(repo.database_path)) as conn, conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("UPDATE simulation_jobs SET status=? WHERE job_id=?", (statuses[variant], job.job_id))
+            row = dict(conn.execute("SELECT * FROM simulation_operational_leases_v1").fetchone())
+            row.update(durable_phase=phases[variant], lifecycle="TERMINAL" if variant != "committed" else "ATTEMPT_BOUND")
+            row["job_snapshot_json"] = repo._job_snapshot(conn, job.job_id)
+            row["proposed_row_digest"] = module._canonical(row)
+            conn.execute("UPDATE simulation_operational_leases_v1 SET durable_phase=?,lifecycle=?,"
+                         "job_snapshot_json=?,proposed_row_digest=? WHERE job_id=?",
+                         (row["durable_phase"], row["lifecycle"], row["job_snapshot_json"], row["proposed_row_digest"], job.job_id))
+        assert repo.list_attempts(job.run_id)[0].ended_at is None
+        assert session._closed and session._unusable.is_set()
+>       assert repo.terminate_orphaned_operational_attempts() == [job.job_id]
+E       AssertionError: assert [] == ['job-59234183140b4a05']
+E         
+E         Right contains one more item: 'job-59234183140b4a05'
+E         Use -v to get more diff
+
+tests/test_operational_runtime_closure.py:947: AssertionError
+________ test_locked_view_issued_bindings_cannot_be_retargeted[purpose] ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea82893b60>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_locked_view_issued_bindin0')
+variant = 'purpose'
+
+    @pytest.mark.parametrize("variant", ["purpose", "operation_digest", "identity_snapshot", "lifecycle_replay"],
+                             ids=["purpose", "operation_digest", "identity_snapshot", "lifecycle_replay"])
+    def test_locked_view_issued_bindings_cannot_be_retargeted(monkeypatch, tmp_path, variant):
+        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+            other = SQLiteSimulationJobRepository(tmp_path / "foreign-issued-view.db")
+            if variant == "purpose":
+                mutations = [("purpose", "heartbeat")]
+            elif variant == "operation_digest":
+                mutations = [("operation_sha256", "0" * 64)]
+            elif variant == "lifecycle_replay":
+                mutations = [("state", "OPEN")]
+            else:
+                mutations = [("_repository", other), ("_session", object()), ("_nonce", "changed"),
+                             ("_thread_id", -1), ("_native_thread_id", -1), ("_connection", None)]
+                for key in ("job_id", "lease_id", "worker_id", "attempt", "generation", "row_revision"):
+                    row = _rows(repo)[0]
+                    row[key] = -1 if key in {"attempt", "generation", "row_revision"} else "changed"
+                    mutations.append(("_snapshot_json", json.dumps(row, sort_keys=True)))
+                mutations.append(("_snapshot_json", "{}"))
+            results = []
+            if variant == "identity_snapshot":
+                original_database = repo.database_path
+                before = _all_sql(repo)
+                with _tx(repo, session, job) as view:
+                    try:
+                        repo.database_path = tmp_path / "retargeted-resolved-database.db"
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        results.append(("resolved_database", "use_rejected"))
+                    finally:
+                        repo.database_path = original_database
+                assert _all_sql(repo) == before
+            for field, value in mutations:
+                before = _all_sql(repo)
+                with _tx(repo, session, job) as view:
+                    if variant == "lifecycle_replay":
+                        assert view._connection.in_transaction and view._proposal is None
+                        assert not session._unusable.is_set()
+                        assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                        (job.job_id,)).fetchone() is not None
+                        module._invalidate_view(view, "actual-owner-terminal-view-transition")
+                        assert view.state == "INVALIDATED" and not session._unusable.is_set()
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        assert view._connection.in_transaction and view._proposal is None
+                        assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                        (job.job_id,)).fetchone() is not None
+                    try:
+                        setattr(view, field, value)
+                    except (AttributeError, module.OperationalLeaseError):
+                        results.append((field, "assignment_rejected"))
+                    else:
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        results.append((field, "use_rejected"))
+                assert _all_sql(repo) == before
+            _evidence(tmp_path, "issued-binding-subcases", {"variant": variant, "results": results})
+            return variant
+>       _exercise(monkeypatch, tmp_path, check)
+
+tests/test_operational_runtime_closure.py:1018: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:141: in _exercise
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:217: in poll_once
+    self._execute(lease.job_id, lease.lease_id)
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+module = <module 'cloud_edge_robot_arm.simulation_runtime.operational_lease' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py'>
+session = <cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession object at 0x72ea82892c30>
+runtime = <cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x72ea82892210>
+lease_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea82891520>
+app_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea835cddc0>
+worker = <cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x72ea82891460>
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea82893320>
+job = SimulationJobRecord(job_id='job-41bab944da2c4270', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+
+    def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+        other = SQLiteSimulationJobRepository(tmp_path / "foreign-issued-view.db")
+        if variant == "purpose":
+            mutations = [("purpose", "heartbeat")]
+        elif variant == "operation_digest":
+            mutations = [("operation_sha256", "0" * 64)]
+        elif variant == "lifecycle_replay":
+            mutations = [("state", "OPEN")]
+        else:
+            mutations = [("_repository", other), ("_session", object()), ("_nonce", "changed"),
+                         ("_thread_id", -1), ("_native_thread_id", -1), ("_connection", None)]
+            for key in ("job_id", "lease_id", "worker_id", "attempt", "generation", "row_revision"):
+                row = _rows(repo)[0]
+                row[key] = -1 if key in {"attempt", "generation", "row_revision"} else "changed"
+                mutations.append(("_snapshot_json", json.dumps(row, sort_keys=True)))
+            mutations.append(("_snapshot_json", "{}"))
+        results = []
+        if variant == "identity_snapshot":
+            original_database = repo.database_path
+            before = _all_sql(repo)
+            with _tx(repo, session, job) as view:
+                try:
+                    repo.database_path = tmp_path / "retargeted-resolved-database.db"
+                    with pytest.raises(module.OperationalLeaseError):
+                        session.evaluate_locked(view)
+                    results.append(("resolved_database", "use_rejected"))
+                finally:
+                    repo.database_path = original_database
+            assert _all_sql(repo) == before
+        for field, value in mutations:
+            before = _all_sql(repo)
+            with _tx(repo, session, job) as view:
+                if variant == "lifecycle_replay":
+                    assert view._connection.in_transaction and view._proposal is None
+                    assert not session._unusable.is_set()
+                    assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                    (job.job_id,)).fetchone() is not None
+                    module._invalidate_view(view, "actual-owner-terminal-view-transition")
+                    assert view.state == "INVALIDATED" and not session._unusable.is_set()
+                    with pytest.raises(module.OperationalLeaseError):
+                        session.evaluate_locked(view)
+                    assert view._connection.in_transaction and view._proposal is None
+                    assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                    (job.job_id,)).fetchone() is not None
+                try:
+                    setattr(view, field, value)
+                except (AttributeError, module.OperationalLeaseError):
+                    results.append((field, "assignment_rejected"))
+                else:
+>                   with pytest.raises(module.OperationalLeaseError):
+E                   Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError'>
+
+tests/test_operational_runtime_closure.py:1012: Failed
+___ test_locked_view_issued_bindings_cannot_be_retargeted[operation_digest] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea82848950>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_locked_view_issued_bindin1')
+variant = 'operation_digest'
+
+    @pytest.mark.parametrize("variant", ["purpose", "operation_digest", "identity_snapshot", "lifecycle_replay"],
+                             ids=["purpose", "operation_digest", "identity_snapshot", "lifecycle_replay"])
+    def test_locked_view_issued_bindings_cannot_be_retargeted(monkeypatch, tmp_path, variant):
+        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+            other = SQLiteSimulationJobRepository(tmp_path / "foreign-issued-view.db")
+            if variant == "purpose":
+                mutations = [("purpose", "heartbeat")]
+            elif variant == "operation_digest":
+                mutations = [("operation_sha256", "0" * 64)]
+            elif variant == "lifecycle_replay":
+                mutations = [("state", "OPEN")]
+            else:
+                mutations = [("_repository", other), ("_session", object()), ("_nonce", "changed"),
+                             ("_thread_id", -1), ("_native_thread_id", -1), ("_connection", None)]
+                for key in ("job_id", "lease_id", "worker_id", "attempt", "generation", "row_revision"):
+                    row = _rows(repo)[0]
+                    row[key] = -1 if key in {"attempt", "generation", "row_revision"} else "changed"
+                    mutations.append(("_snapshot_json", json.dumps(row, sort_keys=True)))
+                mutations.append(("_snapshot_json", "{}"))
+            results = []
+            if variant == "identity_snapshot":
+                original_database = repo.database_path
+                before = _all_sql(repo)
+                with _tx(repo, session, job) as view:
+                    try:
+                        repo.database_path = tmp_path / "retargeted-resolved-database.db"
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        results.append(("resolved_database", "use_rejected"))
+                    finally:
+                        repo.database_path = original_database
+                assert _all_sql(repo) == before
+            for field, value in mutations:
+                before = _all_sql(repo)
+                with _tx(repo, session, job) as view:
+                    if variant == "lifecycle_replay":
+                        assert view._connection.in_transaction and view._proposal is None
+                        assert not session._unusable.is_set()
+                        assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                        (job.job_id,)).fetchone() is not None
+                        module._invalidate_view(view, "actual-owner-terminal-view-transition")
+                        assert view.state == "INVALIDATED" and not session._unusable.is_set()
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        assert view._connection.in_transaction and view._proposal is None
+                        assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                        (job.job_id,)).fetchone() is not None
+                    try:
+                        setattr(view, field, value)
+                    except (AttributeError, module.OperationalLeaseError):
+                        results.append((field, "assignment_rejected"))
+                    else:
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        results.append((field, "use_rejected"))
+                assert _all_sql(repo) == before
+            _evidence(tmp_path, "issued-binding-subcases", {"variant": variant, "results": results})
+            return variant
+>       _exercise(monkeypatch, tmp_path, check)
+
+tests/test_operational_runtime_closure.py:1018: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:141: in _exercise
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:217: in poll_once
+    self._execute(lease.job_id, lease.lease_id)
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+module = <module 'cloud_edge_robot_arm.simulation_runtime.operational_lease' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py'>
+session = <cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession object at 0x72ea8281c170>
+runtime = <cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x72ea831df9b0>
+lease_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea8281d190>
+app_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea8281ed80>
+worker = <cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x72ea82848cb0>
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea82849370>
+job = SimulationJobRecord(job_id='job-0149950b695e4997', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+
+    def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+        other = SQLiteSimulationJobRepository(tmp_path / "foreign-issued-view.db")
+        if variant == "purpose":
+            mutations = [("purpose", "heartbeat")]
+        elif variant == "operation_digest":
+            mutations = [("operation_sha256", "0" * 64)]
+        elif variant == "lifecycle_replay":
+            mutations = [("state", "OPEN")]
+        else:
+            mutations = [("_repository", other), ("_session", object()), ("_nonce", "changed"),
+                         ("_thread_id", -1), ("_native_thread_id", -1), ("_connection", None)]
+            for key in ("job_id", "lease_id", "worker_id", "attempt", "generation", "row_revision"):
+                row = _rows(repo)[0]
+                row[key] = -1 if key in {"attempt", "generation", "row_revision"} else "changed"
+                mutations.append(("_snapshot_json", json.dumps(row, sort_keys=True)))
+            mutations.append(("_snapshot_json", "{}"))
+        results = []
+        if variant == "identity_snapshot":
+            original_database = repo.database_path
+            before = _all_sql(repo)
+            with _tx(repo, session, job) as view:
+                try:
+                    repo.database_path = tmp_path / "retargeted-resolved-database.db"
+                    with pytest.raises(module.OperationalLeaseError):
+                        session.evaluate_locked(view)
+                    results.append(("resolved_database", "use_rejected"))
+                finally:
+                    repo.database_path = original_database
+            assert _all_sql(repo) == before
+        for field, value in mutations:
+            before = _all_sql(repo)
+            with _tx(repo, session, job) as view:
+                if variant == "lifecycle_replay":
+                    assert view._connection.in_transaction and view._proposal is None
+                    assert not session._unusable.is_set()
+                    assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                    (job.job_id,)).fetchone() is not None
+                    module._invalidate_view(view, "actual-owner-terminal-view-transition")
+                    assert view.state == "INVALIDATED" and not session._unusable.is_set()
+                    with pytest.raises(module.OperationalLeaseError):
+                        session.evaluate_locked(view)
+                    assert view._connection.in_transaction and view._proposal is None
+                    assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                    (job.job_id,)).fetchone() is not None
+                try:
+                    setattr(view, field, value)
+                except (AttributeError, module.OperationalLeaseError):
+                    results.append((field, "assignment_rejected"))
+                else:
+>                   with pytest.raises(module.OperationalLeaseError):
+E                   Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError'>
+
+tests/test_operational_runtime_closure.py:1012: Failed
+___ test_locked_view_issued_bindings_cannot_be_retargeted[identity_snapshot] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea831ded80>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_locked_view_issued_bindin2')
+variant = 'identity_snapshot'
+
+    @pytest.mark.parametrize("variant", ["purpose", "operation_digest", "identity_snapshot", "lifecycle_replay"],
+                             ids=["purpose", "operation_digest", "identity_snapshot", "lifecycle_replay"])
+    def test_locked_view_issued_bindings_cannot_be_retargeted(monkeypatch, tmp_path, variant):
+        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+            other = SQLiteSimulationJobRepository(tmp_path / "foreign-issued-view.db")
+            if variant == "purpose":
+                mutations = [("purpose", "heartbeat")]
+            elif variant == "operation_digest":
+                mutations = [("operation_sha256", "0" * 64)]
+            elif variant == "lifecycle_replay":
+                mutations = [("state", "OPEN")]
+            else:
+                mutations = [("_repository", other), ("_session", object()), ("_nonce", "changed"),
+                             ("_thread_id", -1), ("_native_thread_id", -1), ("_connection", None)]
+                for key in ("job_id", "lease_id", "worker_id", "attempt", "generation", "row_revision"):
+                    row = _rows(repo)[0]
+                    row[key] = -1 if key in {"attempt", "generation", "row_revision"} else "changed"
+                    mutations.append(("_snapshot_json", json.dumps(row, sort_keys=True)))
+                mutations.append(("_snapshot_json", "{}"))
+            results = []
+            if variant == "identity_snapshot":
+                original_database = repo.database_path
+                before = _all_sql(repo)
+                with _tx(repo, session, job) as view:
+                    try:
+                        repo.database_path = tmp_path / "retargeted-resolved-database.db"
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        results.append(("resolved_database", "use_rejected"))
+                    finally:
+                        repo.database_path = original_database
+                assert _all_sql(repo) == before
+            for field, value in mutations:
+                before = _all_sql(repo)
+                with _tx(repo, session, job) as view:
+                    if variant == "lifecycle_replay":
+                        assert view._connection.in_transaction and view._proposal is None
+                        assert not session._unusable.is_set()
+                        assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                        (job.job_id,)).fetchone() is not None
+                        module._invalidate_view(view, "actual-owner-terminal-view-transition")
+                        assert view.state == "INVALIDATED" and not session._unusable.is_set()
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        assert view._connection.in_transaction and view._proposal is None
+                        assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                        (job.job_id,)).fetchone() is not None
+                    try:
+                        setattr(view, field, value)
+                    except (AttributeError, module.OperationalLeaseError):
+                        results.append((field, "assignment_rejected"))
+                    else:
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        results.append((field, "use_rejected"))
+                assert _all_sql(repo) == before
+            _evidence(tmp_path, "issued-binding-subcases", {"variant": variant, "results": results})
+            return variant
+>       _exercise(monkeypatch, tmp_path, check)
+
+tests/test_operational_runtime_closure.py:1018: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:141: in _exercise
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:217: in poll_once
+    self._execute(lease.job_id, lease.lease_id)
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+module = <module 'cloud_edge_robot_arm.simulation_runtime.operational_lease' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py'>
+session = <cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession object at 0x72ea8290ac30>
+runtime = <cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x72ea834bf3b0>
+lease_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea8290ad80>
+app_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea834bf830>
+worker = <cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x72ea8290b770>
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea8281f1a0>
+job = SimulationJobRecord(job_id='job-e04b9b59bea3452b', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+
+    def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+        other = SQLiteSimulationJobRepository(tmp_path / "foreign-issued-view.db")
+        if variant == "purpose":
+            mutations = [("purpose", "heartbeat")]
+        elif variant == "operation_digest":
+            mutations = [("operation_sha256", "0" * 64)]
+        elif variant == "lifecycle_replay":
+            mutations = [("state", "OPEN")]
+        else:
+            mutations = [("_repository", other), ("_session", object()), ("_nonce", "changed"),
+                         ("_thread_id", -1), ("_native_thread_id", -1), ("_connection", None)]
+            for key in ("job_id", "lease_id", "worker_id", "attempt", "generation", "row_revision"):
+                row = _rows(repo)[0]
+                row[key] = -1 if key in {"attempt", "generation", "row_revision"} else "changed"
+                mutations.append(("_snapshot_json", json.dumps(row, sort_keys=True)))
+            mutations.append(("_snapshot_json", "{}"))
+        results = []
+        if variant == "identity_snapshot":
+            original_database = repo.database_path
+            before = _all_sql(repo)
+            with _tx(repo, session, job) as view:
+                try:
+                    repo.database_path = tmp_path / "retargeted-resolved-database.db"
+>                   with pytest.raises(module.OperationalLeaseError):
+E                   Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError'>
+
+tests/test_operational_runtime_closure.py:986: Failed
+___ test_locked_view_issued_bindings_cannot_be_retargeted[lifecycle_replay] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea82849d60>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_locked_view_issued_bindin3')
+variant = 'lifecycle_replay'
+
+    @pytest.mark.parametrize("variant", ["purpose", "operation_digest", "identity_snapshot", "lifecycle_replay"],
+                             ids=["purpose", "operation_digest", "identity_snapshot", "lifecycle_replay"])
+    def test_locked_view_issued_bindings_cannot_be_retargeted(monkeypatch, tmp_path, variant):
+        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+            other = SQLiteSimulationJobRepository(tmp_path / "foreign-issued-view.db")
+            if variant == "purpose":
+                mutations = [("purpose", "heartbeat")]
+            elif variant == "operation_digest":
+                mutations = [("operation_sha256", "0" * 64)]
+            elif variant == "lifecycle_replay":
+                mutations = [("state", "OPEN")]
+            else:
+                mutations = [("_repository", other), ("_session", object()), ("_nonce", "changed"),
+                             ("_thread_id", -1), ("_native_thread_id", -1), ("_connection", None)]
+                for key in ("job_id", "lease_id", "worker_id", "attempt", "generation", "row_revision"):
+                    row = _rows(repo)[0]
+                    row[key] = -1 if key in {"attempt", "generation", "row_revision"} else "changed"
+                    mutations.append(("_snapshot_json", json.dumps(row, sort_keys=True)))
+                mutations.append(("_snapshot_json", "{}"))
+            results = []
+            if variant == "identity_snapshot":
+                original_database = repo.database_path
+                before = _all_sql(repo)
+                with _tx(repo, session, job) as view:
+                    try:
+                        repo.database_path = tmp_path / "retargeted-resolved-database.db"
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        results.append(("resolved_database", "use_rejected"))
+                    finally:
+                        repo.database_path = original_database
+                assert _all_sql(repo) == before
+            for field, value in mutations:
+                before = _all_sql(repo)
+                with _tx(repo, session, job) as view:
+                    if variant == "lifecycle_replay":
+                        assert view._connection.in_transaction and view._proposal is None
+                        assert not session._unusable.is_set()
+                        assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                        (job.job_id,)).fetchone() is not None
+                        module._invalidate_view(view, "actual-owner-terminal-view-transition")
+                        assert view.state == "INVALIDATED" and not session._unusable.is_set()
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        assert view._connection.in_transaction and view._proposal is None
+                        assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                        (job.job_id,)).fetchone() is not None
+                    try:
+                        setattr(view, field, value)
+                    except (AttributeError, module.OperationalLeaseError):
+                        results.append((field, "assignment_rejected"))
+                    else:
+                        with pytest.raises(module.OperationalLeaseError):
+                            session.evaluate_locked(view)
+                        results.append((field, "use_rejected"))
+                assert _all_sql(repo) == before
+            _evidence(tmp_path, "issued-binding-subcases", {"variant": variant, "results": results})
+            return variant
+>       _exercise(monkeypatch, tmp_path, check)
+
+tests/test_operational_runtime_closure.py:1018: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:141: in _exercise
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:217: in poll_once
+    self._execute(lease.job_id, lease.lease_id)
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+module = <module 'cloud_edge_robot_arm.simulation_runtime.operational_lease' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py'>
+session = <cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession object at 0x72ea82851b50>
+runtime = <cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x72ea82909f40>
+lease_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea82852c30>
+app_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea828538f0>
+worker = <cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x72ea82853290>
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea8290b860>
+job = SimulationJobRecord(job_id='job-ecc6f6ef57c542e2', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+
+    def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+        other = SQLiteSimulationJobRepository(tmp_path / "foreign-issued-view.db")
+        if variant == "purpose":
+            mutations = [("purpose", "heartbeat")]
+        elif variant == "operation_digest":
+            mutations = [("operation_sha256", "0" * 64)]
+        elif variant == "lifecycle_replay":
+            mutations = [("state", "OPEN")]
+        else:
+            mutations = [("_repository", other), ("_session", object()), ("_nonce", "changed"),
+                         ("_thread_id", -1), ("_native_thread_id", -1), ("_connection", None)]
+            for key in ("job_id", "lease_id", "worker_id", "attempt", "generation", "row_revision"):
+                row = _rows(repo)[0]
+                row[key] = -1 if key in {"attempt", "generation", "row_revision"} else "changed"
+                mutations.append(("_snapshot_json", json.dumps(row, sort_keys=True)))
+            mutations.append(("_snapshot_json", "{}"))
+        results = []
+        if variant == "identity_snapshot":
+            original_database = repo.database_path
+            before = _all_sql(repo)
+            with _tx(repo, session, job) as view:
+                try:
+                    repo.database_path = tmp_path / "retargeted-resolved-database.db"
+                    with pytest.raises(module.OperationalLeaseError):
+                        session.evaluate_locked(view)
+                    results.append(("resolved_database", "use_rejected"))
+                finally:
+                    repo.database_path = original_database
+            assert _all_sql(repo) == before
+        for field, value in mutations:
+            before = _all_sql(repo)
+            with _tx(repo, session, job) as view:
+                if variant == "lifecycle_replay":
+                    assert view._connection.in_transaction and view._proposal is None
+                    assert not session._unusable.is_set()
+                    assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                    (job.job_id,)).fetchone() is not None
+                    module._invalidate_view(view, "actual-owner-terminal-view-transition")
+                    assert view.state == "INVALIDATED" and not session._unusable.is_set()
+                    with pytest.raises(module.OperationalLeaseError):
+                        session.evaluate_locked(view)
+                    assert view._connection.in_transaction and view._proposal is None
+                    assert view._connection.execute("SELECT job_id FROM simulation_jobs WHERE job_id=?",
+                                                    (job.job_id,)).fetchone() is not None
+                try:
+                    setattr(view, field, value)
+                except (AttributeError, module.OperationalLeaseError):
+                    results.append((field, "assignment_rejected"))
+                else:
+>                   with pytest.raises(module.OperationalLeaseError):
+E                   Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError'>
+
+tests/test_operational_runtime_closure.py:1012: Failed
+______ test_confirmation_consumption_keeps_previous_bound[exact_deadline] ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea8274b5f0>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_confirmation_consumption_0')
+variant = 'exact_deadline'
+
+    @pytest.mark.parametrize("variant", ["exact_deadline", "after_deadline"],
+                             ids=["exact_deadline", "after_deadline"])
+    def test_confirmation_consumption_keeps_previous_bound(monkeypatch, tmp_path, variant):
+        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            lease_raw.now = 1_000_000_000
+            with _tx(repo, session, job, "heartbeat") as view:
+                proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+                ack = repo._commit_operational_proposal(view, proposal)
+                previous, proposed = proposal._previous, proposal._segment
+                assert previous is not None and previous.deadline.deadline_ns < proposed.deadline.deadline_ns
+                held, release, ready = threading.Event(), threading.Event(), threading.Event()
+                original_get = session._queue.get
+                seen, errors = [], []
+                def delayed_get(*args, **kwargs):
+                    ready.set()
+                    request = original_get(*args, **kwargs)
+                    if request.kind == "consume":
+                        seen.append(request)
+                        held.set()
+                        if not release.wait(session.wait_cap + 1):
+                            raise RuntimeError("owned consume barrier not released")
+                    return request
+                monkeypatch.setattr(session._queue, "get", delayed_get)
+                assert ready.wait(session.wait_cap), "broker did not enter consume queue seam"
+                def advance_original_bound():
+                    try:
+                        assert held.wait(session.wait_cap + 1)
+                        lease_raw.now = previous.deadline.deadline_ns + (variant == "after_deadline")
+                        assert lease_raw.now < proposed.deadline.deadline_ns
+                    except BaseException as error:
+                        errors.append(error)
+                    finally:
+                        release.set()
+                thread = threading.Thread(target=advance_original_bound, name="owned-consume-counter")
+                thread.start()
+                try:
+                    with pytest.raises(module.OperationalLeaseError):
+                        session.confirm_committed(ack)
+                    assert held.is_set() and seen and not errors
+                    assert session._unusable.is_set()
+                    with pytest.raises(module.OperationalLeaseError):
+                        repo.heartbeat_lease(session.lease_id, lease_ttl_seconds=worker.lease_ttl_seconds)
+                    _evidence(tmp_path, "prior-bound-consumption", {"prior": previous.receipt(),
+                              "proposed": proposed.receipt(), "current_ns": lease_raw.now,
+                              "broker_thread": session.domain.owner_thread_id})
+                    return variant
+                finally:
+                    release.set()
+                    thread.join(timeout=session.wait_cap + 1)
+                    assert not thread.is_alive()
+                    monkeypatch.setattr(session._queue, "get", original_get)
+>       _exercise(monkeypatch, tmp_path, check)
+
+tests/test_operational_runtime_closure.py:1072: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:141: in _exercise
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:217: in poll_once
+    self._execute(lease.job_id, lease.lease_id)
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+module = <module 'cloud_edge_robot_arm.simulation_runtime.operational_lease' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py'>
+session = <cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession object at 0x72ea8286f2f0>
+runtime = <cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x72ea8274af30>
+lease_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea8286e660>
+app_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea8290b4d0>
+worker = <cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x72ea8286f560>
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea8286f260>
+job = SimulationJobRecord(job_id='job-f0738b40aca84761', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+
+    def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+        lease_raw.now = 1_000_000_000
+        with _tx(repo, session, job, "heartbeat") as view:
+            proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+            ack = repo._commit_operational_proposal(view, proposal)
+            previous, proposed = proposal._previous, proposal._segment
+            assert previous is not None and previous.deadline.deadline_ns < proposed.deadline.deadline_ns
+            held, release, ready = threading.Event(), threading.Event(), threading.Event()
+            original_get = session._queue.get
+            seen, errors = [], []
+            def delayed_get(*args, **kwargs):
+                ready.set()
+                request = original_get(*args, **kwargs)
+                if request.kind == "consume":
+                    seen.append(request)
+                    held.set()
+                    if not release.wait(session.wait_cap + 1):
+                        raise RuntimeError("owned consume barrier not released")
+                return request
+            monkeypatch.setattr(session._queue, "get", delayed_get)
+            assert ready.wait(session.wait_cap), "broker did not enter consume queue seam"
+            def advance_original_bound():
+                try:
+                    assert held.wait(session.wait_cap + 1)
+                    lease_raw.now = previous.deadline.deadline_ns + (variant == "after_deadline")
+                    assert lease_raw.now < proposed.deadline.deadline_ns
+                except BaseException as error:
+                    errors.append(error)
+                finally:
+                    release.set()
+            thread = threading.Thread(target=advance_original_bound, name="owned-consume-counter")
+            thread.start()
+            try:
+>               with pytest.raises(module.OperationalLeaseError):
+E               Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError'>
+
+tests/test_operational_runtime_closure.py:1057: Failed
+______ test_confirmation_consumption_keeps_previous_bound[after_deadline] ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea8286d130>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_confirmation_consumption_1')
+variant = 'after_deadline'
+
+    @pytest.mark.parametrize("variant", ["exact_deadline", "after_deadline"],
+                             ids=["exact_deadline", "after_deadline"])
+    def test_confirmation_consumption_keeps_previous_bound(monkeypatch, tmp_path, variant):
+        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+            lease_raw.now = 1_000_000_000
+            with _tx(repo, session, job, "heartbeat") as view:
+                proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+                ack = repo._commit_operational_proposal(view, proposal)
+                previous, proposed = proposal._previous, proposal._segment
+                assert previous is not None and previous.deadline.deadline_ns < proposed.deadline.deadline_ns
+                held, release, ready = threading.Event(), threading.Event(), threading.Event()
+                original_get = session._queue.get
+                seen, errors = [], []
+                def delayed_get(*args, **kwargs):
+                    ready.set()
+                    request = original_get(*args, **kwargs)
+                    if request.kind == "consume":
+                        seen.append(request)
+                        held.set()
+                        if not release.wait(session.wait_cap + 1):
+                            raise RuntimeError("owned consume barrier not released")
+                    return request
+                monkeypatch.setattr(session._queue, "get", delayed_get)
+                assert ready.wait(session.wait_cap), "broker did not enter consume queue seam"
+                def advance_original_bound():
+                    try:
+                        assert held.wait(session.wait_cap + 1)
+                        lease_raw.now = previous.deadline.deadline_ns + (variant == "after_deadline")
+                        assert lease_raw.now < proposed.deadline.deadline_ns
+                    except BaseException as error:
+                        errors.append(error)
+                    finally:
+                        release.set()
+                thread = threading.Thread(target=advance_original_bound, name="owned-consume-counter")
+                thread.start()
+                try:
+                    with pytest.raises(module.OperationalLeaseError):
+                        session.confirm_committed(ack)
+                    assert held.is_set() and seen and not errors
+                    assert session._unusable.is_set()
+                    with pytest.raises(module.OperationalLeaseError):
+                        repo.heartbeat_lease(session.lease_id, lease_ttl_seconds=worker.lease_ttl_seconds)
+                    _evidence(tmp_path, "prior-bound-consumption", {"prior": previous.receipt(),
+                              "proposed": proposed.receipt(), "current_ns": lease_raw.now,
+                              "broker_thread": session.domain.owner_thread_id})
+                    return variant
+                finally:
+                    release.set()
+                    thread.join(timeout=session.wait_cap + 1)
+                    assert not thread.is_alive()
+                    monkeypatch.setattr(session._queue, "get", original_get)
+>       _exercise(monkeypatch, tmp_path, check)
+
+tests/test_operational_runtime_closure.py:1072: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:141: in _exercise
+    assert worker.poll_once()
+           ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:217: in poll_once
+    self._execute(lease.job_id, lease.lease_id)
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:294: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:615: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:660: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1016: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:129: in run
+    callback(module, session, runtime, broker_raw[0], app_raw[0], worker, repo, job)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+module = <module 'cloud_edge_robot_arm.simulation_runtime.operational_lease' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py'>
+session = <cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession object at 0x72ea8288e240>
+runtime = <cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x72ea82909f70>
+lease_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea8288cef0>
+app_raw = <tests.test_operational_runtime_closure._Counter object at 0x72ea8288c260>
+worker = <cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x72ea8288cf20>
+repo = <cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x72ea8288eb10>
+job = SimulationJobRecord(job_id='job-0d658546af7d440c', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+
+    def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
+        lease_raw.now = 1_000_000_000
+        with _tx(repo, session, job, "heartbeat") as view:
+            proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+            ack = repo._commit_operational_proposal(view, proposal)
+            previous, proposed = proposal._previous, proposal._segment
+            assert previous is not None and previous.deadline.deadline_ns < proposed.deadline.deadline_ns
+            held, release, ready = threading.Event(), threading.Event(), threading.Event()
+            original_get = session._queue.get
+            seen, errors = [], []
+            def delayed_get(*args, **kwargs):
+                ready.set()
+                request = original_get(*args, **kwargs)
+                if request.kind == "consume":
+                    seen.append(request)
+                    held.set()
+                    if not release.wait(session.wait_cap + 1):
+                        raise RuntimeError("owned consume barrier not released")
+                return request
+            monkeypatch.setattr(session._queue, "get", delayed_get)
+            assert ready.wait(session.wait_cap), "broker did not enter consume queue seam"
+            def advance_original_bound():
+                try:
+                    assert held.wait(session.wait_cap + 1)
+                    lease_raw.now = previous.deadline.deadline_ns + (variant == "after_deadline")
+                    assert lease_raw.now < proposed.deadline.deadline_ns
+                except BaseException as error:
+                    errors.append(error)
+                finally:
+                    release.set()
+            thread = threading.Thread(target=advance_original_bound, name="owned-consume-counter")
+            thread.start()
+            try:
+>               with pytest.raises(module.OperationalLeaseError):
+E               Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError'>
+
+tests/test_operational_runtime_closure.py:1057: Failed
+__________ test_restart_terminates_without_reissue[recovery_service] ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea82841be0>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_restart_terminates_withou0')
+variant = 'recovery_service'
+
+    @pytest.mark.parametrize(
+        "variant", ["recovery_service", "manual_retry"], ids=["recovery_service", "manual_retry"]
+    )
+    def test_restart_terminates_without_reissue(monkeypatch, tmp_path, variant):
+        new, job, ended_session, original, crash = _unfinished_clone(monkeypatch, tmp_path)
+        module = _api()
+        from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+        from cloud_edge_robot_arm.simulation_runtime.recovery import ArtifactRecoveryService
+    
+        before_attempts = new.list_attempts(job.run_id)
+        assert len(before_attempts) == 1 and before_attempts[0].ended_at is None
+        assert ended_session._closed and ended_session._unusable.is_set()
+        if variant == "recovery_service":
+            ArtifactRecoveryService(
+                repository=new, artifact_root=tmp_path, requeue_recoverable=True
+            ).recover_interrupted_jobs()
+        else:
+            new.terminate_orphaned_operational_attempts()
+            with pytest.raises(ValueError, match="operational"):
+                new.retry_job(job.job_id)
+        current = new.get_job(job.job_id)
+        assert current.status != RuntimeJobStatus.QUEUED
+        assert (
+            new.update_status_cas(
+                job.job_id,
+                expected=current.status,
+                next_status=RuntimeJobStatus.QUEUED,
+                reason_code="forbidden-requeue",
+                worker_id="",
+                lease_id="",
+            )
+            is None
+        )
+        recovered = new.list_attempts(job.run_id)
+        assert len(recovered) == 1 and recovered[0].attempt == before_attempts[0].attempt
+        assert recovered[0].ended_at is not None and recovered[0].result == "INTERRUPTED"
+        assert _rows(new)[0]["original_acquisition_json"] == crash["original_acquisition_json"]
+        assert original["hard_deadlines"] and original["task_origin_event_id"]
+        with pytest.raises(module.OperationalLeaseError):
+            ended_session.evaluate_locked(dict(crash))
+        # A still-live foreign identity is UNKNOWN; registry absence alone is insufficient.
+        with new.publication_guard(), closing(sqlite3.connect(new.database_path)) as conn, conn:
+            conn.execute(
+                "UPDATE simulation_operational_leases_v1 SET pid=?, epoch=?, durable_phase='COMMITTED'",
+                (os.getppid(), "unknown-foreign-live"),
+            )
+        unknown_before = _all_sql(new)
+        assert new.terminate_orphaned_operational_attempts() == []
+        assert _all_sql(new) == unknown_before
+        # Legacy recovery remains explicitly requeueable, independent of this ended epoch.
+        legacy_path = tmp_path / "legacy"
+        legacy_path.mkdir()
+        from tests.test_rgbd_runtime_control import _queued_closed_loop_worker
+    
+        legacy, legacy_job, legacy_worker = _queued_closed_loop_worker(legacy_path)
+        lease = legacy.acquire_lease(worker_id="legacy", backend="MUJOCO", lease_ttl_seconds=30)
+        assert lease is not None
+        legacy.start_attempt(legacy_job.job_id, worker_id="legacy")
+        with legacy.publication_guard(), closing(sqlite3.connect(legacy.database_path)) as conn, conn:
+            conn.execute(
+                "UPDATE simulation_jobs "
+                "SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE job_id=?",
+                (legacy_job.job_id,),
+            )
+        ArtifactRecoveryService(
+            repository=legacy, artifact_root=legacy_path, requeue_recoverable=True
+        ).recover_interrupted_jobs()
+        assert legacy.get_job(legacy_job.job_id).status == RuntimeJobStatus.QUEUED
+        _evidence(
+            tmp_path,
+            "restart",
+            {
+                "variant": variant,
+                "attempts": before_attempts,
+>               "current": current.model_dump(mode="json"),
+                           ^^^^^^^^^^^^^^^^^^
+            },
+        )
+E       AttributeError: 'SimulationJobRecord' object has no attribute 'model_dump'
+
+tests/test_operational_runtime_closure.py:582: AttributeError
+____________ test_restart_terminates_without_reissue[manual_retry] _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72ea8288f350>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r127-red/test_restart_terminates_withou1')
+variant = 'manual_retry'
+
+    @pytest.mark.parametrize(
+        "variant", ["recovery_service", "manual_retry"], ids=["recovery_service", "manual_retry"]
+    )
+    def test_restart_terminates_without_reissue(monkeypatch, tmp_path, variant):
+        new, job, ended_session, original, crash = _unfinished_clone(monkeypatch, tmp_path)
+        module = _api()
+        from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+        from cloud_edge_robot_arm.simulation_runtime.recovery import ArtifactRecoveryService
+    
+        before_attempts = new.list_attempts(job.run_id)
+        assert len(before_attempts) == 1 and before_attempts[0].ended_at is None
+        assert ended_session._closed and ended_session._unusable.is_set()
+        if variant == "recovery_service":
+            ArtifactRecoveryService(
+                repository=new, artifact_root=tmp_path, requeue_recoverable=True
+            ).recover_interrupted_jobs()
+        else:
+            new.terminate_orphaned_operational_attempts()
+            with pytest.raises(ValueError, match="operational"):
+                new.retry_job(job.job_id)
+        current = new.get_job(job.job_id)
+        assert current.status != RuntimeJobStatus.QUEUED
+        assert (
+            new.update_status_cas(
+                job.job_id,
+                expected=current.status,
+                next_status=RuntimeJobStatus.QUEUED,
+                reason_code="forbidden-requeue",
+                worker_id="",
+                lease_id="",
+            )
+            is None
+        )
+        recovered = new.list_attempts(job.run_id)
+        assert len(recovered) == 1 and recovered[0].attempt == before_attempts[0].attempt
+        assert recovered[0].ended_at is not None and recovered[0].result == "INTERRUPTED"
+        assert _rows(new)[0]["original_acquisition_json"] == crash["original_acquisition_json"]
+        assert original["hard_deadlines"] and original["task_origin_event_id"]
+        with pytest.raises(module.OperationalLeaseError):
+            ended_session.evaluate_locked(dict(crash))
+        # A still-live foreign identity is UNKNOWN; registry absence alone is insufficient.
+        with new.publication_guard(), closing(sqlite3.connect(new.database_path)) as conn, conn:
+            conn.execute(
+                "UPDATE simulation_operational_leases_v1 SET pid=?, epoch=?, durable_phase='COMMITTED'",
+                (os.getppid(), "unknown-foreign-live"),
+            )
+        unknown_before = _all_sql(new)
+        assert new.terminate_orphaned_operational_attempts() == []
+        assert _all_sql(new) == unknown_before
+        # Legacy recovery remains explicitly requeueable, independent of this ended epoch.
+        legacy_path = tmp_path / "legacy"
+        legacy_path.mkdir()
+        from tests.test_rgbd_runtime_control import _queued_closed_loop_worker
+    
+        legacy, legacy_job, legacy_worker = _queued_closed_loop_worker(legacy_path)
+        lease = legacy.acquire_lease(worker_id="legacy", backend="MUJOCO", lease_ttl_seconds=30)
+        assert lease is not None
+        legacy.start_attempt(legacy_job.job_id, worker_id="legacy")
+        with legacy.publication_guard(), closing(sqlite3.connect(legacy.database_path)) as conn, conn:
+            conn.execute(
+                "UPDATE simulation_jobs "
+                "SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE job_id=?",
+                (legacy_job.job_id,),
+            )
+        ArtifactRecoveryService(
+            repository=legacy, artifact_root=legacy_path, requeue_recoverable=True
+        ).recover_interrupted_jobs()
+        assert legacy.get_job(legacy_job.job_id).status == RuntimeJobStatus.QUEUED
+        _evidence(
+            tmp_path,
+            "restart",
+            {
+                "variant": variant,
+                "attempts": before_attempts,
+>               "current": current.model_dump(mode="json"),
+                           ^^^^^^^^^^^^^^^^^^
+            },
+        )
+E       AttributeError: 'SimulationJobRecord' object has no attribute 'model_dump'
+
+tests/test_operational_runtime_closure.py:582: AttributeError
+=============================== warnings summary ===============================
+tests/test_operational_runtime_closure.py::test_operational_status_cas_cannot_grant_without_session[worker_mismatch]
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round127-p6-private-authority-lifecycle-repair-20261011/implementation/red/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_operational_runtime_closure.py::test_operational_status_cas_cannot_grant_without_session[worker_mismatch]
+FAILED tests/test_operational_runtime_closure.py::test_operational_status_cas_cannot_grant_without_session[lease_mismatch]
+FAILED tests/test_operational_runtime_closure.py::test_operational_status_cas_cannot_grant_without_session[revoked_cleanup]
+FAILED tests/test_operational_runtime_closure.py::test_private_transaction_helpers_require_writer_owner[direct_legacy]
+FAILED tests/test_operational_runtime_closure.py::test_private_transaction_helpers_require_writer_owner[forged_tls]
+FAILED tests/test_operational_runtime_closure.py::test_private_transaction_helpers_require_writer_owner[nested_foreign_job]
+FAILED tests/test_operational_runtime_closure.py::test_operational_failure_cleanup_closes_actual_attempt[bind_ack_lost]
+FAILED tests/test_operational_runtime_closure.py::test_operational_failure_cleanup_closes_actual_attempt[initial_heartbeat_failed]
+FAILED tests/test_operational_runtime_closure.py::test_operational_failure_cleanup_closes_actual_attempt[acquire_ack_lost]
+FAILED tests/test_operational_runtime_closure.py::test_orphan_terminal_cleanup_covers_durable_phase[revoked]
+FAILED tests/test_operational_runtime_closure.py::test_orphan_terminal_cleanup_covers_durable_phase[terminated]
+FAILED tests/test_operational_runtime_closure.py::test_locked_view_issued_bindings_cannot_be_retargeted[purpose]
+FAILED tests/test_operational_runtime_closure.py::test_locked_view_issued_bindings_cannot_be_retargeted[operation_digest]
+FAILED tests/test_operational_runtime_closure.py::test_locked_view_issued_bindings_cannot_be_retargeted[identity_snapshot]
+FAILED tests/test_operational_runtime_closure.py::test_locked_view_issued_bindings_cannot_be_retargeted[lifecycle_replay]
+FAILED tests/test_operational_runtime_closure.py::test_confirmation_consumption_keeps_previous_bound[exact_deadline]
+FAILED tests/test_operational_runtime_closure.py::test_confirmation_consumption_keeps_previous_bound[after_deadline]
+FAILED tests/test_operational_runtime_closure.py::test_restart_terminates_without_reissue[recovery_service]
+FAILED tests/test_operational_runtime_closure.py::test_restart_terminates_without_reissue[manual_retry]
+19 failed, 4 passed, 1 warning in 27.02s

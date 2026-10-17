@@ -1,0 +1,83 @@
+{
+  "round": "R268",
+  "command_id": "wait_memory_failure",
+  "status": "ROOT_INDEPENDENT_INTEGRITY_ACCEPTED_BUDGET_SPENT",
+  "source_full": {
+    "status": "fulfilled",
+    "value": {
+      "key": "full",
+      "args": {
+        "cmd": "cat artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-settle-wait-diagnostic.py",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "max_output_tokens": 4500,
+        "yield_time_ms": 10000
+      },
+      "actual": {
+        "chunk_id": "1d3986",
+        "wall_time_seconds": 0.00000702,
+        "exit_code": 0,
+        "original_token_count": 2088,
+        "output": "\"\"\"ROOT independent integrity review and selected first diagnostic settlement.\"\"\"\nfrom pathlib import Path\nimport base64,copy,hashlib,json,os,stat,xml.etree.ElementTree as ET\nD=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017\"); RUN=D/\"implementation/wait_memory_failure\"; name=\"wait_memory_failure\"\ncount=0\ndef pin(path,raw): return {\"path\":str(path),\"bytes\":len(raw),\"sha256\":hashlib.sha256(raw).hexdigest()}\ndef checked(p):\n global count\n q=Path(p[\"path\"]); info=q.lstat(); assert stat.S_ISREG(info.st_mode)\n raw=q.read_bytes(); assert len(raw)==p[\"bytes\"] and hashlib.sha256(raw).hexdigest()==p[\"sha256\"]\n count+=1; return raw\ndef encoded(v): return (json.dumps(v,ensure_ascii=False,allow_nan=False,indent=2)+\"\\n\").encode()\ndef save(path,raw,mode=None):\n path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)\n with path.open(\"xb\") as h:\n  assert h.write(raw)==len(raw); h.flush(); os.fsync(h.fileno())\n if mode is not None: os.chmod(path,stat.S_IMODE(mode))\n assert path.read_bytes()==raw\n return pin(path,raw)\ndef before_bytes(row):\n raw=base64.b64decode(row[\"base64\"],validate=True)\n assert checked(row[\"archive\"])==raw and pin(row[\"original\"][\"path\"],raw)=={k:row[\"original\"][k] for k in (\"path\",\"bytes\",\"sha256\")}\n return raw\nrp={\"path\":str(RUN/\"result.json\"),\"bytes\":358632,\"sha256\":\"65f982817ebe5daa7db29e083625936f2ab037dba818c8bc82eeb37dad51933f\"}\ntp={\"path\":str(RUN/\"actual-tool-return.json\"),\"bytes\":4740,\"sha256\":\"6baa963b793057e7a7782c748e45f68038d877a7a1e68e2a9502465995386828\"}\nr=json.loads(checked(rp)); t=json.loads(checked(tp))\nreservation_path=D/\"root-reservations/wait_memory_failure.json\"\nres=json.loads(checked({\"path\":str(reservation_path),\"bytes\":55157,\"sha256\":\"c62e2a6a0eb4ee89cb0ffb3480630207f141c3d1e58891f6932ade44fd605d96\"}))\nassert t[\"round\"]==r[\"round\"]==\"R268\" and t[\"command_id\"]==r[\"command_id\"]==name\nassert t[\"attempt\"]==r[\"attempt\"]==1 and t[\"retry\"]==r[\"retry\"]==0\nassert t[\"invocation\"]==res[\"exact_tool_arguments\"]\nassert t[\"final\"]==t[\"actual_tool_return\"]==t[\"completion\"]==t[\"polls\"][-1]\nassert len(t[\"polls\"])==len(t[\"poll_invocations\"])==4 and t[\"initial\"][\"session_id\"]==72334\nfor args in t[\"poll_invocations\"]:\n assert args[\"session_id\"]==72334 and args[\"chars\"]==\"\" and 0<args[\"yield_time_ms\"]<=60000\nassert t[\"final\"][\"exit_code\"]==r[\"wrapper_exit\"]==0\nmessage=json.loads(t[\"final\"][\"output\"]); assert message[\"result\"]==rp\nfor key in (\"child_exit\",\"wrapper_exit\",\"timed_out\",\"output_limited\",\"diagnostic_complete\"): assert message[key]==r[key]\nassert r[\"child_exit\"]==1 and r[\"timed_out\"] is False and r[\"output_limited\"] is False\nassert r[\"diagnostic_complete\"] is True and r[\"errors\"]==[] and r[\"T2_complete\"] is False\nassert r[\"cleanup\"][\"leader_reaped\"] is True and r[\"cleanup\"][\"group_remaining\"] is False and r[\"cleanup\"][\"cleanup_errors\"]==[]\ninvocation=json.loads(checked(pin(RUN/\"invocation.json\",(RUN/\"invocation.json\").read_bytes())))\nassert invocation[\"command\"]==res[\"command\"] and invocation[\"exact_tool_arguments\"]==t[\"invocation\"]\nfor value in r[\"streams\"].values(): checked(value)\njunit=ET.fromstring(checked(r[\"JUnit\"][\"pin\"])); assert len(list(junit.iter(\"testcase\")))==1 and len(list(junit.iter(\"failure\")))==1\nbefore=json.loads(checked(r[\"before\"])); after=json.loads(checked(r[\"after\"]))\nassert before[\"authority_before\"]==after and len(before[\"sources\"])==27 and len(after[\"protected\"])==211\nfor row in before[\"sources\"]:\n raw=checked(row)\n assert raw==checked(row[\"physical\"])==base64.b64decode(row[\"base64\"],validate=True)\n assert Path(row[\"path\"]).lstat().st_mode==row[\"mode\"]\nfor row in after[\"protected\"]: checked(row)\nsg=json.loads(checked(res[\"source_gate\"]))\nfor item in sg[\"fixed_inputs\"]: checked(item)\nfor item in sg[\"sources\"].values(): checked(item)\nresources=json.loads(checked(r[\"resources\"]))\nassert resources[\"all_records_valid\"] is True and resources[\"validation_errors\"]==[] and resources[\"complete_sidecar_set\"] is True\nassert len(resources[\"records\"])==1 and resources[\"actual_node_counts\"]=={res[\"command\"][\"node\"]:1}\nobjects=[]\nfor row in resources[\"records\"]:\n data=json.loads(checked(row[\"pin\"])); assert data==row[\"data\"] and data[\"pid\"]==r[\"pid\"] and data[\"nodeid\"]==res[\"command\"][\"node\"]\n objects.extend(data[\"resources\"])\nassert len(objects)==resources[\"counts\"][\"allocation_attempts\"]==530\nassert sum(x[\"initialized\"] is True for x in objects)==resources[\"counts\"][\"initialized\"]==528\nassert all(x[\"cleanup_observed\"] is True for x in objects)\nassert r[\"passive\"][\"observer_errors\"]==[] and r[\"passive\"][\"summary\"][\"hooks_equal\"] is True\nfor row in r[\"passive\"][\"records\"]: assert json.loads(checked(row[\"pin\"]))==row[\"data\"]\nassert r[\"prerequisite\"][\"accepted\"] is True\nchecked(r[\"prerequisite\"][\"pin\"])\ncases=json.loads(checked(r[\"cases\"])); index=json.loads(checked(r[\"index\"]))\nfor row in cases[\"scenario_files\"]:\n raw=checked(row[\"pin\"]); assert raw==base64.b64decode(row[\"base64\"],validate=True)\nfor row in r[\"new_retained_databases\"]:\n assert checked(row[\"pin\"])==checked(row[\"archive\"])\n for side in row[\"sidecars\"]:\n  if side[\"exists\"]: assert checked(side[\"pin\"])==checked(side[\"archive\"])\n  else:\n   q=Path(side[\"path\"]); assert not q.exists() and not q.is_symlink() and side[\"pin\"] is None\nauthor_path=Path(res[\"author_role_before\"][\"path\"])\nold_author=next(row for row in res[\"role_before\"] if row[\"original\"][\"path\"]==str(author_path))\nauthor_before=before_bytes(old_author); author_expected=json.loads(author_before)\nentry=author_expected[\"commands\"][name]\nentry.update(state=\"RESERVED\",used=1,remaining=0,reservation_id=res[\"reservation_id\"])\ncontinuation={\"reservation_id\":res[\"reservation_id\"],\"plan\":res[\"plan\"],\"source_gate\":res[\"source_gate\"],\"script_gate\":res[\"script_gate\"],\"sources\":res[\"sources\"],\"command\":res[\"command\"]}\nentry.setdefault(\"continuation\",{})[\"R268\"]=continuation\nentry.update(state=\"SPENT\",result_path=str(RUN/\"result.json\"))\nexpected_author_raw=encoded(author_expected)\nassert expected_author_raw==checked(r[\"author_spent\"])==base64.b64decode(r[\"known_author_generations\"][\"spent\"][\"base64\"],validate=True)\nassert author_path.lstat().st_mode==old_author[\"mode\"]\nroot_path=Path(res[\"root_role_after\"][\"path\"]); root_raw=checked(res[\"root_role_after\"]); mode=root_path.lstat().st_mode\nroot=json.loads(root_raw); assert root[\"commands\"][name][\"state\"]==\"RESERVED_BY_ROOT\"\nfor row in before[\"control_before\"]:\n raw=before_bytes(row)\n if row[\"original\"][\"path\"]==str(author_path): assert raw==author_before\n else: assert checked(row[\"original\"])==raw\narchive=save(D/\"before/settlements/wait_memory_failure/root-command-ledger.json\",root_raw,mode)\nroot_before={\"original\":pin(root_path,root_raw),\"archive\":archive,\"mode\":mode,\"base64\":base64.b64encode(root_raw).decode(\"ascii\")}\nsettled=copy.deepcopy(root)\nsettled[\"commands\"][name].update(state=\"SPENT_DIAGNOSTIC_CAPTURE\",result_path=rp[\"path\"],outcome={\"result\":rp,\"actual_tool_return\":tp,\"child_exit\":1,\"wrapper_exit\":0,\"timed_out\":False,\"diagnostic_complete\":True,\"T2_complete\":False})\nafter_raw=encoded(settled); temporary=root_path.with_name(root_path.name+\".wait-settled.next\")\nsave(temporary,after_raw,mode)\nassert root_path.read_bytes()==root_raw and root_path.lstat().st_mode==mode\nos.replace(temporary,root_path)\nassert root_path.read_bytes()==after_raw and root_path.lstat().st_mode==mode\nreport={\"round\":\"R268\",\"command_id\":name,\"status\":\"INDEPENDENT_DIAGNOSTIC_INTEGRITY_ACCEPTED_SPENT\",\"checks\":count,\"result\":rp,\"actual_tool_return\":tp,\"root_before\":root_before,\"root_after\":pin(root_path,after_raw),\"author_after\":r[\"author_spent\"],\"child_exit\":1,\"wrapper_exit\":0,\"timed_out\":False,\"diagnostic_complete\":True,\"missing_raises_tb_lineno\":4309,\"backend\":\"memory\",\"domain\":\"D_lease\",\"unwind_counter_values_are_non_atomic\":True,\"resource_objects_observed\":530,\"initialized_observed\":528,\"cleanup_observed\":530,\"new_DB_count\":len(r[\"new_retained_databases\"]),\"T2_complete\":False,\"native_accepted\":False,\"formal_accepted\":False}\nreport_pin=save(D/\"root-wait-memory-independent-acceptance.json\",encoded(report))\nprint(json.dumps({\"checks\":count,\"acceptance\":report_pin,\"root_after\":report[\"root_after\"],\"author_after\":r[\"author_spent\"],\"child_exit\":1,\"diagnostic_integrity_accepted\":True,\"T2_complete\":False},ensure_ascii=False))\n"
+      }
+    }
+  },
+  "source_hash": {
+    "status": "fulfilled",
+    "value": {
+      "key": "hash",
+      "args": {
+        "cmd": "sha256sum -- artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-settle-wait-diagnostic.py",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "max_output_tokens": 300,
+        "yield_time_ms": 10000
+      },
+      "actual": {
+        "chunk_id": "fa8e60",
+        "wall_time_seconds": 0.000008759,
+        "exit_code": 0,
+        "original_token_count": 53,
+        "output": "10d5b568dd2eed49ab8e11f8e8304e3760b2107d24a4a8ee8b37d5dafcb1fc08  artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-settle-wait-diagnostic.py\n"
+      }
+    }
+  },
+  "actual": {
+    "args": {
+      "cmd": "env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=5s 120s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-settle-wait-diagnostic.py'",
+      "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "max_output_tokens": 1800,
+      "yield_time_ms": 10000
+    },
+    "actual": {
+      "chunk_id": "70d558",
+      "wall_time_seconds": 0.149261158,
+      "exit_code": 0,
+      "original_token_count": 255,
+      "output": "{\"checks\": 358, \"acceptance\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-wait-memory-independent-acceptance.json\", \"bytes\": 37673, \"sha256\": \"920003f57cd6c9b7fbe081e34819aba833cf2e930d26bd783bc4e93f54259a6f\"}, \"root_after\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-command-ledger.json\", \"bytes\": 27431, \"sha256\": \"43fe42625584a92a96e9066879bf4838b99944bb662a06a083f4beeb5a2cf380\"}, \"author_after\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/implementation/command-ledger.json\", \"bytes\": 26488, \"sha256\": \"c6d28851c68ba1a03ea61bddff1e819857f88dd01721ff50e4da9ab438caffbf\"}, \"child_exit\": 1, \"diagnostic_integrity_accepted\": true, \"T2_complete\": false}\n"
+    }
+  },
+  "acceptance": {
+    "checks": 358,
+    "acceptance": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-wait-memory-independent-acceptance.json",
+      "bytes": 37673,
+      "sha256": "920003f57cd6c9b7fbe081e34819aba833cf2e930d26bd783bc4e93f54259a6f"
+    },
+    "root_after": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/root-command-ledger.json",
+      "bytes": 27431,
+      "sha256": "43fe42625584a92a96e9066879bf4838b99944bb662a06a083f4beeb5a2cf380"
+    },
+    "author_after": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round268-p6-t2-targeted-failure-evidence-20261017/implementation/command-ledger.json",
+      "bytes": 26488,
+      "sha256": "c6d28851c68ba1a03ea61bddff1e819857f88dd01721ff50e4da9ab438caffbf"
+    },
+    "child_exit": 1,
+    "diagnostic_integrity_accepted": true,
+    "T2_complete": false
+  },
+  "facts": "Test failed as expected diagnostic observation, child1/wrapper0, no timeout; no GREEN/T2 claim. Existing ROOT and author first new key spent; dual remains independently held.",
+  "new_runtime_or_retry": 0,
+  "independent_stdout": null,
+  "independent_stderr": null
+}

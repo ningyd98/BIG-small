@@ -1,0 +1,97 @@
+{
+  "schema_version": "bigsmall.r183-step-report.v1",
+  "round": "R183",
+  "actual_author": "/root/astra_status_plan",
+  "author_model": "gpt-6-astra",
+  "status": "METADATA_SERIALIZATION_RECOVERY_COMPLETE_R182_ACTIVATION_PENDING",
+  "original_failure_preserved": true,
+  "root_reservation_id": "r183-five-artifact-json-md-contract-verification-once",
+  "structured_save": {
+    "attempts": 1,
+    "retries": 0,
+    "actual_returned_object": {}
+  },
+  "verification": {
+    "attempts": 1,
+    "retries": 0,
+    "actual_exit": 0,
+    "full_actual_tool_return": {
+      "chunk_id": "6c0473",
+      "wall_time_seconds": 0.00000916,
+      "exit_code": 0,
+      "original_token_count": 191,
+      "output": "{\"status\": \"R183_SERIALIZATION_VERIFIED_METADATA_ONLY\", \"unchanged_inputs\": 3, \"output_pins\": [{\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.md\", \"bytes\": 58609, \"sha256\": \"32ab6a1a3b01340f3a1628e5e32ee02630d1e4e22d93da759287a840e92ca2e2\"}, {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.json\", \"bytes\": 136098, \"sha256\": \"82100de3713beccb61ceeb0da87d40d3cbb6a4552890c6c72337d899fad96c5d\"}], \"inputs\": 255, \"commands\": 6, \"edges\": 4, \"red\": 8, \"green\": 13, \"product_commands\": 0, \"R182_activated\": false}\n"
+    },
+    "submission": {
+      "cmd": "'/usr/bin/timeout' '--signal=TERM' '--kill-after=5s' '60s' '/usr/bin/env' '-i' 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' 'LANG=C.UTF-8' 'PYTHONDONTWRITEBYTECODE=1' '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '-c' 'from pathlib import Path\nimport hashlib\nimport json\n\nexpected = [\n    (\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round183-p6-t1-astra-plan-cross-cell-binding-20261014/original-failure.json\", 953, '\\''7cba990a7df62b7bc0f7ac264698cae52f67bfd1492fc80a1e89c771d65b3519'\\''),\n    (\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round183-p6-t1-astra-plan-cross-cell-binding-20261014/source-snapshot.json\", 136098, '\\''82100de3713beccb61ceeb0da87d40d3cbb6a4552890c6c72337d899fad96c5d'\\''),\n    (\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/input-observation.json\", 83405, '\\''a29eacd682fe9d7c7b609ba7a20da4d383574d0f895aa0678f7b7ff64e36e90d'\\''),\n]\nraw = {}\nfor name, size, digest in expected:\n    data = Path(name).read_bytes()\n    assert len(data) == size and hashlib.sha256(data).hexdigest() == digest\n    raw[name] = data\njson_path = \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.json\"\nmd_path = \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.md\"\njson_bytes = Path(json_path).read_bytes()\nmd_bytes = Path(md_path).read_bytes()\nassert json_bytes == raw[expected[1][0]]\nplan = json.loads(json_bytes)\nassert plan['\\''round'\\''] == '\\''R182'\\'' and plan['\\''author_model'\\''] == '\\''gpt-6-astra'\\''\nassert isinstance(plan['\\''inputs'\\''], list) and len(plan['\\''inputs'\\'']) == 255\nassert isinstance(plan['\\''commands'\\''], list) and len(plan['\\''commands'\\'']) == 6\nedges = plan['\\''contract'\\'']['\\''semantic_edges'\\'']\nassert isinstance(edges, list) and len(edges) == 4\nassert all(isinstance(item, dict) and set(item) == {'\\''edge'\\'', '\\''position'\\'', '\\''accepted_nested_tag'\\'', '\\''rule'\\''} and all(isinstance(value, str) for value in item.values()) for item in edges)\ntests = plan['\\''tests'\\'']\nassert tests['\\''red_count'\\''] == len(tests['\\''red_nodes'\\'']) == 8\nassert tests['\\''green_count'\\''] == len(tests['\\''green_nodes'\\'']) == 13\nassert len(set(tests['\\''red_nodes'\\''])) == 8 and len(set(tests['\\''green_nodes'\\''])) == 13\nassert set(tests['\\''red_nodes'\\'']) <= set(tests['\\''green_nodes'\\''])\nassert 0 < len(md_bytes) <= 150000\nmarkdown = md_bytes.decode('\\''utf-8'\\'')\nblocks = [json.loads(part.split('\\''\\n```'\\'', 1)[0]) for part in markdown.split('\\''```json\\n'\\'')[1:]]\nwanted = [plan['\\''scope'\\''], plan['\\''contract'\\''], plan['\\''tests'\\''], plan['\\''budgets'\\'']] + plan['\\''commands'\\''] + [plan['\\''inherited_commands'\\''], plan['\\''execution_metadata'\\''], plan['\\''source_proof'\\''], plan['\\''root_settlement_contract'\\''], plan['\\''input_roles'\\''], plan['\\''activation'\\''], plan['\\''review'\\''], plan['\\''stop_rules'\\''], plan['\\''acceptance'\\'']]\nassert blocks == wanted\npins = [dict(path=name, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()) for name, data in [(md_path, md_bytes), (json_path, json_bytes)]]\nsummary = dict(status='\\''R183_SERIALIZATION_VERIFIED_METADATA_ONLY'\\'', unchanged_inputs=3, output_pins=pins, inputs=255, commands=6, edges=4, red=8, green=13, product_commands=0, R182_activated=False)\noutput = json.dumps(summary, ensure_ascii=False)\nassert len(output) < 1500\nprint(output)\n'",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-c",
+        "from pathlib import Path\nimport hashlib\nimport json\n\nexpected = [\n    (\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round183-p6-t1-astra-plan-cross-cell-binding-20261014/original-failure.json\", 953, '7cba990a7df62b7bc0f7ac264698cae52f67bfd1492fc80a1e89c771d65b3519'),\n    (\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round183-p6-t1-astra-plan-cross-cell-binding-20261014/source-snapshot.json\", 136098, '82100de3713beccb61ceeb0da87d40d3cbb6a4552890c6c72337d899fad96c5d'),\n    (\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/input-observation.json\", 83405, 'a29eacd682fe9d7c7b609ba7a20da4d383574d0f895aa0678f7b7ff64e36e90d'),\n]\nraw = {}\nfor name, size, digest in expected:\n    data = Path(name).read_bytes()\n    assert len(data) == size and hashlib.sha256(data).hexdigest() == digest\n    raw[name] = data\njson_path = \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.json\"\nmd_path = \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.md\"\njson_bytes = Path(json_path).read_bytes()\nmd_bytes = Path(md_path).read_bytes()\nassert json_bytes == raw[expected[1][0]]\nplan = json.loads(json_bytes)\nassert plan['round'] == 'R182' and plan['author_model'] == 'gpt-6-astra'\nassert isinstance(plan['inputs'], list) and len(plan['inputs']) == 255\nassert isinstance(plan['commands'], list) and len(plan['commands']) == 6\nedges = plan['contract']['semantic_edges']\nassert isinstance(edges, list) and len(edges) == 4\nassert all(isinstance(item, dict) and set(item) == {'edge', 'position', 'accepted_nested_tag', 'rule'} and all(isinstance(value, str) for value in item.values()) for item in edges)\ntests = plan['tests']\nassert tests['red_count'] == len(tests['red_nodes']) == 8\nassert tests['green_count'] == len(tests['green_nodes']) == 13\nassert len(set(tests['red_nodes'])) == 8 and len(set(tests['green_nodes'])) == 13\nassert set(tests['red_nodes']) <= set(tests['green_nodes'])\nassert 0 < len(md_bytes) <= 150000\nmarkdown = md_bytes.decode('utf-8')\nblocks = [json.loads(part.split('\\n```', 1)[0]) for part in markdown.split('```json\\n')[1:]]\nwanted = [plan['scope'], plan['contract'], plan['tests'], plan['budgets']] + plan['commands'] + [plan['inherited_commands'], plan['execution_metadata'], plan['source_proof'], plan['root_settlement_contract'], plan['input_roles'], plan['activation'], plan['review'], plan['stop_rules'], plan['acceptance']]\nassert blocks == wanted\npins = [dict(path=name, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()) for name, data in [(md_path, md_bytes), (json_path, json_bytes)]]\nsummary = dict(status='R183_SERIALIZATION_VERIFIED_METADATA_ONLY', unchanged_inputs=3, output_pins=pins, inputs=255, commands=6, edges=4, red=8, green=13, product_commands=0, R182_activated=False)\noutput = json.dumps(summary, ensure_ascii=False)\nassert len(output) < 1500\nprint(output)\n"
+      ],
+      "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "finite_env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "timeout_seconds": 60,
+      "reservation_id": "r183-five-artifact-json-md-contract-verification-once",
+      "attempt": 1,
+      "retry": 0
+    },
+    "exact_source": "from pathlib import Path\nimport hashlib\nimport json\n\nexpected = [\n    (\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round183-p6-t1-astra-plan-cross-cell-binding-20261014/original-failure.json\", 953, '7cba990a7df62b7bc0f7ac264698cae52f67bfd1492fc80a1e89c771d65b3519'),\n    (\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round183-p6-t1-astra-plan-cross-cell-binding-20261014/source-snapshot.json\", 136098, '82100de3713beccb61ceeb0da87d40d3cbb6a4552890c6c72337d899fad96c5d'),\n    (\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/input-observation.json\", 83405, 'a29eacd682fe9d7c7b609ba7a20da4d383574d0f895aa0678f7b7ff64e36e90d'),\n]\nraw = {}\nfor name, size, digest in expected:\n    data = Path(name).read_bytes()\n    assert len(data) == size and hashlib.sha256(data).hexdigest() == digest\n    raw[name] = data\njson_path = \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.json\"\nmd_path = \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.md\"\njson_bytes = Path(json_path).read_bytes()\nmd_bytes = Path(md_path).read_bytes()\nassert json_bytes == raw[expected[1][0]]\nplan = json.loads(json_bytes)\nassert plan['round'] == 'R182' and plan['author_model'] == 'gpt-6-astra'\nassert isinstance(plan['inputs'], list) and len(plan['inputs']) == 255\nassert isinstance(plan['commands'], list) and len(plan['commands']) == 6\nedges = plan['contract']['semantic_edges']\nassert isinstance(edges, list) and len(edges) == 4\nassert all(isinstance(item, dict) and set(item) == {'edge', 'position', 'accepted_nested_tag', 'rule'} and all(isinstance(value, str) for value in item.values()) for item in edges)\ntests = plan['tests']\nassert tests['red_count'] == len(tests['red_nodes']) == 8\nassert tests['green_count'] == len(tests['green_nodes']) == 13\nassert len(set(tests['red_nodes'])) == 8 and len(set(tests['green_nodes'])) == 13\nassert set(tests['red_nodes']) <= set(tests['green_nodes'])\nassert 0 < len(md_bytes) <= 150000\nmarkdown = md_bytes.decode('utf-8')\nblocks = [json.loads(part.split('\\n```', 1)[0]) for part in markdown.split('```json\\n')[1:]]\nwanted = [plan['scope'], plan['contract'], plan['tests'], plan['budgets']] + plan['commands'] + [plan['inherited_commands'], plan['execution_metadata'], plan['source_proof'], plan['root_settlement_contract'], plan['input_roles'], plan['activation'], plan['review'], plan['stop_rules'], plan['acceptance']]\nassert blocks == wanted\npins = [dict(path=name, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()) for name, data in [(md_path, md_bytes), (json_path, json_bytes)]]\nsummary = dict(status='R183_SERIALIZATION_VERIFIED_METADATA_ONLY', unchanged_inputs=3, output_pins=pins, inputs=255, commands=6, edges=4, red=8, green=13, product_commands=0, R182_activated=False)\noutput = json.dumps(summary, ensure_ascii=False)\nassert len(output) < 1500\nprint(output)\n",
+    "independent_stdout": null,
+    "independent_stderr": null,
+    "capture_boundary": "exec_command supplied one output property, not independent stdout/stderr; no rendered transport was JSON-parsed. Exact output pins were transcribed from the stored successful actual output. No second reader executed."
+  },
+  "checks": {
+    "immutable_inputs": 3,
+    "immutable_inputs_match": true,
+    "json_byte_equal_snapshot": true,
+    "MD_contract_blocks_equal_JSON": 19,
+    "inputs": 255,
+    "commands": 6,
+    "semantic_edges": 4,
+    "red_count": 8,
+    "green_count": 13,
+    "outputs": [
+      {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.md",
+        "bytes": 58609,
+        "sha256": "32ab6a1a3b01340f3a1628e5e32ee02630d1e4e22d93da759287a840e92ca2e2"
+      },
+      {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.json",
+        "bytes": 136098,
+        "sha256": "82100de3713beccb61ceeb0da87d40d3cbb6a4552890c6c72337d899fad96c5d"
+      }
+    ]
+  },
+  "budgets": {
+    "metadata_save": {
+      "used": 1,
+      "remaining": 0
+    },
+    "metadata_verification": {
+      "used": 1,
+      "remaining": 0
+    },
+    "product_commands": 0,
+    "tests": 0,
+    "static": 0,
+    "Git": 0,
+    "original_R179_four_remaining": "HELD0/1 unchanged",
+    "R182_six": "not activated",
+    "R158": "3spent12HELD unchanged",
+    "R175": "3spent unchanged"
+  },
+  "acceptance": {
+    "R182_activated": false,
+    "T1_complete": false,
+    "T12_complete": false,
+    "native_actual": false,
+    "formal_research_accepted": false
+  },
+  "step_report_pin_boundary": "No additional filesystem reader was authorized or used after this report save. ROOT may obtain this new report's own bytes/SHA during its input review; this record contains no self-hash."
+}

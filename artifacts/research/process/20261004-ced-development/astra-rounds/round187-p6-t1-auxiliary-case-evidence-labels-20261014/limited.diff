@@ -1,0 +1,23 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_local_temporal_projection_closure.py.R187-before
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_local_temporal_projection_closure.py
+@@ -144,9 +144,13 @@
+         json.dump({
+             "category": category, "seed": seed, "mutation": changed,
+             "seed_sha256": _r182_hash(seed), "mutation_sha256": _r182_hash(changed),
+-            "baseline_semantic_hash": baseline_hash,
++            "baseline_hash": baseline_hash,
++            "baseline_hash_kind": ("LOCAL_ENVELOPE_DIGEST" if category.startswith("semantic-edge:")
++                                   else "LOCAL_ROUTE_INPUT_SEMANTIC_HASH"),
+             "baseline_decode_and_accessor_returned": True,
+-            "path": "LocalVisualVerificationRouteInput.semantic_hash -> execution_contract.steps[0].parameters",
++            "path": ("_r182_decode(changed): LocalEnvelope.from_payload then domain.from_payload"
++                     if category.startswith("semantic-edge:") else
++                     "LocalVisualVerificationRouteInput.semantic_hash -> execution_contract.steps[0].parameters"),
+             "claim": "Caller-created detached descriptive JSON; no authority/NEW_COMMIT/issuer claim.",
+         }, stream, allow_nan=False, sort_keys=True, indent=2)
+ 
+@@ -270,4 +274,3 @@
+         assert _r182_path(changed)["original_time"] != changed["original_time"]
+     assert [dict(registry) for registry in registries] == before
+     _r182_record(tmp_path, seed, changed, "positive:" + case, baseline_hash)
+-

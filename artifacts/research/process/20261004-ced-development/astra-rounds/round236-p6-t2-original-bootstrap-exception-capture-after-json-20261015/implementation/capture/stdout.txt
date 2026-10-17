@@ -1,0 +1,504 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_______________ test_late_binding_rejects_public_writer[memory] ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x718bdcc49640>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r236-capture/test_late_binding_rejects_publ0')
+request = <FixtureRequest for <Function test_late_binding_rejects_public_writer[memory]>>
+backend = 'memory'
+
+    @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
+    def test_late_binding_rejects_public_writer(monkeypatch, tmp_path, request, backend):
+        with _r223_observe(monkeypatch, request) as observed:
+>           case = _r223_case(monkeypatch, tmp_path, request, backend, observed, mode='race')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_local_public_writer_binding_race.py:252: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_local_public_writer_binding_race.py:242: in _r223_case
+    return _r223_run(monkeypatch, tmp_path / 'real-factory', backend, observed, mode=mode, second=second)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x718bdcc49640>
+directory = PosixPath('/tmp/bigsmall-p6-r236-capture/test_late_binding_rejects_publ0/real-factory')
+backend = 'memory'
+observed = namespace(value={'schema_version': 'bigsmall.r158-t2-resource.v1', 'round': 'R223', 'command_id': 'R223', 'nodeid': 't...aseSession object at 0x718bdbb416d0>], wait_observer=None, add=<function _b_t2_observe.<locals>.add at 0x718bdb7cc860>)
+
+    def _r223_run(monkeypatch, directory, backend, observed, *, mode, second=False):
+        from cloud_edge_robot_arm.repositories.event_autonomy import (
+            InMemoryEventAutonomyRepository, SQLiteEventAutonomyRepository,
+        )
+        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+        from tests.test_visual_worker_factory import software_factory
+    
+        directory.mkdir(parents=True, exist_ok=False)
+        ready, entered, release = threading.Event(), threading.Event(), threading.Event()
+        observed.release_events.append(release)
+        writer = None
+        events = None
+        reads = {}
+        data = {}
+        case = {'mode': mode, 'backend': backend, 'second_connection': second, 'order': [],
+                'writer': {'attempted': False, 'returned': False, 'exception': None},
+                'bootstrap_complete': False, 'binding': None, 'before': None, 'after': None}
+        observed.value['observations']['r223'] = case
+        observed.value['observations']['scenarios'].append(case)
+        order_lock = threading.Lock()
+    
+        def record(kind, **details):
+            with order_lock:
+                case['order'].append({'sequence': len(case['order']) + 1, 'kind': kind,
+                                      'pid': os.getpid(), 'thread': threading.get_ident(),
+                                      'native_thread': threading.get_native_id(), **details})
+    
+        def writer_body():
+            target = None
+            try:
+                target = SQLiteEventAutonomyRepository(events.path) if second else events
+                data['writer_repository'] = target
+                data['writer_code'] = type(target).save_state.__wrapped__.__code__
+                record('WRITER_READY', repository=id(target), connection=None if backend == 'memory' else id(target._conn))
+                ready.set()
+                assert data['start'].wait(10), 'R223 writer start barrier timed out'
+                case['writer']['attempted'] = True
+                target.save_state(data['task'], 'RUNNING', 'R223 positive public writer')
+                case['writer']['returned'] = True
+                record('WRITER_RETURNED')
+            except BaseException as error:
+                case['writer']['exception'] = {'type': type(error).__name__, 'message': str(error)}
+                data['writer_error'] = error
+                record('WRITER_RAISED', exception=case['writer']['exception'])
+            finally:
+                if second and target is not None:
+                    target.close()
+                ready.set()
+                data['finished'].set()
+    
+        def observe_entry(frame, event, arg):
+            if event != 'call':
+                return
+            if (frame.f_code is VisualWorkerRuntime._initialize_local.__code__
+                    and frame.f_locals.get('self').source.event_repository is events):
+                runtime = frame.f_locals['self']
+                data['task'] = frame.f_locals['episode_id']
+                case['task_id'] = data['task']
+                case['legacy_before'] = _r223_legacy_state(events, data['task'])
+                assert _r223_bound(events, data['task']) is None, 'R223 target was already bound before public precheck'
+                record('PRIVATE_BOOTSTRAP_ENTRY_BEFORE_LOCK', runtime=id(runtime), repository=id(events))
+                if mode in {'race', 'before'}:
+                    data['start'].set()
+                    assert entered.wait(10), 'R223 original writer entry barrier timed out'
+                    if mode == 'before':
+                        release.set()
+                        assert data['finished'].wait(10), 'R223 writer-before-binding did not finish'
+                        assert case['writer']['returned'] and data.get('writer_error') is None
+                        record('LEGACY_WRITER_FINISHED_BEFORE_BINDING')
+            elif (frame.f_code is data.get('writer_code')
+                    and frame.f_locals.get('self') is data.get('writer_repository')
+                    and frame.f_locals.get('task_id') == data.get('task')):
+                record('ORIGINAL_SAVE_STATE_AFTER_PUBLIC_PRECHECK_BEFORE_INNER_LOCK',
+                       code_name=frame.f_code.co_qualname, repository=id(frame.f_locals['self']),
+                       lock=id(events._lock if backend == 'memory' else frame.f_locals['self']._write_lock))
+                entered.set()
+                assert release.wait(10), 'R223 original writer release timed out'
+                record('ORIGINAL_WRITER_RELEASED_TOWARD_REAL_INNER_LOCK')
+    
+        def during_episode(worker, repo, job, source_root):
+            runtime = received[0][3].worker_runtime
+            task = runtime.bootstrap.definition.episode_id
+            assert task == data['task']
+            raw = runtime.bootstrap.to_payload()
+            rows = _r223_operation_rows(events, reads, 'bootstrap-init:' + runtime._bootstrap_id)
+            assert raw['transaction']['phase'] == 'COMPLETE'
+            assert all(any(row['phase'] == 'COMPLETE' for row in group) for group in rows.values())
+            binding = _r223_bound(events, task)
+            assert binding == raw['original_time']
+            case.update(bootstrap_complete=True, bootstrap=raw, binding=binding,
+                        complete_receipts=rows, before=_frozen._b_t2_snapshot(events, reads))
+            record('DURING_EPISODE_GENUINE_BINDING_AND_BOTH_COMPLETE', runtime=id(runtime))
+            if mode == 'race':
+                assert entered.is_set() and not data['finished'].is_set()
+                release.set()
+                assert data['finished'].wait(10), 'R223 late writer did not finish after binding'
+            elif mode == 'negative':
+                before_budget = raw['payload']['state']
+                events.save_state(task, 'CANCELLED', 'R223 exact negative positional route')
+                assert events.get_state(task) == 'CANCELLED'
+                assert runtime.bootstrap.to_payload()['payload']['state'] == before_budget
+                case['negative_state'] = events.get_state(task)
+                case['unchanged_budget'] = before_budget
+                record('BOUND_EXACT_NEGATIVE_CANCELLATION')
+            case['legacy_after'] = _r223_legacy_state(events, task)
+            case['after'] = _frozen._b_t2_snapshot(events, reads)
+            record('DURING_EPISODE_AFTER_WRITER_READBACK')
+    
+        try:
+            with monkeypatch.context() as scoped:
+                repo, job, worker, calls, received, _, initial_events = software_factory(
+                    scoped, directory, during_episode=during_episode)
+                events = initial_events
+                if backend == 'memory':
+                    initial_events.close()
+                    events = InMemoryEventAutonomyRepository()
+                    worker.visual_event_repository = events
+                worker.operational_time_mode = 'LOCAL_TEMPORAL_PUBLICATION_V1'
+                reads['job'] = sqlite3.connect(repo.database_path)
+                reads['job'].row_factory = sqlite3.Row
+                if backend == 'sqlite':
+                    reads['event'] = sqlite3.connect(events.path)
+                    reads['event'].row_factory = sqlite3.Row
+                data.update(start=threading.Event(), finished=threading.Event())
+                if mode in {'race', 'before'}:
+                    writer = threading.Thread(target=writer_body, name='R223-public-save-state')
+                    observed.add(writer, 'helper_thread')['initialized'] = True
+                    writer.start()
+                    assert ready.wait(10), 'R223 writer repository initialization timed out'
+                    assert data.get('writer_error') is None, 'R223 second repository initialization failed'
+                observed.wait_observer = observe_entry
+                assert worker.poll_once()
+>               assert calls.count('episode') == 1, repo.get_job(job.job_id).error_message
+E               AssertionError: original worker poll ended
+E               assert 0 == 1
+E                +  where 0 = <built-in method count of list object at 0x718bdb532d00>('episode')
+E                +    where <built-in method count of list object at 0x718bdb532d00> = ['initialize', 'raw_enter', 'reset', 'purpose_begin:SETTLE', 'settle', 'purpose_end:SETTLE', ...].count
+
+tests/test_local_public_writer_binding_race.py:221: AssertionError
+_______________ test_late_binding_rejects_public_writer[sqlite] ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x718bdbdf31d0>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r236-capture/test_late_binding_rejects_publ1')
+request = <FixtureRequest for <Function test_late_binding_rejects_public_writer[sqlite]>>
+backend = 'sqlite'
+
+    @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
+    def test_late_binding_rejects_public_writer(monkeypatch, tmp_path, request, backend):
+        with _r223_observe(monkeypatch, request) as observed:
+>           case = _r223_case(monkeypatch, tmp_path, request, backend, observed, mode='race')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_local_public_writer_binding_race.py:252: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_local_public_writer_binding_race.py:242: in _r223_case
+    return _r223_run(monkeypatch, tmp_path / 'real-factory', backend, observed, mode=mode, second=second)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x718bdbdf31d0>
+directory = PosixPath('/tmp/bigsmall-p6-r236-capture/test_late_binding_rejects_publ1/real-factory')
+backend = 'sqlite'
+observed = namespace(value={'schema_version': 'bigsmall.r158-t2-resource.v1', 'round': 'R223', 'command_id': 'R223', 'nodeid': 't...aseSession object at 0x718bdbe616d0>], wait_observer=None, add=<function _b_t2_observe.<locals>.add at 0x718bdbddf560>)
+
+    def _r223_run(monkeypatch, directory, backend, observed, *, mode, second=False):
+        from cloud_edge_robot_arm.repositories.event_autonomy import (
+            InMemoryEventAutonomyRepository, SQLiteEventAutonomyRepository,
+        )
+        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+        from tests.test_visual_worker_factory import software_factory
+    
+        directory.mkdir(parents=True, exist_ok=False)
+        ready, entered, release = threading.Event(), threading.Event(), threading.Event()
+        observed.release_events.append(release)
+        writer = None
+        events = None
+        reads = {}
+        data = {}
+        case = {'mode': mode, 'backend': backend, 'second_connection': second, 'order': [],
+                'writer': {'attempted': False, 'returned': False, 'exception': None},
+                'bootstrap_complete': False, 'binding': None, 'before': None, 'after': None}
+        observed.value['observations']['r223'] = case
+        observed.value['observations']['scenarios'].append(case)
+        order_lock = threading.Lock()
+    
+        def record(kind, **details):
+            with order_lock:
+                case['order'].append({'sequence': len(case['order']) + 1, 'kind': kind,
+                                      'pid': os.getpid(), 'thread': threading.get_ident(),
+                                      'native_thread': threading.get_native_id(), **details})
+    
+        def writer_body():
+            target = None
+            try:
+                target = SQLiteEventAutonomyRepository(events.path) if second else events
+                data['writer_repository'] = target
+                data['writer_code'] = type(target).save_state.__wrapped__.__code__
+                record('WRITER_READY', repository=id(target), connection=None if backend == 'memory' else id(target._conn))
+                ready.set()
+                assert data['start'].wait(10), 'R223 writer start barrier timed out'
+                case['writer']['attempted'] = True
+                target.save_state(data['task'], 'RUNNING', 'R223 positive public writer')
+                case['writer']['returned'] = True
+                record('WRITER_RETURNED')
+            except BaseException as error:
+                case['writer']['exception'] = {'type': type(error).__name__, 'message': str(error)}
+                data['writer_error'] = error
+                record('WRITER_RAISED', exception=case['writer']['exception'])
+            finally:
+                if second and target is not None:
+                    target.close()
+                ready.set()
+                data['finished'].set()
+    
+        def observe_entry(frame, event, arg):
+            if event != 'call':
+                return
+            if (frame.f_code is VisualWorkerRuntime._initialize_local.__code__
+                    and frame.f_locals.get('self').source.event_repository is events):
+                runtime = frame.f_locals['self']
+                data['task'] = frame.f_locals['episode_id']
+                case['task_id'] = data['task']
+                case['legacy_before'] = _r223_legacy_state(events, data['task'])
+                assert _r223_bound(events, data['task']) is None, 'R223 target was already bound before public precheck'
+                record('PRIVATE_BOOTSTRAP_ENTRY_BEFORE_LOCK', runtime=id(runtime), repository=id(events))
+                if mode in {'race', 'before'}:
+                    data['start'].set()
+                    assert entered.wait(10), 'R223 original writer entry barrier timed out'
+                    if mode == 'before':
+                        release.set()
+                        assert data['finished'].wait(10), 'R223 writer-before-binding did not finish'
+                        assert case['writer']['returned'] and data.get('writer_error') is None
+                        record('LEGACY_WRITER_FINISHED_BEFORE_BINDING')
+            elif (frame.f_code is data.get('writer_code')
+                    and frame.f_locals.get('self') is data.get('writer_repository')
+                    and frame.f_locals.get('task_id') == data.get('task')):
+                record('ORIGINAL_SAVE_STATE_AFTER_PUBLIC_PRECHECK_BEFORE_INNER_LOCK',
+                       code_name=frame.f_code.co_qualname, repository=id(frame.f_locals['self']),
+                       lock=id(events._lock if backend == 'memory' else frame.f_locals['self']._write_lock))
+                entered.set()
+                assert release.wait(10), 'R223 original writer release timed out'
+                record('ORIGINAL_WRITER_RELEASED_TOWARD_REAL_INNER_LOCK')
+    
+        def during_episode(worker, repo, job, source_root):
+            runtime = received[0][3].worker_runtime
+            task = runtime.bootstrap.definition.episode_id
+            assert task == data['task']
+            raw = runtime.bootstrap.to_payload()
+            rows = _r223_operation_rows(events, reads, 'bootstrap-init:' + runtime._bootstrap_id)
+            assert raw['transaction']['phase'] == 'COMPLETE'
+            assert all(any(row['phase'] == 'COMPLETE' for row in group) for group in rows.values())
+            binding = _r223_bound(events, task)
+            assert binding == raw['original_time']
+            case.update(bootstrap_complete=True, bootstrap=raw, binding=binding,
+                        complete_receipts=rows, before=_frozen._b_t2_snapshot(events, reads))
+            record('DURING_EPISODE_GENUINE_BINDING_AND_BOTH_COMPLETE', runtime=id(runtime))
+            if mode == 'race':
+                assert entered.is_set() and not data['finished'].is_set()
+                release.set()
+                assert data['finished'].wait(10), 'R223 late writer did not finish after binding'
+            elif mode == 'negative':
+                before_budget = raw['payload']['state']
+                events.save_state(task, 'CANCELLED', 'R223 exact negative positional route')
+                assert events.get_state(task) == 'CANCELLED'
+                assert runtime.bootstrap.to_payload()['payload']['state'] == before_budget
+                case['negative_state'] = events.get_state(task)
+                case['unchanged_budget'] = before_budget
+                record('BOUND_EXACT_NEGATIVE_CANCELLATION')
+            case['legacy_after'] = _r223_legacy_state(events, task)
+            case['after'] = _frozen._b_t2_snapshot(events, reads)
+            record('DURING_EPISODE_AFTER_WRITER_READBACK')
+    
+        try:
+            with monkeypatch.context() as scoped:
+                repo, job, worker, calls, received, _, initial_events = software_factory(
+                    scoped, directory, during_episode=during_episode)
+                events = initial_events
+                if backend == 'memory':
+                    initial_events.close()
+                    events = InMemoryEventAutonomyRepository()
+                    worker.visual_event_repository = events
+                worker.operational_time_mode = 'LOCAL_TEMPORAL_PUBLICATION_V1'
+                reads['job'] = sqlite3.connect(repo.database_path)
+                reads['job'].row_factory = sqlite3.Row
+                if backend == 'sqlite':
+                    reads['event'] = sqlite3.connect(events.path)
+                    reads['event'].row_factory = sqlite3.Row
+                data.update(start=threading.Event(), finished=threading.Event())
+                if mode in {'race', 'before'}:
+                    writer = threading.Thread(target=writer_body, name='R223-public-save-state')
+                    observed.add(writer, 'helper_thread')['initialized'] = True
+                    writer.start()
+                    assert ready.wait(10), 'R223 writer repository initialization timed out'
+                    assert data.get('writer_error') is None, 'R223 second repository initialization failed'
+                observed.wait_observer = observe_entry
+                assert worker.poll_once()
+>               assert calls.count('episode') == 1, repo.get_job(job.job_id).error_message
+E               AssertionError: original worker poll ended
+E               assert 0 == 1
+E                +  where 0 = <built-in method count of list object at 0x718bdbe4d980>('episode')
+E                +    where <built-in method count of list object at 0x718bdbe4d980> = ['initialize', 'raw_enter', 'reset', 'purpose_begin:SETTLE', 'settle', 'purpose_end:SETTLE', ...].count
+
+tests/test_local_public_writer_binding_race.py:221: AssertionError
+__________ test_late_binding_rejects_public_writer_second_connection ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x718bdbdf2780>
+tmp_path = PosixPath('/tmp/bigsmall-p6-r236-capture/test_late_binding_rejects_publ2')
+request = <FixtureRequest for <Function test_late_binding_rejects_public_writer_second_connection>>
+
+    def test_late_binding_rejects_public_writer_second_connection(monkeypatch, tmp_path, request):
+        with _r223_observe(monkeypatch, request) as observed:
+>           case = _r223_case(monkeypatch, tmp_path, request, 'sqlite', observed, mode='race', second=True)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_local_public_writer_binding_race.py:262: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_local_public_writer_binding_race.py:242: in _r223_case
+    return _r223_run(monkeypatch, tmp_path / 'real-factory', backend, observed, mode=mode, second=second)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x718bdbdf2780>
+directory = PosixPath('/tmp/bigsmall-p6-r236-capture/test_late_binding_rejects_publ2/real-factory')
+backend = 'sqlite'
+observed = namespace(value={'schema_version': 'bigsmall.r158-t2-resource.v1', 'round': 'R223', 'command_id': 'R223', 'nodeid': 't...aseSession object at 0x718bdbd7c200>], wait_observer=None, add=<function _b_t2_observe.<locals>.add at 0x718bdb4f3740>)
+
+    def _r223_run(monkeypatch, directory, backend, observed, *, mode, second=False):
+        from cloud_edge_robot_arm.repositories.event_autonomy import (
+            InMemoryEventAutonomyRepository, SQLiteEventAutonomyRepository,
+        )
+        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+        from tests.test_visual_worker_factory import software_factory
+    
+        directory.mkdir(parents=True, exist_ok=False)
+        ready, entered, release = threading.Event(), threading.Event(), threading.Event()
+        observed.release_events.append(release)
+        writer = None
+        events = None
+        reads = {}
+        data = {}
+        case = {'mode': mode, 'backend': backend, 'second_connection': second, 'order': [],
+                'writer': {'attempted': False, 'returned': False, 'exception': None},
+                'bootstrap_complete': False, 'binding': None, 'before': None, 'after': None}
+        observed.value['observations']['r223'] = case
+        observed.value['observations']['scenarios'].append(case)
+        order_lock = threading.Lock()
+    
+        def record(kind, **details):
+            with order_lock:
+                case['order'].append({'sequence': len(case['order']) + 1, 'kind': kind,
+                                      'pid': os.getpid(), 'thread': threading.get_ident(),
+                                      'native_thread': threading.get_native_id(), **details})
+    
+        def writer_body():
+            target = None
+            try:
+                target = SQLiteEventAutonomyRepository(events.path) if second else events
+                data['writer_repository'] = target
+                data['writer_code'] = type(target).save_state.__wrapped__.__code__
+                record('WRITER_READY', repository=id(target), connection=None if backend == 'memory' else id(target._conn))
+                ready.set()
+                assert data['start'].wait(10), 'R223 writer start barrier timed out'
+                case['writer']['attempted'] = True
+                target.save_state(data['task'], 'RUNNING', 'R223 positive public writer')
+                case['writer']['returned'] = True
+                record('WRITER_RETURNED')
+            except BaseException as error:
+                case['writer']['exception'] = {'type': type(error).__name__, 'message': str(error)}
+                data['writer_error'] = error
+                record('WRITER_RAISED', exception=case['writer']['exception'])
+            finally:
+                if second and target is not None:
+                    target.close()
+                ready.set()
+                data['finished'].set()
+    
+        def observe_entry(frame, event, arg):
+            if event != 'call':
+                return
+            if (frame.f_code is VisualWorkerRuntime._initialize_local.__code__
+                    and frame.f_locals.get('self').source.event_repository is events):
+                runtime = frame.f_locals['self']
+                data['task'] = frame.f_locals['episode_id']
+                case['task_id'] = data['task']
+                case['legacy_before'] = _r223_legacy_state(events, data['task'])
+                assert _r223_bound(events, data['task']) is None, 'R223 target was already bound before public precheck'
+                record('PRIVATE_BOOTSTRAP_ENTRY_BEFORE_LOCK', runtime=id(runtime), repository=id(events))
+                if mode in {'race', 'before'}:
+                    data['start'].set()
+                    assert entered.wait(10), 'R223 original writer entry barrier timed out'
+                    if mode == 'before':
+                        release.set()
+                        assert data['finished'].wait(10), 'R223 writer-before-binding did not finish'
+                        assert case['writer']['returned'] and data.get('writer_error') is None
+                        record('LEGACY_WRITER_FINISHED_BEFORE_BINDING')
+            elif (frame.f_code is data.get('writer_code')
+                    and frame.f_locals.get('self') is data.get('writer_repository')
+                    and frame.f_locals.get('task_id') == data.get('task')):
+                record('ORIGINAL_SAVE_STATE_AFTER_PUBLIC_PRECHECK_BEFORE_INNER_LOCK',
+                       code_name=frame.f_code.co_qualname, repository=id(frame.f_locals['self']),
+                       lock=id(events._lock if backend == 'memory' else frame.f_locals['self']._write_lock))
+                entered.set()
+                assert release.wait(10), 'R223 original writer release timed out'
+                record('ORIGINAL_WRITER_RELEASED_TOWARD_REAL_INNER_LOCK')
+    
+        def during_episode(worker, repo, job, source_root):
+            runtime = received[0][3].worker_runtime
+            task = runtime.bootstrap.definition.episode_id
+            assert task == data['task']
+            raw = runtime.bootstrap.to_payload()
+            rows = _r223_operation_rows(events, reads, 'bootstrap-init:' + runtime._bootstrap_id)
+            assert raw['transaction']['phase'] == 'COMPLETE'
+            assert all(any(row['phase'] == 'COMPLETE' for row in group) for group in rows.values())
+            binding = _r223_bound(events, task)
+            assert binding == raw['original_time']
+            case.update(bootstrap_complete=True, bootstrap=raw, binding=binding,
+                        complete_receipts=rows, before=_frozen._b_t2_snapshot(events, reads))
+            record('DURING_EPISODE_GENUINE_BINDING_AND_BOTH_COMPLETE', runtime=id(runtime))
+            if mode == 'race':
+                assert entered.is_set() and not data['finished'].is_set()
+                release.set()
+                assert data['finished'].wait(10), 'R223 late writer did not finish after binding'
+            elif mode == 'negative':
+                before_budget = raw['payload']['state']
+                events.save_state(task, 'CANCELLED', 'R223 exact negative positional route')
+                assert events.get_state(task) == 'CANCELLED'
+                assert runtime.bootstrap.to_payload()['payload']['state'] == before_budget
+                case['negative_state'] = events.get_state(task)
+                case['unchanged_budget'] = before_budget
+                record('BOUND_EXACT_NEGATIVE_CANCELLATION')
+            case['legacy_after'] = _r223_legacy_state(events, task)
+            case['after'] = _frozen._b_t2_snapshot(events, reads)
+            record('DURING_EPISODE_AFTER_WRITER_READBACK')
+    
+        try:
+            with monkeypatch.context() as scoped:
+                repo, job, worker, calls, received, _, initial_events = software_factory(
+                    scoped, directory, during_episode=during_episode)
+                events = initial_events
+                if backend == 'memory':
+                    initial_events.close()
+                    events = InMemoryEventAutonomyRepository()
+                    worker.visual_event_repository = events
+                worker.operational_time_mode = 'LOCAL_TEMPORAL_PUBLICATION_V1'
+                reads['job'] = sqlite3.connect(repo.database_path)
+                reads['job'].row_factory = sqlite3.Row
+                if backend == 'sqlite':
+                    reads['event'] = sqlite3.connect(events.path)
+                    reads['event'].row_factory = sqlite3.Row
+                data.update(start=threading.Event(), finished=threading.Event())
+                if mode in {'race', 'before'}:
+                    writer = threading.Thread(target=writer_body, name='R223-public-save-state')
+                    observed.add(writer, 'helper_thread')['initialized'] = True
+                    writer.start()
+                    assert ready.wait(10), 'R223 writer repository initialization timed out'
+                    assert data.get('writer_error') is None, 'R223 second repository initialization failed'
+                observed.wait_observer = observe_entry
+                assert worker.poll_once()
+>               assert calls.count('episode') == 1, repo.get_job(job.job_id).error_message
+E               AssertionError: original worker poll ended
+E               assert 0 == 1
+E                +  where 0 = <built-in method count of list object at 0x718bdbe4e5c0>('episode')
+E                +    where <built-in method count of list object at 0x718bdbe4e5c0> = ['initialize', 'raw_enter', 'reset', 'purpose_begin:SETTLE', 'settle', 'purpose_end:SETTLE', ...].count
+
+tests/test_local_public_writer_binding_race.py:221: AssertionError
+=============================== warnings summary ===============================
+tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round236-p6-t2-original-bootstrap-exception-capture-after-json-20261015/implementation/capture/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[memory]
+FAILED tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer[sqlite]
+FAILED tests/test_local_public_writer_binding_race.py::test_late_binding_rejects_public_writer_second_connection
+3 failed, 1 warning in 47.97s

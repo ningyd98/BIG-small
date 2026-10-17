@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="38" time="18.063" timestamp="2026-10-14T08:58:44.911944+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[request_event]" time="0.857" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[operation]" time="0.314" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[request_kind]" time="0.275" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[result_hash]" time="0.283" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[cas_prestate]" time="0.312" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[transaction_event]" time="0.288" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_binding_rejects[final_state]" time="0.287" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_publication_hash_rejects[without_utc]" time="0.299" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_publication_hash_rejects[with_utc]" time="0.293" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_publication_hash_rejects[partial_utc]" time="0.291" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_route_labels_recomputed[semantic_hash]" time="1.699" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_route_labels_recomputed[source_key]" time="1.178" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_nested_original_rejects[publication_verification]" time="0.283" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_nested_original_rejects[publication_retry]" time="0.288" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_nested_original_rejects[route_before]" time="1.214" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_nested_original_rejects[route_after]" time="1.181" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_valid_causal_lower_bound[app_hard]" time="0.238" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_valid_causal_lower_bound[app_age]" time="0.237" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_valid_causal_lower_bound[lease_acquisition]" time="0.233" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_valid_causal_lower_bound[lease_segment]" time="0.232" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_scope_null_rejected" time="0.322" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_replay_positive[bootstrap]" time="0.308" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_history_replay_positive[supervision]" time="0.502" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_semantic_projection_invariant[outer_diagnostics]" time="0.844" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_semantic_projection_invariant[nested_diagnostics]" time="0.869" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_semantic_projection_invariant[nested_renewal]" time="0.838" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_causal_overlap_positive" time="0.226" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_cross_domain_causality_rejected" time="0.233" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_publication_history_getters[local]" time="0.282"><failure message="AssertionError: Regex pattern did not match.&#10; Regex: 'tag|schema|source|publication|budget|field|semantic'&#10; Input: &quot;1 validation error for RecoveryBudget\ntask_id\n  Field required [type=missing, input_value={'decision': {'app_curren...cation-transaction.v1'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing&quot;">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x72c62a093770&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-green/test_r179_publication_history_0')
+variant = 'local'
+
+    @pytest.mark.parametrize("variant", ["local", "legacy"])
+    def test_r179_publication_history_getters(monkeypatch, tmp_path, variant):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+            LocalRetryBudgetRecord, LocalVerificationBudgetRecord, VerificationBudgetRecord,
+        )
+    
+        registries = _r179_registries()
+        before = [dict(registry) for registry in registries]
+        fixture = _r179_fixture(monkeypatch)
+        seed = copy.deepcopy(fixture["publication"])
+        if variant == "legacy":
+            source = fixture["legacy"]["data"]["publication"].to_payload()
+            seed["payload"]["verification_budget"] = copy.deepcopy(source["verification_budget"])
+            seed["payload"]["retry_budget"] = copy.deepcopy(source["retry_budget"])
+            seed["payload"]["publication_hash"] = _r179_publication_hash(seed)
+        domain = _r179_accepted(seed)
+        verification = domain.verification_budget_history
+        retry = domain.retry_budget_history
+        if variant == "local":
+            assert type(verification) is LocalVerificationBudgetRecord
+            assert type(retry) is LocalRetryBudgetRecord
+            assert verification.state.original_budget_reference == seed["original_time"]["verification_reference"]
+            assert retry.original_recovery_reference == seed["original_time"]["recovery_reference"]
+            for name, value in seed["payload"]["retry_budget"]["payload"].items():
+                assert getattr(retry, name) == value, name
+            with pytest.raises(ValueError, match="history"):
+                _ = domain.verification_budget
+            with pytest.raises(ValueError, match="history"):
+                _ = domain.retry_budget
+            exported = retry.to_payload()
+            exported["payload"]["event_retry_counts"]["caller"] = 1
+            assert retry.to_payload() == seed["payload"]["retry_budget"]
+            derived = retry.original_recovery_reference
+            derived["window_id"] = "caller"
+            assert retry.original_recovery_reference == seed["original_time"]["recovery_reference"]
+        else:
+            assert type(verification) is VerificationBudgetRecord
+            assert type(retry) is RecoveryBudget
+            assert domain.verification_budget.to_payload() == verification.to_payload()
+            assert domain.retry_budget.model_dump(mode="json") == retry.model_dump(mode="json")
+        for key in ("verification_budget", "retry_budget"):
+            changed = copy.deepcopy(seed)
+            changed["payload"][key]["schema_version"] = "unsupported.r179.v1"
+            changed["payload"]["publication_hash"] = _r179_publication_hash(changed)
+            with pytest.raises(ValueError, match="tag|schema|source|publication|budget|field|semantic"):
+&gt;               _r179_accepted(changed)
+
+tests/test_operational_runtime_closure.py:3433: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:2970: in _r179_accepted
+    decoded = LocalEnvelope.from_payload(record)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:1748: in from_payload
+    _semantic(tag, body, original, diagnostics,
+src/cloud_edge_robot_arm/vision/local_temporal.py:1532: in _semantic
+    _publication_body(body, local_original=original)
+src/cloud_edge_robot_arm/vision/local_temporal.py:541: in _publication_body
+    retry_task = strict_retry(_model(retry_raw, RecoveryBudget)).task_id
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = {'decision': {'app_current': {'domain': {'accuracy_status': 'UNVERIFIED', 'api': 'Linux time.clock_gettime_ns(time.CLO...58-legacy-original-retry', 'effective_retry_limit': 2, 'event_retry_counts': {}, 'per_skill_retry_limit': 2, ...}, ...}
+model = &lt;class 'cloud_edge_robot_arm.contracts.models.RecoveryBudget'&gt;
+
+    def _model[Model: BaseModel](value: JSONValue, model: type[Model]) -&gt; Model:
+&gt;       parsed = model.model_validate_json(_canonical(value))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RecoveryBudget
+E       task_id
+E         Field required [type=missing, input_value={'decision': {'app_curren...cation-transaction.v1'}}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+src/cloud_edge_robot_arm/vision/local_temporal.py:407: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x72c62a093770&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p6-r179-green/test_r179_publication_history_0')
+variant = 'local'
+
+    @pytest.mark.parametrize("variant", ["local", "legacy"])
+    def test_r179_publication_history_getters(monkeypatch, tmp_path, variant):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+            LocalRetryBudgetRecord, LocalVerificationBudgetRecord, VerificationBudgetRecord,
+        )
+    
+        registries = _r179_registries()
+        before = [dict(registry) for registry in registries]
+        fixture = _r179_fixture(monkeypatch)
+        seed = copy.deepcopy(fixture["publication"])
+        if variant == "legacy":
+            source = fixture["legacy"]["data"]["publication"].to_payload()
+            seed["payload"]["verification_budget"] = copy.deepcopy(source["verification_budget"])
+            seed["payload"]["retry_budget"] = copy.deepcopy(source["retry_budget"])
+            seed["payload"]["publication_hash"] = _r179_publication_hash(seed)
+        domain = _r179_accepted(seed)
+        verification = domain.verification_budget_history
+        retry = domain.retry_budget_history
+        if variant == "local":
+            assert type(verification) is LocalVerificationBudgetRecord
+            assert type(retry) is LocalRetryBudgetRecord
+            assert verification.state.original_budget_reference == seed["original_time"]["verification_reference"]
+            assert retry.original_recovery_reference == seed["original_time"]["recovery_reference"]
+            for name, value in seed["payload"]["retry_budget"]["payload"].items():
+                assert getattr(retry, name) == value, name
+            with pytest.raises(ValueError, match="history"):
+                _ = domain.verification_budget
+            with pytest.raises(ValueError, match="history"):
+                _ = domain.retry_budget
+            exported = retry.to_payload()
+            exported["payload"]["event_retry_counts"]["caller"] = 1
+            assert retry.to_payload() == seed["payload"]["retry_budget"]
+            derived = retry.original_recovery_reference
+            derived["window_id"] = "caller"
+            assert retry.original_recovery_reference == seed["original_time"]["recovery_reference"]
+        else:
+            assert type(verification) is VerificationBudgetRecord
+            assert type(retry) is RecoveryBudget
+            assert domain.verification_budget.to_payload() == verification.to_payload()
+            assert domain.retry_budget.model_dump(mode="json") == retry.model_dump(mode="json")
+        for key in ("verification_budget", "retry_budget"):
+            changed = copy.deepcopy(seed)
+            changed["payload"][key]["schema_version"] = "unsupported.r179.v1"
+            changed["payload"]["publication_hash"] = _r179_publication_hash(changed)
+&gt;           with pytest.raises(ValueError, match="tag|schema|source|publication|budget|field|semantic"):
+E           AssertionError: Regex pattern did not match.
+E            Regex: 'tag|schema|source|publication|budget|field|semantic'
+E            Input: "1 validation error for RecoveryBudget\ntask_id\n  Field required [type=missing, input_value={'decision': {'app_curren...cation-transaction.v1'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+
+tests/test_operational_runtime_closure.py:3432: AssertionError</failure></testcase><testcase classname="tests.test_operational_runtime_closure" name="test_r179_publication_history_getters[legacy]" time="0.242" /><testcase classname="tests.test_operational_runtime_closure" name="test_r179_local_publication_positive" time="0.317" /><testcase classname="tests.test_operational_runtime_closure" name="test_b_local_temporal_schema_roundtrip[bootstrap]" time="0.332" /><testcase classname="tests.test_operational_runtime_closure" name="test_b_local_temporal_schema_roundtrip[supervision]" time="0.365" /><testcase classname="tests.test_operational_runtime_closure" name="test_b_local_temporal_schema_roundtrip[owner_grounding]" time="0.297" /><testcase classname="tests.test_operational_runtime_closure" name="test_b_local_temporal_schema_roundtrip[route_completion_budget]" time="0.401" /><testcase classname="tests.test_operational_runtime_closure" name="test_b_local_codec_cannot_mint_live_authority" time="0.326" /><testcase classname="tests.test_operational_runtime_closure" name="test_b_local_original_hash_stable_across_lease_renewal" time="0.227" /><testcase classname="tests.test_operational_runtime_closure" name="test_b_legacy_v1_v2_codec_bytes_and_utc_rules" time="0.353" /></testsuite></testsuites>

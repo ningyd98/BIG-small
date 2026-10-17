@@ -1,0 +1,340 @@
+# R191 — 声明边界与历史脚本证明修复计划
+
+实际规划者：gpt-6-astra（/root/astra_status_plan）。冻结待 ROOT 复核；规划期间未执行脚本或修复。
+
+原 ROOT sourcegate f6a27c 实际退出1，行29把所有 FIELDS: 子串视作唯一声明。before有4处、after有5处，含条件语句与 LIMIT_FIELDS:；换行开头声明均唯一。实际三段受保护字节均相等，236源/保护项匹配。原失败不改成通过，未走到的后续检查不得称已完成。
+
+同根因影响尚未运行的 R182 prepare_green。唯一Sol仅修 prepare-evidence.py 的 FIELDS边界块，使用行首锚定、唯一终点与顺序守卫。其余产品、测试及原R179脚本不改。ROOT只修改自己的结算脚本历史map：精确两旧脚本完整归档（prepare及ROOT自身）供RED292核验，未来当前脚本另按新gate校验。不能跳过脚本或改旧raw。
+
+R192形状假设已排除：已有 red_history 三键归一化，不改该正确逻辑。
+
+ROOT新增一次120秒标准库纠正sourceproof，保留原全部检查并对两项脚本修订作明确历史/当前证明。该动作不执行两脚本或测试。之后原4+4未用槽按既定完整门继续，零重置、零新增产品/静态/pytest/Git。
+
+完整合同：
+
+```json
+{
+  "schema_version": 1,
+  "round": "R191",
+  "date": "2026-10-14",
+  "actual_author": "/root/astra_status_plan",
+  "author_model": "gpt-6-astra",
+  "status": "FROZEN_PENDING_ROOT_REVIEW",
+  "issue": {
+    "original": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/original-root-gate-failure.json",
+    "actual": "f6a27c exit1 AssertionError line29 during metadata sourcegate, not product failure.",
+    "root_cause": "Unanchored b'FIELDS:' counts4before/5after including conditional and LIMIT_FIELDS use. Actual line-start declaration occurs exactlyonce. Frozen R182 prepare protected_shared uses identical incorrect uniqueness assertion.",
+    "consequence": "Changing that metadata script requires preserving historical RED script pins, not updating old result/gate/raw.",
+    "hypothesis_excluded": "No evidence of protected constants/copy/canonical region change; independent byte comparison all3same. No R192 normalization defect."
+  },
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/original-root-gate-failure.json",
+      "bytes": 5200,
+      "sha256": "075c86f5850515e130509fadf5046de7f0d0d3bb8d4170cac46cc3433357d61b",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/product-repair-change-report.json",
+      "bytes": 345709,
+      "sha256": "b5e9a795ebd66b93096bbf8a4b504eb2c19ccdce7d6101155b330c28cd897033",
+      "role": "fixed"
+    },
+    {
+      "bytes": 111096,
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "sha256": "63ec55b0e3d4b45fe68f2890ab4eb9e2714f52d572eeee70a6efbecaebd53cd8",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/prepare-evidence.py",
+      "bytes": 13233,
+      "sha256": "77cb39339ff2f7aa5d4293174d0fbefb284e9554f16bfd0049c7856516b8e852",
+      "role": "before_authorized_metadata_script_revision"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/run-command.py",
+      "bytes": 14806,
+      "sha256": "6dc5ecae7d14fa8d5119b999064f604ca5f0fe5f4c0e6eed6963f28f84de054e",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/root-settlement.py",
+      "bytes": 20629,
+      "sha256": "20a365502526256d38039bbcef061c9d6f7b9b522935aafa45f4cfab656b6e9a",
+      "role": "before_authorized_metadata_script_revision"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round179-p6-t1-detached-causality-hash-audit-20261014/implementation/prepare-evidence.py",
+      "bytes": 12691,
+      "sha256": "8ea8a72f39cce758ab43cf9a6d6e33327191395e420b156d34ce96a08d3aa97f",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round179-p6-t1-detached-causality-hash-audit-20261014/implementation/run-command.py",
+      "bytes": 14179,
+      "sha256": "049d873e6328f89641d20d9577de448818d6ff9ff9161054abebaeb27f4bc84e",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round179-p6-t1-detached-causality-hash-audit-20261014/implementation/root-settlement.py",
+      "bytes": 16271,
+      "sha256": "542f408da66cc5dabf061a994d3877d73dd90c227f2e4d0c48e07eaf3dbfca94",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/red/result.json",
+      "bytes": 90468,
+      "sha256": "e50623bfbdb6cd7cb5e9e736d21263e8ded8084dd6f93fb89a35dc8336aa76cf",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/prepare_red/candidate-snapshot.json",
+      "bytes": 1821084,
+      "sha256": "91b1c6d6d2756bf79fd38e57e7bd5b3aed10560b38e9e701e38f3e19af28fdab",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/product-repair-limited.diff",
+      "bytes": 14001,
+      "sha256": "13a1fea1eb70f38b900006f5b10ff6c2614d14d6fd216a6e9de8a361e3bbefe1",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/plan.json",
+      "bytes": 136098,
+      "sha256": "82100de3713beccb61ceeb0da87d40d3cbb6a4552890c6c72337d899fad96c5d",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/command-ledger.json",
+      "bytes": 12373,
+      "sha256": "77f8b499850f2e1c35a8f5b4a38bda3e826ff42864bfa49fd24f0439acca6b34",
+      "role": "role_gate_before_snapshot_not_future_execution_pin"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/root-command-ledger.json",
+      "bytes": 15406,
+      "sha256": "c5fa2b356f130d5ef27fca77b3733aa67914edbde7620dd0fdb2171114488bef",
+      "role": "role_gate_before_snapshot_not_future_execution_pin"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/script-gate.json",
+      "bytes": 171476,
+      "sha256": "9bf8a07925d88ae49e05bf1bc19f7f409d395f510416c217922b7cd458d60f73",
+      "role": "role_gate_before_snapshot_not_future_execution_pin"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round179-p6-t1-detached-causality-hash-audit-20261014/plan.json",
+      "bytes": 118709,
+      "sha256": "dc0cae1b743d6244469625e3f9a4fd14200efbb3e3669c422f1639f59b4be05e",
+      "role": "fixed"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round179-p6-t1-detached-causality-hash-audit-20261014/command-ledger.json",
+      "bytes": 18280,
+      "sha256": "4ddd2b67a07a321d2789c73d02e3f2e09cb9f6a076c9a9bb294a1f3ce19475f6",
+      "role": "role_gate_before_snapshot_not_future_execution_pin"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round179-p6-t1-detached-causality-hash-audit-20261014/root-command-ledger.json",
+      "bytes": 122222,
+      "sha256": "c9ab9c75fd8794cc8c30e42b773d088a6ee4b69292a57abdd317b7d29b34b8ce",
+      "role": "role_gate_before_snapshot_not_future_execution_pin"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round179-p6-t1-detached-causality-hash-audit-20261014/script-gate.json",
+      "bytes": 146136,
+      "sha256": "d6d2c6b820bb720a4cfe2c96a1ff04ab912b467a5ba3ff5fe2d8756f1a223f08",
+      "role": "role_gate_before_snapshot_not_future_execution_pin"
+    }
+  ],
+  "protection": {
+    "current_owned_and_protected_manifest": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/product-repair-change-report.json",
+      "bytes": 345709,
+      "sha256": "b5e9a795ebd66b93096bbf8a4b504eb2c19ccdce7d6101155b330c28cd897033"
+    },
+    "fields": [
+      "owned25_current_pins",
+      "protected211"
+    ],
+    "actual_matches": 236,
+    "current_shared": {
+      "bytes": 111096,
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "sha256": "63ec55b0e3d4b45fe68f2890ab4eb9e2714f52d572eeee70a6efbecaebd53cd8"
+    },
+    "no_product_or_test_edit": true,
+    "aux_and_original_tests": "wholebytes fixed; no node/decorator/fixture/helper modification",
+    "original_R179_three_scripts": "fixed exact pins",
+    "R182_runner": "fixed exact14806/6dc5...",
+    "old_raw_and_plans": "immutable"
+  },
+  "bounded_edits": [
+    {
+      "actor": "sole /root/p6_stage_b_sol actual gpt-6.1-sol",
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/prepare-evidence.py",
+      "scope": "Only protected_shared first FIELDS block (old lines123–126). All bytes before function and from existing for start,end loop onwards unchanged; no EOF normalization.",
+      "contract": [
+        "Use start=b'\\nFIELDS:' and end=b'\\n\\ndef _copy('.",
+        "Require before/after count(start)==1, count(end)==1, and start index<end index in each.",
+        "Compare exact extracted bytes after start and before end as previously intended, including annotation and full mapping contents.",
+        "Keep _copy/_canonical checks and every consume/fixed_inputs/source/protected/ledger/timeout/output assertion unchanged. No exception suppression or fallback to first arbitrary substring."
+      ],
+      "implementation_before_archive": {
+        "original": {
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/prepare-evidence.py",
+          "bytes": 13233,
+          "sha256": "77cb39339ff2f7aa5d4293174d0fbefb284e9554f16bfd0049c7856516b8e852"
+        },
+        "archive_path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/before-prepare-evidence.py"
+      }
+    },
+    {
+      "actor": "ROOT only",
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/root-settlement.py",
+      "scope": "Only add finite verified historical script archive mapping at existing red_history construction/use; preserve existing25-source PIN_KEYS normalization and all other raw/resource/current checks.",
+      "contract": [
+        "Exactly TWO logical historical paths allowed: R182 prepare-evidence.py13233/77cb... and this ROOTsettler20629/20a...; both actually appear in immutable RED result.input_records292.",
+        "Before adding them, read immutable R191 fullbyte archives, verify exact original length/fullSHA from this plan, assert each exact three-key logical path/pin matches exactlyone corresponding RED input record. No path wildcard/extension or broad historical exclusion.",
+        "Extend already-normalized red_history only with those2three-key original pins; then existing child_evidence('red',red_history) validates raw oldrecords against actual verified archives. Never replace oldREDpins with newcurrent hashes.",
+        "Current prepare and current ROOTsettler remain exactchecked by final active gate.input_records and gate.script_pin; final afterscript hashes are independently ROOTreviewed. No new script may be accepted merely because its old archive matched.",
+        "Original25 historical source pins and every other RED record retain existing handling. Existing run-command script and all R179 scripts remain currentfixed.",
+        "No change to check(record,history) broad semantics, metadata_snapshot, type normalization, tests, counts, resource rules, legacy goldens or authority checks."
+      ],
+      "implementation_before_archive": {
+        "original": {
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/root-settlement.py",
+          "bytes": 20629,
+          "sha256": "20a365502526256d38039bbcef061c9d6f7b9b522935aafa45f4cfab656b6e9a"
+        },
+        "archive_path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/before-root-settlement.py"
+      }
+    }
+  ],
+  "root_source_gate_replacement": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/source-gate.py",
+    "owner": "ROOT",
+    "purpose": "New corrected one-shot stdlib metadata gate; not replay of failed inline reader.",
+    "contract": [
+      "Start from the preserved original sourcegate assertions. Keep original base64/pin/report/snapshot25/other24/protected211/diff/currentshared checks.",
+      "Replace only first FIELDS marker with line-start anchored boundary and uniqueness/order guards as specified. Retain exact3 protected regions; observed hashes listed in input-observation are expectations, not post-repair acceptance.",
+      "Add exact limited-delta proof: compare new prepare before/after bytes outside authorized first block; require specified literal guard semantics by complete text review. For ROOTsettler compare full diff only permitted finite script history extension; no AST/import/compile/run of either script.",
+      "Preserve old RED gate/result292 and all actual raw. In old292 source gate comparison, check shared against old104539 report/archive and independently current111096; for exactly2changed metadata scripts verify archived originals plus current ROOTreviewed afterpins. Check remaining289 records against current files. Never blanket skip all scripts.",
+      "Retain original plan fixed-role checks unchanged. Preserve all4unchanged scripts exact pins; validate2approved changed script afterpins and full beforearchives instead of expecting their old bytes current.",
+      "Retain four author/ROOT ledgers: prepare_red/red1/0 and fourremaining0/1 perround; no reset. The original failedsourcegate did not run these laterchecks; new proof reports only actual results.",
+      "Check25 currentproduct/test sources and211protected unchanged before/after gate. Verify no newtest/static/evidence directories generated.",
+      "Archive before gate/role metadata before any subsequent normal release; freeze all new script/input pins and literal source before executing this new source gate. Do not circularly pin own future output or require authorized rolebefore snapshots currentafter reservation.",
+      "Exclusive output proof.json/actual-tool-return.json/step-report.json+md. Print summary<1500chars; store actual full result first, capture streams honestly. Any mismatch/exception stops, no retry."
+    ]
+  },
+  "archive_and_execution": {
+    "before_any_edit": "ROOT native structured or exact byte preservation of both complete script beforebytes into the two exclusive archive paths, and original gate/role bytes into before-metadata.json. Source authors then use native structured edit; no product execution.",
+    "archive_records": [
+      {
+        "original": {
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/prepare-evidence.py",
+          "bytes": 13233,
+          "sha256": "77cb39339ff2f7aa5d4293174d0fbefb284e9554f16bfd0049c7856516b8e852"
+        },
+        "archive_path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/before-prepare-evidence.py"
+      },
+      {
+        "original": {
+          "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/root-settlement.py",
+          "bytes": 20629,
+          "sha256": "20a365502526256d38039bbcef061c9d6f7b9b522935aafa45f4cfab656b6e9a"
+        },
+        "archive_path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/before-root-settlement.py"
+      }
+    ],
+    "new_metadata_slot": {
+      "id": "r191-corrected-source-scope-gate-once",
+      "owner": "ROOT",
+      "authorized": 1,
+      "used": 0,
+      "remaining": 1,
+      "retries": 0,
+      "timeout_seconds": 120,
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/source-gate.py"
+      ],
+      "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "finite_env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "runtime": "Stdlib bytes/JSON/base64/hash/diff only, own120sSIGALRM; no AST/tokenize/compile/import product/subprocess.",
+      "capture": "Exact approved command with shell noclobber independent stdout.txt/stderr.txt; tool object stored immediately. Gate source fully read and SHA approved before this single invocation."
+    },
+    "same_original_execution": "After successful corrected scopegate and fulltext review of both modified scripts, ROOT may prepare/activate original unused prepare_green120, retaining exact original argv/env and script path but with approved new script pins. It is NOT consumed by R191. All subsequent original budgets/order remain unchanged."
+  },
+  "historical_gate_policy": {
+    "old_RED_and_prepare_RED": "Do not modify frozen invocations, results, streams, snapshots, script pins or completed gate command entries.",
+    "future_commands": "Only not-yet-run gate.input_records/script_pin may bind revised scripts after approved delta; preserve old complete gate before normal update. No mutable role/gate path in fixed input_records.",
+    "historical_mapping": "R191 two archives have original physical hashes; old logical script path is separately explicit. No current-versus-old mismatch suppressed without exact archive check.",
+    "retained_R179": "No R179 script revision. Its declaration split still protects real declaration contents; no new samecause execution failure observed."
+  },
+  "preconditions": [
+    "ROOT full plan/raw/input review before any script edit.",
+    "Current shared111096/SHA63ec55... SOURCE_READY candidate fixed; this plan does not accept semantic correctness.",
+    "All directinputs and236source/protected hashes still applicable; no source writes sincefailure.",
+    "ROOT and soleSol obey split ownership; only2metadata scripts and ROOTnewsourcegate modified/created.",
+    "Before execution, ROOT fullreviews exact modified scripts, limiteddiff, archive bytes, source-gate.py and allafterpins. Missing/nonmatching evidence is STOP, no guessed fields.",
+    "Original RED8/RED19 accepted evidence remains; no GREEN/ruff/prepare_green/settlement run yet."
+  ],
+  "allowed_metadata": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/root-activation.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/input-check.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/command-ledger.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/before-metadata.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/script-change-report.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/limited.diff",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/proof.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/invocation.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/stdout.txt",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/stderr.txt",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/actual-tool-return.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/step-report.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round191-p6-t1-root-source-proof-record-shape-20261014/implementation/step-report.md"
+  ],
+  "budgets": {
+    "new_metadata_scope_gate": 1,
+    "new_product": 0,
+    "new_pytest": 0,
+    "new_static": 0,
+    "new_Git": 0,
+    "failed_gate_retries": 0,
+    "old_commands_reset": false,
+    "R182": "prepare_red/redSPENT1/0; fourremainingHELD0/1",
+    "R179": "prepare_red/redSPENT1/0; fourremainingHELD0/1",
+    "fresh_review": "same seat8remaining, no consumption by R191",
+    "R158": "3spent12HELD",
+    "R175": "threeSPENT"
+  },
+  "acceptance": {
+    "only": "Correct source boundary proof and exact script-history compatibility; no software feature PASS.",
+    "requires": "Actual newmetadata gate0/allchecks true plus ROOTscript review; source gate failed f6a27c remains failed.",
+    "not_claimed": [
+      "GREEN13",
+      "GREEN38",
+      "T1",
+      "T2/T3",
+      "P6B9",
+      "T12",
+      "native",
+      "actual research",
+      "formal",
+      "Git"
+    ],
+    "planned_disjoint_green_union": 51
+  },
+  "stop_rules": [
+    "Any extra marker/schema/semantic problem, wider scriptchange, missing archive, new failure or source drift requires next genuine Astra; do not bypass or retry."
+  ]
+}
+```
+

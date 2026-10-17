@@ -1,0 +1,405 @@
+"""R251 ROOT-only finite settlement of genuine GREEN9 and original R223 budget identities."""
+from pathlib import Path
+from collections import Counter
+import base64
+import hashlib
+import json
+import os
+import re
+import signal
+import sys
+import traceback
+import xml.etree.ElementTree as ET
+
+ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
+BASE = ROOT/'artifacts/research/process/20261004-ced-development'
+D = BASE/'astra-rounds/round251-p6-t2-event3-entry-fence-continuation-20261017'
+R223 = BASE/'astra-rounds/round223-p6-t2-public-writer-binding-race-20261015'
+STATE = BASE/'t12-sol-handoff-20261007/active-t12-state.json'
+PHASE = BASE/'t12-sol-handoff-20261007/phase-summary.md'
+OUT = D/'implementation/root_settlement'
+checks = []
+def encoded(value):
+    return (json.dumps(value,ensure_ascii=False,indent=2,allow_nan=False)+'\n').encode()
+def identity(row):
+    return {k:row[k] for k in ('path','bytes','sha256')}
+def key(row):
+    return tuple(row[k] for k in ('path','bytes','sha256'))
+def pin(path,raw=None):
+    raw = path.read_bytes() if raw is None else raw
+    return {'path':str(path),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+def fixed(row):
+    path = Path(row['path'])
+    raw = path.read_bytes()
+    if path.is_symlink() or pin(path,raw)!=identity(row):
+        raise ValueError('fixed input differs: '+str(path))
+    return raw
+def save(path,value):
+    path.parent.mkdir(parents=True,exist_ok=True)
+    raw = value if isinstance(value,bytes) else encoded(value)
+    with path.open('xb') as handle:
+        if handle.write(raw)!=len(raw):
+            raise OSError('partial exclusive metadata write')
+    if path.read_bytes()!=raw:
+        raise ValueError('exclusive metadata readback differs')
+    return pin(path,raw)
+def read(path):
+    return json.loads(path.read_bytes())
+def check(label,condition):
+    checks.append({'label':label,'ok':bool(condition)})
+def require_checks():
+    if any(not x['ok'] for x in checks):
+        raise ValueError('settlement integrity condition failed')
+def actual_completion(directory,transport,expected_exit):
+    actual = read(directory/'actual-tool-return.json')
+    initial,polls,final = actual['initial'],actual['polls'],actual['final']
+    check('actual_once_'+directory.name,actual['attempt']==1 and actual['retry']==0
+          and final==actual['actual_tool_return']==(polls[-1] if polls else initial)
+          and final['exit_code']==expected_exit and actual['invocation']==transport['invocation']
+          and actual['independent_stdout'] is None and actual['independent_stderr'] is None)
+    if polls:
+        check('actual_same_session_'+directory.name,initial.get('session_id') is not None
+              and all(x.get('session_id')==initial['session_id'] for x in polls[:-1])
+              and len(actual['poll_invocations'])==len(polls)
+              and all(x['session_id']==initial['session_id'] and x['chars']==''
+                      and 0<x['yield_time_ms']<=60000 for x in actual['poll_invocations']))
+    return actual
+def close_controls(before,expected):
+    for row in before:
+        path = Path(row['path'])
+        raw = base64.b64decode(row['base64'],validate=True)
+        if pin(path,raw)!=identity(row):
+            raise ValueError('complete original control bytes differ')
+        actual = path.read_bytes()
+        if actual!=expected.get(str(path),raw):
+            raise ValueError('exact original control transition differs')
+
+def main():
+    signal.signal(signal.SIGALRM,lambda *_:(_ for _ in ()).throw(TimeoutError('R251 ROOT settlement120s')))
+    signal.alarm(120)
+    plan = read(D/'plan.json')
+    command = next(x for x in plan['commands'] if x['id']=='root_settlement')
+    gate_file = D/'script-gate.json'
+    gate_raw = gate_file.read_bytes()
+    gate = json.loads(gate_raw)['commands']['root_settlement']
+    role_paths = [Path(plan['budget_continuation'][k]) for k in ('ROOT_ledger','author_ledger')]
+    role_raws = {p:p.read_bytes() for p in role_paths}
+    roles = {p:json.loads(raw) for p,raw in role_raws.items()}
+    root_role,author_role = [roles[p] for p in role_paths]
+    entry = root_role['commands']['root_settlement']
+    mirror = author_role['commands']['root_settlement']
+    if (gate['state']!='APPROVED' or gate['full_source_reviewed'] is not True
+            or entry['state']!='RESERVED_BY_ROOT' or entry['used']!=1 or entry['remaining']!=0
+            or entry['authorized']!=1 or entry['reservation_id']!=gate['reservation_id']
+            or entry['gate_pin']!=pin(gate_file,gate_raw)
+            or mirror['author_executable'] is not False or mirror['owner']!='ROOT'
+            or mirror['used']!=0 or mirror['remaining']!=1):
+        raise ValueError('sole original ROOT slot and nonexecutable author mirror required')
+    contract = {k:v for k,v in command.items() if k not in ('authorized','used','remaining','state')}
+    if entry['continuation']['execution_contract']!=contract or entry['continuation']['round']!='R251':
+        raise ValueError('exact original budget continuation contract differs')
+    if (sys.argv!=command['launcher_argv'][1:] or Path.cwd()!=ROOT
+            or gate['launcher_argv']!=command['launcher_argv'] or gate['cwd']!=command['cwd']
+            or gate['finite_env']!=command['finite_env'] or gate['timeout_seconds']!=120):
+        raise ValueError('exact ROOT launcher/environment/cwd/cap required')
+    fixed(gate['source'])
+    if gate['source']['path']!=str(Path(__file__)):
+        raise ValueError('actual ROOT source differs')
+    mutable = [D/'script-gate.json',D/'source-gate.json',D/'root-activation.json',*role_paths]
+    if any(x['path'] in {str(p) for p in mutable} for x in gate['input_records']):
+        raise ValueError('live mutable control cannot enter fixed input loop')
+    for row in gate['input_records']:
+        fixed(row)
+    before = []
+    for path in mutable+[STATE,PHASE]:
+        raw = path.read_bytes()
+        before.append({**pin(path,raw),'base64':base64.b64encode(raw).decode()})
+    OUT.mkdir(parents=True,exist_ok=False)
+    invocation = {'round':'R251','budget_owner':'R223.root_settlement','actor':'ROOT','attempt':1,'retry':0,
+        'argv':command['launcher_argv'],'launcher_argv':command['launcher_argv'],'cwd':command['cwd'],
+        'finite_env':command['finite_env'],'timeout_seconds':120,'reservation_id':gate['reservation_id'],
+        'source':gate['source'],'script_gate':pin(gate_file,gate_raw),'controls_before':before,
+        'outer_capture':gate['transport'],'independent_tool_streams':None,
+        'capture_finalization':'ROOT preserves actual tool return and exact exclusive outer stream copies after process exit'}
+    save(OUT/'invocation.json',invocation)
+    close_controls(before,{})
+    observation = json.loads(fixed(plan['inputs']['observation']))
+    predecessor = json.loads(fixed(plan['inputs']['legal_RED_acceptance']))
+    check('legal_R248_RED_predecessor',predecessor['legal_RED'] is True
+          and predecessor['status']=='ACCEPTED_LEGAL_ORIGINAL_RACE_RED')
+    snapshot = json.loads(fixed(gate['source_index_pin']))
+    check('actual_current_counts',len(snapshot['sources'])==27 and len(snapshot['protected'])==211
+          and len(snapshot['scripts'])==4)
+    for row in snapshot['sources']:
+        raw = fixed(row)
+        check('current_full_source',raw==base64.b64decode(row['base64'],validate=True)
+              and raw==fixed(row['physical']) and Path(row['path']).stat().st_mode==row['mode'])
+    for row in snapshot['protected']:
+        fixed(row)
+    for row in snapshot['scripts']:
+        check('full_current_script',fixed(row)==base64.b64decode(row['base64'],validate=True))
+    original = json.loads(fixed(plan['inputs']['legal_RED_baseline']))
+    current_by_path = {x['path']:identity(x) for x in snapshot['sources']}
+    targets = set(plan['scope']['product_paths'])
+    check('only_three_current_product_paths',set(current_by_path)=={x['path'] for x in original['sources']}
+          and all(current_by_path[x['path']]==identity(x) for x in original['sources'] if x['path'] not in targets))
+    fixed(plan['inputs']['frozen_fixture'])
+    scope = json.loads(fixed(gate['fence_inventory_pin']))
+    check('all72_source_entries',len(scope['entries'])==72
+          and {(x['path'],x['method']) for x in scope['entries']}==
+              {(x['path'],x['method']) for x in observation['writer_inventory']})
+    fixed(gate['source_report_pin'])
+    registry = {key(x['original']):x for x in observation['known_missing']}
+    check('exact35_missing',len(registry)==len(snapshot['historical_registry'])==35
+          and {key(x['original']) for x in snapshot['historical_registry']}==set(registry))
+    for row in snapshot['historical_registry']:
+        p = Path(row['original']['path'])
+        check('missing_bytes_stay_unavailable',not p.exists() and not p.is_symlink()
+              and row['hash_match'] is None and row['current_bytes'] is None and row['current_sha256'] is None)
+    for row in snapshot['history_observations']:
+        if key(row['original']) in registry:
+            check('historical_unavailable_not_pass',row['hash_match'] is None)
+        else:
+            raw = fixed(row['resolved'])
+            check('full_historical_generation',row['hash_match'] is True
+                  and pin(Path(row['original']['path']),raw)==identity(row['original']))
+    for row in observation['old_absent_sidecars']:
+        p = Path(row['path'])
+        check('old90_sidecar_absence',row['exists'] is False and not p.exists() and not p.is_symlink())
+    for row in observation['retained_workspace_databases']:
+        fixed(row['pin'])
+        for side in row['sidecars']:
+            p = Path(side['path'])
+            check('retained_DB_sidecar',side['exists'] is False and side['is_symlink'] is False
+                  and not p.exists() and not p.is_symlink())
+    for name in ('prepare_green','ruff','green'):
+        for role in (root_role,author_role):
+            x = role['commands'][name]
+            check('original_slot_spent_'+name,x['used']==1 and x['remaining']==0 and x['state'].startswith('SPENT'))
+    for original_role in observation['R223_role_values']:
+        role = roles[Path(original_role['pin']['path'])]
+        for name in ('prepare_red','red'):
+            check('original_failed_chain_retained',role['commands'][name]==original_role['value']['commands'][name])
+    for name in ('prepare_green','ruff','green'):
+        previous_gate = json.loads(gate_raw)['commands'][name]
+        actual_completion(D/'implementation'/name,previous_gate['transport'],0)
+    prepare = read(D/'implementation/prepare_green/result.json')
+    ruff = read(D/'implementation/ruff/result.json')
+    green = read(D/'implementation/green/result.json')
+    check('exact_accepted_prepare_source',prepare['candidate']==gate['source_index_pin'] and prepare['exit_code']==0)
+    check('Ruff_actual_success',ruff['child_exit']==ruff['wrapper_exit']==0
+          and ruff['accepted_command_outcome'] is True and ruff['observation_errors']==[])
+    check('GREEN_actual_success',green['child_exit']==green['wrapper_exit']==0
+          and green['accepted_command_outcome'] is True and green['timed_out'] is False
+          and green['runner_exception'] is None and green['observation_errors']==[]
+          and green['cleanup']=={'leader_reaped':True,'group_remaining':False,'cleanup_notes':[]}
+          and green['source_index_pin']==gate['source_index_pin'])
+    green_command = next(x for x in plan['commands'] if x['id']=='green')
+    expected = green_command['nodeids']
+    xml = ET.fromstring((D/'implementation/green/junit.xml').read_bytes())
+    nodes = xml.findall('.//testcase')
+    nodeids = [x.get('classname','').replace('.','/')+'.py::'+x.get('name','') for x in nodes]
+    check('exact9_PASS',nodeids==expected and len(nodes)==9
+          and all(x.find('failure') is None and x.find('error') is None and x.find('skipped') is None for x in nodes)
+          and green['JUnit']['nodeids']==expected
+          and (green['JUnit']['tests'],green['JUnit']['passes'],green['JUnit']['failures'],
+               green['JUnit']['errors'],green['JUnit']['skips'])==(9,9,0,0,0))
+    case_by_node = {}
+    behavior_facts = []
+    for row in green['cases']:
+        value = json.loads(fixed(row['pin']))
+        check('full_case_record',value==row['data'])
+        node = next(x for x in expected if hashlib.sha256(x.encode()).hexdigest()+'.json'==Path(row['pin']['path']).name)
+        if node in case_by_node:
+            raise ValueError('duplicate actual case')
+        case_by_node[node]=value
+        mode = value['mode']
+        if mode=='unbound':
+            check('unbound_real_legacy_roundtrip',value['binding'] is None and value['polled'] is False
+                  and value['worker_active_job_id']=='' and value['before']!=value['first']!=value['after'])
+            if value['backend']=='memory':
+                check('unbound_memory_RUN_PAUSE',value['first']=={'present':True,'value':'RUNNING'}
+                      and value['after']=={'present':True,'value':'PAUSED'})
+            else:
+                check('unbound_SQLite_RUN_PAUSE',len(value['first'])==len(value['after'])==1
+                      and value['first'][0]['current_state']=='RUNNING' and value['after'][0]['current_state']=='PAUSED')
+        else:
+            bootstrap,receipts = value['bootstrap'],value['complete_receipts']
+            transaction = bootstrap['transaction']
+            common = ('operation_id','operation_sha256','job_id','attempt','lease_id','epoch',
+                      'generation','row_revision','phase','event_record_hash','event_receipt_hash','job_receipt_hash')
+            check('genuine_private_binding_dual_COMPLETE',value['bootstrap_complete'] is True
+                  and value['binding']==bootstrap['original_time'] and transaction['phase']=='COMPLETE'
+                  and set(receipts)=={'event','job'} and len(receipts['event'])==len(receipts['job'])==1
+                  and receipts['event']==receipts['job']
+                  and all(all(r[k]==transaction[k] for k in common) for group in receipts.values() for r in group))
+            order = value['order']
+            kinds = [x['kind'] for x in order]
+            check('actual_order_identity',all(x['pid']==green['child_pid'] for x in order)
+                  and [x['sequence'] for x in order]==list(range(1,len(order)+1)))
+            if mode=='race':
+                error = value['writer']['exception']
+                check('late_bound_positive_writer_rejected',value['writer_joined'] is True
+                      and value['writer']['attempted'] is True and value['writer']['returned'] is False
+                      and isinstance(error,dict) and error['type']=='ValueError'
+                      and re.search('private|operational|scope',error['message']) is not None
+                      and value['legacy_before']==value['legacy_after']
+                      and kinds.index('ORIGINAL_SAVE_STATE_AFTER_PUBLIC_PRECHECK_BEFORE_INNER_LOCK')
+                          <kinds.index('DURING_EPISODE_GENUINE_BINDING_AND_BOTH_COMPLETE')
+                          <kinds.index('ORIGINAL_WRITER_RELEASED_TOWARD_REAL_INNER_LOCK')
+                          <kinds.index('WRITER_RAISED'))
+            elif mode=='before':
+                check('real_writer_before_binding_allowed',value['writer_joined'] is True
+                      and value['writer']['returned'] is True and value['writer']['exception'] is None
+                      and value['legacy_before']!=value['legacy_after']
+                      and kinds.index('LEGACY_WRITER_FINISHED_BEFORE_BINDING')
+                          <kinds.index('DURING_EPISODE_GENUINE_BINDING_AND_BOTH_COMPLETE'))
+            elif mode=='negative':
+                check('exact_bound_negative_kept',value['negative_state']=='CANCELLED'
+                      and value['unchanged_budget']==bootstrap['payload']['state']
+                      and value['legacy_before']==value['legacy_after'])
+            else:
+                raise ValueError('unrecognized frozen scenario')
+        behavior_facts.append({'nodeid':node,'mode':mode,'backend':value['backend'],'case':row['pin']})
+    check('exact9_case_map',set(case_by_node)==set(expected))
+    summary = green['resource_summary']
+    counts = Counter()
+    resource_nodes = []
+    for row in summary['records']:
+        value = json.loads(fixed(row['pin']))
+        node = value['nodeid']
+        resource_nodes.append(node)
+        check('full_actual_resource_record',value==row['data'] and row['error'] is None
+              and value['pid']==green['child_pid'] and value['command_id']=='R223'
+              and value['allocation_attempts']==len(value['resources']) and value['cleanup_errors']==[])
+        obs = value['observations']
+        check('behavior_and_hooks_restored',obs['assertions_completed'] is True
+              and obs['observers_restored'] is True and obs['method_restoration'] is True and obs['exit_exception'] is None)
+        check('actual_scenario_raw_match',obs['scenarios']==[case_by_node[node]]
+              and all(x is None for x in value['unobserved'].values()))
+        by_id = {x['resource_id']:x for x in value['resources']}
+        check('unique_actual_resource_ids',len(by_id)==len(value['resources']))
+        counts['allocation_attempts']+=len(value['resources'])
+        for call in value['worker_lifecycles']:
+            counts['attempted_poll_lifecycles']+=1
+            counts['entered_poll_lifecycles']+=int(call['entered'])
+            counts['normally_returned_poll_lifecycles']+=int(call['returned_normally'])
+            check('actual_completed_poll',call['attempted'] is True and call['entered'] is True
+                  and call['returned_normally'] is True and call['return_value'] is True and call['exception'] is None
+                  and 0<call['start_sequence']<call['entry_sequence']<call['end_sequence'])
+        for obj in value['resources']:
+            counts['initialized']+=int(obj['initialized'])
+            counts['kind:'+obj['kind']]+=1
+            counts['cleanup_observed']+=int(obj['cleanup_observed'])
+            check('actual_observed_cleanup',obj['initialization_attempted'] is True
+                  and obj['cleanup_observed'] is True and obj['pid']==green['child_pid'])
+            if obj['kind']=='worker':
+                counts['constructed_worker_attempts']+=1
+                counts['initialized_workers']+=int(obj['initialized'])
+                polls = [x['poll_id'] for x in value['worker_lifecycles'] if x['worker_resource_id']==obj['resource_id']]
+                check('actual_worker_poll_links_idle',obj['poll_ids']==polls and obj['final_active_job_id']=='')
+                if not polls:
+                    counts['never_polled_workers']+=1
+                    check('never_polled_no_owned_runtime',obj['cleanup_basis']=='never_polled_no_owned_runtime'
+                          and obj['session_resource_ids']==obj['broker_resource_ids']==obj['heartbeat_resource_ids']==[])
+                else:
+                    check('polled_runtime_released',obj['cleanup_basis']=='poll_finished_runtime_released')
+                for field,kind in (('session_resource_ids','lease_session'),('broker_resource_ids','broker_thread'),
+                                   ('heartbeat_resource_ids','heartbeat_thread')):
+                    for linked in obj[field]:
+                        check('real_runtime_owner',by_id[linked]['kind']==kind
+                              and by_id[linked]['worker_resource_id']==obj['resource_id'])
+            if obj['kind'] in ('helper_thread','broker_thread','heartbeat_thread'):
+                check('real_thread_joined',obj['alive_after_join'] is False
+                      and type(obj['thread_ident']) is int and type(obj['native_thread_id']) is int)
+            if obj['kind']=='lease_session':
+                check('real_session_released',obj['broker_alive'] is False)
+    check('actual_resource_summary_valid',summary['all_records_valid'] is True
+          and summary['validation_errors']==[] and Counter(resource_nodes)==Counter(expected)
+          and dict(counts)==summary['counts'] and counts['attempted_poll_lifecycles']<=18)
+    prerequisite = json.loads(fixed(green['prerequisite']['pin']))
+    check('exact_import_only_prerequisite',prerequisite==green['prerequisite']['data']
+          and prerequisite['accepted_prerequisite'] is True and prerequisite['exception'] is None
+          and prerequisite['pid']==green['child_pid'] and prerequisite['profile_trace_before']==[None]*4
+          and prerequisite['profile_trace_after']==[None]*4 and prerequisite['pre_observer_resource_measurement'] is None)
+    fixed(prerequisite['actual_file_pin'])
+    for row in green['streams'].values():
+        fixed(row)
+    new_index = green['new_run_index']
+    check('real_new_persistent_index',new_index['retained_in_place'] is True
+          and new_index['old_bytes_recovered'] is False and new_index['SQL'] is False)
+    for row in new_index['databases']:
+        fixed(row['pin'])
+        check('new_DB_under_persistent_workspace',Path(row['pin']['path']).is_relative_to(D/'implementation/green/persistent-basetemp'))
+        for side in row['sidecars']:
+            p = Path(side['path'])
+            check('new_DB_closed_sidecar',side['exists'] is False and side['is_symlink'] is False
+                  and not p.exists() and not p.is_symlink())
+    require_checks()
+    close_controls(before,{})
+    settlement = {'round':'R251','status':'BOUNDED_EVENT3_GREEN9_CLOSURE',
+        'legal_RED':plan['inputs']['legal_RED_acceptance'],'GREEN':pin(D/'implementation/green/result.json'),
+        'source_index':gate['source_index_pin'],'fence_inventory':gate['fence_inventory_pin'],
+        'checks':checks,'check_count':len(checks),'actual_resources':dict(counts),
+        'behavior_facts':behavior_facts,'new_retained_databases':new_index['databases'],
+        'historical_missing_count':35,'all_historical_bytes_available':False,
+        'T2_complete':False,'T12_complete':False,'native':False,'formal':False,'Git_commands':0}
+    settlement_pin = save(OUT/'settlement.json',settlement)
+    save(OUT/'result.json',{'round':'R251','command':'root_settlement','budget_owner':'R223.root_settlement',
+        'attempt':1,'retry':0,'exit_code':0,'settlement':settlement_pin,'invocation':invocation,
+        'stdout_stderr_actual_tool_capture':'Final exact copies recorded by ROOT after tool completion',
+        'test_execution':False,'new_product_commands':0,'runtime_evidence':None,'actual_resources':None})
+    entry.update(state='SPENT_ACCEPTED_ROOT_SETTLEMENT',used=1,remaining=0,actual_exit_code=0,settlement=settlement_pin)
+    mirror['ROOT_usage_mirror']={'used':1,'remaining':0,'executed_by':'ROOT','author_executed':False,
+                                 'settlement':settlement_pin}
+    state_before = next(base64.b64decode(x['base64'],validate=True) for x in before if x['path']==str(STATE))
+    phase_before = next(base64.b64decode(x['base64'],validate=True) for x in before if x['path']==str(PHASE))
+    state = json.loads(state_before)
+    if 'R251' in state['planning']:
+        raise ValueError('new R251 planning fact already exists')
+    state['planning']['R251']={'status':settlement['status'],'settlement':settlement_pin,
+        'GREEN':settlement['GREEN'],'legal_RED':settlement['legal_RED'],'T2_complete':False,
+        'next':'Parent GREEN7 and fresh review remain held for separate continuation'}
+    comparison = json.loads(encoded(state))
+    del comparison['planning']['R251']
+    if comparison!=json.loads(state_before):
+        raise ValueError('STATE changed outside planning.R251')
+    phase = phase_before+(
+        '\n\n## R251（2026-10-17）\n\n原event3锁／事务入口围栏与原九例GREEN已完成有界软件核验。'
+        '72源码入口不等于72运行用例；历史35项原证据仍缺失，未恢复完整远端复现包。'
+        '父GREEN7、freshreview12、Git仍未放行；T2/T12/native/formal未完成。证据：'
+        +str(OUT/'settlement.json')+'\n').encode()
+    source_gate = read(D/'source-gate.json')
+    source_gate.update(status=settlement['status'],execution_released=False,settlement=settlement_pin)
+    gates = json.loads(gate_raw)
+    gates['commands']['root_settlement']['state']='SPENT_ACCEPTED_ROOT_SETTLEMENT'
+    mutations = {role_paths[0]:encoded(root_role),role_paths[1]:encoded(author_role),
+        STATE:encoded(state),PHASE:phase,D/'source-gate.json':encoded(source_gate),
+        gate_file:encoded(gates),D/'root-activation.json':encoded({
+            'status':settlement['status'],'execution_released':False,'settlement':settlement_pin})}
+    close_controls(before,{})
+    for path,raw in mutations.items():
+        temp = D/('.ROOT-settlement-'+path.name+'.tmp')
+        save(temp,raw)
+        os.replace(temp,path)
+    save(D/'root-bounded-race-closure.json',{**settlement,'final_roles':[pin(p) for p in role_paths],
+        'STATE':pin(STATE),'PHASE':pin(PHASE),'controls_before':pin(OUT/'invocation.json')})
+    signal.alarm(0)
+    print(json.dumps({'command':'root_settlement','exit_code':0,'checks':len(checks),
+                      'result_pin':pin(OUT/'result.json'),'settlement_pin':settlement_pin},ensure_ascii=False))
+
+if __name__=='__main__':
+    try:
+        main()
+    except BaseException as error:
+        signal.alarm(0)
+        OUT.mkdir(parents=True,exist_ok=True)
+        failure = {'round':'R251','command':'root_settlement','attempt':1,'retry':0,'exit_code':1,
+            'runner_exception':{'type':type(error).__name__,'message':str(error),'traceback':traceback.format_exc()},
+            'checks':checks,'T2_complete':False,'T12_complete':False}
+        if not (OUT/'result.json').exists():
+            save(OUT/'result.json',failure)
+        save(OUT/'unexpected-failure.json',failure)
+        print(json.dumps({'command':'root_settlement','exit_code':1,
+                          'result_pin':pin(OUT/'result.json')},ensure_ascii=False))
+        raise SystemExit(1)

@@ -1,0 +1,30 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round239-p6-t2-writer-release-barrier-progress-capture-20261015/root-full-source-gate-and-reserve.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round241-p6-t2-native-source-eof-reconstruction-20261015/root-full-source-gate-and-reserve.py
+@@ -36,6 +36,7 @@
+ patches=[native(v) for v in report["raw_native_receipts"]];ck(len(patches)==4,"four complete native records")
+ def reconstruct(add,update,path):
+  a=add.splitlines();ck(a[:2]==["*** Begin Patch","*** Add File: "+path] and a[-1]=="*** End Patch" and all(x.startswith("+") for x in a[2:-1]),"exact AddFile sole path")
++ ck(a[-2]=="+","recorded AddFile includes exactly observed final empty source line")
+  text="".join(x[1:]+"\n" for x in a[2:-1])
+  u=update.splitlines();ck(u[:2]==["*** Begin Patch","*** Update File: "+path] and u[-1]=="*** End Patch","exact UpdateFile sole path")
+  hunks=[];current=[]
+@@ -49,7 +50,18 @@
+   ck(all(x and x[0] in " +-" for x in hunk),"literal native hunk syntax")
+   before="".join(x[1:]+"\n" for x in hunk if x[0] in " -");after="".join(x[1:]+"\n" for x in hunk if x[0] in " +")
+   ck(before and text.count(before)==1,"unique original native hunk");text=text.replace(before,after,1)
+- ck(text.encode()==Path(path).read_bytes(),"complete native generations reconstruct exact frozen source")
++ expected={
++  str(I/"r239_barrier_observer.py"):(17093,"8d672fbbf781788a8001c244d92683092babb3a4fdbfc6e3cb1a351ff66b17a1",17092,"7b3080db3f38b311b32ff91e03c45896bec579f9dc8dfa4956a5fd9f4285e36c",1),
++  str(I/"run-command.py"):(47446,"cfc4b7a18b85f4ecd3eba7b94aa8bef7d47d61871ffe564a40873315bdf14800",47445,"9bcd169e9e45c05a71dd813b67ea122452ccb663ab71e2c795ef17771dfebc40",7)
++ }
++ ck(path in expected,"only two frozen native chains")
++ raw_size,raw_hash,final_size,final_hash,hunk_count=expected[path]
++ raw=text.encode();ck(len(hunks)==hunk_count and len(raw)==raw_size and hashlib.sha256(raw).hexdigest()==raw_hash,"exact full literal reconstruction generation")
++ ck(raw.endswith(b"\n\n") and not raw.endswith(b"\n\n\n"),"exact observed two-LF reconstructed ending")
++ normalized=raw[:-1]
++ ck(len(normalized)==final_size and hashlib.sha256(normalized).hexdigest()==final_hash,"one explicitly bounded EOF LF representation difference")
++ actual=Path(path).read_bytes();ck(normalized==actual,"complete native content plus explicit final-LF relation equals exact frozen source")
++ checks.append({"check":"R241 native EOF provenance "+path,"pass":True,"literal_reconstruction":{"bytes":raw_size,"sha256":raw_hash},"frozen_source":{"bytes":final_size,"sha256":final_hash},"difference":"one terminal LF only; no interior/source edit","intermediate_disk_generation_observed":False})
+ for i in range(2):reconstruct(patches[i*2],patches[i*2+1],report["scripts"][i]["path"])
+ old=next(x for x in p["inputs"] if x["path"].endswith("/round237-p6-t2-original-verification-budget-intersection-20261015/implementation/run-command.py"));fixed(old)
+ observer,runner=[Path(x["path"]) for x in report["scripts"]]

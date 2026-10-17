@@ -48,12 +48,14 @@ from cloud_edge_robot_arm.simulation_workbench.models import (
 if TYPE_CHECKING:
     from cloud_edge_robot_arm.repositories.event_autonomy import EventAutonomyRepository
     from cloud_edge_robot_arm.research.operational_prefix_v1 import OperationalPrefixApplicationV1
+    from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseSession
     from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
 
 
 VISUAL_WORKER_FACTORY_SOURCE_PATHS = frozenset(
     {
         "src/cloud_edge_robot_arm/vision/capture.py",
+        "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
         "src/cloud_edge_robot_arm/vision/runtime_binding.py",
         "src/cloud_edge_robot_arm/vision/role_models.py",
         "src/cloud_edge_robot_arm/simulation/config.py",
@@ -102,6 +104,9 @@ class SimulationWorker:
         visual_role_binding: RoleRuntimeBinding | None = None,
         visual_event_repository: EventAutonomyRepository | None = None,
         visual_robot_id: str | None = None,
+        operational_time_mode: Literal[
+            "UTC_LEGACY_VETO", "OPERATIONAL_LEASE_FOUNDATION_V1", "LOCAL_TEMPORAL_PUBLICATION_V1"
+        ] = "UTC_LEGACY_VETO",
     ) -> None:
         visual_configuration = (
             visual_role_binding,
@@ -118,6 +123,11 @@ class SimulationWorker:
             from cloud_edge_robot_arm.vision.worker_owner import _identity_string
 
             _identity_string(visual_robot_id)
+        if operational_time_mode not in {"UTC_LEGACY_VETO", "OPERATIONAL_LEASE_FOUNDATION_V1", "LOCAL_TEMPORAL_PUBLICATION_V1"}:
+            raise ValueError("unsupported operational time mode")
+        self.operational_time_mode = operational_time_mode
+        self._frozen_operational_time_mode = operational_time_mode
+        self._operational_lease_session: OperationalLeaseSession | None = None
         self.worker_id = worker_id
         self.backend = backend
         self.repository = repository
@@ -134,43 +144,100 @@ class SimulationWorker:
         self._native_clock_prefix_application: object | None = None
 
     def poll_once(self) -> bool:
-        # acquire_lease 是跨进程/跨线程的唯一消费门；没有租约就不能执行 job。
-        lease = self.repository.acquire_lease(
-            worker_id=self.worker_id,
-            backend=self.backend,
-            lease_ttl_seconds=self.lease_ttl_seconds,
+        from cloud_edge_robot_arm.simulation_runtime.operational_lease import (
+            OperationalLeaseError,
+            _close_worker_lease_session,
+            _heartbeat_lease_scope,
+            _install_heartbeat_thread,
+            _open_worker_lease_session,
+            _worker_lease_scope,
         )
-        if lease is None:
-            return False
-        self.active_job_id = lease.job_id
-        self._heartbeat_failed.clear()
+
+        if self._operational_lease_session is not None:
+            raise OperationalLeaseError("worker poll already active")
+        self._frozen_operational_time_mode = self.operational_time_mode
+        session = None
+        lease = None
+        heartbeat = None
         stop_heartbeat = threading.Event()
+        first_heartbeat = threading.Event()
+        with ExitStack() as stack:
+            if self._frozen_operational_time_mode in {"OPERATIONAL_LEASE_FOUNDATION_V1", "LOCAL_TEMPORAL_PUBLICATION_V1"}:
+                session = _open_worker_lease_session(self)
+                self._operational_lease_session = session
+                stack.enter_context(_worker_lease_scope(session))
+            elif self._frozen_operational_time_mode != "UTC_LEGACY_VETO":
+                raise OperationalLeaseError("unsupported operational mode")
+            try:
+                lease = self.repository.acquire_lease(
+                    worker_id=self.worker_id,
+                    backend=self.backend,
+                    lease_ttl_seconds=self.lease_ttl_seconds,
+                )
+                if lease is None:
+                    return False
+                owned_lease = lease
+                self.active_job_id = lease.job_id
+                self._heartbeat_failed.clear()
 
-        def maintain_lease() -> None:
-            from datetime import UTC, datetime
+                def maintain_lease() -> None:
+                    from contextlib import nullcontext
+                    from datetime import UTC, datetime
 
-            while not stop_heartbeat.is_set():
-                try:
-                    self.repository.heartbeat_lease(
-                        lease.lease_id, lease_ttl_seconds=self.lease_ttl_seconds
+                    scope = (
+                        _heartbeat_lease_scope(session) if session is not None else nullcontext()
                     )
-                    self.heartbeat_at = datetime.now(UTC).isoformat()
-                except Exception:
-                    self._heartbeat_failed.set()
-                    return
-                stop_heartbeat.wait(max(0.05, self.lease_ttl_seconds / 3))
+                    try:
+                        with scope:
+                            while not stop_heartbeat.is_set():
+                                self.repository.heartbeat_lease(
+                                    owned_lease.lease_id, lease_ttl_seconds=self.lease_ttl_seconds
+                                )
+                                self.heartbeat_at = datetime.now(UTC).isoformat()
+                                first_heartbeat.set()
+                                stop_heartbeat.wait(max(0.05, self.lease_ttl_seconds / 3))
+                    except Exception:
+                        self._heartbeat_failed.set()
+                    finally:
+                        first_heartbeat.set()
 
-        heartbeat = threading.Thread(target=maintain_lease, name="simulation-lease", daemon=True)
-        heartbeat.start()
-        try:
-            self._execute(lease.job_id, lease.lease_id)
-        finally:
-            stop_heartbeat.set()
-            heartbeat.join(timeout=1)
-            self.repository.release_lease(lease.lease_id)
-            self.active_job_id = ""
-            self._active_task_origin = None
-        return True
+                heartbeat = threading.Thread(
+                    target=maintain_lease, name="simulation-lease", daemon=True
+                )
+                if session is not None:
+                    _install_heartbeat_thread(session, heartbeat)
+                heartbeat.start()
+                if session is not None:
+                    # ACQUIRED/null-attempt is a genuine limited state before start_attempt.
+                    if (
+                        not first_heartbeat.wait(session.wait_cap)
+                        or self._heartbeat_failed.is_set()
+                    ):
+                        raise OperationalLeaseError("initial ACQUIRED heartbeat failed")
+                self._execute(lease.job_id, lease.lease_id)
+                return True
+            finally:
+                if session is not None:
+                    session.invalidate("worker poll finally")
+                stop_heartbeat.set()
+                if heartbeat is not None:
+                    heartbeat.join(timeout=1)
+                    if session is not None and heartbeat.is_alive():
+                        session.join_failed = True
+                try:
+                    if session is not None and session.job_id:
+                        self.repository.cleanup_operational_session(session.job_id, session=session)
+                    elif session is None and lease is not None:
+                        self.repository.release_lease(lease.lease_id)
+                finally:
+                    self.active_job_id = ""
+                    self._active_task_origin = None
+                    from cloud_edge_robot_arm.vision.operational_windows import _revoke_worker
+
+                    _revoke_worker(self)
+                    if session is not None:
+                        _close_worker_lease_session(session, reason="worker poll closed")
+                        self._operational_lease_session = None
 
     def _execute(self, job_id: str, lease_id: str) -> None:
         with self.repository.publication_guard():
@@ -210,9 +277,23 @@ class SimulationWorker:
                 raise CancelledByOperator("cancelled before start")
             self._transition(job_id, RuntimeJobStatus.LEASED, RuntimeJobStatus.STARTING, lease_id)
             self._transition(job_id, RuntimeJobStatus.STARTING, RuntimeJobStatus.RUNNING, lease_id)
+            from cloud_edge_robot_arm.vision.operational_windows import (
+                OperationalWindowOwner,
+                _prepare_startup,
+                _worker_scope,
+            )
+
+            operational_owner = None
+            if _prepare_startup(self, job):
+                operational_owner = OperationalWindowOwner.from_worker(self, job_id=job_id)
+                operational_owner._begin_origin()
             start_monotonic = time.monotonic()
             self._active_task_origin = (job_id, start_monotonic, datetime.now(UTC))
-            result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+            if operational_owner is not None:
+                operational_owner._mark_origin()
+                operational_owner._seal_origin(self._active_task_origin)
+            with _worker_scope(self):
+                result, events, metrics = self._run(job, start_monotonic=start_monotonic)
             self._raise_if_cancelled_or_timed_out(job_id, job, start_monotonic)
             terminal = RuntimeJobStatus.SUCCEEDED
             if (
@@ -235,6 +316,21 @@ class SimulationWorker:
                 self._raise_if_cancelled_or_timed_out(job_id, job, start_monotonic)
                 if self._active_job_cancelled(job):
                     raise RuntimeError("lease lost before evidence publication")
+                if self._operational_lease_session is not None:
+                    if terminal != RuntimeJobStatus.BLOCKED_BY_ENV:
+                        self._transition(
+                            job_id, RuntimeJobStatus.RUNNING, RuntimeJobStatus.FINALIZING, lease_id
+                        )
+                    artifacts = self._publish_operational_artifacts(
+                        job,
+                        attempt=attempt.attempt,
+                        terminal=terminal,
+                        events=events,
+                        metrics=metrics,
+                        result=result,
+                        start_monotonic=start_monotonic,
+                    )
+                    return
                 if terminal == RuntimeJobStatus.BLOCKED_BY_ENV:
                     self._transition(job_id, RuntimeJobStatus.RUNNING, terminal, lease_id)
                 else:
@@ -281,6 +377,14 @@ class SimulationWorker:
                 if isinstance(exc, (CancelledByOperator, TimedOut))
                 else (f"{type(exc).__name__}: {exc}")
             )
+            if self._operational_lease_session is not None:
+                # An ended/revoked caller has no positive archival capability. The
+                # original poll finally closes its exact residual SQL owner instead.
+                self._operational_lease_session.invalidate(error)
+                self.repository.cleanup_operational_session(
+                    job_id, session=self._operational_lease_session
+                )
+                return
             if (
                 publishing_success
                 and result is not None
@@ -321,6 +425,121 @@ class SimulationWorker:
                 status=failure_terminal,
                 error=error,
             )
+        finally:
+            from cloud_edge_robot_arm.vision.operational_windows import _revoke_worker
+
+            _revoke_worker(self)
+
+    def _publish_operational_artifacts(
+        self,
+        job: SimulationJobRecord,
+        *,
+        attempt: int,
+        terminal: RuntimeJobStatus,
+        events: list[TimelineEvent],
+        metrics: list[SimulationMetric],
+        result: dict[str, Any] | ExperimentResult,
+        start_monotonic: float,
+    ) -> dict[str, str]:
+        """Keep previews private; only a live original owner can promote the final files."""
+        session = self._operational_lease_session
+        if session is None:
+            raise RuntimeError("operational publication lost its original session")
+        run_dir = self.artifact_root / job.artifact_root
+        private = run_dir / (".operational-publication-" + session.epoch)
+        stage, backup, rejected = private / "stage", private / "previous", private / "unconfirmed"
+        stage.mkdir(parents=True, exist_ok=False)
+        backup.mkdir()
+        rejected.mkdir()
+        promoted: list[Path] = []
+        expected_paths = self._artifact_paths(job)
+
+        def validate() -> None:
+            current = self.repository.get_job(job.job_id)
+            if current.cancel_requested or current.status in {
+                RuntimeJobStatus.CANCEL_REQUESTED,
+                RuntimeJobStatus.CANCELLING,
+                RuntimeJobStatus.CANCELLED,
+            }:
+                raise CancelledByOperator("cancelled during publication")
+            if (time.monotonic() - start_monotonic) >= job.timeout_seconds:
+                raise TimedOut("original task timeout during publication")
+            expected = (
+                RuntimeJobStatus.RUNNING
+                if terminal == RuntimeJobStatus.BLOCKED_BY_ENV
+                else RuntimeJobStatus.FINALIZING
+            )
+            if (
+                session._unusable.is_set()
+                or self._heartbeat_failed.is_set()
+                or current.status != expected
+                or current.attempt != attempt
+                or not self._owns_artifact_publication(current, job.lease_id)
+            ):
+                raise RuntimeError("original owner/UTC lease veto during publication")
+
+        def publish(final: SimulationJobRecord, snapshot: dict[str, Any]) -> dict[str, str]:
+            written = self._write_artifacts(
+                final,
+                events=events,
+                metrics=metrics,
+                result=result,
+                expected_terminal_status=terminal,
+                publication_snapshot=snapshot,
+                publication_directory=stage,
+            )
+            paths = {}
+            for name, relative in written.items():
+                actual = self.artifact_root / relative
+                paths[name] = (
+                    (run_dir / actual.name).relative_to(self.artifact_root).as_posix()
+                    if actual.parent == stage
+                    else relative
+                )
+                if not actual.is_file():
+                    raise RuntimeError("publication did not write its exact artifact target")
+            if paths != expected_paths:
+                raise RuntimeError("publication preview artifact map differs from final target")
+            validate()
+            for source in sorted(stage.iterdir()):
+                destination = run_dir / source.name
+                if destination.exists():
+                    destination.replace(backup / source.name)
+                source.replace(destination)
+                promoted.append(destination)
+            return paths
+
+        try:
+            return self.repository.finalize_operational_publication(
+                job.job_id,
+                attempt=attempt,
+                terminal=terminal,
+                artifact_paths=expected_paths,
+                metrics=[metric.model_dump(mode="json") for metric in metrics],
+                publish=publish,
+                validate=validate,
+            )
+        except BaseException as error:
+            # Retain exact failed preview bytes as explicitly unconfirmed diagnostics,
+            # withdraw their public names, and restore any pre-existing originals.
+            for destination in reversed(promoted):
+                if destination.exists():
+                    destination.replace(rejected / destination.name)
+            for previous in backup.iterdir():
+                previous.replace(run_dir / previous.name)
+            _atomic_write_json(
+                private / "rejection.json",
+                {
+                    "status": "UNCONFIRMED_PREVIEW_NOT_ACCEPTED",
+                    "accepted": False,
+                    "epoch": session.epoch,
+                    "job_id": job.job_id,
+                    "lease_id": job.lease_id,
+                    "error": f"{type(error).__name__}: {error}",
+                    "preview_is_committed_evidence": False,
+                },
+            )
+            raise
 
     def _recover_failed_publication(
         self,
@@ -742,6 +961,7 @@ class SimulationWorker:
             )
         self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
         runtime_source = None
+        operational_handoff = None
         verification_limits = None
         source_hashes: Mapping[str, str] | None = None
         required_sources: frozenset[str] = frozenset()
@@ -835,6 +1055,9 @@ class SimulationWorker:
                 task_started_at=origin[2],
                 task_timeout_s=float(job.timeout_seconds),
             )
+            from cloud_edge_robot_arm.vision.operational_windows import _new_handoff
+
+            operational_handoff = _new_handoff(self, runtime_source, verification_limits)
 
         def check_setup_boundary() -> None:
             self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
@@ -911,6 +1134,7 @@ class SimulationWorker:
                         role_binding=binding,
                         model_snapshot_hash=snapshot.digest(),
                         verification_limits=verification_limits,
+                        _operational_handoff=operational_handoff,
                     )
                     worker_runtime.check_active(robot.get_state())
                 policy_arguments: dict[str, Any] = {}
@@ -1050,8 +1274,10 @@ class SimulationWorker:
         metrics: list[SimulationMetric],
         result: dict[str, Any] | ExperimentResult,
         expected_terminal_status: RuntimeJobStatus | None = None,
+        publication_snapshot: dict[str, Any] | None = None,
+        publication_directory: Path | None = None,
     ) -> dict[str, str]:
-        run_dir = self.artifact_root / job.artifact_root
+        run_dir = publication_directory or self.artifact_root / job.artifact_root
         run_dir.mkdir(parents=True, exist_ok=True)
         # artifact 文件是重启恢复和验收的第二真源；数据库缺记录时可以从这里恢复，
         # 但写入时仍只保存相对路径，避免泄露本机目录。
@@ -1081,7 +1307,11 @@ class SimulationWorker:
             "sim_real_gap_report": run_dir / "sim_real_gap_report.json",
         }
         _atomic_write_json(paths["run_manifest"], redact(job.manifest))
-        job_events = self.repository.list_events(job.run_id)
+        job_events = (
+            publication_snapshot["events"]
+            if publication_snapshot is not None
+            else self.repository.list_events(job.run_id)
+        )
         _atomic_write_jsonl(
             paths["events"],
             [
@@ -1189,7 +1419,11 @@ class SimulationWorker:
             if event.previous_status or event.next_status
         ]
         _atomic_write_jsonl(paths["state_transitions"], transitions)
-        attempts = self.repository.list_attempts(job.run_id)
+        attempts = (
+            publication_snapshot["attempts"]
+            if publication_snapshot is not None
+            else self.repository.list_attempts(job.run_id)
+        )
         _atomic_write_jsonl(
             paths["attempts"],
             [
@@ -1204,7 +1438,11 @@ class SimulationWorker:
                 for attempt in attempts
             ],
         )
-        leases = self.repository.list_leases(job.run_id)
+        leases = (
+            publication_snapshot["leases"]
+            if publication_snapshot is not None
+            else self.repository.list_leases(job.run_id)
+        )
         lease_rows = [
             {
                 "job_id": lease.job_id,
@@ -1339,6 +1577,22 @@ class SimulationWorker:
 
         if job.lease_id != lease_id or job.worker_id != self.worker_id:
             return False
+        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
+            from cloud_edge_robot_arm.vision.operational_windows import _OWNERS
+            from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseError
+            from cloud_edge_robot_arm.research.operational_time_v1 import OperationalTimeError
+
+            try:
+                owner = _OWNERS.get(self)
+                if owner is not None:
+                    owner._check_app_live(require_origin=owner.task_origin is not None)
+                with self.repository._local_read_scope(
+                    self._operational_lease_session, job_id=job.job_id, purpose="worker-read",
+                    operation_sha256=hashlib.sha256((job.job_id + ":worker-read").encode()).hexdigest(),
+                ) as view:
+                    return self._operational_lease_session.evaluate_locked(view).status == "VALID"
+            except (OperationalLeaseError, OperationalTimeError, ValueError):
+                return False
         lease = next(
             (
                 item
@@ -1472,6 +1726,11 @@ class SimulationWorker:
         """Recheck persisted ownership at each model return and physical boundary."""
         from datetime import UTC, datetime
 
+        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
+            current = self.repository.get_job(original.job_id)
+            return (current.cancel_requested or current.status != RuntimeJobStatus.RUNNING
+                    or self._heartbeat_failed.is_set()
+                    or not self._owns_artifact_publication(current, original.lease_id))
         try:
             current = self.repository.get_job(original.job_id)
             if current.cancel_requested or current.status in {
@@ -1528,8 +1787,16 @@ class SimulationWorker:
             raise RuntimeError("lease heartbeat failed; dispatch stopped")
         if current.lease_id != original.lease_id or current.status != RuntimeJobStatus.RUNNING:
             raise RuntimeError("job no longer owns an active running lease")
+        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
+            if not self._owns_artifact_publication(current, original.lease_id):
+                raise RuntimeError("current local task/lease authority unavailable")
+            return
         if (time.monotonic() - start_monotonic) >= original.timeout_seconds:
             raise TimedOut("timeout")
+
+
+_GENUINE_WORKER_POLL_CODE = SimulationWorker.poll_once.__code__
+_GENUINE_WORKER_MODULE_GLOBALS = globals()
 
 
 def _experiment_config(

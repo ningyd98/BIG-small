@@ -1,0 +1,48 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round195-p6-t1-compact-tool-receipt-shape-20261014/implementation/before/root-settlement.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round192-p6-t1-original-green38-unexpected-outcome-20261014/implementation/root-settlement.py
+@@ -72,7 +72,21 @@
+     assert actual["exit_code"] == expected_exit and actual.get("session_id") is None
+     for record in tool["outer_streams"].values():
+         check(record)
+-    assert tool["actual_summary"] == result
++    summary = tool["actual_summary"]
++    assert isinstance(summary, dict)
++    if "child_exit" in result:
++        assert result["command"] in {"red", "ruff", "green", "green51"}
++        required = {"JUnit", "accepted_command_outcome", "child_exit",
++                    "cleanup", "timed_out", "wrapper_exit"}
++        optional = {"command", "failures", "process_pid"}
++        if directory == D / "implementation/green51":
++            assert set(summary) == required
++        if summary != result:
++            assert required <= set(summary) <= required | optional
++            assert all(key in result and value == result[key] for key, value in summary.items())
++    else:
++        assert result["command"] in {"prepare", "prepare_red", "prepare_green"}
++        assert summary == result
+     return tool
+ 
+ 
+@@ -386,7 +400,21 @@
+     assert json.loads(unarchive(invocation["author_ledger_before"]))["commands"][name]["used"] == 0
+     check(result["invocation"])
+     for record in result["input_records"]:
+-        check(record)
++        if name == "ruff" and record["path"] == str(D / "implementation/root-settlement.py"):
++            expected_history = {"path": str(D / "implementation/root-settlement.py"), "bytes": 29121,
++                                "sha256": "034b1db438d6a7fb4c6090f76e277be06e1edc7b5e47a09f97e9e9835fa1b20f"}
++            assert record == expected_history
++            assert [item for item in result["input_records"]
++                    if item["path"] == expected_history["path"]] == [expected_history]
++            archive = B / "round195-p6-t1-compact-tool-receipt-shape-20261014/implementation/before/root-settlement.py"
++            archived = pin(archive)
++            assert (archived["bytes"], archived["sha256"]) == (
++                expected_history["bytes"], expected_history["sha256"])
++        else:
++            check(record)
++    if name == "ruff":
++        assert sum(record["path"] == str(D / "implementation/root-settlement.py")
++                   for record in result["input_records"]) == 1
+     for record in result["streams"].values():
+         check(record)
+     actual_tool(directory, 0, result)

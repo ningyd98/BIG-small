@@ -1,12 +1,37 @@
 # Current Authoritative Status
 
+## 2026-10-08 P4 真实来源限定验收完成
+
+修复后的单次 MuJoCo 来源采集与另一进程的公共 reader 均退出 0，独立 Astra 审查 22 项全部通过。完整事件为 RESET1、CONTROL120、PHYSICS120、CAPTURE3；缓存实例0/0、显式76800像素，0动作。225源在本次采集与读出前后无漂移，原件 VERIFIED、source_prefix_complete=true；原 D 年龄区间1.244654602–1.977729199秒。
+
+新63份原件共16700451字节，旧失败68份共25001424字节均保留并独立复核；累计实际2次为1失败、1成功。这里只接受 P4 startup→RESET→capture→current 来源正分支，不代表 native、live authority、九组、G1或T12实际决策完成。完整raw/DB继续本地，远端只交付限定小证据。
+
+P5/R100由原GPT-6.1-sol执行，唯一RED为27个预期缺接口失败；随后发现计划中年龄5秒等值允许与kind截止等值拒绝冲突，现场已冻结交实际Astra R101澄清，八个现存产品源未改，GREEN/static未运行。P3新角色actual probe仍待P8来源冻结，P6–P12尚未完成。后续合法源码变化不追溯改写本次冻结来源，不得借用已结束P4 owner。
+
+
+## 2026-10-08 Git 整理：P3 与 P4/R93 软件交付
+
+已核实隔离交付分支 `codex/research-20261007-p1-delivery` 的软件 HEAD 为 `ed7efb48acbb86f7cb387a8a67e89d479700dc69`；本次文档整理前，本地、上游及实时远端一致。P4/R93 软件提交为 `a77568043bb5589471e3f15a07d3203998acb8b4`，P3 软件提交为该 HEAD。此前 P1/P2 交付仍保留。当前主工作区 15 个已修改源码、配置与测试文件均与交付工作区逐字节一致。
+
+P3 软件独审通过，原 GREEN 为 90 个唯一用例（含 11 个新增）；P4/R93 原 GREEN 为 31 个用例。两次导出候选各另验 1 个正例。上述为既有验证，本次仅整理文档、核对文件和 Git，不重跑产品测试。P4 首次真实仿真采集失败及 68 份原件保留；新一轮实际采集尚未启动。当前角色的新 Max probe、native 完整动作和正式研究尚未验收，`formal_accepted=false`。较早段落记录当时状态，以本条覆盖其 P3/P4 和 Git 进度。
+
+主研发分支的用户 `1007` 提交、两个嵌套工作区改动及全部实验原件保留。本次有限文档提交沿用隔离交付分支；完整批量 raw、运行数据库、凭据、权重和 SDK 不属于本次新增交付，远端不是完整实验复现包。
+
+详见 [本轮 Git 交付记录](research/t12-git-delivery-20261008.md)。
+
 ## 2026-10-04 云、边、端持续研发
 
 当前按[ced.research.v2总计划](superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)持续实施，边缘模型型号后置。已独立审查的软件范围包括角色/wire绑定、原生三值条件、T10提交与硬停止、共同基线/模式CAS、规则成本边界、视觉修复候选、stage/activation/start接口、持久恢复及完成/预算消费者、运行组合、Max角色局部修复、T8先导/完整资源冻结补修、INITIAL来源审计、完整分配/统计/复现及只读研究页。实际风险来源、owner登记和方法接入继续实施，不登记整体完成。
 
-尚未记录经独立验收的Max真实调用、native几何/运动界或连续效果证书；JOINT/LOCAL_RECOVER及真实INITIAL/FINAL保持关闭。新100组开发采集与1组教师故障原始来源不能替代完整机会/200组证明。研究页面的4200条软件BLOCKED记录不计物理结果，formal_accepted=false。历史限定DONE与原始失败保持原口径。每步报告和审查见[阶段总结](research/process/continuation_20261004.md)，操作入口见[复现说明](research/reproduction.md)，未满足门见[结果与限制](research/results_and_limits.md)。
+Max历史35次真实请求HTTP200及独立valid=true已记录，继续复用成功通道；当前T12角色与source绑定仍按P3增量核验。native几何/运动界或连续效果证书尚未验收；JOINT/LOCAL_RECOVER及真实INITIAL/FINAL保持关闭。新100组开发采集与1组教师故障原始来源不能替代完整机会/200组证明。研究页面的4200条软件BLOCKED记录不计物理结果，formal_accepted=false。历史限定DONE与原始失败保持原口径。每步报告和审查见[阶段总结](research/process/continuation_20261004.md)，操作入口见[复现说明](research/reproduction.md)，未满足门见[结果与限制](research/results_and_limits.md)。
 
 用户选择增加可见姿态标记并保留顶视相机与控制器。独立开发v1资产/检测已通过73项CPU及源/原始帧hash独审；同一物理相机的320×240严格识别UNKNOWN，新640×480单帧OBSERVED。第二版本保留原红色边缘，17份源与77项CPU独审通过，新的实际静态帧识别ID7并看到红色边缘；完整目标关联和连续/校准/native证书仍缺，不自动切换默认配置或抓取profile。一次开发搬运的147份产物/完整raw重建独审通过，离线物理评分成功，但全部9个动作后边界标记UNKNOWN，不能以物理成功代替视觉可观测性。
+
+2026-10-08 后续核验：P4/R93 软件修复已独立审查并交付 `a77568043bb5589471e3f15a07d3203998acb8b4`，63 个明确路径共 394,827 字节，隔离候选正链 1 项通过，本地/上游/实时远端一致。P3 经 R97 修正真实 Ruff 导入分组后，90 个唯一用例全部通过（含 11 个新增），ROOT 最终独审通过；当前实际 Max probe 仍待 P8 source freeze。P4 新一轮预检尚未开始：ROOT 资源检查因短参数字符串匹配命中一个已消失 PID 而停止，原始输出已保存，Astra R98 正规划限定检查器修复；不认作真实采集失败或成功。原 P4 首次真实失败和完整原件保留。T12 继续，软件通过不代替真实/正式验收。
+
+2026-10-08 当前续作：P1/P2 的交付分支仍为 `03f33416d0cb9d35f432c053f08f8ef98afd5cd2`，本地/上游/实时远端复核一致。P3 的 R92 RED 命中 3 个预期失败、8 个保护用例通过，随后范围证明与 Ruff 出现新失败，原件已冻结，实际 Astra 正制定 R94；尚无 GREEN。P4 已实际运行一次并失败：合法的缓存空实例侧文件被非空 inventory 规则拒绝，68 份原件共 25,001,424 字节完整保留，catalog 未发布、外部 reader 未运行。R93 实际 Astra 计划的 53 项输入已核验，Sol 正实施三个文件的软件修复，新实际运行尚未授权。R91 完整动作新版本设计及 26 项输入已审阅，接受分阶段实施；它仍须真实完整时域、九个独立组件和正常链验证，不能升级旧 P2 的 UNKNOWN 或宣称 native 通过。P5 仅备派单，T12 全目标继续，formal_accepted=false。最新派单和轮次见[活动状态](../artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/active-t12-state.json)。
+
+2026-10-07 执行进度：GPT-6.1-sol 实施的 P1（RW1、OC2）与 P2 限定软件已独立审查并推送至 codex/research-20261007-p1-delivery，代码提交依次为 3daddcc96c1d23e928fb4c9a3d868750b6cc37ec、98b8282138ba61367db526d7d8f52e27085f4f9f、851b80c88c242007a740dae778671bdf98ab330c；各次本地/上游/实时远端 SHA 一致。导出候选分别 66、46、4 项通过。P2 原 93 项通过加 R85 修复 1 项覆盖 94 个唯一节点，未重跑全量。GRASP/mutable contact 与完整 future D 缺来源，依赖批量停止；P3 仅备派单、P4 真实 prefix 未启动。用户 1007、嵌套工作区修改和完整实验原件保留，完整 raw/DB 远端复现包未交付。真实恢复/G4/native/正式研究未验收。详见[Git 交付记录](research/t12-p1-p2-git-delivery-20261007.md)。下文较早条目保留其历史验收时点。
 
 第62步：OC2首轮完整CPU GREEN为57通过/4失败/61项；reset/capture失败原件序列化与缺文件、export/catalog环境终态断言需Astra67计划。RW1首轮GREEN为81通过/1失败/82项，畸形来源负例后的fixture别名污染待Astra68。两者源码/原日志/全失败分母已冻结，未修、未重跑、未静态/旧回归/独审；两份Astra计划已请求，此快照尚未交付。OC2原77仅批准差异、RW1其余35静止；真实prefix/source-positive与恢复0002仍0。第60步保存帧全时域观察结果保持，native/九组/G1/INITIAL/METHOD/FINAL未验收；主线T12/18、T13并行、边缘后置，本地公开载荷仍待批准。 [第62步报告](../artifacts/research/process/20261004-ced-development/report-step62.md)。
 

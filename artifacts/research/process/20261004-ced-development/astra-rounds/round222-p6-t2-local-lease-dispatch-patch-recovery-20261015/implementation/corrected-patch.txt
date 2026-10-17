@@ -1,0 +1,306 @@
+*** Begin Patch
+*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py
+@@
+     def __init__(self, *, _token: object, worker: SimulationWorker) -> None:
+         if _token is not _TOKEN:
+             raise OperationalLeaseError("session requires genuine worker poll lifecycle")
+         ttl = worker.lease_ttl_seconds
+         if type(ttl) is not int or not math.isfinite(ttl) or ttl <= 0:
+             raise OperationalLeaseError("frozen TTL must be positive finite integer seconds")
+         self.worker = worker
++        self._mode = worker._frozen_operational_time_mode
+         self.repository = cast("SQLiteSimulationJobRepository", worker.repository)
+         self.worker_id = worker.worker_id
+         self._binding = worker.visual_role_binding
+         self._binding_hash = _digest(self._binding.evidence()) if self._binding is not None else ""
+         self.main_thread = threading.get_ident()
+         self.main_native_thread = threading.get_native_id()
+         self.ttl_ns = ttl * 1_000_000_000
+         self.wait_cap = min(1.0, max(0.05, ttl / 3))
+         self.epoch = uuid4().hex
+         self.job_id = ""
+         self.lease_id = ""
+         self._domain: OperationalDomain | None = None
+         self._closed = False
+         self._unusable = threading.Event()
+         self._stop = threading.Event()
+         self._ready = threading.Event()
+         self._startup_error: BaseException | None = None
+         self._queue: queue.Queue[_Request] = queue.Queue()
+         self._heartbeat_thread: threading.Thread | None = None
+         self._active: LeaseProposal | None = None
+         self._pending: LeaseProposal | None = None
+         self._original: _Segment | None = None
+         self.ingress_history: list[dict[str, Any]] = []
+         self.cleanup_reason = ""
+         self.join_failed = False
+         self._broker = threading.Thread(
+             target=self._serve, name="operational-lease-broker", daemon=True
+         )
+         with _REGISTRY_LOCK:
+             _SESSIONS[self.epoch] = self
+         self._broker.start()
+         if not self._ready.wait(self.wait_cap) or self._startup_error is not None:
+             self.invalidate("broker startup failed")
+             self._stop.set()
+             self._broker.join(timeout=1)
+             raise OperationalLeaseError("broker OC1 startup unavailable") from self._startup_error
+ 
+@@
+     def _check_ingress(self, purpose: str) -> str:
+         with _REGISTRY_LOCK:
+             if _SESSIONS.get(self.epoch) is not self or self._closed or self._unusable.is_set():
+                 raise OperationalLeaseError("session is closed, revoked or unregistered")
+         if getattr(_SCOPE, "session", None) is not self:
+             raise OperationalLeaseError("actual private worker lifecycle scope required")
+         role = getattr(_SCOPE, "role", "")
+         if role == "main":
+             if (threading.get_ident(), threading.get_native_id()) != (
+                 self.main_thread,
+                 self.main_native_thread,
+             ):
+                 raise OperationalLeaseError("main thread identity changed")
+         elif role == "heartbeat":
+             if threading.current_thread() is not self._heartbeat_thread or purpose != "heartbeat":
+                 raise OperationalLeaseError("heartbeat scope cannot perform this operation")
+         else:
+             raise OperationalLeaseError("unknown private lifecycle role")
+         if self.worker.repository is not self.repository or self.worker.worker_id != self.worker_id:
+             self.invalidate("worker repository identity changed")
+             raise OperationalLeaseError("worker original source changed")
+         if (
+             self.worker.visual_role_binding is not self._binding
+             or self._binding is None
+             or _digest(self._binding.evidence()) != self._binding_hash
+             or self.worker.lease_ttl_seconds * 1_000_000_000 != self.ttl_ns
+         ):
+             self.invalidate("worker original policy changed")
+             raise OperationalLeaseError("worker frozen source/TTL policy changed")
+-        if self.worker.operational_time_mode != self.worker._frozen_operational_time_mode:
++        if (self.worker._frozen_operational_time_mode != self._mode
++                or (self._mode != "LOCAL_TEMPORAL_PUBLICATION_V1"
++                    and self.worker.operational_time_mode != self._mode)):
+             self.invalidate("worker mode changed while active")
+             raise OperationalLeaseError("worker frozen mode changed")
+         return str(role)
+ 
+*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py
+@@
+     def heartbeat_lease(self, lease_id: str, *, lease_ttl_seconds: int) -> None:
+         self._initialize()
+         if type(lease_ttl_seconds) is not int or lease_ttl_seconds <= 0:
+             raise ValueError("lease_ttl_seconds must be a positive integer")
+         with self._connect() as conn:
+             # Measure after lock acquisition: lock waits cannot revive expiry.
+             now = _now()
+             expires_at = now + timedelta(seconds=lease_ttl_seconds)
++            session = _current_session(self)
++            if session is not None and session._mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++                # The dispatcher already evaluated the genuine current broker
++                # segment in this transaction. UTC columns remain diagnostics.
++                cursor = conn.execute(
++                    "UPDATE simulation_job_leases SET heartbeat_at=?,expires_at=? WHERE lease_id=? "
++                    "AND released_at='' AND EXISTS (SELECT 1 FROM simulation_jobs j "
++                    "WHERE j.job_id=simulation_job_leases.job_id AND j.lease_id=simulation_job_leases.lease_id "
++                    "AND j.worker_id=simulation_job_leases.worker_id AND j.cancel_requested=0 "
++                    "AND j.status IN (?,?,?))",
++                    (_dt(now), _dt(expires_at), lease_id, RuntimeJobStatus.LEASED.value,
++                     RuntimeJobStatus.STARTING.value, RuntimeJobStatus.RUNNING.value))
++                if cursor.rowcount != 1:
++                    raise OperationalLeaseError("current local heartbeat ownership/CAS invalid")
++                conn.execute("UPDATE simulation_jobs SET lease_expires_at=?,updated_at=? WHERE lease_id=?",
++                             (_dt(expires_at), _dt(now), lease_id))
++                return
+             # Keep lease and job expiry in one transaction. Expiry, release,
+             # cancellation and ownership changes are irreversible to a heartbeat.
+             cursor = conn.execute(
+                 """
+                 UPDATE simulation_job_leases SET heartbeat_at = ?, expires_at = ?
+                 WHERE lease_id = ? AND released_at = '' AND expires_at > ?
+                 AND EXISTS (
+                     SELECT 1 FROM simulation_jobs AS job
+                     WHERE job.job_id = simulation_job_leases.job_id
+                     AND job.lease_id = simulation_job_leases.lease_id
+                     AND job.worker_id = simulation_job_leases.worker_id
+                     AND job.lease_expires_at > ? AND job.cancel_requested = 0
+                     AND job.status IN (?, ?, ?)
+                 )
+                 """,
+                 (
+                     _dt(now),
+                     _dt(expires_at),
+                     lease_id,
+                     _dt(now),
+                     _dt(now),
+                     RuntimeJobStatus.LEASED.value,
+                     RuntimeJobStatus.STARTING.value,
+                     RuntimeJobStatus.RUNNING.value,
+                 ),
+             )
+             if cursor.rowcount != 1:
+                 raise RuntimeError("lease is expired, released or no longer actively owned")
+             conn.execute(
+                 """
+                 UPDATE simulation_jobs SET lease_expires_at = ?, updated_at = ?
+                 WHERE lease_id = ?
+                 """,
+                 (_dt(expires_at), _dt(now), lease_id),
+             )
+ 
+@@
+     def _local_read_scope(self, session, *, job_id: str, purpose: str, operation_sha256: str):
+         """Issue or join a genuine private read view; descriptors cannot enter."""
+         from cloud_edge_robot_arm.vision.operational_windows import OperationalWindowOwner, _prepare_startup
+         from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+ 
+         caller = sys._getframe(2).f_code
+         allowed = {
+             _prepare_startup.__code__, OperationalWindowOwner._bind_inputs.__code__,
+             VisualWorkerRuntime._read_lease.__code__,
+             VisualWorkerRuntime._local_publication_scope.__wrapped__.__code__,
++            SimulationWorker._owns_artifact_publication.__code__,
+         }
+         if (type(session) is not OperationalLeaseSession or _current_session(self) is not session
+                 or session.repository is not self or caller not in allowed
+                 or session.worker._frozen_operational_time_mode != "LOCAL_TEMPORAL_PUBLICATION_V1"):
+             raise OperationalLeaseError("registered private local session/caller required")
+         session._check_ingress(purpose)
+-        active = getattr(self._transactions, "local_view", None)
++        active = (getattr(self._transactions, "local_view", None)
++                  or getattr(self._transactions, "publication_view", None))
+         if active is not None:
+             session._view(active)
+             if active.snapshot["job_id"] != job_id:
+                 raise OperationalLeaseError("foreign local read job")
+             yield active
+             return
+         with self._operational_transaction(session, job_id=job_id, purpose=purpose,
+                                            operation_sha256=operation_sha256) as view:
+             self._transactions.local_view = view
+             try:
+                 yield view
+             finally:
+                 self._transactions.local_view = None
+ 
+*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/worker.py
+@@
+     def _owns_artifact_publication(self, job: SimulationJobRecord, lease_id: str) -> bool:
+         from datetime import UTC, datetime
+ 
+         from cloud_edge_robot_arm.simulation_runtime.models import TERMINAL_STATUSES
+ 
+         if job.lease_id != lease_id or job.worker_id != self.worker_id:
+             return False
++        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            from cloud_edge_robot_arm.vision.operational_windows import _OWNERS
++            from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseError
++            from cloud_edge_robot_arm.research.operational_time_v1 import OperationalTimeError
++
++            try:
++                owner = _OWNERS.get(self)
++                if owner is not None:
++                    owner._check_app_live(require_origin=owner.task_origin is not None)
++                with self.repository._local_read_scope(
++                    self._operational_lease_session, job_id=job.job_id, purpose="worker-read",
++                    operation_sha256=hashlib.sha256((job.job_id + ":worker-read").encode()).hexdigest(),
++                ) as view:
++                    return self._operational_lease_session.evaluate_locked(view).status == "VALID"
++            except (OperationalLeaseError, OperationalTimeError, ValueError):
++                return False
+         lease = next(
+             (
+                 item
+                 for item in self.repository.list_leases(job.run_id)
+                 if item.lease_id == lease_id and item.worker_id == self.worker_id
+             ),
+             None,
+         )
+         if lease is None:
+             return False
+         # A completed owner may archive after releasing its own lease while the
+         # publication guard prevents a retry from acquiring a replacement lease.
+         if job.status in TERMINAL_STATUSES:
+             return True
+         now = datetime.now(UTC)
+         return (
+             lease.released_at is None
+             and lease.expires_at > now
+             and job.lease_expires_at is not None
+             and job.lease_expires_at > now
+         )
+ 
+@@
+     def _active_job_cancelled(self, original: SimulationJobRecord) -> bool:
+         """Recheck persisted ownership at each model return and physical boundary."""
+         from datetime import UTC, datetime
+ 
+-        try:
++        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            current = self.repository.get_job(original.job_id)
++            return (current.cancel_requested or current.status != RuntimeJobStatus.RUNNING
++                    or self._heartbeat_failed.is_set()
++                    or not self._owns_artifact_publication(current, original.lease_id))
++        try:
+             current = self.repository.get_job(original.job_id)
+             if current.cancel_requested or current.status in {
+                 RuntimeJobStatus.CANCEL_REQUESTED,
+                 RuntimeJobStatus.CANCELLING,
+                 RuntimeJobStatus.CANCELLED,
+             }:
+                 return True
+             if self._heartbeat_failed.is_set():
+                 return True
+             now = datetime.now(UTC)
+             if (
+                 not original.lease_id
+                 or current.lease_id != original.lease_id
+                 or current.worker_id != self.worker_id
+                 or current.status != RuntimeJobStatus.RUNNING
+                 or current.lease_expires_at is None
+                 or current.lease_expires_at <= now
+             ):
+                 self._heartbeat_failed.set()
+                 return True
+             lease = next(
+                 (
+                     item
+                     for item in self.repository.list_leases(original.run_id)
+                     if item.lease_id == original.lease_id
+                 ),
+                 None,
+             )
+             if (
+                 lease is None
+                 or lease.released_at is not None
+                 or lease.expires_at <= now
+                 or lease.worker_id != self.worker_id
+             ):
+                 self._heartbeat_failed.set()
+                 return True
+             return False
+         except Exception:
+             # A missing/unreadable lease cannot authorize a late response.
+             self._heartbeat_failed.set()
+             return True
+ 
+@@
+     def _raise_if_cancelled_or_timed_out(
+         self, job_id: str, original: SimulationJobRecord, start_monotonic: float
+     ) -> None:
+         current = self.repository.get_job(job_id)
+         if current.cancel_requested or current.status == RuntimeJobStatus.CANCEL_REQUESTED:
+             raise CancelledByOperator("cancelled by operator")
+         if self._heartbeat_failed.is_set():
+             raise RuntimeError("lease heartbeat failed; dispatch stopped")
+         if current.lease_id != original.lease_id or current.status != RuntimeJobStatus.RUNNING:
+             raise RuntimeError("job no longer owns an active running lease")
++        if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            if not self._owns_artifact_publication(current, original.lease_id):
++                raise RuntimeError("current local task/lease authority unavailable")
++            return
+         if (time.monotonic() - start_monotonic) >= original.timeout_seconds:
+             raise TimedOut("timeout")
+ 
+ 
+*** End Patch

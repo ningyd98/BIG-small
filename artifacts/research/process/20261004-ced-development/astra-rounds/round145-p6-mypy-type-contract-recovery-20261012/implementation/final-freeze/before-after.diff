@@ -1,0 +1,106 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round145-p6-mypy-type-contract-recovery-20261012/implementation/before/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py
+@@ -19,7 +19,7 @@
+ from dataclasses import asdict, dataclass, field
+ from pathlib import Path
+ from types import MappingProxyType
+-from typing import TYPE_CHECKING, Any, cast
++from typing import TYPE_CHECKING, Any, NoReturn, SupportsIndex, cast
+ from uuid import uuid4
+ 
+ from cloud_edge_robot_arm.research.operational_time_v1 import (
+@@ -77,7 +77,7 @@
+     def __deepcopy__(self, memo: dict[int, object]) -> object:
+         raise OperationalLeaseError("live lease capabilities cannot be copied")
+ 
+-    def __reduce_ex__(self, protocol: int) -> object:
++    def __reduce_ex__(self, protocol: SupportsIndex) -> NoReturn:
+         raise OperationalLeaseError("live lease capabilities cannot be serialized")
+ 
+ 
+@@ -641,9 +641,12 @@
+             for issued in _PROPOSALS.values():
+                 if issued.binding.session is self:
+                     _set_proposal_state(issued.proposal, "REVOKED")
+-            for issued in _VIEWS.values():
+-                if issued.session is self and issued.view.state not in {"CLOSED", "INVALIDATED"}:
+-                    _set_view_state(issued.view, "INVALIDATED")
++            for issued_view in _VIEWS.values():
++                if issued_view.session is self and issued_view.view.state not in {
++                    "CLOSED",
++                    "INVALIDATED",
++                }:
++                    _set_view_state(issued_view.view, "INVALIDATED")
+ 
+     def _serve(self) -> None:
+         clock: OperationalClockOwner | None = None
+@@ -696,10 +699,10 @@
+             if source.kind != reply.kind or source.view is not reply.view.view:
+                 raise OperationalLeaseError("consumption does not match original operation")
+             _view_record(reply.view.view)
+-            proposal = _proposal_record(reply.proposal.proposal)
++            issued_proposal = _proposal_record(reply.proposal.proposal)
+             if (
+-                proposal is not reply.proposal
+-                or int(json.loads(proposal.target_json)["generation"]) != reply.generation
++                issued_proposal is not reply.proposal
++                or int(json.loads(issued_proposal.target_json)["generation"]) != reply.generation
+             ):
+                 raise OperationalLeaseError("consumption generation binding changed")
+             for segment in reply.segments:
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round145-p6-mypy-type-contract-recovery-20261012/implementation/before/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py
+@@ -20,7 +20,8 @@
+ from datetime import UTC, datetime, timedelta
+ from functools import wraps
+ from pathlib import Path
+-from typing import Any, cast
++from types import FunctionType
++from typing import Any, Protocol, cast
+ from uuid import uuid4
+ 
+ from cloud_edge_robot_arm.simulation_runtime.models import (
+@@ -64,6 +65,10 @@
+ _DISPATCH_CODES: set[Any] = set()
+ 
+ 
++class _ContextManagerFunction(Protocol):
++    __wrapped__: FunctionType
++
++
+ @dataclass(frozen=True)
+ class _DispatchOwner:
+     repository: SQLiteSimulationJobRepository
+@@ -97,7 +102,7 @@
+         return cast(R, repository._writer_call(function, args, kwargs))
+ 
+     _WRITER_FUNCTIONS[function.__name__] = function
+-    _DISPATCH_CODES.add(guarded.__code__)
++    _DISPATCH_CODES.add(cast(FunctionType, guarded).__code__)
+     return guarded
+ 
+ 
+@@ -1095,8 +1100,8 @@
+         self, connection: sqlite3.Connection, nonce: str, job_id: str, operation: str
+     ) -> _WriterOwner:
+         allowed = {
+-            self._legacy_write_transaction.__wrapped__.__code__,
+-            self._operational_transaction.__wrapped__.__code__,
++            cast(_ContextManagerFunction, self._legacy_write_transaction).__wrapped__.__code__,
++            cast(_ContextManagerFunction, self._operational_transaction).__wrapped__.__code__,
+             self._acquire_operational.__code__,
+         }
+         if sys._getframe(1).f_code not in allowed:
+@@ -1571,7 +1576,11 @@
+                     )
+                     allowed = allowed or subordinate
+                     if name == "release_lease":
+-                        allowed = allowed and job_id == _current_session(self).lease_id
++                        allowed = (
++                            allowed
++                            and job_id
++                            == cast(OperationalLeaseSession, _current_session(self)).lease_id
++                        )
+                     else:
+                         allowed = allowed and same_job
+                 if not allowed or actual_parent is None:

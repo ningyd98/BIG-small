@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, cast
 
 POLICY_V1: dict[str, Any] = {
@@ -74,7 +75,7 @@ def validate_policy_v1(value: Any) -> dict[str, Any]:
     return dict(data)
 
 
-def validate_inventory_v1(value: Any) -> None:
+def validate_inventory_v1(value: Any, *, allow_empty_instances: bool = False) -> None:
     if type(value) is not dict or not value:
         raise ValueError("complete source inventory required")
     for path, pin in value.items():
@@ -93,7 +94,13 @@ def validate_inventory_v1(value: Any) -> None:
             or any(c not in "0123456789abcdef" for c in digest)
         ):
             raise ValueError("lowercase original SHA256 required")
-        _integer(row["bytes"], minimum=1)
+        minimum = (
+            0
+            if allow_empty_instances is True
+            and re.fullmatch(r"frames/acquisition-[1-9][0-9]*/instances\.i32", path) is not None
+            else 1
+        )
+        _integer(row["bytes"], minimum=minimum)
 
 
 def validate_preregistration_v1(value: Any) -> dict[str, Any]:

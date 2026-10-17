@@ -1,0 +1,43 @@
+{
+  "schema_version": "bigsmall.r219.original-source-observation.v1",
+  "round": "R219",
+  "classification": "SOURCE_CONFIRMED_TEST_FIXTURE_ATTRIBUTE_MISMATCH; not runtime failure",
+  "actual_observer": "ROOT",
+  "actual_reads": [
+    {
+      "chunk_id": "4a6a62",
+      "wall_time_seconds": 0.00000822,
+      "exit_code": 0,
+      "original_token_count": 222,
+      "output": "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py:108:        payload[\"allowed_error_m\"],\nsrc/cloud_edge_robot_arm/vision/owner_registration.py:262:class OriginalActionRequirements:\nsrc/cloud_edge_robot_arm/vision/owner_registration.py:266:    allowed_error_m: float\nsrc/cloud_edge_robot_arm/vision/owner_registration.py:277:        allowed_error_m: float = 0.01,\nsrc/cloud_edge_robot_arm/vision/owner_registration.py:317:            \"allowed_error_m\": _positive(allowed_error_m),\nsrc/cloud_edge_robot_arm/vision/owner_registration.py:336:            \"allowed_error_m\": self.allowed_error_m,\nsrc/cloud_edge_robot_arm/vision/owner_registration.py:377:                r.allowed_error_m,\nsrc/cloud_edge_robot_arm/vision/owner_registration.py:587:            r.allowed_error_m,\nsrc/cloud_edge_robot_arm/vision/owner_registration.py:803:                r.allowed_error_m,\n"
+    },
+    {
+      "chunk_id": "14ee99",
+      "wall_time_seconds": 0.000009339,
+      "exit_code": 0,
+      "original_token_count": 1061,
+      "output": "258:         return {item.name: getattr(self, item.name) for item in fields(self)}\n259: \n260: \n261: @dataclass(frozen=True, init=False)\n262: class OriginalActionRequirements:\n263:     _original_step_json: str\n264:     preconditions: tuple[ConditionSpec, ...]\n265:     postconditions: tuple[ConditionSpec, ...]\n266:     allowed_error_m: float\n267:     sensor_requirements: tuple[str, ...]\n268:     ordinary_ttl_s: float\n269:     expected_duration_s: float\n270:     policy_source_hashes: Mapping[str, str]\n271: \n272:     def __init__(\n273:         self,\n274:         original_step: TaskStep | None = None,\n275:         preconditions: Sequence[ConditionSpec] = (),\n276:         postconditions: Sequence[ConditionSpec] = (),\n277:         allowed_error_m: float = 0.01,\n278:         sensor_requirements: Sequence[str] = (\"rgbd\",),\n279:         ordinary_ttl_s: float = 5.0,\n280:         expected_duration_s: float = 1.0,\n281:         policy_source_hashes: Mapping[str, str] | None = None,\n282:         *,\n283:         _original_step_json: str | None = None,\n284:     ) -> None:\n285:         step = (\n286:             original_step\n287:             if original_step is not None\n288:             else TaskStep.model_validate_json(_original_step_json or \"null\")\n289:         )\n290:         stored = _model_json(step, TaskStep)\n291:         pre, post = (\n292:             tuple(_condition(c) for c in preconditions),\n293:             tuple(_condition(c) for c in postconditions),\n294:         )\n295:         if not pre or not post:\n296:             raise ValueError(\"original canonical pre/effect requirements cannot be empty\")\n297:         if not set(step.preconditions) <= {c.name for c in pre} or not set(\n298:             step.success_conditions\n299:         ) <= {c.name for c in post}:\n300:             raise ValueError(\"original condition names cannot be removed\")\n301:         if isinstance(sensor_requirements, str):\n302:             raise ValueError(\"original sensor requirements must be an explicit sequence\")\n303:         sensors = tuple(sensor_requirements)\n304:         if (\n305:             not sensors\n306:             or len(sensors) != len(set(sensors))\n307:             or any(not isinstance(s, str) or not s for s in sensors)\n308:         ):\n309:             raise ValueError(\"explicit original sensor policy required\")\n310:         duration = _positive(expected_duration_s)\n311:         if duration < max(step.expected_duration_ms, step.timeout_ms) / 1000:\n312:             raise ValueError(\"original duration must cover original timeout/expected horizon\")\n313:         for name, value in {\n314:             \"_original_step_json\": stored,\n315:             \"preconditions\": pre,\n316:             \"postconditions\": post,\n317:             \"allowed_error_m\": _positive(allowed_error_m),\n318:             \"sensor_requirements\": sensors,\n319:             \"ordinary_ttl_s\": _positive(ordinary_ttl_s),\n320:             \"expected_duration_s\": duration,\n321:             \"policy_source_hashes\": _sources(policy_source_hashes or {}),\n322:         }.items():\n323:             object.__setattr__(self, name, value)\n324: \n325:     @property\n326:     def original_step(self) -> TaskStep:\n327:         return TaskStep.model_validate_json(self._original_step_json)\n328: \n329:     def to_payload(self) -> dict[str, Any]:\n330:         step = self.original_step\n331:         return {\n332:             \"original_step\": json.loads(self._original_step_json),\n333:             \"original_step_hash\": _digest(json.loads(self._original_step_json)),\n334:             \"preconditions\": [_condition_payload(c) for c in self.preconditions],\n335:             \"postconditions\": [_condition_payload(c) for c in self.postconditions],\n336:             \"allowed_error_m\": self.allowed_error_m,\n337:             \"sensor_requirements\": list(self.sensor_requirements),\n338:             \"ordinary_ttl_s\": self.ordinary_ttl_s,\n339:             \"expected_duration_s\": self.expected_duration_s,\n340:             \"timeout_ms\": step.timeout_ms,\n341:             \"retry_limit\": step.retry_limit,\n342:             \"policy_source_hashes\": dict(self.policy_source_hashes),\n343:         }\n344: \n345:     def digest(self) -> str:\n346:         return _digest(self.to_payload())\n347: \n"
+    }
+  ],
+  "current_test": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py",
+    "bytes": 254022,
+    "sha256": "4d9bb9dc38ebaffd666054aeb00793b10e116f6b793527dd3461b3d22b6a8992"
+  },
+  "immutable_after": "artifacts/research/process/20261004-ced-development/astra-rounds/round218-p6-t2-writer-fixture-schema-and-reader-20261015/implementation/after-test.py",
+  "facts": {
+    "helper": "_b_t2_writer_authorization",
+    "current_expression": "allowed_error_m=requirement.required_accuracy_m",
+    "actual_source": "src/cloud_edge_robot_arm/vision/owner_registration.py:262-346",
+    "actual_model_field": "allowed_error_m",
+    "nonexistent_model_attribute": "required_accuracy_m",
+    "model_bytes": 44891,
+    "model_sha256": "6fa239d9df6f64e92630940fc61c10859cbd48344844003d37a11c092a9d7c4b",
+    "prior_plan_continuity": "Original writer used this attribute; R218 F4 explicitly retained it. R218 three-helper scope/pin gate passed, but this later field review reveals a remaining source defect; do not alter historical R218 evidence."
+  },
+  "repair_performed": false,
+  "runtime_failure_observed": false,
+  "product_or_test_execution": false,
+  "T2_red_green_used": 0,
+  "proposed_bounded_scope": "Actual Astra to plan one test helper field correction to existing canonical requirement.allowed_error_m only, all other source and models unchanged; no alias, getattr fallback, default or relaxed input."
+}

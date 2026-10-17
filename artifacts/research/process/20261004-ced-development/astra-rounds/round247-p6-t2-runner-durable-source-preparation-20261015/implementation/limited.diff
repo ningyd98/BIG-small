@@ -1,0 +1,527 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round247-p6-t2-runner-durable-source-preparation-20261015/implementation/before/r237-run-command.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round242-p6-t2-writer-barrier-condition-synchronization-20261015/implementation/run-command.py
+@@ -1,46 +1,254 @@
+-"""R237/R238 once-only budget-intersection recovery. Raw evidence precedes classification."""
++"""R242/R245 once-only Ruff and genuine race RED with explicit historical evidence loss."""
+ from pathlib import Path
+ import base64
+ import hashlib
+ import json
+ import os
+ import signal
++import sys
++import traceback
++
++ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
++D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round242-p6-t2-writer-barrier-condition-synchronization-20261015'
++E = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round245-p6-t2-missing-temporary-evidence-continuation-20261015'
++
++
++def encoded(value):
++    return (json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n').encode()
++
++
++def read_json(path):
++    return json.loads(path.read_bytes())
++
++
++def identity(row):
++    return {key: row[key] for key in ('path', 'bytes', 'sha256')}
++
++
++def key(row):
++    return tuple(row[name] for name in ('path', 'bytes', 'sha256'))
++
++
++def file_pin(path, raw=None):
++    raw = path.read_bytes() if raw is None else raw
++    return {'path': str(path), 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
++
++
++def fixed(row):
++    path = Path(row['path'])
++    raw = path.read_bytes()
++    if path.is_symlink() or file_pin(path, raw) != identity(row):
++        raise ValueError('fixed input differs: ' + str(path))
++    return raw
++
++
++def save(path, value):
++    path.parent.mkdir(parents=True, exist_ok=True)
++    raw = value if type(value) is bytes else encoded(value)
++    with path.open('xb') as handle:
++        if handle.write(raw) != len(raw):
++            raise OSError('partial exclusive metadata write')
++    if path.read_bytes() != raw:
++        raise ValueError('exclusive metadata readback differs')
++
++
++def commands(plan, overlay):
++    result = json.loads(json.dumps(plan['commands']))
++    change = overlay['execution_override']['replace_exact_child_argument']
++    for row in result:
++        if row['id'] == 'red':
++            if row['child_argv'].count(change['old']) != 1:
++                raise ValueError('one exact persistent basetemp overlay required')
++            row['child_argv'] = [change['new'] if value == change['old'] else value for value in row['child_argv']]
++    return result
++
++
++def verify_contract(plan, gate):
++    overlay = json.loads(fixed(gate['overlay_plan_pin']))
++    missing_observation = json.loads(fixed(gate['overlay_observation_pin']))
++    observation = json.loads(fixed(plan['inputs']['observation']))
++    source = json.loads(fixed(observation['protected_authority']['index']))
++    findings = json.loads(fixed(plan['inputs']['root_final_findings']))
++    if (len(source['sources']) != 27 or len(source['protected']) != 211
++            or len(source['input_records']) != 419 or len(source['history']) != 321):
++        raise ValueError('exact original27/211/419/321 authority required')
++    registry = {}
++    for row in missing_observation['known_missing']:
++        original, authority = row['original'], row['authority']
++        if key(original) in registry or row['disposition'] != 'HISTORICAL_BYTES_CURRENTLY_UNAVAILABLE_R245':
++            raise ValueError('unique exact unavailable original identity required')
++        container = json.loads(fixed(authority['pin']))
++        ordinal, selector = authority['ordinal'], authority['selector']
++        if type(ordinal) is not int or ordinal < 0:
++            raise ValueError('explicit nonnegative ordinal required')
++        if selector == 'input_records':
++            values = container['input_records']
++            if type(values) is not list or ordinal >= len(values):
++                raise ValueError('input_records authority range differs')
++            authoritative = values[ordinal]
++        elif selector == 'new_retained_databases.pin':
++            values = container['new_retained_databases']
++            if type(values) is not list or ordinal >= len(values) or type(values[ordinal]) is not dict:
++                raise ValueError('new database authority range differs')
++            authoritative = values[ordinal]['pin']
++        else:
++            raise ValueError('unknown exact unavailable selector')
++        if identity(authoritative) != identity(original):
++            raise ValueError('registered original differs from authoritative exact selector')
++        registry[key(original)] = row
++    if len(registry) != 35:
++        raise ValueError('exact35 unavailable identities required')
++    missing = []
++    for row in registry.values():
++        path = Path(row['original']['path'])
++        try:
++            path.lstat()
++        except FileNotFoundError:
++            pass
++        else:
++            raise ValueError('registered unavailable path appeared; provenance review required: ' + str(path))
++        missing.append({'original': row['original'], 'authority': row['authority'],
++                        'disposition': row['disposition'], 'current_exists': False,
++                        'current_is_symlink': False, 'current_bytes': None, 'current_sha256': None,
++                        'hash_match': None})
++    mappings = {}
++    for entry in source['resolved_history']['entries']:
++        if entry['resolution']['kind'] not in {'CURRENT_EXACT_BYTES', 'EXACT_PHYSICAL_BEFORE'}:
++            raise ValueError('unknown inherited explicit mapping kind')
++        mappings[key(entry['original'])] = entry['resolution']['pin']
++    pairs = [observation['frozen_fixture_archive']] + observation['explicit_R239_settlement_history']
++    if len(observation['explicit_R239_settlement_history']) != 7:
++        raise ValueError('exact seven R239 settlement maps required')
++    allowed_context = {str(ROOT / 'artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007' / name)
++                       for name in ('active-t12-state.json', 'phase-summary.md')}
++    allowed_context.update(str(D / name) for name in
++                           ('source-gate.json', 'script-gate.json', 'root-activation.json',
++                            'command-ledger.json', 'root-command-ledger.json'))
++    for pair in gate['context_history']:
++        if pair['original']['path'] not in allowed_context:
++            raise ValueError('context archive outside explicitly mutable paths')
++        pairs.append(pair)
++    for pair in pairs:
++        raw = fixed(pair['archive'])
++        if (len(raw), hashlib.sha256(raw).hexdigest()) != (pair['original']['bytes'], pair['original']['sha256']):
++            raise ValueError('full physical original/archive byte equivalence differs')
++        mappings[key(pair['original'])] = identity(pair['archive'])
++    observations = []
++    def historical(row, origin):
++        if key(row) in registry:
++            observations.append({'original': identity(row), 'origin': origin,
++                                 'classification': 'HISTORICAL_BYTES_CURRENTLY_UNAVAILABLE_R245',
++                                 'hash_match': None})
++            return
++        target = mappings.get(key(row), row)
++        raw = fixed(target)
++        if (len(raw), hashlib.sha256(raw).hexdigest()) != (row['bytes'], row['sha256']):
++            raise ValueError('historical mapped bytes differ')
++        observations.append({'original': identity(row), 'origin': origin, 'resolved': identity(target),
++                             'classification': 'VERIFIED_ARCHIVED' if target['path'] != row['path'] else 'CURRENT_EXACT',
++                             'hash_match': True})
++    for name, rows in [('input_records419', source['input_records']), ('history321', source['history']),
++                       ('inherited_documents', source['resolved_history']['documents']),
++                       ('original_inputs', observation['inputs']), ('overlay_inputs', missing_observation['inputs']),
++                       ('immutable_raw', observation['immutable_raw']), ('context', list(observation['context_only'].values())),
++                       ('gate_fixed_inputs', gate['input_records'])]:
++        for ordinal, row in enumerate(rows):
++            historical(row, {'list': name, 'ordinal': ordinal})
++    fixture = Path(observation['frozen_fixture_archive']['original']['path'])
++    before = fixed(gate['fixture_before_pin'])
++    if before != fixed(observation['frozen_fixture_archive']['archive']):
++        raise ValueError('fixture physical before differs from accepted complete archive')
++    delta = plan['scope']['exact_change']
++    old, new = delta['before'].encode(), delta['after'].encode()
++    after = fixture.read_bytes()
++    if (before.count(old) != 1 or after != before.replace(old, new, 1)
++            or len(after) != delta['expected_after_bytes']
++            or hashlib.sha256(after).hexdigest() != delta['expected_after_sha256']):
++        raise ValueError('exact whole fixture two-byte delta differs')
++    for row in source['sources']:
++        raw = base64.b64decode(row['base64'], validate=True)
++        if file_pin(Path(row['path']), raw) != identity(row):
++            raise ValueError('original source fullbase64 identity differs')
++        if fixed(row['physical']) != raw:
++            raise ValueError('R239 full physical original source differs')
++        current = Path(row['path']).read_bytes()
++        if current != (after if row['path'] == str(fixture) else raw):
++            raise ValueError('current source outside single fixture delta differs')
++        if Path(row['path']).stat().st_mode != row['mode']:
++            raise ValueError('source mode differs')
++    for row in source['protected']:
++        fixed(row)
++    for row in source['scripts']:
++        if fixed(row) != base64.b64decode(row['base64'], validate=True):
++            raise ValueError('old script full byte generation differs')
++    databases = source['retained_databases'] + findings['new_retained_databases']
++    sidecars = source['absent_sidecars'] + [item for row in findings['new_retained_databases'] for item in row['sidecars']]
++    if (len(databases) != 30 or len({key(row['pin']) for row in databases}) != 30
++            or any(key(row['pin']) not in registry for row in databases)
++            or len(sidecars) != 90 or len({row['path'] for row in sidecars}) != 90):
++        raise ValueError('exact missing30 databases and90 sidecars required')
++    for row in sidecars:
++        path = Path(row['path'])
++        if row['exists'] is not False or path.exists() or path.is_symlink():
++            raise ValueError('recorded old sidecar absence differs')
++    return {'status': 'ACCEPTED_FOR_BOUNDED_NEW_RUN_WITH_DECLARED_HISTORICAL_EVIDENCE_LOSS',
++            'source': source, 'observation': observation, 'overlay': overlay, 'missing_registry': missing,
++            'history_observations': observations, 'explicit_maps': pairs, 'sidecars': sidecars,
++            'commands': commands(plan, overlay), 'fixture_after': file_pin(fixture),
++            'all_historical_bytes_available': False}
++
++
++def role_gate(key_name):
++    plan = read_json(D / 'plan.json')
++    gate_raw, author_raw, root_raw = [(D / name).read_bytes() for name in
++                                     ('script-gate.json', 'command-ledger.json', 'root-command-ledger.json')]
++    gate = json.loads(gate_raw)['commands'][key_name]
++    author, root = json.loads(author_raw), json.loads(root_raw)
++    entry, reservation = author['commands'][key_name], root['commands'][key_name]
++    if (gate['state'] != 'APPROVED' or gate['full_source_reviewed'] is not True
++            or entry['state'] != 'HELD' or entry['used'] != 0 or entry['remaining'] != 1
++            or reservation['state'] != 'RESERVED_BY_ROOT' or reservation['used'] != 1
++            or reservation['remaining'] != 0 or gate['reservation_id'] != reservation['reservation_id']):
++        raise ValueError('exact one-use ROOT reservation and author slot required')
++    fixed(gate['source'])
++    if gate['source']['path'] != str(Path(__file__)):
++        raise ValueError('actual author source differs')
++    mutable = {str(D / name) for name in ('script-gate.json', 'command-ledger.json', 'root-command-ledger.json',
++                                         'source-gate.json', 'root-activation.json')}
++    if any(row['path'] in mutable for row in gate['input_records']):
++        raise ValueError('live own mutable control in fixed input loop')
++    controls = []
++    for name in ('script-gate.json', 'command-ledger.json', 'root-command-ledger.json', 'source-gate.json', 'root-activation.json'):
++        path = D / name
++        raw = path.read_bytes()
++        controls.append({**file_pin(path, raw), 'base64': base64.b64encode(raw).decode()})
++    return plan, gate, author, entry, controls, (gate_raw, author_raw, root_raw)
++
++
++def consume(key_name, gate, author, entry, controls, raw_roles):
++    for row in controls:
++        fixed(row)
++    if tuple((D / name).read_bytes() for name in
++             ('script-gate.json', 'command-ledger.json', 'root-command-ledger.json')) != raw_roles:
++        raise ValueError('immediate full role/gate CAS differs')
++    entry.update(state='SPENT', used=1, remaining=0, reservation_id=gate['reservation_id'])
++    temporary = D / ('.author-' + key_name + '.tmp')
++    save(temporary, author)
++    os.replace(temporary, D / 'command-ledger.json')
++
++
++def post_controls(controls, author):
++    for row in controls:
++        if row['path'] == str(D / 'command-ledger.json'):
++            if Path(row['path']).read_bytes() != encoded(author):
++                raise ValueError('exact author one-slot transition differs')
++        else:
++            fixed(row)
++
+ import stat
+ import subprocess
+-import sys
+ import time
+-import traceback
+ import xml.etree.ElementTree as ET
+-
+-ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
+-D = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round237-p6-t2-original-verification-budget-intersection-20261015'
+-
+-
+-def read_json(path):
+-    return json.loads(path.read_bytes())
+-
+-
+-def encoded(value):
+-    return (json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n').encode()
+-
+-
+-def file_pin(path):
+-    data = path.read_bytes()
+-    return {'path': str(path), 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+-
+-
+-def fixed(record):
+-    path = Path(record['path'])
+-    if path.is_symlink() or file_pin(path) != {k: record[k] for k in ('path', 'bytes', 'sha256')}:
+-        raise ValueError('fixed input pin differs: ' + str(path))
+-
+-
+-def save(path, value):
+-    with path.open('xb') as handle:
+-        data = encoded(value)
+-        if handle.write(data) != len(data):
+-            raise OSError('partial metadata write: ' + str(path))
+-
+ 
+ def index(directory):
+     result = []
+@@ -330,99 +538,74 @@
+             'failure_details': [{'nodeid': names[nodes.index(item)], 'text': ET.tostring(item, encoding='unicode')} for item in failures]}
+ 
+ 
++
+ def verify_baseline(plan, gate):
+-    fixed(gate['source_index_pin'])
+-    baseline = read_json(Path(gate['source_index_pin']['path']))
++    verified = verify_contract(plan, gate)
++    baseline = json.loads(fixed(gate['source_index_pin']))
+     if len(baseline['sources']) != 27 or len(baseline['protected']) != 211:
+-        raise ValueError('exact current27/protected211 required')
++        raise ValueError('exact accepted new27/211 baseline required')
+     for row in baseline['sources']:
++        raw = fixed(row)
++        if raw != base64.b64decode(row['base64'], validate=True) or fixed(row['physical']) != raw:
++            raise ValueError('accepted new physical full source differs')
++    for row in baseline['scripts'] + baseline['protected']:
+         fixed(row)
+-        raw = base64.b64decode(row['base64'], validate=True)
+-        if (hashlib.sha256(raw).hexdigest() != row['sha256'] or len(raw) != row['bytes']
+-                or Path(row['path']).stat().st_mode != row['mode']):
+-            raise ValueError('baseline full source/mode differs')
+-    for row in baseline['protected'] + baseline['scripts'] + baseline['history']:
+-        fixed(row)
+-    for row in baseline['absent_sidecars']:
++    if baseline['historical_registry'] != verified['missing_registry']:
++        raise ValueError('exact35 current unavailable states differ from accepted baseline')
++    return baseline, verified
++
++
++def persistent_index(base):
++    files = index(base)
++    databases = []
++    for row in files:
+         path = Path(row['path'])
+-        if row['exists'] is not False or path.exists() or path.is_symlink():
+-            raise ValueError('old exact DB sidecar is no longer absent')
+-    observed = json.loads(Path(plan['inputs']['index']['path']).read_bytes())
+-    fixed(plan['inputs']['index'])
+-    resolved = json.loads(Path(gate['resolved_history_pin']['path']).read_bytes())
+-    fixed(gate['resolved_history_pin'])
+-    if resolved != baseline['resolved_history'] or resolved['unresolved']:
+-        raise ValueError('explicit frozen historical generations differ')
+-    for row in resolved['documents']:
+-        fixed(row)
+-    expected_history = []
+-    for item in resolved['entries']:
+-        original, resolution = item['original'], item['resolution']
+-        row = resolution['pin']
+-        if (resolution['kind'] not in {'EXACT_PHYSICAL_BEFORE', 'CURRENT_EXACT_BYTES'}
+-                or (row['bytes'], row['sha256']) != (original['bytes'], original['sha256'])):
+-            raise ValueError('historical original identity differs')
+-        fixed(row)
+-        expected_history.append(row)
+-    if expected_history != baseline['history'] or len(observed['retained_databases']) != 18:
+-        raise ValueError('finite history/18 retained databases differ')
+-    absences = []
+-    for row in observed['retained_databases']:
+-        fixed(row['pin'])
+-        absences.extend(row['sidecars'])
+-    if absences != baseline['absent_sidecars'] or len(absences) != 54:
+-        raise ValueError('exact 54 retained database sidecar absences required')
+-    return baseline
++        if row['kind'] == 'regular' and path.suffix in {'.db', '.sqlite', '.sqlite3'}:
++            if path.is_symlink():
++                raise ValueError('new persistent database is a symlink')
++            sidecars = []
++            for suffix in ('-wal', '-shm', '-journal'):
++                side = Path(str(path) + suffix)
++                sidecars.append({'path': str(side), 'exists': side.exists(), 'is_symlink': side.is_symlink(),
++                                 'pin': file_pin(side) if side.is_file() and not side.is_symlink() else None})
++            databases.append({'pin': file_pin(path), 'sidecars': sidecars,
++                              'provenance': 'This genuine new R242 run only; old bytes not recovered'})
++    return {'files': files, 'databases': databases, 'retained_in_place': True,
++            'SQL': False, 'old_bytes_recovered': False}
+ 
+ 
+ def main(key):
+-    plan = read_json(D / 'plan.json')
+-    normative = next(item for item in plan['commands'] if item['id'] == key)
++    plan, gate, author, entry, controls_before, raw_roles = role_gate(key)
++    gate_data, author_data, root_data = raw_roles
++    verified = verify_contract(plan, gate)
++    normative = next(row for row in verified['commands'] if row['id'] == key)
+     command = {**normative, 'argv': normative['child_argv'], 'evidence_directory': str(D / 'implementation' / key)}
+-    gate_data = (D / 'script-gate.json').read_bytes()
+-    gate = json.loads(gate_data)['commands'][key]
+-    author_data, root_data = (D / 'command-ledger.json').read_bytes(), (D / 'root-command-ledger.json').read_bytes()
+-    author, root = json.loads(author_data), json.loads(root_data)
+-    entry, reservation = author['commands'][key], root['commands'][key]
+-    if (gate['state'] != 'APPROVED' or gate['full_source_reviewed'] is not True
+-            or reservation['state'] != 'RESERVED_BY_ROOT' or reservation['used'] != 1
+-            or reservation['remaining'] != 0 or entry['state'] != 'HELD'
+-            or entry['used'] != 0 or entry['remaining'] != 1
+-            or gate['reservation_id'] != reservation['reservation_id']):
+-        raise ValueError('exact one-use ROOT reservation/author gate required')
+     launcher = command['launcher_argv']
+     if (sys.argv != launcher[1:] or Path.cwd() != ROOT or gate['launcher_argv'] != launcher
+-            or gate['argv'] != command['argv'] or entry['child_argv'] != command['argv'] or entry['launcher_argv'] != launcher
+-            or gate['finite_env'] != command['finite_env'] or gate['cwd'] != str(ROOT)
+-            or gate['timeout_seconds'] != command['timeout_seconds']
+-            or gate['source']['path'] != str(Path(__file__))):
+-        raise ValueError('exact command/launcher/environment/cap mismatch')
+-    fixed(gate['source'])
++            or gate['argv'] != command['argv'] or gate['finite_env'] != command['finite_env']
++            or gate['cwd'] != str(ROOT) or gate['timeout_seconds'] != command['timeout_seconds']):
++        raise ValueError('exact overlaid command/launcher/environment/cap differs')
+     fixed(gate['prerequisite_source'])
+     if gate['prerequisite_source'] != {'path': str(ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation/r235_startup_prerequisite.py'),
+                                       'bytes': 5022, 'sha256': 'e46122f6ce00f9c5d0e13be33301b8861b567cb3f25c33d41447f1ea68880e0d'}:
+-        raise ValueError('exact unchanged import-only prerequisite plugin required')
+-    mutable = {str(D / name) for name in ('script-gate.json', 'source-gate.json', 'root-activation.json', 'command-ledger.json', 'root-command-ledger.json')}
+-    for record in gate['input_records']:
+-        if record['path'] in mutable:
+-            raise ValueError('mutable role/gate cannot enter current-fixed input loop')
+-        fixed(record)
+-    baseline = verify_baseline(plan, gate)
+-    controls_before = []
+-    for name in ('command-ledger.json', 'root-command-ledger.json', 'script-gate.json', 'root-activation.json', 'source-gate.json'):
+-        path = D / name
+-        raw = path.read_bytes()
+-        controls_before.append({**file_pin(path), 'base64': base64.b64encode(raw).decode()})
++        raise ValueError('unchanged exact R235 import-only prerequisite required')
++    baseline, verified = verify_baseline(plan, gate)
+     out = Path(command['evidence_directory'])
+     out.mkdir(parents=True, exist_ok=False)
+     expected = [arg for arg in command['argv'] if '::' in arg]
+     base = next((Path(arg.split('=', 1)[1]) for arg in command['argv'] if arg.startswith('--basetemp=')), None)
+-    if base is not None and base.exists():
+-        raise ValueError('fresh exact basetemp required')
++    persistent_absence = None
++    if base is not None:
++        if (base != D / 'implementation/red/persistent-basetemp' or base.exists() or base.is_symlink()
++                or base.parent.resolve() != (D / 'implementation/red').resolve()
++                or any(path.is_symlink() for path in [D, D / 'implementation', D / 'implementation/red'])):
++            raise ValueError('exclusive nonsymlink workspace persistent basetemp required')
++        persistent_absence = {'path': str(base), 'exists': False, 'is_symlink': False,
++                              'parent_resolved': str(base.parent.resolve())}
+     for name in ('BIGSMALL_R223_RESOURCE_ROOT', 'BIGSMALL_R223_CASE_ROOT'):
+         if name in command['finite_env']:
+             Path(command['finite_env'][name]).mkdir(parents=True, exist_ok=False)
+-    invocation = {'round': 'R237', 'command': key, 'argv': command['argv'], 'launcher_argv': launcher,
++    invocation = {'round': 'R242', 'command': key, 'argv': command['argv'], 'launcher_argv': launcher,
+                   'cwd': str(ROOT), 'finite_env': command['finite_env'], 'timeout_seconds': command['timeout_seconds'],
+                   'cleanup_seconds': 15, 'attempt': 1, 'retry': 0, 'reservation_id': gate['reservation_id'],
+                   'source': gate['source'], 'script_gate': file_pin(D / 'script-gate.json'),
+@@ -431,7 +614,8 @@
+                   'root_ledger_before_base64': base64.b64encode(root_data).decode(),
+                   'outer_capture': gate['transport'], 'independent_tool_streams': None,
+                   'baseline': gate['source_index_pin'], 'prerequisite_source': gate['prerequisite_source'],
+-                  'resolved_history_pin': gate['resolved_history_pin'], 'controls_before': controls_before}
++                  'historical_unavailable': verified['missing_registry'], 'controls_before': controls_before,
++                  'persistent_basetemp_before': persistent_absence}
+     save(out / 'invocation.json', invocation)
+     if ((D / 'command-ledger.json').read_bytes() != author_data
+             or (D / 'root-command-ledger.json').read_bytes() != root_data
+@@ -510,18 +694,13 @@
+         except BaseException as error:
+             observation_errors.append({'stage': 'prerequisite', 'type': type(error).__name__, 'message': str(error)})
+     try:
+-        post = verify_baseline(plan, gate)
++        post, post_verified = verify_baseline(plan, gate)
+         source_after = {'all_unchanged': True, 'sources': [
+             {k: row[k] for k in ('path', 'bytes', 'sha256')} for row in post['sources']],
+             'protected_count': len(post['protected'])}
+         save(out / 'source-after.json', source_after)
+     except BaseException as error:
+         observation_errors.append({'stage': 'source-after', 'type': type(error).__name__, 'message': str(error)})
+-    for record in gate['input_records']:
+-        try:
+-            fixed(record)
+-        except BaseException as error:
+-            observation_errors.append({'stage': 'post-input', 'path': record['path'], 'type': type(error).__name__, 'message': str(error)})
+     for row in controls_before:
+         try:
+             if row['path'] == str(D / 'command-ledger.json'):
+@@ -531,6 +710,16 @@
+                 fixed(row)
+         except BaseException as error:
+             observation_errors.append({'stage': 'post-control', 'path': row['path'], 'type': type(error).__name__, 'message': str(error)})
++    new_run_index = None
++    if base is not None:
++        try:
++            if cleaned['leader_reaped'] is not True or cleaned['group_remaining'] is not False:
++                raise ValueError('new DB hashes require actual process closure')
++            new_run_index = persistent_index(base)
++            new_run_index['historical_unavailable'] = verified['missing_registry']
++            save(out / 'persistent-file-database-index.json', new_run_index)
++        except BaseException as error:
++            observation_errors.append({'stage': 'new persistent evidence', 'type': type(error).__name__, 'message': str(error)})
+     accepted = (failure is None and not observation_errors and not timed_out
+                 and cleaned['leader_reaped'] is True and cleaned['group_remaining'] is False
+                 and source_after is not None and source_after['all_unchanged'] is True)
+@@ -549,12 +738,14 @@
+     wrapper_exit = child_exit if accepted else 1
+     streams = {name: file_pin(out / (name + '.txt')) if (out / (name + '.txt')).is_file() else None
+                for name in ('stdout', 'stderr')}
+-    result = {'round': 'R237', 'command': key, 'attempt': 1, 'retry': 0, 'child_pid': None if process is None else process.pid,
++    result = {'round': 'R242', 'command': key, 'attempt': 1, 'retry': 0, 'child_pid': None if process is None else process.pid,
+               'child_exit': child_exit, 'wrapper_exit': wrapper_exit, 'accepted_command_outcome': bool(accepted),
+               'timed_out': timed_out, 'cleanup': cleaned, 'JUnit': xml, 'resource_summary': resources,
+               'cases': case_records, 'streams': streams, 'input_records': gate['input_records'],
+               'invocation': invocation, 'source_index_pin': gate['source_index_pin'],
+               'prerequisite': prerequisite, 'source_after': source_after,
++              'new_run_index': new_run_index, 'historical_unavailable': verified['missing_registry'],
++              'qualification': verified['status'], 'all_historical_bytes_available': False,
+               'legal_RED_requires_ROOT_acceptance': True, 'GREEN': False, 'product_acceptance': False,
+               'file_index': index(out), 'temp_index': [] if base is None else index(base),
+               'runner_exception': failure, 'observation_errors': observation_errors, 'outer_capture': gate['transport']}
+@@ -569,20 +760,20 @@
+ 
+ 
+ if __name__ == '__main__':
+-    if len(sys.argv) != 2 or sys.argv[1] not in {'ruff', 'red'}:
+-        raise SystemExit('exact R237 ruff|red launcher required')
+     try:
++        if len(sys.argv) != 2 or sys.argv[1] not in {'ruff', 'red'}:
++            raise ValueError('exact R242 ruff|red launcher required')
+         raise SystemExit(main(sys.argv[1]))
+     except Exception as error:
+-        out = D / 'implementation' / sys.argv[1]
++        key_name = sys.argv[1] if len(sys.argv) == 2 else 'unknown'
++        out = D / 'implementation' / key_name
+         out.mkdir(parents=True, exist_ok=True)
+-        failure = {'round': 'R237', 'command': sys.argv[1], 'attempt': 1, 'retry': 0,
++        failure = {'round': 'R242', 'command': key_name, 'attempt': 1, 'retry': 0,
+                    'wrapper_exit': 1, 'child_exit': None, 'accepted_command_outcome': False,
+                    'runner_exception': {'type': type(error).__name__, 'message': str(error),
+                                         'traceback': traceback.format_exc()}, 'file_index': index(out)}
+         if not (out / 'result.json').exists():
+             save(out / 'result.json', failure)
+-        print(json.dumps({'command': sys.argv[1], 'wrapper_exit': 1,
++        print(json.dumps({'command': key_name, 'wrapper_exit': 1,
+                           'result_pin': file_pin(out / 'result.json')}, ensure_ascii=False))
+         raise SystemExit(1)
+-

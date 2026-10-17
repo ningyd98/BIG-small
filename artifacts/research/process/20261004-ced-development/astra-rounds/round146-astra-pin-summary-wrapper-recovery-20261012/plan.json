@@ -1,0 +1,80 @@
+{
+  "schema": "ced.astra.metadata-recovery.v1",
+  "round": "R146",
+  "model": "gpt-6-astra",
+  "planner": "/root/astra_status_plan",
+  "date": "2026-10-12",
+  "status": "FROZEN_PENDING_ROOT_ACTIVATION",
+  "problem": {
+    "kind": "OVERSIZED_METADATA_OUTPUT_WRAPPER_JSON_PARSE_FAILURE",
+    "original_python_code": "from pathlib import Path\nimport json,hashlib\nr=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall\");a=r/\"artifacts/research/process/20261004-ced-development/astra-rounds\"\np=a/\"round141-p6-positive-publication-control-20261012\";f=p/\"implementation/stopped-final-mypy\"\nidx=json.loads((f/\"source-index.json\").read_text());pins={};checks=[]\ndef pin(path,expected=None):\n q=Path(path);b=q.read_bytes();v={\"path\":str(q),\"bytes\":len(b),\"sha256\":hashlib.sha256(b).hexdigest()};pins[str(q)]=v\n if expected:checks.append({\"path\":str(q),\"match\":v[\"bytes\"]==expected[\"bytes\"] and v[\"sha256\"]==expected[\"sha256\"]})\nfor e in idx[\"files\"]:\n pin(e[\"snapshot\"],e)\n if \"/sources/\" in e[\"snapshot\"] or \"/commands/\" in e[\"snapshot\"]:pin(e[\"source\"],e)\nfor e in idx[\"protected\"]:pin(e[\"path\"],e)\nfor q in [f/\"source-index.json\",f/\"finding.json\",f/\"step-report.json\",p/\"plan.json\",p/\"implementation/root-mypy-failure-reader/reader.json\",p/\"implementation/root-positive-reader/reader.json\"]:pin(q)\nledgers={}\nfor e in idx[\"files\"]:\n if e[\"source\"].endswith(\"command-ledger.json\"):\n  pin(e[\"source\"]);ledgers[e[\"source\"]]=json.loads(Path(e[\"source\"]).read_text())\nraw=Path(json.loads((f/\"finding.json\").read_text())[\"stdout\"][\"path\"]).read_text()\nprint(json.dumps({\"inputs\":list(pins.values()),\"comparisons\":checks,\"sources\":idx[\"sources\"],\"protected\":idx[\"protected\"],\"ledgers\":ledgers,\"diagnostics\":[l for l in raw.splitlines() if \": error:\" in l],\"raw_stdout\":raw},ensure_ascii=False))\n",
+    "exact_submitted_shell_command": ".venv/bin/python -c 'from pathlib import Path\nimport json,hashlib\nr=Path(\"/home/ningyd/文档/ChatGPT/BIGsmall\");a=r/\"artifacts/research/process/20261004-ced-development/astra-rounds\"\np=a/\"round141-p6-positive-publication-control-20261012\";f=p/\"implementation/stopped-final-mypy\"\nidx=json.loads((f/\"source-index.json\").read_text());pins={};checks=[]\ndef pin(path,expected=None):\n q=Path(path);b=q.read_bytes();v={\"path\":str(q),\"bytes\":len(b),\"sha256\":hashlib.sha256(b).hexdigest()};pins[str(q)]=v\n if expected:checks.append({\"path\":str(q),\"match\":v[\"bytes\"]==expected[\"bytes\"] and v[\"sha256\"]==expected[\"sha256\"]})\nfor e in idx[\"files\"]:\n pin(e[\"snapshot\"],e)\n if \"/sources/\" in e[\"snapshot\"] or \"/commands/\" in e[\"snapshot\"]:pin(e[\"source\"],e)\nfor e in idx[\"protected\"]:pin(e[\"path\"],e)\nfor q in [f/\"source-index.json\",f/\"finding.json\",f/\"step-report.json\",p/\"plan.json\",p/\"implementation/root-mypy-failure-reader/reader.json\",p/\"implementation/root-positive-reader/reader.json\"]:pin(q)\nledgers={}\nfor e in idx[\"files\"]:\n if e[\"source\"].endswith(\"command-ledger.json\"):\n  pin(e[\"source\"]);ledgers[e[\"source\"]]=json.loads(Path(e[\"source\"]).read_text())\nraw=Path(json.loads((f/\"finding.json\").read_text())[\"stdout\"][\"path\"]).read_text()\nprint(json.dumps({\"inputs\":list(pins.values()),\"comparisons\":checks,\"sources\":idx[\"sources\"],\"protected\":idx[\"protected\"],\"ledgers\":ledgers,\"diagnostics\":[l for l in raw.splitlines() if \": error:\" in l],\"raw_stdout\":raw},ensure_ascii=False))\n'",
+    "wrapper_code_with_exact_code_binding_reference": "const code = <exact original_python_code in this record>;\nconst r=await tools.exec_command({cmd:\".venv/bin/python -c '\"+code.replace(/'/g,\"'\\\\''\")+\"'\",max_output_tokens:24000});\nif(r.exit_code!==0){text(r);exit();}const d=JSON.parse(r.output);store(\"r145data\",d);\ntext({pins:d.inputs.length,comparisons:d.comparisons.length,mismatches:d.comparisons.filter(x=>!x.match),diagnostics:d.diagnostics.length,ledgers:Object.fromEntries(Object.entries(d.ledgers).map(([k,v])=>[k,{keys:Object.keys(v),commands:Object.fromEntries(Object.entries(v.commands||{}).map(([n,c])=>[n,{used:c.used,remaining:c.remaining}]))}]))});",
+    "max_output_tokens": 24000,
+    "actual_wrapper_error": "SyntaxError: Unexpected token 'W', \"Warning: t\"... is not valid JSON\n    at JSON.parse (<anonymous>)\n    at exec_main.mjs:22:50",
+    "nested_full_return": null,
+    "nested_full_stdout": null,
+    "nested_exit": null,
+    "capture_status": "UNAVAILABLE: nested return was not stored before JSON.parse. Only exact submitted Python/shell and wrapper algorithm/error are available. Never reconstruct or rerun original to obtain missing raw.",
+    "cause": "Oversized metadata JSON (full ledgers/raw plus pins) was truncated/prefixed by tool; wrapper parsed output as JSON without checking transport formatting.",
+    "product_failure": false,
+    "source_writes": 0,
+    "product_commands": 0
+  },
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round141-p6-positive-publication-control-20261012/implementation/stopped-final-mypy/source-index.json",
+      "bytes": 31423,
+      "sha256": "7929a2084bc6471007f77d9cbd1f3951fa95abc581690b3824e5dc9d39a7ae72"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round141-p6-positive-publication-control-20261012/implementation/stopped-final-mypy/finding.json",
+      "bytes": 6310,
+      "sha256": "828c2f91b934fe54d12a63991b454f7e40761fa1d8b79bf405e209608d0f6daf"
+    }
+  ],
+  "scope": {
+    "allowed_after_activation": [
+      "Read/hash exact frozen index entries and protected paths; compare frozen files to recorded bytes/SHA; compare six current sources/raw original command records separately. Old ROOT ledger snapshots are only frozen historical pins; pin synced current ledgers independently without asserting snapshot equality.",
+      "Exclusive-create /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round146-astra-pin-summary-wrapper-recovery-20261012/pin-receipt.json via .venv stdlib JSON/hash only, storing full pin records/checks and finite current ledger budgets, 22 diagnostic lines; omit duplicate full ledgers/raw streams from stdout.",
+      "Print only report absolute path/bytes/full SHA plus finite counts under 1500 characters; store/text actual complete returned tool object before any interpretation.",
+      "Read saved receipt by exact path in finite bounded metadata portions if needed; if stdout truncates, never rerun generation or JSON.parse transport prefix. Read authoritative saved file instead.",
+      "Preserve available original failure/capture limits and step report in this round, then resume R145 plan writing."
+    ],
+    "forbidden": [
+      "Product/test/source edits",
+      "Import product or AST/compile/collect/static/pytest/SQL/probe/Git/native/actual",
+      "Repeat original failing summary command",
+      "Replace old ledger/raw/plan",
+      "Create or reset validation budgets",
+      "Claim missing original raw recovered"
+    ]
+  },
+  "preconditions": [
+    "ROOT full plan/input review and explicit activation before recovery script.",
+    "Input index/finding still match; output pin-receipt.json absent; use exclusive create and never overwrite.",
+    "Only known exact index/explicit paths; no guessed module leaf. Any missing pin/new cause stops affected recovery."
+  ],
+  "verification": [
+    "Actual recovery result object retained with numeric exit/combined tool output; no fabricated separate streams.",
+    "Receipt file JSON text/hash/bytes and finite counts checked; required source/raw/protected comparisons match; historical ledger synchronization is explicitly distinguished.",
+    "No claims of successful checks from failed wrapper before the fresh receipt exists."
+  ],
+  "budget": {
+    "new_product": 0,
+    "resets": 0,
+    "original_reader_retries": 0,
+    "recovery_metadata_generation": 1,
+    "metadata_text_read": "finite receipt portions only",
+    "remaining_green20_new_green19": "HELD unchanged",
+    "positive_rerun": 0
+  },
+  "acceptance": "Metadata transport/pin receipt only. Original R14522-source diagnostic reasoning retained, not a new product failure. Complete R145 actual plan next; no product repair until separate ROOT R145 activation.",
+  "metadata_scope": [
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round146-astra-pin-summary-wrapper-recovery-20261012/pin-receipt.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round146-astra-pin-summary-wrapper-recovery-20261012/original-failure.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round146-astra-pin-summary-wrapper-recovery-20261012/root-activation.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round146-astra-pin-summary-wrapper-recovery-20261012/input-check.json",
+    "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round146-astra-pin-summary-wrapper-recovery-20261012/step-report.json"
+  ]
+}

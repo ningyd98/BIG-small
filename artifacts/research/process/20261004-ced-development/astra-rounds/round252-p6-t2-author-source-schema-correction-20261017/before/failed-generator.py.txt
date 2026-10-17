@@ -1,0 +1,84 @@
+from pathlib import Path
+import json,hashlib,re,difflib,base64
+R=Path("/home/ningyd/文档/ChatGPT/BIGsmall");D=Path("/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round251-p6-t2-event3-entry-fence-continuation-20261017");I=D/'implementation';I.mkdir(exist_ok=True)
+o=json.loads((D/'input-observation.json').read_text());names=o['writer_names']
+def pin(p,b):return dict(path=str(p),bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
+def save(p,b):
+ with p.open('xb') as f:f.write(b)
+ assert p.read_bytes()==b
+ return pin(p,b)
+def parameters(header):
+ raw=header[header.index('(')+1:header.rindex(')')]
+ parts=[];start=0;depth=0;quote=None
+ for i,c in enumerate(raw):
+  if quote:
+   if c==quote and (i==0 or raw[i-1]!='\\'):quote=None
+  elif c in "'\"":quote=c
+  elif c in '([{':depth+=1
+  elif c in ')]}':depth-=1
+  elif c==',' and depth==0:parts.append(raw[start:i].strip());start=i+1
+ parts.append(raw[start:].strip());pos=[];kw=[];star=False
+ for part in parts:
+  if part=='*':star=True;continue
+  key=part.split(':',1)[0].split('=',1)[0].strip()
+  if key and key!='self':(kw if star else pos).append(key)
+ return pos,kw
+entries=[];changes=[];patch='*** Begin Patch\n'
+for name in ('protocol','memory','sqlite'):
+ p=R/'src/cloud_edge_robot_arm/repositories/event_autonomy'/f'{name}.py';b=p.read_bytes();s=b.decode()
+ expected=next(x for x in o['current_sources'] if x['path']==str(p))
+ assert pin(p,b)=={k:expected[k] for k in ('path','bytes','sha256')}
+ before=D/'before'/p.relative_to(R);assert before.read_bytes()==b
+ t=s
+ if name=='protocol':
+  marker='\n\ndef local_event_repository(cls):'
+  helper='\n\ndef _local_legacy_write_guard_unlocked(repository, name, args, kwargs) -> None:\n    """Fence a public legacy writer while its actual storage lock is held."""\n    if _local_target(repository, name, args, kwargs):\n        raise ValueError("operational task mutation requires the registered private publication scope")\n'
+  t=t.replace(marker,helper+marker,1)
+ else:
+  t=t.replace('    IdempotencyConflictError,\n','    IdempotencyConflictError,\n    _local_legacy_write_guard_unlocked,\n',1)
+  matches=list(re.finditer(r'^    def (\w+)\(',t,re.M));edits=[]
+  for ix,a in enumerate(matches):
+   method=a[1]
+   if method not in names:continue
+   end=matches[ix+1].start() if ix+1<len(matches) else len(t)
+   block=t[a.start():end];lines=block.splitlines(keepends=True)
+   sigend=next(i for i,l in enumerate(lines) if l.rstrip().endswith(':'));header=''.join(lines[:sigend+1])
+   pos,kw=parameters(header)
+   args='('+', '.join(pos)+(',' if len(pos)==1 else '')+')'
+   kwargs='{'+', '.join(repr(k)+': '+k for k in kw)+'}'
+   call=f'            _local_legacy_write_guard_unlocked(self, "{method}", {args}, {kwargs})\n'
+   if name=='memory':
+    if method=='mark_event_handled':
+     old='        return event_id in self._events\n'
+     assert block.count(old)==1
+     new=block.replace(old,'        with self._lock:\n'+call+'            return event_id in self._events\n',1)
+     first='return event_id in self._events';txn=None;begin=None
+    else:
+     at=next(i for i,l in enumerate(lines) if l=='        with self._lock:\n')
+     first=lines[at+1].strip();lines.insert(at+1,call);new=''.join(lines);txn=None;begin=None
+   else:
+    at=next(i for i,l in enumerate(lines) if l.startswith('        with self._write_lock'))
+    explicit=lines[at]=='        with self._write_lock, self._conn:\n'
+    if explicit:
+     assert lines[at+1]=='            self._conn.execute("BEGIN IMMEDIATE")\n'
+     first=lines[at+2].strip();lines.insert(at+2,call);begin='reused existing BEGIN IMMEDIATE'
+    else:
+     assert lines[at]=='        with self._write_lock:\n'
+     first=lines[at+1].strip();lines[at]='        with self._write_lock, self._conn:\n'
+     lines[at+1:at+1]=['            self._conn.execute("BEGIN IMMEDIATE")\n',call]
+     begin='one added BEGIN IMMEDIATE before guard'
+    new=''.join(lines);txn='outer public method; connection context closes introduced transaction on all exits; original explicit/internal commit calls unchanged'
+   entries.append(dict(path=str(p),method=method,signature=header.rstrip(),arguments=dict(positional=pos,keyword=kw,expression=call.strip()),real_lock='self._lock' if name=='memory' else 'self._write_lock',transaction_owner=txn,begin=begin,first_effect_or_controlling_read=first,guard_position='first statement under real lock'+(' after single BEGIN IMMEDIATE' if name=='sqlite' else ''),original_method_sha256=hashlib.sha256(block.encode()).hexdigest(),candidate_method_sha256=hashlib.sha256(new.encode()).hexdigest()))
+   edits.append((a.start(),end,new))
+  assert len(edits)==36
+  for start,end,new in reversed(edits):t=t[:start]+new+t[end:]
+ after=t.encode();candidate=I/f'prepared-{name}-source.txt';save(candidate,after)
+ u=list(difflib.unified_diff(s.splitlines(keepends=True),t.splitlines(keepends=True),n=5))
+ patch+='*** Update File: '+str(p)+'\n'+''.join('@@\n' if line.startswith('@@ ') else line for line in u[2:])
+ changes.append(dict(before=pin(p,b),physical_before=pin(before,b),candidate=pin(candidate,after),after=pin(p,after)))
+ assert (s.endswith('\n'))==(t.endswith('\n'))
+assert len(entries)==72
+patch+='*** End Patch'
+save(I/'prepared-product.patch',patch.encode())
+save(I/'prepared-product-values.json',(json.dumps(dict(changes=changes,entries=entries),ensure_ascii=False,indent=2)+'\n').encode())
+print(json.dumps(dict(changes=changes,entries=len(entries),patch=pin(I/'prepared-product.patch',patch.encode())),ensure_ascii=False))

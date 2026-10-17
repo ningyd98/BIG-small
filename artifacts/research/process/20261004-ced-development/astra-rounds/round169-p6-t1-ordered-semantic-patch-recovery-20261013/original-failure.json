@@ -1,0 +1,161 @@
+{
+  "schema_version": "bigsmall.r169-original-failure.v1",
+  "date_context": "2026-10-13",
+  "author_identity": {
+    "task": "/root/p6_stage_b_sol",
+    "model": "gpt-6.1-sol",
+    "basis": "explicit parent spawn configuration"
+  },
+  "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+  "problem_kind": "UNEXPECTED_APPLY_PATCH_CONTEXT_ORDER_FAILURE",
+  "product_failure_observed": false,
+  "failed_tool": {
+    "outer": "functions.exec",
+    "inner": "tools.apply_patch",
+    "input_argument_kind": "direct patch string",
+    "exact_js_source": "const patch=\"*** Begin Patch\\n*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py\\n@@\\n-    observation = _object(decision[\\\"lease_observation\\\"])\\n+    observation = _object(decision[\\\"lease_observation\\\"], frozenset(\\n+        \\\"status reasons domain original_acquisition segment current job_id lease_id worker_id attempt generation source_identity schema stage_label\\\".split()\\n+    ))\\n@@\\n-    if _object(observation[\\\"current\\\"])[\\\"domain\\\"] != lease_domain:\\n+    lease_current = _bracket(observation[\\\"current\\\"], event=False)\\n+    if lease_current[\\\"domain\\\"] != lease_domain:\\n         raise ValueError(\\\"broker current domain changed\\\")\\n-    if _bracket(observation[\\\"original_acquisition\\\"])[\\\"domain\\\"] != lease_domain:\\n+    acquisition = _bracket(observation[\\\"original_acquisition\\\"])\\n+    if acquisition[\\\"domain\\\"] != lease_domain:\\n         raise ValueError(\\\"broker original acquisition domain changed\\\")\\n+    segment = _object(observation[\\\"segment\\\"], frozenset(\\\"domain generation origin deadline_ns\\\".split()))\\n+    if segment[\\\"domain\\\"] != lease_domain or segment[\\\"generation\\\"] != decision[\\\"lease_generation\\\"] or segment[\\\"origin\\\"] != acquisition:\\n+        raise ValueError(\\\"current broker segment cannot replace original acquisition\\\")\\n+    lease_deadline = _integer(segment[\\\"deadline_ns\\\"], positive=True)\\n+    if lease_deadline <= _integer(acquisition[\\\"upper_ns\\\"]):\\n+        raise ValueError(\\\"broker segment must follow acquisition\\\")\\n@@\\n         if any(_integer(current[\\\"upper_ns\\\"]) >= _integer(ref[\\\"deadline_ns\\\"], positive=True) for ref in refs):\\n             raise ValueError(\\\"recorded app decision expired at original hard bound\\\")\\n+        for ref in refs:\\n+            effective = _object(ref[\\\"effective_upper\\\"])\\n+            upper = _integer(current[\\\"upper_ns\\\"])\\n+            endpoint = _integer(effective[\\\"value_ns\\\"])\\n+            if upper > endpoint or (upper == endpoint and effective[\\\"inclusive\\\"] is not True):\\n+                raise ValueError(\\\"recorded app evidence crosses its AGE_CLOSED/HARD_OPEN bound\\\")\\n+        if _integer(lease_current[\\\"upper_ns\\\"]) >= lease_deadline:\\n+            raise ValueError(\\\"recorded broker decision crosses its separate HARD_OPEN bound\\\")\\n@@\\n             if decision[\\\"lease_epoch\\\"] != identity[\\\"epoch\\\"]:\\n                 raise ValueError(\\\"original lease epoch changed\\\")\\n+            if _object(decision[\\\"lease_observation\\\"])[\\\"original_acquisition\\\"] != identity[\\\"original_acquisition\\\"]:\\n+                raise ValueError(\\\"renewal cannot replace the original broker acquisition\\\")\\n@@\\n class LocalVerificationBudgetState(_DetachedValue):\\n*** End Patch\";\nconst result=await tools.apply_patch(patch); store(\"t1_shared_decision_semantics_patch_actual\",result); text(result);",
+    "exact_patch": "*** Begin Patch\n*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py\n@@\n-    observation = _object(decision[\"lease_observation\"])\n+    observation = _object(decision[\"lease_observation\"], frozenset(\n+        \"status reasons domain original_acquisition segment current job_id lease_id worker_id attempt generation source_identity schema stage_label\".split()\n+    ))\n@@\n-    if _object(observation[\"current\"])[\"domain\"] != lease_domain:\n+    lease_current = _bracket(observation[\"current\"], event=False)\n+    if lease_current[\"domain\"] != lease_domain:\n         raise ValueError(\"broker current domain changed\")\n-    if _bracket(observation[\"original_acquisition\"])[\"domain\"] != lease_domain:\n+    acquisition = _bracket(observation[\"original_acquisition\"])\n+    if acquisition[\"domain\"] != lease_domain:\n         raise ValueError(\"broker original acquisition domain changed\")\n+    segment = _object(observation[\"segment\"], frozenset(\"domain generation origin deadline_ns\".split()))\n+    if segment[\"domain\"] != lease_domain or segment[\"generation\"] != decision[\"lease_generation\"] or segment[\"origin\"] != acquisition:\n+        raise ValueError(\"current broker segment cannot replace original acquisition\")\n+    lease_deadline = _integer(segment[\"deadline_ns\"], positive=True)\n+    if lease_deadline <= _integer(acquisition[\"upper_ns\"]):\n+        raise ValueError(\"broker segment must follow acquisition\")\n@@\n         if any(_integer(current[\"upper_ns\"]) >= _integer(ref[\"deadline_ns\"], positive=True) for ref in refs):\n             raise ValueError(\"recorded app decision expired at original hard bound\")\n+        for ref in refs:\n+            effective = _object(ref[\"effective_upper\"])\n+            upper = _integer(current[\"upper_ns\"])\n+            endpoint = _integer(effective[\"value_ns\"])\n+            if upper > endpoint or (upper == endpoint and effective[\"inclusive\"] is not True):\n+                raise ValueError(\"recorded app evidence crosses its AGE_CLOSED/HARD_OPEN bound\")\n+        if _integer(lease_current[\"upper_ns\"]) >= lease_deadline:\n+            raise ValueError(\"recorded broker decision crosses its separate HARD_OPEN bound\")\n@@\n             if decision[\"lease_epoch\"] != identity[\"epoch\"]:\n                 raise ValueError(\"original lease epoch changed\")\n+            if _object(decision[\"lease_observation\"])[\"original_acquisition\"] != identity[\"original_acquisition\"]:\n+                raise ValueError(\"renewal cannot replace the original broker acquisition\")\n@@\n class LocalVerificationBudgetState(_DetachedValue):\n*** End Patch",
+    "source_capture": "Copied from the complete visible failed functions.exec input; no filesystem source reread or output reconstruction."
+  },
+  "actual_error_capture": {
+    "structured_outer_return": null,
+    "structured_inner_return": null,
+    "numeric_exit_code": null,
+    "independent_stdout": null,
+    "independent_stderr": null,
+    "combined_wrapper_text": "Script error:\napply_patch verification failed: Failed to find expected lines in /home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py:\nclass LocalVerificationBudgetState(_DetachedValue):",
+    "capture_gap": "functions.exec raised before assigning result; no structured apply_patch return or independent streams were available."
+  },
+  "patch_write_status": {
+    "status": "UNKNOWN",
+    "before_sha256": null,
+    "after_sha256": null,
+    "basis": "No subsequent source read/hash/probe. The wrapper reports missing context; this record does not assert atomicity or absence of a partial write."
+  },
+  "successful_apply_patch_sequence": [
+    {
+      "store_key": "t1_local_temporal_initial_write_actual_result",
+      "paths": [
+        "src/cloud_edge_robot_arm/vision/local_temporal.py"
+      ],
+      "actual_inner_tool_return": {},
+      "actual_outer_functions_return": null
+    },
+    {
+      "store_key": "t1_local_temporal_accessor_patch_actual",
+      "paths": [
+        "src/cloud_edge_robot_arm/vision/local_temporal.py"
+      ],
+      "actual_inner_tool_return": {},
+      "actual_outer_functions_return": null
+    },
+    {
+      "store_key": "t1_local_domain_carrier_base_patch_actual",
+      "paths": [
+        "src/cloud_edge_robot_arm/vision/local_temporal.py"
+      ],
+      "actual_inner_tool_return": {},
+      "actual_outer_functions_return": null
+    },
+    {
+      "store_key": "t1_bootstrap_local_adaptation_actual",
+      "paths": [
+        "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py"
+      ],
+      "actual_inner_tool_return": {},
+      "actual_outer_functions_return": null
+    },
+    {
+      "store_key": "t1_supervision_local_adaptation_actual",
+      "paths": [
+        "src/cloud_edge_robot_arm/vision/local_temporal.py",
+        "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py"
+      ],
+      "actual_inner_tool_return": {},
+      "actual_outer_functions_return": null
+    },
+    {
+      "store_key": "t1_budget_local_adaptation_actual",
+      "paths": [
+        "src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+        "src/cloud_edge_robot_arm/edge/recovery/verification_router.py"
+      ],
+      "actual_inner_tool_return": {},
+      "actual_outer_functions_return": null
+    },
+    {
+      "store_key": "t1_owner_registration_local_adaptation_actual",
+      "paths": [
+        "src/cloud_edge_robot_arm/vision/owner_registration.py"
+      ],
+      "actual_inner_tool_return": {},
+      "actual_outer_functions_return": null
+    },
+    {
+      "store_key": "t1_visual_owner_local_adaptation_actual",
+      "paths": [
+        "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py"
+      ],
+      "actual_inner_tool_return": {},
+      "actual_outer_functions_return": null
+    },
+    {
+      "store_key": "t1_verification_local_adaptation_actual",
+      "paths": [
+        "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py"
+      ],
+      "actual_inner_tool_return": {},
+      "actual_outer_functions_return": null
+    }
+  ],
+  "domain_files_written_but_unverified": [
+    "src/cloud_edge_robot_arm/vision/owner_registration.py",
+    "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+    "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+    "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+    "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+    "src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+    "src/cloud_edge_robot_arm/edge/recovery/lifecycle.py"
+  ],
+  "implementation_status": "UNFINISHED_T1_DRAFT_STOPPED_PENDING_ACTUAL_ASTRA_R169",
+  "shared_semantic_patch_intent": "Complete already planned detached broker observation, segment/current bracket, separate app/broker bounds and immutable original acquisition joins. Failed input accidentally placed an earlier class context after a later LocalEnvelope context.",
+  "remaining_unexecuted_work": [
+    "complete shared per-tag semantic joins and LocalVerificationBudgetState accessors",
+    "complete draft domain type/interface self-review within original T1 scope",
+    "freeze source/change/semantic/fixture/resource reports for ROOT gate"
+  ],
+  "verification": {
+    "tests_executed_since_T1_product_authorization": 0,
+    "static_executed_since_T1_product_authorization": 0,
+    "imports_AST_compile_probes": 0,
+    "product_runtime_executed": 0,
+    "T1_GREEN": "HELD",
+    "legacy_current_claim": "R166 independently accepted 1 PASS remains historical prerequisite; this failure is a patch tool failure, not a test result."
+  },
+  "budget_as_last_ROOT_report": {
+    "R158_used": 2,
+    "R158_remaining": 13,
+    "R158_remaining_state": "HELD",
+    "R166_legacy_control_used": 1,
+    "R166_legacy_control_remaining": 0,
+    "R167_metadata_used": 1,
+    "R167_metadata_remaining": 0,
+    "reset_or_retry": false
+  },
+  "actions_after_failure_before_preservation": {
+    "source_or_fixture_reads": [],
+    "source_or_test_or_runner_or_report_repairs": [],
+    "retries": 0,
+    "communications": [
+      "STOP sent to ROOT with actual wrapper text and request for failure destination",
+      "ROOT authorized only this original-failure metadata preservation"
+    ]
+  },
+  "unknowns": {
+    "current_source_hashes": null,
+    "current_ledger_hashes": null,
+    "full_outer_transport_object": null,
+    "partial_write_extent": null
+  }
+}
+

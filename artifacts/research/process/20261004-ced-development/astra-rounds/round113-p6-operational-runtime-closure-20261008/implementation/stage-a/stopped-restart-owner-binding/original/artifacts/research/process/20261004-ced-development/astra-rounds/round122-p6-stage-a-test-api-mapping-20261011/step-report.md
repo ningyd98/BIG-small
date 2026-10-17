@@ -1,0 +1,1 @@
+R122 mapping applied to original A20 only; original RED belongs to frozen old draft. Actual original task/verification deadline handles retained; cross-thread OC1 negative receives same pre-captured main clock. P5/OC1 unchanged. Original production continuation pending; no validation rerun.

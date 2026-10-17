@@ -1,0 +1,48 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/prepare-evidence.py.R191-before
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/prepare-evidence.py
+@@ -120,10 +120,13 @@
+ 
+ 
+ def protected_shared(before, after):
+-    assert before.count(b"FIELDS:") == after.count(b"FIELDS:") == 1
+-    old = before.split(b"FIELDS:", 1)[1].split(b"\n\ndef _copy(", 1)[0]
+-    new = after.split(b"FIELDS:", 1)[1].split(b"\n\ndef _copy(", 1)[0]
+-    assert old == new
++    start, end = b"\nFIELDS:", b"\n\ndef _copy("
++    assert before.count(start) == after.count(start) == 1
++    assert before.count(end) == after.count(end) == 1
++    before_start, before_end = before.index(start), before.index(end)
++    after_start, after_end = after.index(start), after.index(end)
++    assert before_start < before_end and after_start < after_end
++    assert before[before_start + len(start):before_end] == after[after_start + len(start):after_end]
+     for start, end in ((b"def _copy(", b"def _object("),
+                        (b"def _canonical(", b"def _hash(")):
+         assert before.count(start) == after.count(start) == 1
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/root-settlement.py.R191-before
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round182-p6-t1-recursive-local-projection-closure-20261014/implementation/root-settlement.py
+@@ -345,6 +345,25 @@
+             assert unarchive(record) == unarchive(red["sources"][path])
+         red_history = {path: {key: record[key] for key in PIN_KEYS}
+                        for path, record in red["sources"].items()}
++        # R191 preserves exactly the two metadata scripts revised after RED.
++        historical_directory = D.parent / "round191-p6-t1-root-source-proof-record-shape-20261014" / "implementation"
++        historical_scripts = (
++            (D / "implementation/prepare-evidence.py",
++             historical_directory / "before-prepare-evidence.py", 13233,
++             "77cb39339ff2f7aa5d4293174d0fbefb284e9554f16bfd0049c7856516b8e852"),
++            (D / "implementation/root-settlement.py",
++             historical_directory / "before-root-settlement.py", 20629,
++             "20a365502526256d38039bbcef061c9d6f7b9b522935aafa45f4cfab656b6e9a"),
++        )
++        red_inputs = load(D / "implementation/red/result.json")["input_records"]
++        for logical_path, archive_path, length, digest in historical_scripts:
++            archived = archive_path.read_bytes()
++            assert len(archived) == length and sha(archived) == digest
++            expected = {"path": str(logical_path), "bytes": length, "sha256": digest}
++            assert [record for record in red_inputs
++                    if record["path"] == str(logical_path)] == [expected]
++            assert str(logical_path) not in red_history
++            red_history[str(logical_path)] = expected
+         red_actual = child_evidence("red", red_history)
+         ruff_actual = child_evidence("ruff")
+         green_actual = child_evidence("green")
