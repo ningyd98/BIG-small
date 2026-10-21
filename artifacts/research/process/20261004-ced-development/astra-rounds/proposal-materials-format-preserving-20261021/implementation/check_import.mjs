@@ -1,0 +1,13 @@
+import fs from 'node:fs/promises';
+import crypto from 'node:crypto';
+import { importRuntimeModule } from '/home/ningyd/.codex/plugins/cache/openai-primary-runtime/presentations/26.1020.11127/skills/presentations/container_tools/runtime_helpers.mjs';
+const {FileBlob,PresentationFile}=await importRuntimeModule('@oai/artifact-tool');
+const candidate='/home/ningyd/文档/ChatGPT/BIGsmall/output/doc/20261021-proposal-revision/.build/candidate.pptx';
+const hash=async()=>crypto.createHash('sha256').update(await fs.readFile(candidate)).digest('hex');
+const before=await hash();
+const p=await PresentationFile.importPptx(await FileBlob.load(candidate));
+if(p.slides.items.length!==12)throw new Error('Unexpected slide count');
+if(before!==await hash())throw new Error('Candidate changed during import');
+const result={importPassed:true,slideCount:12,sha256:before};
+await fs.writeFile('/home/ningyd/文档/ChatGPT/BIGsmall/output/doc/20261021-proposal-revision/.build/import-validation.json',JSON.stringify(result,null,2));
+console.log(JSON.stringify(result));
