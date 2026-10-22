@@ -1,0 +1,35 @@
+{
+  "round": "R304",
+  "before": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/run-evidence.py",
+    "bytes": 14464,
+    "sha256": "f36559d6cacba23c102684cb04c12c938b66975dec317af1e754c9167c4d251b"
+  },
+  "after": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/run-evidence.py",
+    "bytes": 15117,
+    "sha256": "7bbc9d480ad06d1b812fd427adea0528b0a974307312af84b2f6b8a458827493"
+  },
+  "exact_replacements": [
+    {
+      "old": "        index = helper.strict_index(out / \"persistent-basetemp\")",
+      "new": "        basetemp = out / \"persistent-basetemp\"\n        try:\n            basetemp_state = basetemp.lstat()\n        except FileNotFoundError:\n            if not result[\"unit_only\"]:\n                raise\n            index = []\n            result[\"persistent_basetemp\"] = {\"path\": str(basetemp), \"exists\": False,\n                \"is_symlink\": False, \"observation\": \"unit_basetemp_absent_after_child\"}\n        else:\n            index = helper.strict_index(basetemp)\n            result[\"persistent_basetemp\"] = {\"path\": str(basetemp), \"exists\": True,\n                \"is_symlink\": stat.S_ISLNK(basetemp_state.st_mode),\n                \"observation\": \"existing_path_strictly_indexed\"}",
+      "expected_count": 1
+    },
+    {
+      "old": "{\"files\": index, \"databases\": dbs})",
+      "new": "{\"root\": result[\"persistent_basetemp\"], \"files\": index, \"databases\": dbs})",
+      "expected_count": 1
+    }
+  ],
+  "source_diff": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round304-p6-t2-unit-basetemp-absence-prerun-20261022/source.diff",
+    "bytes": 1604,
+    "sha256": "645d4bf468c5dadd3fd1c413915c9bcfdeb1253e7c47254486b2afa92a687153"
+  },
+  "full_source_previously_read": true,
+  "full_small_diff_reviewed": true,
+  "syntax_parsed": true,
+  "runtime_started": false,
+  "cleanup_risk_not_observed": "Unexpected cleanup exception may interrupt final metadata; CONSUMED remains1/0, never refundable. No scope expansion."
+}

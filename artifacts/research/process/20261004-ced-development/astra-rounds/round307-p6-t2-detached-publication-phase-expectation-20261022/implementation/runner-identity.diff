@@ -1,0 +1,81 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round306-p6-t2-planner-draft-json-serialization-20261022/implementation/run-evidence.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round307-p6-t2-detached-publication-phase-expectation-20261022/implementation/run-evidence.py
+@@ -1,4 +1,4 @@
+-"""R306 finite selected-command evidence runner; stdlib parent only."""
++"""R307 finite selected-command evidence runner; stdlib parent only."""
+ from __future__ import annotations
+ import base64
+ import copy
+@@ -15,10 +15,10 @@
+ 
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+ D = Path(__file__).resolve().parent.parent
+-PLAN_SHA = "0f27559991b88e53e78d8c17b682b62506f4a3cd8e345ff4b836aa55321b7e2a"
++PLAN_SHA = "5b93a067f41b198d0732ad54a21954f77d9122655fb7956e90cdc1ca188d2488"
+ HELPER = D.parent / "round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/run-evidence.py"
+ HELPER_SHA = "1371a63dc6faf3c784eea25a71a07b2a42320bdca0951f3bbb5ac7038fc19fe3"
+-KEYS = ("observer_serialization", "dual_behavior")
++KEYS = ("observer_detached_summary", "dual_behavior")
+ 
+ 
+ def require(ok, message):
+@@ -66,7 +66,7 @@
+     require(stat.S_IMODE(path.stat().st_mode) == before["mode"], "ledger mode changed")
+     require(path.read_bytes() == base64.b64decode(before["base64"]), "ledger CAS bytes changed")
+     write(receipt.with_name(receipt.stem + "-before.json"), before)
+-    temp = path.with_name(path.name + ".r306-next")
++    temp = path.with_name(path.name + ".r307-next")
+     write(temp, after)
+     os.chmod(temp, before["mode"])
+     check(before)
+@@ -105,12 +105,12 @@
+             else:
+                 sides.append({"path": str(side), "exists": False, "pin": None, "archive": None})
+         rows.append({"pin": pin(original), "archive": archive, "sidecars": sides,
+-                     "provenance": "Genuine new R306 run only; old missing bytes not recovered"})
++                     "provenance": "Genuine new R307 run only; old missing bytes not recovered"})
+     return rows
+ 
+ 
+ def main():
+-    require(len(sys.argv) == 2 and sys.argv[1] in KEYS, "one exact R306 command key")
++    require(len(sys.argv) == 2 and sys.argv[1] in KEYS, "one exact R307 command key")
+     key = sys.argv[1]
+     plan_pin = pin(D / "plan.json")
+     require(plan_pin["sha256"] == PLAN_SHA, "actual Astra plan changed")
+@@ -122,7 +122,7 @@
+     accepted = json.loads(accepted_path.read_bytes())
+     require(accepted["reviewed"] is True and accepted["source_gate"] == pin(gate_path),
+             "ROOT acceptance does not bind gate")
+-    require(gate["round"] == "R306" and gate["commands"] == plan["commands"], "literal command table differs")
++    require(gate["round"] == "R307" and gate["commands"] == plan["commands"], "literal command table differs")
+     require(gate["sources"]["runner"] == pin(__file__), "runner not bound")
+     root = json.loads((D / "root-command-ledger.json").read_bytes())
+     author_path = D / "implementation/command-ledger.json"
+@@ -143,7 +143,7 @@
+                                   "executor_binding": gate["executor_binding"]})
+     write(out / "source-before.json", snapshot(gate))
+     require(pin(HELPER)["sha256"] == HELPER_SHA, "reviewed helper changed")
+-    spec = importlib.util.spec_from_file_location("r306_frozen_helpers", HELPER)
++    spec = importlib.util.spec_from_file_location("r307_frozen_helpers", HELPER)
+     helper = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(helper)  # main guard remains false; stdlib definitions only.
+     write(out / "helper-provenance.json", {"source": pin(HELPER),
+@@ -189,7 +189,7 @@
+         spent["commands"][key]["state"] = "SPENT"
+         cas(author_path, current, spent, out / "author-spent.json")
+     elapsed = time.monotonic() - start
+-    result = {"round": "R306", "command_id": key, "child_exit": process.returncode if process else None,
++    result = {"round": "R307", "command_id": key, "child_exit": process.returncode if process else None,
+               "pid": process.pid if process else None, "elapsed_seconds": elapsed,
+               "timed_out": timed_out, "output_limited": output_limited, "cleanup": cleanup,
+               "errors": errors, "unit_only": key.startswith("observer_"),
+@@ -237,7 +237,7 @@
+                 path = Path(item["path"])
+                 if stat.S_ISREG(item["mode"]) and path.name in helper.CASE_NAMES:
+                     cases.append({"pin": pin(path), "data": json.loads(path.read_bytes())})
+-            result["cases"] = write(out / "cases.json", {"round": "R306", "node": command["node"], "files": cases})
++            result["cases"] = write(out / "cases.json", {"round": "R307", "node": command["node"], "files": cases})
+             pre = helper.prerequisite(out / "prerequisite.json", {"module": helper.MODULE_PIN}, process.pid)
+             result["prerequisite"] = pre
+             require(pre["accepted"], "startup prerequisite did not pass")

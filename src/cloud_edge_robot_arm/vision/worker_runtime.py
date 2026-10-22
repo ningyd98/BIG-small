@@ -1783,7 +1783,7 @@ class VisualWorkerRuntime:
                     "kind": kind, "event_key": f"worker-{kind.lower()}-{current.revision}",
                     "robot_state": robot_state.model_dump(mode="json"), "claim_id": claim_id,
                     "observation": None if observation is None else observation.model_dump(mode="json"),
-                    "draft": None if draft is None else asdict(draft)}
+                    "draft": None if draft is None else draft.model_dump(mode="json")}
             request = VisualBootstrapTransitionInput.from_payload(self._local_envelope(
                 "visual.bootstrap.transition.local.v1", body))
             with self._local_publication_scope(operation_id=body["event_key"], operation_sha256=_local_digest(request)):

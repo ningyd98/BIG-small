@@ -1,0 +1,92 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round307-p6-t2-detached-publication-phase-expectation-20261022/before/test_operational_runtime_closure.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -4300,11 +4300,30 @@
+     return latest
+ 
+ 
+-def _b_t2_detached_read(repo, run_id, operation_id):
++def _b_t2_detached_read(repo, run_id, operation_id, *, expected_job_phase, expected_job_rows):
+     summary = repo.read_local_publication(run_id)
+     exported = _b_t2_plain(summary)
+-    assert isinstance(exported, (dict, list)), "actual durable publication summary required"
+-    assert operation_id in json.dumps(exported, sort_keys=True)
++    assert isinstance(exported, list), "actual durable publication row list required"
++    assert all(isinstance(row, dict) for row in exported), "actual durable publication rows required"
++    assert expected_job_phase in (None, "EVENT_COMMITTED", "COMPLETE")
++    assert isinstance(expected_job_rows, list) and all(isinstance(row, dict) for row in expected_job_rows)
++    assert all(row.get("operation_id") == operation_id for row in expected_job_rows)
++    metadata = {"write_disposition": "HISTORICAL_ONLY", "confirmation_state": "UNKNOWN",
++                "accepted": False, "live_authority": False}
++    for row in exported:
++        assert row.get("write_disposition") == "HISTORICAL_ONLY"
++        assert row.get("confirmation_state") == "UNKNOWN"
++        assert row.get("accepted") is False
++        assert row.get("live_authority") is False
++    selected = [row for row in exported if row.get("operation_id") == operation_id]
++    if expected_job_phase is None:
++        assert expected_job_rows == [] and selected == [], "event-only commit has no job receipt"
++    else:
++        assert len(expected_job_rows) == len(selected) == 1, "one exact target job receipt required"
++        expected = expected_job_rows[0]
++        assert expected["phase"] == selected[0]["phase"] == expected_job_phase
++        assert set(selected[0]) == set(expected) | set(metadata), "detached row columns differ"
++        assert {key: selected[0][key] for key in expected} == expected, "detached row differs from SQL"
+ 
+     def check(value):
+         if isinstance(value, dict):
+@@ -4492,7 +4511,17 @@
+                     job_read.row_factory = event_read.row_factory = sqlite3.Row
+                     read_map = {"job": job_read, "event": event_read}
+                     before_restart = _b_t2_snapshot(restarted_event, read_map)
+-                    detached = _b_t2_detached_read(restarted_job, saved["run_id"], saved["operation_id"])
++                    expected_job_phase = (None, "EVENT_COMMITTED", "EVENT_COMMITTED", "COMPLETE")[index]
++                    before_rows = _b_t2_operation_rows(read_map, saved["operation_id"])
++                    if expected_job_phase is None:
++                        assert before_rows["job"] == []
++                    else:
++                        assert len(before_rows["job"]) == 1
++                        assert before_rows["job"][0]["phase"] == expected_job_phase
++                    detached = _b_t2_detached_read(
++                        restarted_job, saved["run_id"], saved["operation_id"],
++                        expected_job_phase=expected_job_phase, expected_job_rows=before_rows["job"],
++                    )
+                     reconciliation = _b_t2_plain(restarted_job.reconcile_local_publications())
+                     with pytest.raises((RuntimeError, ValueError), match="owner|scope|private|authority|session"):
+                         restarted_event.transition_visual_bootstrap_if_current(
+@@ -4501,12 +4530,15 @@
+                     after_restart = _b_t2_snapshot(restarted_event, read_map)
+                     _b_t2_retained_spend(after_restart, saved["before_record"], 1)
+                     new_rows = _b_t2_operation_rows(read_map, saved["operation_id"])
++                    assert new_rows["job"] == before_rows["job"]
+                     if index != 3:
+                         assert not all(any(row["phase"] == "COMPLETE" for row in value)
+                                        for value in new_rows.values())
+                     _b_t2_case_evidence(directory, "restart-no-authority", {
+                         "before": before_restart, "after": after_restart, "detached": detached,
+                         "reconciliation": reconciliation, "rows": new_rows,
++                        "expected_job_phase": expected_job_phase,
++                        "independent_job_rows_before": before_rows["job"],
+                     })
+                 finally:
+                     restarted_event.close()
+@@ -4533,7 +4565,11 @@
+                 assert duplicate.write_disposition == "HISTORICAL_DUPLICATE"
+                 assert duplicate.record.to_payload()["payload"] == state["payload"]
+                 assert duplicate.record.to_payload()["original_time"] == state["original_time"]
+-                _b_t2_detached_read(repo, runtime.source.run_id, "live-exact-operation")
++                assert len(rows["job"]) == 1 and rows["job"][0]["phase"] == "COMPLETE"
++                _b_t2_detached_read(
++                    repo, runtime.source.run_id, "live-exact-operation",
++                    expected_job_phase="COMPLETE", expected_job_rows=rows["job"],
++                )
+                 changed = copy.deepcopy(transition.to_payload())
+                 changed["payload"]["robot_state"]["connected"] = False
+                 from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import VisualBootstrapTransitionInput
+@@ -4544,6 +4580,7 @@
+                 _b_t2_case_evidence(directory, "same-owner-exact-history", {
+                     "before": before.to_payload(), "current": state, "rows": rows,
+                     "after": after, "duplicate_disposition": duplicate.write_disposition,
++                    "expected_job_phase": "COMPLETE", "independent_job_rows_before": rows["job"],
+                 })
+                 return True
+ 

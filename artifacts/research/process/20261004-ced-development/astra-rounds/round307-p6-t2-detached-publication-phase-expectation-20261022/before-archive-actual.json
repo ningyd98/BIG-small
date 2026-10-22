@@ -1,0 +1,18 @@
+{
+  "round": "R307",
+  "kind": "input_pins_and_before_archive",
+  "invocation": {
+    "cmd": "/usr/bin/python3 - <<'PY'\nfrom pathlib import Path\nimport base64,hashlib,json,os,stat\nroot=Path('/home/ningyd/文档/ChatGPT/BIGsmall');d=root/'artifacts/research/process/20261004-ced-development/astra-rounds/round307-p6-t2-detached-publication-phase-expectation-20261022';p=d/'plan.json';raw=p.read_bytes();assert hashlib.sha256(raw).hexdigest()=='5b93a067f41b198d0732ad54a21954f77d9122655fb7956e90cdc1ca188d2488';plan=json.loads(raw)\ndef pin(p,b=None):\n if b is None:b=p.read_bytes()\n return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\nrows=[]\nfor row in [*plan['inputs'],plan['observation']]:\n q=Path(row['path']);actual=pin(q);assert actual=={k:row[k] for k in ('path','bytes','sha256')},str(q);assert stat.S_ISREG(q.lstat().st_mode);rows.append(actual)\nsource=Path(plan['scope']['test_target']);data=source.read_bytes();mode=source.lstat().st_mode;assert hashlib.sha256(data).hexdigest()=='a280954e4774035982661e2fb388af2787691320f396514953720217b4add7a3'\ntest=Path(plan['scope']['new_test']);assert not test.exists() and not test.is_symlink();before=d/'before';before.mkdir(exist_ok=True);archive=before/'test_operational_runtime_closure.py'\nwith archive.open('xb') as f:f.write(data)\nos.chmod(archive,stat.S_IMODE(mode))\nv={'round':'R307','plan':pin(p,raw),'checked_inputs':rows,'fixture_before':{'original':pin(source,data),'archive':pin(archive,data),'mode':mode,'base64':base64.b64encode(data).decode('ascii')},'new_test_before':{'path':str(test),'exists':False,'is_symlink':False},'tests_executed':0}\nwith (before/'manifest.json').open('x',encoding='utf-8') as f:json.dump(v,f,ensure_ascii=False,indent=2);f.write(chr(10))\nprint(json.dumps({'inputs_checked':len(rows),'archive':pin(archive,data),'manifest':pin(before/'manifest.json'),'mode':mode,'tests_executed':0},ensure_ascii=False))\nPY",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "max_output_tokens": 2500
+  },
+  "actual_tool_return": {
+    "chunk_id": "9ab32d",
+    "wall_time_seconds": 0.00001002,
+    "exit_code": 0,
+    "original_token_count": 173,
+    "output": "{\"inputs_checked\": 38, \"archive\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round307-p6-t2-detached-publication-phase-expectation-20261022/before/test_operational_runtime_closure.py\", \"bytes\": 257757, \"sha256\": \"a280954e4774035982661e2fb388af2787691320f396514953720217b4add7a3\"}, \"manifest\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round307-p6-t2-detached-publication-phase-expectation-20261022/before/manifest.json\", \"bytes\": 356678, \"sha256\": \"12614761eab3c882e76e85354f5a1f099176bbe8ed116b07d475ff641763c618\"}, \"mode\": 33204, \"tests_executed\": 0}\n"
+  },
+  "independent_stdout": null,
+  "independent_stderr": null
+}

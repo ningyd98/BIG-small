@@ -1,0 +1,18 @@
+{
+  "round": "R306",
+  "kind": "input_pins_and_before_archive",
+  "invocation": {
+    "cmd": "'/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' - <<'PY'\nfrom pathlib import Path\nimport base64,hashlib,json,os,stat\nroot=Path('/home/ningyd/文档/ChatGPT/BIGsmall');d=root/'artifacts/research/process/20261004-ced-development/astra-rounds/round306-p6-t2-planner-draft-json-serialization-20261022'\nplanpath=d/'plan.json';planraw=planpath.read_bytes();assert hashlib.sha256(planraw).hexdigest()=='0f27559991b88e53e78d8c17b682b62506f4a3cd8e345ff4b836aa55321b7e2a';plan=json.loads(planraw)\nsuppath=d/'preexecution-supplement.json';supraw=suppath.read_bytes();assert hashlib.sha256(supraw).hexdigest()=='196935e09d139793ed9c7d34633912753a8432dbcdadac9a461ea34239986802';sup=json.loads(supraw)\ndef pin(p,b=None):\n if b is None:b=p.read_bytes()\n return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\nrows=[]\nfor row in [*plan['inputs'],plan['observation'],*sup['inputs']]:\n p=Path(row['path']);observed=pin(p);assert observed=={k:row[k] for k in ('path','bytes','sha256')},str(p);assert stat.S_ISREG(p.lstat().st_mode);rows.append(observed)\np=Path(plan['scope']['product_target']);raw=p.read_bytes();mode=p.lstat().st_mode;assert hashlib.sha256(raw).hexdigest()=='9b94e77bdffa6744d228d508b19c2235762c0c728aabc7a39bba739173b1a25f'\ntest=Path(plan['scope']['new_regression']);assert not test.exists() and not test.is_symlink()\nbefore=d/'before';before.mkdir(exist_ok=True);archive=before/'worker_runtime.py'\nwith archive.open('xb') as f:f.write(raw)\nos.chmod(archive,stat.S_IMODE(mode))\nvalue={'round':'R306','plan':pin(planpath,planraw),'supplement':pin(suppath,supraw),'checked_inputs':rows,'product_before':{'original':pin(p,raw),'archive':pin(archive,raw),'mode':mode,'base64':base64.b64encode(raw).decode('ascii')},'new_regression_before':{'path':str(test),'exists':False,'is_symlink':False},'tests_executed':0}\nwith (before/'manifest.json').open('x',encoding='utf-8') as f:json.dump(value,f,ensure_ascii=False,indent=2);f.write(chr(10))\nprint(json.dumps({'inputs_checked':len(rows),'archive':pin(archive,raw),'mode':mode,'manifest':pin(before/'manifest.json'),'tests_executed':0},ensure_ascii=False))\nPY",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "max_output_tokens": 3000
+  },
+  "actual_tool_return": {
+    "chunk_id": "7cd9f0",
+    "wall_time_seconds": 0.0000095,
+    "exit_code": 0,
+    "original_token_count": 166,
+    "output": "{\"inputs_checked\": 39, \"archive\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round306-p6-t2-planner-draft-json-serialization-20261022/before/worker_runtime.py\", \"bytes\": 123955, \"sha256\": \"9b94e77bdffa6744d228d508b19c2235762c0c728aabc7a39bba739173b1a25f\"}, \"mode\": 33204, \"manifest\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round306-p6-t2-planner-draft-json-serialization-20261022/before/manifest.json\", \"bytes\": 178952, \"sha256\": \"c3cd9322460f0de317847a96bcf577c16e9a9e01375df07f958a2a9ae5c82c13\"}, \"tests_executed\": 0}\n"
+  },
+  "independent_stdout": null,
+  "independent_stderr": null
+}

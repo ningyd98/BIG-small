@@ -3530,6 +3530,9 @@ def _b_t2_observe(monkeypatch, value):
 
     guard = threading.RLock()
     objects, methods, clocks, release_events, worker_refs, session_refs = {}, {}, [], [], [], []
+    session_owners = {}
+    sample_counts = {"runtime_samples": 0}
+    value["observations"]["observer_sampling"] = sample_counts
     sequence = 0
     poll_context = threading.local()
     real_poll = SimulationWorker.poll_once
@@ -3604,39 +3607,65 @@ def _b_t2_observe(monkeypatch, value):
                 return result
         return initialize
 
-    def sample_runtime(worker):
+    def sample_runtime(worker, session=None):
         with guard:
-            sample_runtime_locked(worker)
+            sample_runtime_locked(worker, session)
 
-    def sample_runtime_locked(worker):
+    def sample_runtime_locked(worker, session=None):
+        sample_counts["runtime_samples"] += 1
         record = objects[id(worker)][1]
-        session = getattr(worker, "_operational_lease_session", None)
-        heartbeat = None if session is None else getattr(session, "_heartbeat_thread", None)
-        # Presence is observed separately from constructor success and from a close call.
-        if hasattr(worker, "_operational_lease_session"):
-            record["session_observed"] = session is not None or record["session_observed"] is True
-        if hasattr(worker, "_operational_lease_session"):
-            record["heartbeat_observed"] = heartbeat is not None or record["heartbeat_observed"] is True
-        if session is not None:
-            session_record = add(session, "lease_session")
-            if id(session) not in record["session_resource_ids"]:
-                record["session_resource_ids"].append(id(session))
+        current = getattr(worker, "_operational_lease_session", None)
+        for candidate in (session, current):
+            if candidate is None:
+                continue
+            owner = getattr(candidate, "worker", worker)
+            assert owner is worker, "session actual worker identity changed"
+            known = session_owners.get(id(candidate))
+            assert known is None or known is worker, "session observer owner identity changed"
+            if known is None:
+                session_owners[id(candidate)] = worker
+                session_refs.append(candidate)
+            session_record = add(candidate, "lease_session")
+            if id(candidate) not in record["session_resource_ids"]:
+                record["session_resource_ids"].append(id(candidate))
             session_record["worker_resource_id"] = id(worker)
-        for thread, kind, key, peak_key in (
-            (None if session is None else getattr(session, "_broker", None),
-             "broker_thread", "broker_resource_ids", "broker_peak_alive"),
-            (heartbeat, "heartbeat_thread", "heartbeat_resource_ids", "heartbeat_peak_alive"),
+        sessions = [objects[item][0] for item in record["session_resource_ids"]]
+        field_observed = hasattr(worker, "_operational_lease_session")
+        if field_observed or sessions:
+            record["session_observed"] = bool(sessions)
+        for attribute, kind, key, peak_key in (
+            ("_broker", "broker_thread", "broker_resource_ids", "broker_peak_alive"),
+            ("_heartbeat_thread", "heartbeat_thread", "heartbeat_resource_ids", "heartbeat_peak_alive"),
         ):
-            if thread is not None:
-                thread_record = add(thread, kind)
-                thread_record["initialized"] = thread.ident is not None
-                thread_record["worker_resource_id"] = id(worker)
-                thread_record["session_resource_id"] = None if session is None else id(session)
-                if id(thread) not in record[key]:
-                    record[key].append(id(thread))
-            if hasattr(worker, "_operational_lease_session"):
+            for owned_session in sessions:
+                thread = getattr(owned_session, attribute, None)
+                if thread is not None:
+                    thread_record = add(thread, kind)
+                    thread_record["initialized"] = thread.ident is not None
+                    thread_record["worker_resource_id"] = id(worker)
+                    thread_record["session_resource_id"] = id(owned_session)
+                    if id(thread) not in record[key]:
+                        record[key].append(id(thread))
+            if (record[key] or (field_observed and not sessions)
+                    or any(hasattr(item, attribute) for item in sessions)):
                 alive = sum(int(objects[item][0].is_alive()) for item in record[key])
                 record[peak_key] = max(record[peak_key] or 0, alive)
+        if field_observed or any(hasattr(item, "_heartbeat_thread") for item in sessions):
+            record["heartbeat_observed"] = bool(record["heartbeat_resource_ids"])
+
+    def observe_session(session, worker=None):
+        if session is None:
+            return
+        with guard:
+            known = session_owners.get(id(session))
+            owner = getattr(session, "worker", worker)
+            if owner is None:
+                owner = known
+            if known is not None:
+                assert owner is known, "session lifecycle actual owner changed"
+            registered = objects.get(id(owner))
+            if registered is not None and registered[0] is owner and registered[1]["kind"] == "worker":
+                sample_runtime_locked(owner, session)
 
     def poll_once(worker, *args, **kwargs):
         record = add(worker, "worker")
@@ -3767,28 +3796,42 @@ def _b_t2_observe(monkeypatch, value):
         return clock
 
     session_code = lease_module.OperationalLeaseSession.__init__.__code__
+    thread_start_code = threading.Thread.start.__code__
+    heartbeat_install_code = lease_module._install_heartbeat_thread.__code__
+    session_close_code = lease_module._close_worker_lease_session.__code__
 
     def profile(frame, event, arg):
-        if frame.f_code is poll_code and event == "call":
+        code = frame.f_code
+        if code is poll_code and event in ("call", "return"):
             call = getattr(poll_context, "call", None)
             if call is not None and frame.f_locals.get("self") is objects[call["worker_resource_id"]][0]:
-                call["entered"] = True
-                call["entry_sequence"] = tick()
-                call["thread_id"] = threading.get_ident()
-                call["native_thread_id"] = threading.get_native_id()
-        for worker in tuple(worker_refs):
-            sample_runtime(worker)
-        if frame.f_code is session_code and event == "call":
+                if event == "call":
+                    call["entered"] = True
+                    call["entry_sequence"] = tick()
+                    call["thread_id"] = threading.get_ident()
+                    call["native_thread_id"] = threading.get_native_id()
+                sample_runtime(frame.f_locals["self"])
+        elif code is session_code and event in ("call", "return"):
             session = frame.f_locals["self"]
-            add(session, "lease_session")
-            session_refs.append(session)
-        elif frame.f_code is session_code and event == "return":
-            session = frame.f_locals["self"]
-            record = objects[id(session)][1]
-            record["initialized"] = getattr(session, "_sealed", False) is True
-            if not record["initialized"]:
-                record["initialization_error"] = {"type": "IncompleteConstructor",
-                                                  "message": "actual session constructor did not seal"}
+            observe_session(session, frame.f_locals.get("worker"))
+            if event == "return" and id(session) in objects:
+                record = objects[id(session)][1]
+                record["initialized"] = getattr(session, "_sealed", False) is True
+                if not record["initialized"]:
+                    record["initialization_error"] = {"type": "IncompleteConstructor",
+                                                      "message": "actual session constructor did not seal"}
+        elif code is thread_start_code and event in ("call", "return"):
+            thread = frame.f_locals.get("self")
+            for session in tuple(session_refs):
+                if (thread is not None and
+                        (thread is getattr(session, "_broker", None)
+                         or thread is getattr(session, "_heartbeat_thread", None))):
+                    observe_session(session)
+                    break
+        elif code is heartbeat_install_code and event == "return":
+            observe_session(frame.f_locals.get("session"))
+        elif code is session_close_code and event in ("call", "return"):
+            observe_session(frame.f_locals.get("session"))
         callback = state.wait_observer
         if callback is not None:
             callback(frame, event, arg)
@@ -4257,11 +4300,30 @@ def _b_t2_retained_spend(snapshot, before_record, debit):
     return latest
 
 
-def _b_t2_detached_read(repo, run_id, operation_id):
+def _b_t2_detached_read(repo, run_id, operation_id, *, expected_job_phase, expected_job_rows):
     summary = repo.read_local_publication(run_id)
     exported = _b_t2_plain(summary)
-    assert isinstance(exported, (dict, list)), "actual durable publication summary required"
-    assert operation_id in json.dumps(exported, sort_keys=True)
+    assert isinstance(exported, list), "actual durable publication row list required"
+    assert all(isinstance(row, dict) for row in exported), "actual durable publication rows required"
+    assert expected_job_phase in (None, "EVENT_COMMITTED", "COMPLETE")
+    assert isinstance(expected_job_rows, list) and all(isinstance(row, dict) for row in expected_job_rows)
+    assert all(row.get("operation_id") == operation_id for row in expected_job_rows)
+    metadata = {"write_disposition": "HISTORICAL_ONLY", "confirmation_state": "UNKNOWN",
+                "accepted": False, "live_authority": False}
+    for row in exported:
+        assert row.get("write_disposition") == "HISTORICAL_ONLY"
+        assert row.get("confirmation_state") == "UNKNOWN"
+        assert row.get("accepted") is False
+        assert row.get("live_authority") is False
+    selected = [row for row in exported if row.get("operation_id") == operation_id]
+    if expected_job_phase is None:
+        assert expected_job_rows == [] and selected == [], "event-only commit has no job receipt"
+    else:
+        assert len(expected_job_rows) == len(selected) == 1, "one exact target job receipt required"
+        expected = expected_job_rows[0]
+        assert expected["phase"] == selected[0]["phase"] == expected_job_phase
+        assert set(selected[0]) == set(expected) | set(metadata), "detached row columns differ"
+        assert {key: selected[0][key] for key in expected} == expected, "detached row differs from SQL"
 
     def check(value):
         if isinstance(value, dict):
@@ -4449,7 +4511,17 @@ def test_dual_database_order_and_partial_commit(monkeypatch, tmp_path, request):
                     job_read.row_factory = event_read.row_factory = sqlite3.Row
                     read_map = {"job": job_read, "event": event_read}
                     before_restart = _b_t2_snapshot(restarted_event, read_map)
-                    detached = _b_t2_detached_read(restarted_job, saved["run_id"], saved["operation_id"])
+                    expected_job_phase = (None, "EVENT_COMMITTED", "EVENT_COMMITTED", "COMPLETE")[index]
+                    before_rows = _b_t2_operation_rows(read_map, saved["operation_id"])
+                    if expected_job_phase is None:
+                        assert before_rows["job"] == []
+                    else:
+                        assert len(before_rows["job"]) == 1
+                        assert before_rows["job"][0]["phase"] == expected_job_phase
+                    detached = _b_t2_detached_read(
+                        restarted_job, saved["run_id"], saved["operation_id"],
+                        expected_job_phase=expected_job_phase, expected_job_rows=before_rows["job"],
+                    )
                     reconciliation = _b_t2_plain(restarted_job.reconcile_local_publications())
                     with pytest.raises((RuntimeError, ValueError), match="owner|scope|private|authority|session"):
                         restarted_event.transition_visual_bootstrap_if_current(
@@ -4458,12 +4530,15 @@ def test_dual_database_order_and_partial_commit(monkeypatch, tmp_path, request):
                     after_restart = _b_t2_snapshot(restarted_event, read_map)
                     _b_t2_retained_spend(after_restart, saved["before_record"], 1)
                     new_rows = _b_t2_operation_rows(read_map, saved["operation_id"])
+                    assert new_rows["job"] == before_rows["job"]
                     if index != 3:
                         assert not all(any(row["phase"] == "COMPLETE" for row in value)
                                        for value in new_rows.values())
                     _b_t2_case_evidence(directory, "restart-no-authority", {
                         "before": before_restart, "after": after_restart, "detached": detached,
                         "reconciliation": reconciliation, "rows": new_rows,
+                        "expected_job_phase": expected_job_phase,
+                        "independent_job_rows_before": before_rows["job"],
                     })
                 finally:
                     restarted_event.close()
@@ -4490,7 +4565,11 @@ def test_dual_database_order_and_partial_commit(monkeypatch, tmp_path, request):
                 assert duplicate.write_disposition == "HISTORICAL_DUPLICATE"
                 assert duplicate.record.to_payload()["payload"] == state["payload"]
                 assert duplicate.record.to_payload()["original_time"] == state["original_time"]
-                _b_t2_detached_read(repo, runtime.source.run_id, "live-exact-operation")
+                assert len(rows["job"]) == 1 and rows["job"][0]["phase"] == "COMPLETE"
+                _b_t2_detached_read(
+                    repo, runtime.source.run_id, "live-exact-operation",
+                    expected_job_phase="COMPLETE", expected_job_rows=rows["job"],
+                )
                 changed = copy.deepcopy(transition.to_payload())
                 changed["payload"]["robot_state"]["connected"] = False
                 from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import VisualBootstrapTransitionInput
@@ -4501,6 +4580,7 @@ def test_dual_database_order_and_partial_commit(monkeypatch, tmp_path, request):
                 _b_t2_case_evidence(directory, "same-owner-exact-history", {
                     "before": before.to_payload(), "current": state, "rows": rows,
                     "after": after, "duplicate_disposition": duplicate.write_disposition,
+                    "expected_job_phase": "COMPLETE", "independent_job_rows_before": rows["job"],
                 })
                 return True
 

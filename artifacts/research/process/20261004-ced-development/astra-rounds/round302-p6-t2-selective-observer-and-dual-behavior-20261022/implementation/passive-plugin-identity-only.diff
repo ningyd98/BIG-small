@@ -1,0 +1,54 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/r296_session_evidence.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/r302_session_evidence.py
+@@ -1,4 +1,4 @@
+-"""R296 finite observation of original lease-session events; no authority."""
++"""R302 finite observation of original lease-session events; no authority."""
+ from pathlib import Path
+ import hashlib
+ import json
+@@ -10,14 +10,14 @@
+ import pytest
+ 
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+-D = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017"
++D = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022"
+ LEASE = str(ROOT / "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py")
+ TEST = ROOT / "tests/test_operational_runtime_closure.py"
+ LEASE_SHA = "f71d9bcb9c38a7c93e989f7649360b4a0624b4cc2d869bc389b9c9f6b8a76580"
+-TEST_SHA = "193f45147160f52ba53956df506ddbc602b81f2248990eea604366a39e63ef13"
+-PLAN_SHA = "68c41755f5717446324f89d6c2b8b5740e0c47fef351e7846b99d31a966720f9"
++TEST_SHA = "a280954e4774035982661e2fb388af2787691320f396514953720217b4add7a3"
++PLAN_SHA = "102a71ab25c129f602a3155f0222e7ad9336df79646bd9378d044e99bf478b2d"
+ NODE = "tests/test_operational_runtime_closure.py::test_dual_database_order_and_partial_commit"
+-KEY = "dual_rpc_timeout_evidence"
++KEY = "dual_behavior"
+ TARGETS = {
+     ("__init__", 417): ("OperationalLeaseSession.__init__", {"call", "line455", "return"}),
+     ("invalidate", 640): ("OperationalLeaseSession.invalidate", {"call"}),
+@@ -422,7 +422,7 @@
+             or sources["plan"]["sha256"] != PLAN_SHA):
+         raise RuntimeError("frozen R296 source generation differs")
+     gate = json.loads((D / "source-gate.json").read_bytes())
+-    if gate["round"] != "R296" or gate["sources"]["plugin"] != sources["plugin"]:
++    if gate["round"] != "R302" or gate["sources"]["plugin"] != sources["plugin"]:
+         raise RuntimeError("ROOT source gate does not bind this complete plugin")
+     _STATE = {"directory": directory, "sources": sources, "records": [], "sessions": {},
+               "estimated_record_bytes": 0, "record_charges": [], "attempted_records": 0, "dropped_events": 0, "drops_by_reason": {},
+@@ -514,7 +514,7 @@
+         return
+     state = _STATE
+     state["normal_finish"] = True
+-    metadata = {"round": "R296", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
++    metadata = {"round": "R302", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
+                 "sources": state["sources"], "bounds": BOUNDS,
+                 "events_count": len(state["records"]), "dropped_events": state["dropped_events"],
+                 "first_observed": list(state["sessions"].values()),
+@@ -587,7 +587,7 @@
+         error_record("exclusive post-restoration persistence", error)
+         accounting["verified"] = False
+         accounting["failure"] = {"type": typename(error), "captured_records_not_discarded_in_memory": True}
+-        failure = {"round": "R296", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
++        failure = {"round": "R302", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
+                    "schema_version": "bigsmall.r296.session-summary.v1",
+                    "incomplete": True, "persistence_failure": True,
+                    "captured_event_count": len(state["records"]),

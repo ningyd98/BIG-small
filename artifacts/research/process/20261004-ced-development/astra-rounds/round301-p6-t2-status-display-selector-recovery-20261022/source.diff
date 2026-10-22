@@ -1,0 +1,58 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round300-p6-t2-executor-and-baseline-continuation-20261022/root-continuation-metadata.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round301-p6-t2-status-display-selector-recovery-20261022/root-continuation-metadata.py
+@@ -14,6 +14,7 @@
+ ROOT = Path('/home/ningyd/文档/ChatGPT/BIGsmall')
+ B = ROOT / 'artifacts/research/process/20261004-ced-development/astra-rounds'
+ D = B / 'round300-p6-t2-executor-and-baseline-continuation-20261022'
++N = B / 'round301-p6-t2-status-display-selector-recovery-20261022'
+ R = B / 'round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017'
+ E = B / 'round298-p6-t2-plugin-finalization-eof-byte-generation-20261017'
+ F = B / 'round297-p6-t2-selected-event-attempt-accounting-20261017'
+@@ -104,14 +105,17 @@
+           and binding['spawn_actual'] == {'task_name': '/root/runtime_repair_sol'}
+           and binding['sole_writer_accepted'] is True, 'actual-bound-Sol')
+     check(binding['plan'] == pin(D / 'plan.json'), 'binding-plan')
+-    review = read(D / 'root-continuation-metadata-source-review.json')
++    review = read(N / 'source-review.json')
+     check(review['status'] == 'FULL_SOURCE_NATIVE_ARGV_REVIEWED'
+           and review['source'] == pin(Path(__file__)), 'metadata-source-review')
+-    check(review['commands'] == {k: p['commands'][k] for k in ('applicability', 'publish_gates')},
+-          'two-literal-metadata-commands')
++    expected_commands = {k: dict(p['commands'][k]) for k in ('applicability', 'publish_gates')}
++    for command in expected_commands.values():
++        command['cmd'] = command['cmd'].replace(str(D / 'root-continuation-metadata.py'), str(N / 'root-continuation-metadata.py'))
++    check(review['commands'] == expected_commands, 'two-literal-metadata-commands')
++    check(review['continuation_plan'] == pin(N / 'plan.json'), 'R301-continuation-plan')
+     check(git('rev-parse', 'HEAD').decode().strip() == p['HEAD_applicability']['required'], 'current-HEAD')
+     check(git('branch', '--show-current').decode().strip() == p['HEAD_applicability']['branch'], 'branch')
+-    status = git('status', '--porcelain=v1', '-z').decode().split('\0')
++    status = git('status', '--short').decode().splitlines()
+     nested = set(obs['git']['status_porcelain'])
+     new_outputs = set(p['R298_original_recovery_outputs'].values())
+     new_outputs.update(p['metadata_contract']['modes']['publish-gates']['outputs'])
+@@ -122,7 +126,7 @@
+         else:
+             target = ROOT / entry[3:]
+             check(entry.startswith('?? ') and (target.is_relative_to(D)
+-                  or str(target) in new_outputs), 'authorized-new-workspace-path:' + entry)
++                  or target.is_relative_to(N) or str(target) in new_outputs), 'authorized-new-workspace-path:' + entry)
+     check(observed_nested == nested, 'nested-dirty-preserved')
+     r = read(R / 'plan.json')
+     e = read(E / 'plan.json')
+@@ -206,6 +210,7 @@
+         check(Path(q['path']).lstat().st_mode == 33204, 'current-source-mode')
+     fixed = p['inputs'] + [pin(D / n) for n in ('plan.json', 'input-observation.json', 'executor-binding.json',
+              'root-continuation-metadata.py', 'root-continuation-metadata-source-review.json')]
++    fixed += [pin(N / name) for name in ('plan.json', 'input-observation.json', 'root-continuation-metadata.py', 'source-review.json')]
+     return save(D / 'applicability.json', {'round': 'R300', 'status': 'R300_CONTINUATION_APPLICABLE_NO_RUNTIME_RELEASE',
+         'plan': pin(D / 'plan.json'), 'fixed_inputs': fixed, 'sources': source_pins,
+         'source_reconstruction': reconstruction, 'checks': list(CHECKS), 'runtime': 0, 'T2_complete': False})
+@@ -273,7 +278,7 @@
+         failure = {'round': 'R300', 'mode': sys.argv[1:] , 'status': 'FAILED_NO_RETRY',
+                    'type': type(error).__name__, 'error': str(error), 'traceback': traceback.format_exc(),
+                    'checks_completed': CHECKS, 'runtime': 0}
+-        destination = D / ('metadata-' + (sys.argv[1] if len(sys.argv) == 2 else 'invalid') + '-failure.json')
++        destination = N / ('metadata-' + (sys.argv[1] if len(sys.argv) == 2 else 'invalid') + '-failure.json')
+         with destination.open('xb') as stream:
+             stream.write((json.dumps(failure, ensure_ascii=False, indent=2) + '\n').encode())
+         raise

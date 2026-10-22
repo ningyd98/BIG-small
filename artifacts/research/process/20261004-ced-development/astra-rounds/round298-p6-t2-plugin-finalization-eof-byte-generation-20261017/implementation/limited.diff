@@ -1,0 +1,36 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round297-p6-t2-selected-event-attempt-accounting-20261017/before/r296_session_evidence.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/r296_session_evidence.py
+@@ -309,7 +309,6 @@
+ 
+ 
+ def append_record(row, session_row=None):
+-    _STATE["attempted_records"] += 1
+     row["ordinal"] = len(_STATE["records"])
+     if session_row is not None and session_row["event_count"] >= 64:
+         drop("events_per_session64")
+@@ -338,11 +337,11 @@
+     category = "line" + str(frame.f_lineno) if event == "line" else event
+     if category not in spec[1]:
+         return
++    _STATE["attempted_records"] += 1
+     sid = id(session)
+     sessions = _STATE["sessions"]
+     if sid not in sessions:
+         if len(sessions) >= 6:
+-            _STATE["attempted_records"] += 1
+             drop("sessions6")
+             return
+         sessions[sid] = {"session_id": sid, "event_count": 0, "epoch": None, "first_observed": {}}
+@@ -479,6 +478,7 @@
+ def pytest_runtest_makereport(item, call):
+     if _STATE is None or item.nodeid != NODE or call.excinfo is None:
+         return None
++    _STATE["attempted_records"] += 1
+     try:
+         error = call.excinfo.value
+         tb = BaseException.__dict__["__traceback__"].__get__(error, type(error))
+@@ -605,4 +605,3 @@
+                 if handle.write(failure_raw) != len(failure_raw):
+                     raise OSError("partial bounded failure record")
+         raise
+-

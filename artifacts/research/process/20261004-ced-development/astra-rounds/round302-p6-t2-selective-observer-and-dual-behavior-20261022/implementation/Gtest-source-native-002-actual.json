@@ -1,0 +1,11 @@
+{
+  "round": "R302",
+  "kind": "Gtest_pre_freeze_identity_separation",
+  "tool": "apply_patch",
+  "arguments": "*** Begin Patch\n*** Update File: /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_t2_observer_lifecycle.py\n@@\n-        broker = _Thread(11)\n-        session = SimpleNamespace(worker=worker, _broker=broker,\n+        idle_broker = _Thread(10)\n+        session = SimpleNamespace(worker=worker, _broker=idle_broker,\n@@\n-        workers.scans = guard.entries = worker.session_reads = broker.alive_reads = 0\n+        workers.scans = guard.entries = worker.session_reads = idle_broker.alive_reads = 0\n@@\n-        assert broker.alive_reads == 0, \"unrelated profile events sampled thread liveness\"\n+        assert idle_broker.alive_reads == 0, \"unrelated profile events sampled thread liveness\"\n@@\n-        assert workers.scans == guard.entries == worker.session_reads == broker.alive_reads == 0\n+        assert workers.scans == guard.entries == worker.session_reads == idle_broker.alive_reads == 0\n@@\n-        partial.worker = preinstall\n+        broker = _Thread(11)\n+        partial.worker = preinstall\n@@\n-        broker.alive = heartbeat.alive = foreign.alive = False\n+        idle_broker.alive = broker.alive = heartbeat.alive = foreign.alive = False\n*** End Patch",
+  "actual_tool_return": {},
+  "numeric_exit": null,
+  "independent_stdout": null,
+  "independent_stderr": null,
+  "tests_executed": 0
+}

@@ -1,0 +1,112 @@
+{
+  "round": "R310",
+  "actual_model": "gpt-6-astra",
+  "status": "PLANNED_NOT_EXECUTED",
+  "problem": "Delivery final-manifest read_blob rejects a file when full stat_result changes during reading.",
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round309-p6-t2-delivery-symlink-blob-classification-20261023/final-manifest-failed-actual.json",
+      "bytes": 4344,
+      "sha256": "ca4bd58ffaac1ffc1356f296b1fee6e9374a401433e695483563f45396dc914f"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round309-p6-t2-delivery-symlink-blob-classification-20261023/git-preflight-actual.json",
+      "bytes": 16756,
+      "sha256": "bd0ab352b152c0b527f8d1622801e7d1a3ccf2190228c034db7bcd80d52241d9"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round309-p6-t2-delivery-symlink-blob-classification-20261023/step-report.json",
+      "bytes": 1603,
+      "sha256": "42ae60afafa5bcd2acb3794ab3248d93ff0d673bb689598c9d5abde61ca91621"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round309-p6-t2-delivery-symlink-blob-classification-20261023/plan.json",
+      "bytes": 19786,
+      "sha256": "8d369431b65ed839924c68a5e60a5bd6fb9751d2782ff75100fe4a9a7ed29df2"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round308-p6-t2-large-case-evidence-delivery-20261023/git-preflight.json",
+      "bytes": 472647,
+      "sha256": "3b232ecb47aff3a5284cc9994c3f23fb8d9825a4bfdfe34782e2cedcb2c3ef44"
+    }
+  ],
+  "root_cause_or_hypothesis": [
+    "Full stat_result equality includes access time and thus is unsuitable as content-identity comparison across a read.",
+    "Original failure does not identify which field changed; independent observation supports atime as the failure mechanism."
+  ],
+  "original_failure": {
+    "chunk_id": "416941",
+    "exit_code": 1,
+    "failed_expression": "assert s==p.lstat()",
+    "target": "artifacts/research/process/20261004-ced-development/astra-rounds/round309-p6-t2-delivery-symlink-blob-classification-20261023/git-preflight-actual.json",
+    "field_delta_captured_at_original_failure": false
+  },
+  "scope": [
+    "Only the final-manifest metadata invocation saved in the pinned R309 failure; no existing file overwritten.",
+    "Replace full stat equality with exact dev/ino/mode/size/mtime_ns/ctime_ns equality; exclude only atime.",
+    "Add only the exact R309 failure receipt plus the three fixed R310 files listed below to existing additional paths.",
+    "Final manifest/pathspec and all subsequent stage/commit/push actual receipts remain under /tmp; no recursive self-hash or further in-repo outputs."
+  ],
+  "exact_patch": {
+    "source_receipt": "artifacts/research/process/20261004-ced-development/astra-rounds/round309-p6-t2-delivery-symlink-blob-classification-20261023/final-manifest-failed-actual.json",
+    "source_field": "invocation.cmd",
+    "expected_occurrences": 1,
+    "old": " assert s==p.lstat(),str(p)",
+    "new": " after=p.lstat()\n fields=('st_dev','st_ino','st_mode','st_size','st_mtime_ns','st_ctime_ns')\n before_identity=tuple(getattr(s,k) for k in fields)\n after_identity=tuple(getattr(after,k) for k in fields)\n assert before_identity==after_identity,{'path':str(p),'fields':fields,'before':before_identity,'after':after_identity}",
+    "additional_paths": [
+      "R309/final-manifest-failed-actual.json",
+      "R310/plan.md",
+      "R310/plan.json",
+      "R310/input-observation.json"
+    ],
+    "additional_paths_resolution": {
+      "R309": "artifacts/research/process/20261004-ced-development/astra-rounds/round309-p6-t2-delivery-symlink-blob-classification-20261023",
+      "R310": "artifacts/research/process/20261004-ced-development/astra-rounds/round310-p6-t2-delivery-stat-identity-continuation-20261023"
+    },
+    "additional_change": "Append those four concrete Paths to original additional=[P,D/git-preflight-actual.json,D/step-report.json], where original D remains R309. No globs. Existing three entries remain.",
+    "temporary_directory_prefix": "bigsmall-r310-git-delivery-",
+    "all_other_logic": "unchanged, including correct NUL/newline, O_NOFOLLOW, raw byte/hash/mode verification, exact index/HEAD/branch checks, source/evidence paths and database exclusions"
+  },
+  "prerequisites": [
+    "ROOT reviews exact replacement against pinned failure; existing R309 successful preflight stays frozen.",
+    "The three R310 fixed files must be complete before the one final manifest run; preserve all old files and no current product/fixture/runner/role edits.",
+    "Original branch research/20261004-continuation and precommit HEAD b6b3a8835b149e53cfb41c572aec1bbfc0152bbb; empty index and exact candidate set checked by original manifest logic.",
+    "Reuse successful preflight six symlink raw targets and regular source pins; no new historical or runtime audit."
+  ],
+  "execution": [
+    {
+      "step": 1,
+      "action": "One corrected final manifest invocation with /usr/bin/python3, original cwd and original bounds. Save full call/actual in /tmp.",
+      "expected": "exit0; original1127 entries plus original3 additions plus new4 additions =1134 unique paths; six symlinks; each<100MiB; unchanged original aggregate SHA/size and ignored path.",
+      "failure": "Preserve actual, stop affected delivery, no automatic retry."
+    },
+    {
+      "step": 2,
+      "action": "Stage exact manifest pathspec only (git --literal-pathspecs add --pathspec-from-file=<absolute paths.nul> --pathspec-file-nul). No directory staging, -A, force-add or changed ignores.",
+      "expected": "Index path set exactly manifest paths."
+    },
+    {
+      "step": 3,
+      "action": "Check every staged entry stage0/mode/raw blob length/SHA against frozen manifest; regular100644 bytes and six120000 raw link-text bytes. Do not dereference links. Preserve R308/R309 exact link targets and all source pins.",
+      "expected": "All blobs match, no160000 or unlisted link or oversized blob; preserve existing reviewed whitespace/evidence handling."
+    },
+    {
+      "step": 4,
+      "action": "Use already authorized explicit delivery commit and push on existing research branch; retain full actuals in /tmp. Then compare local HEAD, upstream and remote branch SHA.",
+      "expected": "All3SHAs equal resulting commit; record exact delivered paths and local-only evidence limits."
+    }
+  ],
+  "preserved_boundaries": [
+    "No tests, models, physics, runtime, old gates, roles or budget edits; runtime new slots0.",
+    "No R309 preflight rerun; no whole-repository historical audit or new gate framework.",
+    "No archive rewrite, symlink target change/follow, raw aggregate deletion, DB force-add or .gitignore change.",
+    "35DB/90sidecar historical gaps unchanged; no full remote reproduction or formal research acceptance claim.",
+    "Only atime excluded; any dev/ino/mode/size/mtime_ns/ctime_ns drift still fails with real before/after values."
+  ],
+  "planner_actions": "Only read inputs/source, parse corrected source, write this plan and observation; no final-manifest or Git execution."
+}

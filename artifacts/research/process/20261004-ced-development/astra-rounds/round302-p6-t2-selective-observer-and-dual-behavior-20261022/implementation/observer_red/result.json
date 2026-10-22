@@ -1,0 +1,90 @@
+{
+  "round": "R302",
+  "command_id": "observer_red",
+  "child_exit": 1,
+  "pid": 5,
+  "elapsed_seconds": 1.0224319260014454,
+  "timed_out": false,
+  "output_limited": false,
+  "cleanup": {
+    "leader_reaped": true,
+    "group_remaining": false,
+    "cleanup_errors": [],
+    "cleanup_seconds_bound": 15
+  },
+  "errors": [],
+  "unit_only": true,
+  "formal_accepted": false,
+  "whole_T2_accepted": false,
+  "environment_difference": "Explicit plugins only; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+  "raw_streams": {
+    "stdout.txt": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/observer_red/stdout.txt",
+      "bytes": 3188,
+      "sha256": "e3e5550e15e0b8c061756aa8a0f7b6ac6136e14556ae046c8601f02bf15effc0"
+    },
+    "stderr.txt": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/observer_red/stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "raw_threshold_bytes_each": 33554432,
+  "raw_overshoot_bytes": {
+    "stdout.txt": 0,
+    "stderr.txt": 0
+  },
+  "junit": {
+    "pin": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/observer_red/junit.xml",
+      "bytes": 3147,
+      "sha256": "03a13ed0ccb0870e9af1a1bc2f3fc4c8830ca3e68a5cd3d9bc47b9fa791300c6"
+    },
+    "available": true,
+    "records": [
+      {
+        "nodeid": "tests/test_t2_observer_lifecycle.py::test_observer_selective_lifecycle_contract",
+        "attributes": {
+          "classname": "tests.test_t2_observer_lifecycle",
+          "name": "test_observer_selective_lifecycle_contract",
+          "time": "0.395"
+        },
+        "outcomes": [
+          {
+            "tag": "failure",
+            "attributes": {
+              "message": "AssertionError: unrelated profile events scanned worker history\nassert 5 == 0\n +  where 5 = [<tests.test_t2_observer_lifecycle._Worker object at 0x7693210516d0>].scans"
+            },
+            "text": "monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7693224755b0>\n\n    def test_observer_selective_lifecycle_contract(monkeypatch):\n        # Catches unselected profile events doing worker/lock/liveness work, dropped\n        # wait events, and losing sessions constructed before worker installation.\n        # The callback is the real fixture closure. Automatic hooks are paused so\n        # these explicit events test bookkeeping without creating authority or RPCs.\n        from cloud_edge_robot_arm.simulation_runtime import operational_lease as lease\n    \n        original_profile = sys.getprofile()\n        original_thread_profile = threading.getprofile()\n        value = {\"resources\": [], \"worker_lifecycles\": [], \"cleanup_errors\": [],\n                 \"observations\": {\"scenarios\": []}}\n        with fixture._b_t2_observe(monkeypatch, value) as observed:\n            profile = sys.getprofile()\n            sys.setprofile(None)\n            threading.setprofile(None)\n    \n            workers = _Workers(observed.workers)\n            _cell(observed.add, \"worker_refs\").cell_contents = workers\n            observed.workers = workers\n            guard_cell = _cell(observed.add, \"guard\")\n            guard = _Guard(guard_cell.cell_contents)\n            guard_cell.cell_contents = guard\n            worker = _Worker(installed_field=True)\n            observed.add(worker, \"worker\")\n            idle_broker = _Thread(10)\n            session = SimpleNamespace(worker=worker, _broker=idle_broker,\n                                      _heartbeat_thread=None, _sealed=True, _closed=True)\n            worker._operational_lease_session = session\n            frame = _frame(_unrelated.__code__)\n            lock = threading.Lock()\n            argument = lock.acquire\n            events = (\"call\", \"return\", \"c_call\", \"c_return\", \"c_exception\")\n            workers.scans = guard.entries = worker.session_reads = idle_broker.alive_reads = 0\n            for event in events:\n                profile(frame, event, argument)\n            # This is the sole predeclared G0 RED assertion: old profile always\n            # iterates tuple(worker_refs), even for an unrelated Python/C event.\n>           assert workers.scans == 0, \"unrelated profile events scanned worker history\"\nE           AssertionError: unrelated profile events scanned worker history\nE           assert 5 == 0\nE            +  where 5 = [<tests.test_t2_observer_lifecycle._Worker object at 0x7693210516d0>].scans\n\ntests/test_t2_observer_lifecycle.py:114: AssertionError"
+          }
+        ]
+      }
+    ],
+    "tests": 1,
+    "failures": 1,
+    "errors": 0,
+    "skips": 0
+  },
+  "persistent_basetemp": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/observer_red/persistent-basetemp",
+    "exists": false,
+    "is_symlink": false,
+    "observation": "unit_basetemp_absent_after_child"
+  },
+  "new_databases": [],
+  "persistent_index": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/observer_red/persistent-file-database-index.json",
+    "bytes": 380,
+    "sha256": "aa64e9ac7ab8d89dfd7fda95a0481a0c242907f24ef7a330acf3db4ff6712396"
+  },
+  "capture_integrity_complete": true,
+  "child_matched_expected_exit": true,
+  "behavior_candidate_pass": false,
+  "ROOT_acceptance_required": true,
+  "unobserved": {
+    "OS_handles": null,
+    "external_models": null,
+    "GPU_native": null,
+    "native_tool_exit": null
+  }
+}

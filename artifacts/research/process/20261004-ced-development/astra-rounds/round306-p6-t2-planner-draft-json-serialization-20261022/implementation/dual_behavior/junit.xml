@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="47.625" timestamp="2026-10-22T23:38:18.986868+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_runtime_closure" name="test_dual_database_order_and_partial_commit" time="47.136"><failure message="assert 'commit-seam:0' in '[{&quot;accepted&quot;: false, &quot;attempt&quot;: 1, &quot;confirmation_state&quot;: &quot;UNKNOWN&quot;, &quot;epoch&quot;: &quot;1c93ff578b5546f488df86095dc593a8&quot;, &quot;eve...-publication-transaction.v1\\&quot;}}}}}&quot;, &quot;phase&quot;: &quot;COMPLETE&quot;, &quot;row_revision&quot;: 6, &quot;write_disposition&quot;: &quot;HISTORICAL_ONLY&quot;}]'&#10; +  where '[{&quot;accepted&quot;: false, &quot;attempt&quot;: 1, &quot;confirmation_state&quot;: &quot;UNKNOWN&quot;, &quot;epoch&quot;: &quot;1c93ff578b5546f488df86095dc593a8&quot;, &quot;eve...-publication-transaction.v1\\&quot;}}}}}&quot;, &quot;phase&quot;: &quot;COMPLETE&quot;, &quot;row_revision&quot;: 6, &quot;write_disposition&quot;: &quot;HISTORICAL_ONLY&quot;}]' = &lt;function dumps at 0x7a2207bb2ac0&gt;([{'accepted': False, 'attempt': 1, 'confirmation_state': 'UNKNOWN', 'epoch': '1c93ff578b5546f488df86095dc593a8', ...},..., {'accepted': False, 'attempt': 1, 'confirmation_state': 'UNKNOWN', 'epoch': '1c93ff578b5546f488df86095dc593a8', ...}], sort_keys=True)&#10; +    where &lt;function dumps at 0x7a2207bb2ac0&gt; = json.dumps">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7a22070ea6c0&gt;
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round306-...er-draft-json-serialization-20261022/implementation/dual_behavior/persistent-basetemp/test_dual_database_order_and_p0')
+request = &lt;FixtureRequest for &lt;Function test_dual_database_order_and_partial_commit&gt;&gt;
+
+    def test_dual_database_order_and_partial_commit(monkeypatch, tmp_path, request):
+        with _b_t2_attempt(request) as attempt:
+            _b_t2_api()
+            attempt["entered_behavior"] = True
+            with _b_t2_observe(monkeypatch, attempt) as observed:
+                cases = (("event", "PENDING"), ("job", "EVENT_COMMITTED"),
+                         ("event", "COMPLETE"), ("job", "COMPLETE"))
+                for index, (database, phase) in enumerate(cases):
+                    directory = tmp_path / ("commit-seam-" + str(index))
+    
+                    def exercise(runtime, session, worker, repo, job, events, reads, observed):
+                        before_record = _b_t2_capture_and_unusable_plan(runtime, events, "seam-setup")
+                        before = _b_t2_snapshot(events, reads)
+                        operation_id = "commit-seam:" + str(index)
+                        transition = _b_t2_bootstrap_request(
+                            before_record, "RESERVE_REOBSERVATION", operation_id
+                        )
+                        observed.fault.update(operation_id=operation_id, database=database,
+                                              phase=phase, fired=False)
+                        try:
+                            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                                _b_t2_operation(runtime, events, transition)
+                        finally:
+                            observed.fault["operation_id"] = None
+                        assert observed.fault["fired"] is True
+                        faults = [item for item in attempt["observations"]["scenarios"]
+                                  if item.get("operation_id") == operation_id
+                                  and item.get("kind") == "TRUE_COMMIT_THEN_SAME_CONNECTION_CLOSE"]
+                        assert len(faults) == 1
+                        assert faults[0]["in_transaction_after_commit"] is False
+                        assert faults[0]["actual_closed_connection_error"]["type"] == "ProgrammingError"
+                        rows = _b_t2_operation_rows(reads, operation_id)
+                        assert rows[database] and any(row["phase"] == phase for row in rows[database])
+                        identity = before_record.to_payload()["original_time"]["lease_identity"]
+                        for row in rows["event"] + rows["job"]:
+                            assert row["operation_id"] == operation_id
+                            assert row["operation_sha256"] == _b_t2_digest(transition)
+                            for field in ("job_id", "lease_id", "attempt", "epoch"):
+                                assert row[field] == identity[field]
+                            assert type(row["event_record_hash"]) is str and len(row["event_record_hash"]) == 64
+                        if index == 0:
+                            assert rows["job"] == [], "event PENDING COMMIT must precede the job receipt"
+                        both_complete = all(any(row["phase"] == "COMPLETE" for row in value)
+                                            for value in rows.values())
+                        assert both_complete is (index == 3)
+                        if index &lt; 2:
+                            assert not any(row["phase"] == "COMPLETE" for row in rows["event"])
+                        if index == 2:
+                            assert not any(row["phase"] == "COMPLETE" for row in rows["job"])
+                        after = _b_t2_snapshot(events, reads)
+                        _b_t2_retained_spend(after, before_record.to_payload(), 1)
+                        _b_t2_case_evidence(directory, "true-commit-loss", {
+                            "database": database, "phase": phase, "before": before, "after": after,
+                            "rows": rows, "fault": faults[0], "both_complete": both_complete,
+                            "operation_id": operation_id, "operation_sha256": _b_t2_digest(transition),
+                            "original": before_record.to_payload()["original_time"],
+                            "returned_NEW_COMMIT": False,
+                        })
+                        return {"operation_id": operation_id, "run_id": runtime.source.run_id,
+                                "job_path": str(repo.database_path), "event_path": str(events.path),
+                                "before_record": before_record.to_payload(), "request": transition.to_payload()}
+    
+                    saved = _b_t2_exercise(monkeypatch, directory, "sqlite", observed, exercise)
+                    # A new repository has no live owner/session. Reconciliation is evidence only.
+                    from cloud_edge_robot_arm.repositories.event_autonomy import SQLiteEventAutonomyRepository
+                    from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
+                        VisualBootstrapTransitionInput,
+                    )
+                    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+    
+                    restarted_job = SQLiteSimulationJobRepository(Path(saved["job_path"]))
+                    restarted_event = SQLiteEventAutonomyRepository(Path(saved["event_path"]))
+                    job_read = event_read = None
+                    try:
+                        job_read = sqlite3.connect(saved["job_path"])
+                        event_read = sqlite3.connect(saved["event_path"])
+                        job_read.row_factory = event_read.row_factory = sqlite3.Row
+                        read_map = {"job": job_read, "event": event_read}
+                        before_restart = _b_t2_snapshot(restarted_event, read_map)
+&gt;                       detached = _b_t2_detached_read(restarted_job, saved["run_id"], saved["operation_id"])
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_runtime_closure.py:4495: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = &lt;cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x7a2205d95280&gt;
+run_id = 'terminal-test', operation_id = 'commit-seam:0'
+
+    def _b_t2_detached_read(repo, run_id, operation_id):
+        summary = repo.read_local_publication(run_id)
+        exported = _b_t2_plain(summary)
+        assert isinstance(exported, (dict, list)), "actual durable publication summary required"
+&gt;       assert operation_id in json.dumps(exported, sort_keys=True)
+E       assert 'commit-seam:0' in '[{"accepted": false, "attempt": 1, "confirmation_state": "UNKNOWN", "epoch": "1c93ff578b5546f488df86095dc593a8", "eve...-publication-transaction.v1\\"}}}}}", "phase": "COMPLETE", "row_revision": 6, "write_disposition": "HISTORICAL_ONLY"}]'
+E        +  where '[{"accepted": false, "attempt": 1, "confirmation_state": "UNKNOWN", "epoch": "1c93ff578b5546f488df86095dc593a8", "eve...-publication-transaction.v1\\"}}}}}", "phase": "COMPLETE", "row_revision": 6, "write_disposition": "HISTORICAL_ONLY"}]' = &lt;function dumps at 0x7a2207bb2ac0&gt;([{'accepted': False, 'attempt': 1, 'confirmation_state': 'UNKNOWN', 'epoch': '1c93ff578b5546f488df86095dc593a8', ...},..., {'accepted': False, 'attempt': 1, 'confirmation_state': 'UNKNOWN', 'epoch': '1c93ff578b5546f488df86095dc593a8', ...}], sort_keys=True)
+E        +    where &lt;function dumps at 0x7a2207bb2ac0&gt; = json.dumps
+
+tests/test_operational_runtime_closure.py:4307: AssertionError</failure></testcase></testsuite></testsuites>

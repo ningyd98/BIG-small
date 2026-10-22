@@ -1,0 +1,165 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/before/G0-test_operational_runtime_closure.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -3530,6 +3530,9 @@
+ 
+     guard = threading.RLock()
+     objects, methods, clocks, release_events, worker_refs, session_refs = {}, {}, [], [], [], []
++    session_owners = {}
++    sample_counts = {"runtime_samples": 0}
++    value["observations"]["observer_sampling"] = sample_counts
+     sequence = 0
+     poll_context = threading.local()
+     real_poll = SimulationWorker.poll_once
+@@ -3604,39 +3607,65 @@
+                 return result
+         return initialize
+ 
+-    def sample_runtime(worker):
++    def sample_runtime(worker, session=None):
+         with guard:
+-            sample_runtime_locked(worker)
+-
+-    def sample_runtime_locked(worker):
++            sample_runtime_locked(worker, session)
++
++    def sample_runtime_locked(worker, session=None):
++        sample_counts["runtime_samples"] += 1
+         record = objects[id(worker)][1]
+-        session = getattr(worker, "_operational_lease_session", None)
+-        heartbeat = None if session is None else getattr(session, "_heartbeat_thread", None)
+-        # Presence is observed separately from constructor success and from a close call.
+-        if hasattr(worker, "_operational_lease_session"):
+-            record["session_observed"] = session is not None or record["session_observed"] is True
+-        if hasattr(worker, "_operational_lease_session"):
+-            record["heartbeat_observed"] = heartbeat is not None or record["heartbeat_observed"] is True
+-        if session is not None:
+-            session_record = add(session, "lease_session")
+-            if id(session) not in record["session_resource_ids"]:
+-                record["session_resource_ids"].append(id(session))
++        current = getattr(worker, "_operational_lease_session", None)
++        for candidate in (session, current):
++            if candidate is None:
++                continue
++            owner = getattr(candidate, "worker", worker)
++            assert owner is worker, "session actual worker identity changed"
++            known = session_owners.get(id(candidate))
++            assert known is None or known is worker, "session observer owner identity changed"
++            if known is None:
++                session_owners[id(candidate)] = worker
++                session_refs.append(candidate)
++            session_record = add(candidate, "lease_session")
++            if id(candidate) not in record["session_resource_ids"]:
++                record["session_resource_ids"].append(id(candidate))
+             session_record["worker_resource_id"] = id(worker)
+-        for thread, kind, key, peak_key in (
+-            (None if session is None else getattr(session, "_broker", None),
+-             "broker_thread", "broker_resource_ids", "broker_peak_alive"),
+-            (heartbeat, "heartbeat_thread", "heartbeat_resource_ids", "heartbeat_peak_alive"),
++        sessions = [objects[item][0] for item in record["session_resource_ids"]]
++        field_observed = hasattr(worker, "_operational_lease_session")
++        if field_observed or sessions:
++            record["session_observed"] = bool(sessions)
++        for attribute, kind, key, peak_key in (
++            ("_broker", "broker_thread", "broker_resource_ids", "broker_peak_alive"),
++            ("_heartbeat_thread", "heartbeat_thread", "heartbeat_resource_ids", "heartbeat_peak_alive"),
+         ):
+-            if thread is not None:
+-                thread_record = add(thread, kind)
+-                thread_record["initialized"] = thread.ident is not None
+-                thread_record["worker_resource_id"] = id(worker)
+-                thread_record["session_resource_id"] = None if session is None else id(session)
+-                if id(thread) not in record[key]:
+-                    record[key].append(id(thread))
+-            if hasattr(worker, "_operational_lease_session"):
++            for owned_session in sessions:
++                thread = getattr(owned_session, attribute, None)
++                if thread is not None:
++                    thread_record = add(thread, kind)
++                    thread_record["initialized"] = thread.ident is not None
++                    thread_record["worker_resource_id"] = id(worker)
++                    thread_record["session_resource_id"] = id(owned_session)
++                    if id(thread) not in record[key]:
++                        record[key].append(id(thread))
++            if (record[key] or (field_observed and not sessions)
++                    or any(hasattr(item, attribute) for item in sessions)):
+                 alive = sum(int(objects[item][0].is_alive()) for item in record[key])
+                 record[peak_key] = max(record[peak_key] or 0, alive)
++        if field_observed or any(hasattr(item, "_heartbeat_thread") for item in sessions):
++            record["heartbeat_observed"] = bool(record["heartbeat_resource_ids"])
++
++    def observe_session(session, worker=None):
++        if session is None:
++            return
++        with guard:
++            known = session_owners.get(id(session))
++            owner = getattr(session, "worker", worker)
++            if owner is None:
++                owner = known
++            if known is not None:
++                assert owner is known, "session lifecycle actual owner changed"
++            registered = objects.get(id(owner))
++            if registered is not None and registered[0] is owner and registered[1]["kind"] == "worker":
++                sample_runtime_locked(owner, session)
+ 
+     def poll_once(worker, *args, **kwargs):
+         record = add(worker, "worker")
+@@ -3767,28 +3796,42 @@
+         return clock
+ 
+     session_code = lease_module.OperationalLeaseSession.__init__.__code__
++    thread_start_code = threading.Thread.start.__code__
++    heartbeat_install_code = lease_module._install_heartbeat_thread.__code__
++    session_close_code = lease_module._close_worker_lease_session.__code__
+ 
+     def profile(frame, event, arg):
+-        if frame.f_code is poll_code and event == "call":
++        code = frame.f_code
++        if code is poll_code and event in ("call", "return"):
+             call = getattr(poll_context, "call", None)
+             if call is not None and frame.f_locals.get("self") is objects[call["worker_resource_id"]][0]:
+-                call["entered"] = True
+-                call["entry_sequence"] = tick()
+-                call["thread_id"] = threading.get_ident()
+-                call["native_thread_id"] = threading.get_native_id()
+-        for worker in tuple(worker_refs):
+-            sample_runtime(worker)
+-        if frame.f_code is session_code and event == "call":
++                if event == "call":
++                    call["entered"] = True
++                    call["entry_sequence"] = tick()
++                    call["thread_id"] = threading.get_ident()
++                    call["native_thread_id"] = threading.get_native_id()
++                sample_runtime(frame.f_locals["self"])
++        elif code is session_code and event in ("call", "return"):
+             session = frame.f_locals["self"]
+-            add(session, "lease_session")
+-            session_refs.append(session)
+-        elif frame.f_code is session_code and event == "return":
+-            session = frame.f_locals["self"]
+-            record = objects[id(session)][1]
+-            record["initialized"] = getattr(session, "_sealed", False) is True
+-            if not record["initialized"]:
+-                record["initialization_error"] = {"type": "IncompleteConstructor",
+-                                                  "message": "actual session constructor did not seal"}
++            observe_session(session, frame.f_locals.get("worker"))
++            if event == "return" and id(session) in objects:
++                record = objects[id(session)][1]
++                record["initialized"] = getattr(session, "_sealed", False) is True
++                if not record["initialized"]:
++                    record["initialization_error"] = {"type": "IncompleteConstructor",
++                                                      "message": "actual session constructor did not seal"}
++        elif code is thread_start_code and event in ("call", "return"):
++            thread = frame.f_locals.get("self")
++            for session in tuple(session_refs):
++                if (thread is not None and
++                        (thread is getattr(session, "_broker", None)
++                         or thread is getattr(session, "_heartbeat_thread", None))):
++                    observe_session(session)
++                    break
++        elif code is heartbeat_install_code and event == "return":
++            observe_session(frame.f_locals.get("session"))
++        elif code is session_close_code and event in ("call", "return"):
++            observe_session(frame.f_locals.get("session"))
+         callback = state.wait_observer
+         if callback is not None:
+             callback(frame, event, arg)

@@ -1,0 +1,125 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/r302_session_evidence.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round306-p6-t2-planner-draft-json-serialization-20261022/implementation/r306_session_evidence.py
+@@ -1,4 +1,4 @@
+-"""R302 finite observation of original lease-session events; no authority."""
++"""R306 finite observation of original lease-session events; no authority."""
+ from pathlib import Path
+ import hashlib
+ import json
+@@ -10,12 +10,12 @@
+ import pytest
+ 
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+-D = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022"
++D = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds/round306-p6-t2-planner-draft-json-serialization-20261022"
+ LEASE = str(ROOT / "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py")
+ TEST = ROOT / "tests/test_operational_runtime_closure.py"
+ LEASE_SHA = "f71d9bcb9c38a7c93e989f7649360b4a0624b4cc2d869bc389b9c9f6b8a76580"
+ TEST_SHA = "a280954e4774035982661e2fb388af2787691320f396514953720217b4add7a3"
+-PLAN_SHA = "102a71ab25c129f602a3155f0222e7ad9336df79646bd9378d044e99bf478b2d"
++PLAN_SHA = "0f27559991b88e53e78d8c17b682b62506f4a3cd8e345ff4b836aa55321b7e2a"
+ NODE = "tests/test_operational_runtime_closure.py::test_dual_database_order_and_partial_commit"
+ KEY = "dual_behavior"
+ TARGETS = {
+@@ -26,7 +26,7 @@
+ }
+ BOUNDS = {"sessions_max": 6, "events_per_session_max": 64, "stack_frames_max": 12,
+           "primitive_string_utf8_max": 1024, "exception_chain_max": 4,
+-          "total_persisted_utf8_bytes_max": 131072, "files_max": 2}
++          "total_persisted_utf8_bytes_max": 524288, "files_max": 2}
+ _STATE = None
+ 
+ 
+@@ -314,8 +314,8 @@
+         drop("events_per_session64")
+         return
+     size = upper_json_bytes(row)
+-    if _STATE["estimated_record_bytes"] + size > 98304:
+-        drop("reserved_128KiB_budget")
++    if _STATE["estimated_record_bytes"] + size > 393216:
++        drop("reserved_512KiB_budget")
+         return
+     _STATE["records"].append(row)
+     _STATE["record_charges"].append(size)
+@@ -422,7 +422,7 @@
+             or sources["plan"]["sha256"] != PLAN_SHA):
+         raise RuntimeError("frozen R296 source generation differs")
+     gate = json.loads((D / "source-gate.json").read_bytes())
+-    if gate["round"] != "R302" or gate["sources"]["plugin"] != sources["plugin"]:
++    if gate["round"] != "R306" or gate["sources"]["plugin"] != sources["plugin"]:
+         raise RuntimeError("ROOT source gate does not bind this complete plugin")
+     _STATE = {"directory": directory, "sources": sources, "records": [], "sessions": {},
+               "estimated_record_bytes": 0, "record_charges": [], "attempted_records": 0, "dropped_events": 0, "drops_by_reason": {},
+@@ -514,7 +514,7 @@
+         return
+     state = _STATE
+     state["normal_finish"] = True
+-    metadata = {"round": "R302", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
++    metadata = {"round": "R306", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
+                 "sources": state["sources"], "bounds": BOUNDS,
+                 "events_count": len(state["records"]), "dropped_events": state["dropped_events"],
+                 "first_observed": list(state["sessions"].values()),
+@@ -540,7 +540,7 @@
+                "own_new_Python_threads": 0, "own_new_Events": 0,
+                "own_handles": state["handles"], "summary_handle_close_observation": None}
+     accounting = {"method": "COMPACT_PRIMITIVE_TREE_UTF8_ESCAPE_BOUND",
+-                  "record_payload_budget": 98304, "metadata_reserved_bytes": 32768,
++                  "record_payload_budget": 393216, "metadata_reserved_bytes": 131072,
+                   "attempted_records": state["attempted_records"],
+                   "charged_record_bytes": state["estimated_record_bytes"],
+                   "record_charges": state["record_charges"], "measured_record_bytes": [],
+@@ -556,13 +556,13 @@
+             accounting["measured_record_bytes"].append(measured)
+             if measured > charged:
+                 raise ValueError("compact actual record exceeds admitted primitive cost")
+-        if sum(state["record_charges"]) != state["estimated_record_bytes"] or state["estimated_record_bytes"] > 98304:
++        if sum(state["record_charges"]) != state["estimated_record_bytes"] or state["estimated_record_bytes"] > 393216:
+             raise ValueError("record admission accounting differs")
+         accounting["verified"] = True
+         event_raw = (json.dumps(events, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n").encode()
+         summary_raw = (json.dumps(summary, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n").encode()
+-        if len(event_raw) + len(summary_raw) > 131072:
+-            raise ValueError("R296 persisted evidence would exceed128KiB; no oversized write")
++        if len(event_raw) + len(summary_raw) > 524288:
++            raise ValueError("R296 persisted evidence would exceed512KiB; no oversized write")
+         with (state["directory"] / "events.json").open("xb") as handle:
+             descriptor = handle.fileno()
+             if handle.write(event_raw) != len(event_raw):
+@@ -571,23 +571,23 @@
+                                  "fd": descriptor, "closed_observed": handle.closed})
+         summary["own_handles"] = state["handles"]
+         summary_raw = (json.dumps(summary, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n").encode()
+-        if len(event_raw) + len(summary_raw) > 131072:
+-            raise ValueError("R296 final128KiB bound")
++        if len(event_raw) + len(summary_raw) > 524288:
++            raise ValueError("R296 final512KiB bound")
+         with (state["directory"] / "summary.json").open("xb") as handle:
+             summary["own_handles"] = state["handles"] + [{
+                 "path": str(state["directory"] / "summary.json"), "fd": handle.fileno(),
+                 "closed_observed": None,
+                 "limitation": "Own final close follows this payload; not observable in it."}]
+             summary_raw = (json.dumps(summary, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n").encode()
+-            if len(event_raw) + len(summary_raw) > 131072:
+-                raise ValueError("R296 handle metadata exceeds128KiB")
++            if len(event_raw) + len(summary_raw) > 524288:
++                raise ValueError("R296 handle metadata exceeds512KiB")
+             if handle.write(summary_raw) != len(summary_raw):
+                 raise OSError("partial R296 summary write")
+     except BaseException as error:
+         error_record("exclusive post-restoration persistence", error)
+         accounting["verified"] = False
+         accounting["failure"] = {"type": typename(error), "captured_records_not_discarded_in_memory": True}
+-        failure = {"round": "R302", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
++        failure = {"round": "R306", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
+                    "schema_version": "bigsmall.r296.session-summary.v1",
+                    "incomplete": True, "persistence_failure": True,
+                    "captured_event_count": len(state["records"]),
+@@ -600,7 +600,7 @@
+         event_path = state["directory"] / "events.json"
+         summary_path = state["directory"] / "summary.json"
+         prior_size = event_path.stat().st_size if event_path.exists() else 0
+-        if not summary_path.exists() and len(failure_raw) + prior_size <= 131072:
++        if not summary_path.exists() and len(failure_raw) + prior_size <= 524288:
+             with summary_path.open("xb") as handle:
+                 if handle.write(failure_raw) != len(failure_raw):
+                     raise OSError("partial bounded failure record")

@@ -1,0 +1,29 @@
+--- R302-runner-G0
++++ R302-runner-R304
+@@ -205,11 +205,24 @@
+         junit = helper.junit_observation(out / "junit.xml", command["node"])
+         result["junit"] = junit
+         require(junit["available"], "actual JUnit unavailable")
+-        index = helper.strict_index(out / "persistent-basetemp")
++        basetemp = out / "persistent-basetemp"
++        try:
++            basetemp_state = basetemp.lstat()
++        except FileNotFoundError:
++            if not result["unit_only"]:
++                raise
++            index = []
++            result["persistent_basetemp"] = {"path": str(basetemp), "exists": False,
++                "is_symlink": False, "observation": "unit_basetemp_absent_after_child"}
++        else:
++            index = helper.strict_index(basetemp)
++            result["persistent_basetemp"] = {"path": str(basetemp), "exists": True,
++                "is_symlink": stat.S_ISLNK(basetemp_state.st_mode),
++                "observation": "existing_path_strictly_indexed"}
+         dbs = archives(helper, index, out)
+         result["new_databases"] = dbs
+         result["persistent_index"] = write(out / "persistent-file-database-index.json",
+-                                           {"files": index, "databases": dbs})
++                                           {"root": result["persistent_basetemp"], "files": index, "databases": dbs})
+         if not result["unit_only"]:
+             summary = helper.diagnostic_resources(out / "resources", key, command["child_argv"], process.pid)
+             result["resource_summary"] = write(out / "resource-summary.json", summary)

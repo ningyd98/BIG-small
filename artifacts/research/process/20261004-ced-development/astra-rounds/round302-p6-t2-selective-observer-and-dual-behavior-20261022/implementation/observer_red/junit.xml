@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.748" timestamp="2026-10-22T23:04:07.923233+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_t2_observer_lifecycle" name="test_observer_selective_lifecycle_contract" time="0.395"><failure message="AssertionError: unrelated profile events scanned worker history&#10;assert 5 == 0&#10; +  where 5 = [&lt;tests.test_t2_observer_lifecycle._Worker object at 0x7693210516d0&gt;].scans">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7693224755b0&gt;
+
+    def test_observer_selective_lifecycle_contract(monkeypatch):
+        # Catches unselected profile events doing worker/lock/liveness work, dropped
+        # wait events, and losing sessions constructed before worker installation.
+        # The callback is the real fixture closure. Automatic hooks are paused so
+        # these explicit events test bookkeeping without creating authority or RPCs.
+        from cloud_edge_robot_arm.simulation_runtime import operational_lease as lease
+    
+        original_profile = sys.getprofile()
+        original_thread_profile = threading.getprofile()
+        value = {"resources": [], "worker_lifecycles": [], "cleanup_errors": [],
+                 "observations": {"scenarios": []}}
+        with fixture._b_t2_observe(monkeypatch, value) as observed:
+            profile = sys.getprofile()
+            sys.setprofile(None)
+            threading.setprofile(None)
+    
+            workers = _Workers(observed.workers)
+            _cell(observed.add, "worker_refs").cell_contents = workers
+            observed.workers = workers
+            guard_cell = _cell(observed.add, "guard")
+            guard = _Guard(guard_cell.cell_contents)
+            guard_cell.cell_contents = guard
+            worker = _Worker(installed_field=True)
+            observed.add(worker, "worker")
+            idle_broker = _Thread(10)
+            session = SimpleNamespace(worker=worker, _broker=idle_broker,
+                                      _heartbeat_thread=None, _sealed=True, _closed=True)
+            worker._operational_lease_session = session
+            frame = _frame(_unrelated.__code__)
+            lock = threading.Lock()
+            argument = lock.acquire
+            events = ("call", "return", "c_call", "c_return", "c_exception")
+            workers.scans = guard.entries = worker.session_reads = idle_broker.alive_reads = 0
+            for event in events:
+                profile(frame, event, argument)
+            # This is the sole predeclared G0 RED assertion: old profile always
+            # iterates tuple(worker_refs), even for an unrelated Python/C event.
+&gt;           assert workers.scans == 0, "unrelated profile events scanned worker history"
+E           AssertionError: unrelated profile events scanned worker history
+E           assert 5 == 0
+E            +  where 5 = [&lt;tests.test_t2_observer_lifecycle._Worker object at 0x7693210516d0&gt;].scans
+
+tests/test_t2_observer_lifecycle.py:114: AssertionError</failure></testcase></testsuite></testsuites>
