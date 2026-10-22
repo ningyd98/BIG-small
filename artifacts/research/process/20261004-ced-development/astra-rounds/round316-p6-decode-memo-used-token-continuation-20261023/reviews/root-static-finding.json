@@ -1,0 +1,38 @@
+{
+  "round": "R316",
+  "reviewer": "ROOT",
+  "kind": "STATIC_SOURCE_FINDING_NOT_DYNAMIC_FAILURE",
+  "product": {
+    "path": "src/cloud_edge_robot_arm/vision/local_temporal.py",
+    "bytes": 121282,
+    "sha256": "06e0c6cd5638f75a439f6403b88f4c70ed55229b2b451d40a74e5b05f1adc78b"
+  },
+  "test": {
+    "path": "tests/test_local_temporal_decode_memo.py",
+    "bytes": 14523,
+    "sha256": "e7333fe9e56f5883da01392033881002c5fdae81dca1695040479ef31b86b35f"
+  },
+  "ownership_function": {
+    "first_line": 1846,
+    "source": "def _decode_memo_owned_here(memo: _DecodeMemo) -> bool:\n    # Token reset checks actual Context ownership, including copied contexts.\n    # Refresh the token in its owner so the outer finally can always reset it.\n    if memo.token is None:\n        return False\n    try:\n        _DECODE_MEMO.reset(memo.token)\n    except ValueError:\n        return False\n    memo.token = _DECODE_MEMO.set(memo)\n    return True\n"
+  },
+  "outer_finally": {
+    "first_line": 1921,
+    "source": "        finally:\n            if outermost:\n                _DECODE_MEMO.reset(memo.token)\n"
+  },
+  "path": "A copied active Context retains the same _DecodeMemo object. Parent finally consumes the shared token. Subsequent decode in retained context probes that used token. G1 catches ValueError only; RuntimeError from used-token check escapes.",
+  "dynamic_reproduction_run": false,
+  "official_source_confirmation": {
+    "source_url": "https://raw.githubusercontent.com/python/cpython/v3.12.0/Python/context.c",
+    "version": "CPython v3.12.0",
+    "lines": "81-98, 274-305, 369-379",
+    "read_method": "official source via web read; no executable downloaded or probe run",
+    "finding": "Context copies preserve variable-value references. Reset checks token used first and raises RuntimeError before checking Context mismatch (ValueError). This confirms the static used-token branch, not a recorded product failure."
+  },
+  "plan": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round316-p6-decode-memo-used-token-continuation-20261023/plan.json",
+    "bytes": 8264,
+    "sha256": "b2590e34dabfdf39b7c8271ca84c02736b44068fa12fc0472328eb5e60a96bb2"
+  },
+  "scope_accepted": "exact one-line ownership reset catch plus additive delayed copied-context regression; no new execution slots"
+}

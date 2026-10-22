@@ -1,0 +1,16 @@
+{
+  "invocation": {
+    "tool": "exec_command",
+    "arguments": {
+      "cmd": "/usr/bin/python3 - <<'PY'\nimport json,hashlib\nfrom pathlib import Path\nB=Path('artifacts/research/process/20261004-ced-development/astra-rounds');D=B/'round327-p6-observer-green-envelope-optional-labels-20261023';R=B/'round319-p6-session-constructor-observer-bookkeeping-20261023';p=json.loads((D/'plan.json').read_bytes());assert hashlib.sha256((D/'plan.json').read_bytes()).hexdigest()=='fa77d1ff8c29f8c2bf1afb67a7d2d990ba462c5a6b7c3b634994956b223c16e3'\nfor q in p['inputs']:\n b=Path(q['path']).read_bytes();assert len(b)==q['bytes'] and hashlib.sha256(b).hexdigest()==q['sha256'],q['path']\nfor f in ['reviews/session_init_green-root-acceptance.json','reviews/session_init_green-root-settle-before.json','reviews/session_init_green-root-settle.json','root-command-ledger.json.r319-settle','implementation/observer_selective_green']:\n q=R/f;assert not q.exists() and not q.is_symlink(),str(q)\nfor f,state in [('root-command-ledger.json','RESERVED'),('implementation/command-ledger.json','SPENT')]:\n c=json.loads((R/f).read_bytes())['commands'];assert c['session_init_green']['state']==state and c['session_init_green']['used']==1 and c['session_init_green']['remaining']==0;assert c['observer_selective_green']['state']=='HELD' and c['observer_selective_green']['used']==0\nprint(json.dumps({'round':'R327','input_count':len(p['inputs']),'acceptance_paths_absent':True,'GREEN_ROOT_RESERVED_AUTHOR_SPENT':True,'SELECTIVE_both_HELD':True}))\nPY",
+      "max_output_tokens": 1200
+    }
+  },
+  "actual_tool_return": {
+    "chunk_id": "3c846e",
+    "wall_time_seconds": 0.00000977,
+    "exit_code": 0,
+    "original_token_count": 36,
+    "output": "{\"round\": \"R327\", \"input_count\": 14, \"acceptance_paths_absent\": true, \"GREEN_ROOT_RESERVED_AUTHOR_SPENT\": true, \"SELECTIVE_both_HELD\": true}\n"
+  }
+}

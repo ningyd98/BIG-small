@@ -1,0 +1,18 @@
+{
+  "round": "R315",
+  "invocation": {
+    "cmd": "/usr/bin/python3 - <<'PY'\nfrom pathlib import Path\nimport json,hashlib,os\nroot=Path('/home/ningyd/文档/ChatGPT/BIGsmall');d=root/'artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023';gate=json.loads((d/'red-source-gate.json').read_bytes());target=root/'src/cloud_edge_robot_arm/vision/local_temporal.py'\ndef pin(p):\n b=p.read_bytes();return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\nunchanged=[];changed=[]\nfor row in gate['pins']:\n current=pin(Path(row['path']))\n if current!={k:row[k] for k in ('path','bytes','sha256')}:\n  assert Path(row['path'])==target;changed.append({'before':row,'after':current})\n else:unchanged.append(row)\nassert len(changed)==1;assert len(gate['pins'])==454\npaths=['implementation/product-source.diff','implementation/product-generation-map.json','before/source.json','after/source.json','reviews/product-source-native-actual.json','reviews/product-generation-actual.json']\nreport={'round':'R315','product':pin(target),'pins':{name:pin(d/name) for name in paths},'red_gate':pin(d/'red-source-gate.json'),'red_gate_other_pins_unchanged':len(unchanged),'only_changed_source':changed,'frozen_test':pin(root/'tests/test_local_temporal_decode_memo.py'),'frozen_runner':pin(d/'implementation/run-evidence.py'),'successful_cache_only':True,'hit_value_str_and_fresh_cls_instance':True,'class_and_full_strict_copy_canonical_key':True,'production_entry_cap':128,'production_byte_cap':8388608,'UTF8_key_result_both_conservatively_charged':True,'copied_context_ownership_checked_by_ContextVar_token':True,'top_level_finally_reset':True,'all_original_validation_statements_AST_unchanged':True,'all_other_source_bytes_identical':True,'runtime_executed':False,'GREEN_waiting_ROOT_source_argv_review_and_reservation':True}\np=d/'reviews/product-preparation-report.json';b=(json.dumps(report,ensure_ascii=False,indent=2)+'\\n').encode()\nwith p.open('xb') as f:f.write(b);f.flush();os.fsync(f.fileno())\nassert p.read_bytes()==b;print(json.dumps({'report':pin(p),'red_gate_total':len(gate['pins']),'unchanged':len(unchanged),'changed':changed,'runtime_executed':False},ensure_ascii=False))\nPY",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "yield_time_ms": 1000,
+    "max_output_tokens": 1700
+  },
+  "actual_tool_return": {
+    "chunk_id": "5f09e1",
+    "wall_time_seconds": 0.00000953,
+    "exit_code": 0,
+    "original_token_count": 203,
+    "output": "{\"report\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/reviews/product-preparation-report.json\", \"bytes\": 4437, \"sha256\": \"da4d6d49717cf20339aa3d73702e308b66688be86c70f593a66d1b182b173908\"}, \"red_gate_total\": 454, \"unchanged\": 453, \"changed\": [{\"before\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py\", \"bytes\": 119154, \"sha256\": \"8d41d767ea77a0a2a41e191a25d2e95d8e3cc6e4f6908faddbedbe13dcca6ad7\"}, \"after\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py\", \"bytes\": 121282, \"sha256\": \"06e0c6cd5638f75a439f6403b88f4c70ed55229b2b451d40a74e5b05f1adc78b\"}}], \"runtime_executed\": false}\n"
+  },
+  "independent_stdout": null,
+  "independent_stderr": null
+}

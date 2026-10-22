@@ -1,0 +1,16 @@
+{
+  "invocation": {
+    "tool": "exec_command",
+    "arguments": {
+      "cmd": "/usr/bin/python3 - <<'PY'\nimport json,hashlib,os\nfrom pathlib import Path\nB=Path('artifacts/research/process/20261004-ced-development/astra-rounds');D=B/'round320-p6-outbox-red-gate-absent-conftest-continuation-20261023';P=B/'round317-p6-mixed-outbox-candidate-claim-20261023'\ndef pin(p):\n p=Path(p);b=p.read_bytes();return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\nv=json.loads((D/'plan.json').read_bytes());checks=[{'expected':q,'actual':pin(q['path']),'matches':all(pin(q['path'])[k]==q[k] for k in ('bytes','sha256'))} for q in v['inputs']]\nassert pin(D/'plan.json')['sha256']=='2496d71bf99441a859285fe664d3879dad85e6dabaf0440ed29ff3df11c073ab'\nassert all(q['matches'] for q in checks)\nmissing={str(p):not p.exists() and not p.is_symlink() for p in [Path('tests/conftest.py'),Path('conftest.py')]};assert all(missing.values())\noutputs=['red-source-gate.json','root-red-source-acceptance.json','reviews/red-source-independent-review.json','reviews/observer_red_memory-root-reserve-before.json','reviews/observer_red_memory-root-reserve.json'];assert all(not (P/p).exists() for p in outputs)\np=D/'reviews/plan-applicability.json';p.parent.mkdir(parents=True,exist_ok=True)\nreport={'round':'R320','reviewer':'ROOT','applicable':True,'plan':pin(D/'plan.json'),'input_checks':checks,'paths_confirmed_absent':missing,'required_outputs_confirmed_absent':outputs,'only_allowed_script_modifications':v['scope'],'runtime_slots_added':0}\nwith p.open('x') as f:f.write(json.dumps(report,ensure_ascii=False,indent=2)+'\\n');f.flush();os.fsync(f.fileno())\nprint(json.dumps({'applicable':True,'input_count':len(checks),'report':pin(p)},ensure_ascii=False))\nPY",
+      "max_output_tokens": 1800
+    }
+  },
+  "actual_return": {
+    "chunk_id": "7a7b12",
+    "wall_time_seconds": 0.00000838,
+    "exit_code": 0,
+    "original_token_count": 80,
+    "output": "{\"applicable\": true, \"input_count\": 16, \"report\": {\"path\": \"artifacts/research/process/20261004-ced-development/astra-rounds/round320-p6-outbox-red-gate-absent-conftest-continuation-20261023/reviews/plan-applicability.json\", \"bytes\": 12019, \"sha256\": \"59d79d6d438a4d8500510de108e38cfbee5e66c7b74e931ec54e386ec995f8ad\"}}\n"
+  }
+}

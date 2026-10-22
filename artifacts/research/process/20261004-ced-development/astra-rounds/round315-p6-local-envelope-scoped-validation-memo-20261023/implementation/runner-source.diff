@@ -1,0 +1,101 @@
+--- R311/implementation/run-evidence.py
++++ R315/implementation/run-evidence.py
+@@ -1,4 +1,4 @@
+-"""R311 finite selected-command evidence runner; stdlib parent only."""
++"""R315 finite selected-command evidence runner; stdlib parent only."""
+ from __future__ import annotations
+ import base64
+ import copy
+@@ -15,10 +15,10 @@
+ 
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+ D = Path(__file__).resolve().parent.parent
+-PLAN_SHA = "20e6092993170d7ec5112a79712410d385b1196294e373e8d9468c19bf4a40f8"
++PLAN_SHA = "c71222fa4d71b4c8a51ed5a9bffb9d197edfef7a83e11444b1f7e75166ff50a3"
+ HELPER = D.parent / "round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/run-evidence.py"
+ HELPER_SHA = "1371a63dc6faf3c784eea25a71a07b2a42320bdca0951f3bbb5ac7038fc19fe3"
+-KEYS = ("budget_memory", "budget_sqlite", "writer_memory", "writer_sqlite")
++KEYS = ("observer_red", "observer_green", "writer_memory")
+ 
+ 
+ def require(ok, message):
+@@ -66,7 +66,7 @@
+     require(stat.S_IMODE(path.stat().st_mode) == before["mode"], "ledger mode changed")
+     require(path.read_bytes() == base64.b64decode(before["base64"]), "ledger CAS bytes changed")
+     write(receipt.with_name(receipt.stem + "-before.json"), before)
+-    temp = path.with_name(path.name + ".r311-next")
++    temp = path.with_name(path.name + ".r315-next")
+     write(temp, after)
+     os.chmod(temp, before["mode"])
+     check(before)
+@@ -105,12 +105,12 @@
+             else:
+                 sides.append({"path": str(side), "exists": False, "pin": None, "archive": None})
+         rows.append({"pin": pin(original), "archive": archive, "sidecars": sides,
+-                     "provenance": "Genuine new R311 run only; old missing bytes not recovered"})
++                     "provenance": "Genuine new R315 run only; old missing bytes not recovered"})
+     return rows
+ 
+ 
+ def main():
+-    require(len(sys.argv) == 2 and sys.argv[1] in KEYS, "one exact R311 command key")
++    require(len(sys.argv) == 2 and sys.argv[1] in KEYS, "one exact R315 command key")
+     key = sys.argv[1]
+     plan_pin = pin(D / "plan.json")
+     require(plan_pin["sha256"] == PLAN_SHA, "actual Astra plan changed")
+@@ -122,13 +122,13 @@
+     accepted = json.loads(accepted_path.read_bytes())
+     require(accepted["reviewed"] is True and accepted["source_gate"] == pin(gate_path),
+             "ROOT acceptance does not bind gate")
+-    require(gate["round"] == "R311" and gate["commands"] == plan["commands"], "literal command table differs")
++    require(gate["round"] == "R315" and gate["commands"] == plan["commands"], "literal command table differs")
+     require(gate["sources"]["runner"] == pin(__file__), "runner not bound")
+     root = json.loads((D / "root-command-ledger.json").read_bytes())
+     author_path = D / "implementation/command-ledger.json"
+     before_author = full(author_path)
+     author = json.loads(base64.b64decode(before_author["base64"]))
+-    require(set(root["commands"]) == set(author["commands"]) == set(KEYS), "exact four-key ledgers")
++    require(set(root["commands"]) == set(author["commands"]) == set(KEYS), "exact three-key ledgers")
+     reserved = root["commands"][key]
+     require(reserved["state"] == "RESERVED" and reserved["used"] == 1 and reserved["remaining"] == 0,
+             "ROOT did not reserve selected command")
+@@ -143,7 +143,7 @@
+                                   "executor_binding": gate["executor_binding"]})
+     write(out / "source-before.json", snapshot(gate))
+     require(pin(HELPER)["sha256"] == HELPER_SHA, "reviewed helper changed")
+-    spec = importlib.util.spec_from_file_location("r311_frozen_helpers", HELPER)
++    spec = importlib.util.spec_from_file_location("r315_frozen_helpers", HELPER)
+     helper = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(helper)  # main guard remains false; stdlib definitions only.
+     write(out / "helper-provenance.json", {"source": pin(HELPER),
+@@ -189,7 +189,7 @@
+         spent["commands"][key]["state"] = "SPENT"
+         cas(author_path, current, spent, out / "author-spent.json")
+     elapsed = time.monotonic() - start
+-    result = {"round": "R311", "command_id": key, "child_exit": process.returncode if process else None,
++    result = {"round": "R315", "command_id": key, "child_exit": process.returncode if process else None,
+               "pid": process.pid if process else None, "elapsed_seconds": elapsed,
+               "timed_out": timed_out, "output_limited": output_limited, "cleanup": cleanup,
+               "errors": errors, "unit_only": key.startswith("observer_"),
+@@ -223,6 +223,12 @@
+         result["new_databases"] = dbs
+         result["persistent_index"] = write(out / "persistent-file-database-index.json",
+                                            {"root": result["persistent_basetemp"], "files": index, "databases": dbs})
++        if result["unit_only"]:
++            micro = [{"pin": pin(Path(item["path"])), "data": json.loads(Path(item["path"]).read_bytes())}
++                     for item in index if stat.S_ISREG(item["mode"])
++                     and Path(item["path"]).name == "decode-memo-case.json"]
++            require(len(micro) == command["expected_case_files"] == 1, "one actual micro case required")
++            result["micro_cases"] = write(out / "micro-cases.json", {"round": "R315", "files": micro})
+         if not result["unit_only"]:
+             summary = helper.diagnostic_resources(out / "resources", key, command["child_argv"], process.pid)
+             result["resource_summary"] = write(out / "resource-summary.json", summary)
+@@ -237,7 +243,7 @@
+                 path = Path(item["path"])
+                 if stat.S_ISREG(item["mode"]) and path.name in helper.CASE_NAMES:
+                     cases.append({"pin": pin(path), "data": json.loads(path.read_bytes())})
+-            result["cases"] = write(out / "cases.json", {"round": "R311", "node": command["node"], "files": cases})
++            result["cases"] = write(out / "cases.json", {"round": "R315", "node": command["node"], "files": cases})
+             pre = helper.prerequisite(out / "prerequisite.json", {"module": helper.MODULE_PIN}, process.pid)
+             result["prerequisite"] = pre
+             require(pre["accepted"], "startup prerequisite did not pass")

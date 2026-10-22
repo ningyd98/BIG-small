@@ -1,0 +1,202 @@
+F
+=================================== FAILURES ===================================
+____________________ test_mixed_local_legacy_claim[memory] _____________________
+
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-...utbox-candidate-claim-20261023/implementation/observer_red_memory/persistent-basetemp/test_mixed_local_legacy_claim_0')
+backend = 'memory'
+
+    @pytest.mark.parametrize("backend", ["memory", "sqlite"])
+    def test_mixed_local_legacy_claim(tmp_path, backend):
+        from cloud_edge_robot_arm.simulation_runtime import operational_lease as lease
+        from cloud_edge_robot_arm.vision import operational_windows as windows
+    
+        registries = [(name, getattr(module, name)) for module, names in (
+            (windows, ("_OWNERS", "_PENDING", "_HANDOFFS", "_SCOPES", "_TRANSITIONS")),
+            (lease, ("_SESSIONS", "_VIEWS", "_PROPOSALS", "_ACKS"))) for name in names]
+        registry_before = [dict(value) for _, value in registries]
+        packet = {"round": "R317", "lock_clarification": "R318", "backend": backend,
+                  "fixture_kind": "descriptive persisted storage only, no private capability",
+                  "sources": [_pin(ROOT / "src/cloud_edge_robot_arm/repositories/event_autonomy" / name)
+                              for name in ("protocol.py", "memory.py", "sqlite.py")],
+                  "inputs": [_pin(ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds" / name / "plan.json")
+                             for name in ("round317-p6-mixed-outbox-candidate-claim-20261023",
+                                          "round318-p6-memory-original-lock-clarification-20261023")],
+                  "test_source": _pin(Path(__file__)),
+                  "checks": {}, "operations": [], "fixture_preparations": [],
+                  "waited_binding": {"phases": []}, "cleanup_errors": [],
+                  "resources": {"repository_attempted": False, "repository_constructed": False,
+                      "repository_closed": False, "sqlite_connections_attempted": 0,
+                      "sqlite_connections_opened": 0, "sqlite_connections_closed": 0,
+                      "sqlite_connections_peak": 0,
+                      "claimant_threads_attempted": 0, "claimant_threads_started": 0,
+                      "claimant_threads_joined": 0}, "live_authority_created": False}
+        repo = holder = claimant = original_lock = original_connection = None
+        holder_lock_held = False
+        proceed = threading.Event()
+        resources = packet["resources"]
+    
+        def message(key, *, task=None, backoff=0, status=MessageStatus.PENDING):
+            return PendingMessage(message_id=key, task_id=task or ("legacy-" + key),
+                idempotency_key=key, message_type="R317_DESCRIPTION", payload={"label": key},
+                backoff_base_ms=backoff, max_retries=5, status=status)
+    
+        def snapshot_unlocked(connection=None):
+            if backend == "memory":
+                local_rows = [{"category": category, "record_key": key, "value_json": raw,
+                               "value_utf8_hex": raw.encode().hex()}
+                              for (category, key), raw in sorted(repo._local_tasks.items())]
+                receipt_rows = [{"operation_id": key, "raw_json": raw, "raw_utf8_hex": raw.encode().hex()}
+                                for key, raw in sorted(repo._local_publications.items())]
+                legacy = {key: {"payload_json": value.model_dump_json(),
+                               "payload_hash": repo._outbox_hashes[key]}
+                          for key, value in repo._outbox.items()}
+            else:
+                conn = connection if connection is not None else repo._conn
+                local_rows = [dict(row) for row in conn.execute(
+                    "SELECT category,record_key,task_id,value_json FROM visual_local_tasks_v1 ORDER BY category,record_key")]
+                for row in local_rows:
+                    row["value_utf8_hex"] = row["value_json"].encode().hex()
+                receipt_rows = [dict(row) for row in conn.execute(
+                    "SELECT * FROM visual_local_publications_v1 ORDER BY operation_id")]
+                for row in receipt_rows:
+                    row["payload_utf8_hex"] = row["payload_json"].encode().hex()
+                legacy = {row["message_id"]: dict(row) for row in conn.execute("SELECT * FROM event_outbox ORDER BY id")}
+            return {"local_tasks": local_rows, "publication_receipts": receipt_rows, "legacy": legacy}
+    
+        def snapshot():
+            with (repo._lock if backend == "memory" else repo._write_lock):
+                return snapshot_unlocked()
+    
+        def same_local(before, after):
+            assert before["local_tasks"] == after["local_tasks"]
+            assert before["publication_receipts"] == after["publication_receipts"]
+    
+        def invoke(label, operation):
+            before = snapshot()
+            row = {"label": label, "before": before}
+            packet["operations"].append(row)
+            result = None
+            error = None
+            try:
+                result = operation()
+            except ValueError as actual:
+                error = actual
+                row["exception"] = {"type": type(actual).__name__, "message": str(actual)}
+            row["after"] = snapshot()
+            same_local(before, row["after"])
+            row["returned"] = result.model_dump(mode="json") if isinstance(result, PendingMessage) else result
+            return result, error, row
+    
+        def refused(label, operation):
+            result, error, row = invoke(label, operation)
+            assert result is None and type(error) is ValueError and str(error) == SCOPE_ERROR
+            assert row["before"] == row["after"]
+            return row
+    
+        def claimed(label, expected, *, primary=False):
+            result, error, row = invoke(label, repo.claim_outbox_message)
+            if error is not None:
+                assert type(error) is ValueError and str(error) == SCOPE_ERROR
+            # Only this first valid mixed delivery assertion is an expected RED.
+            if primary:
+                assert error is None and result is not None, "mixed legacy candidate must be delivered"
+            else:
+                assert error is None and result is not None
+            assert result.message_id == expected.message_id and result.task_id == expected.task_id
+            assert result.status is MessageStatus.SENDING
+            old = row["before"]["legacy"]
+            new = row["after"]["legacy"]
+            assert set(old) == set(new)
+            assert {key: value for key, value in old.items() if key != expected.message_id} == {
+                key: value for key, value in new.items() if key != expected.message_id}
+            stored = PendingMessage.model_validate_json(new[expected.message_id]["payload_json"])
+            assert stored == result
+            return result
+    
+        def binding_unlocked(task, connection=None):
+            raw = json.dumps({"task_id": task, "fixture": "descriptive binding, no live authority"}, indent=2)
+            if backend == "memory":
+                repo._local_tasks[("binding", task)] = raw
+            else:
+                conn = connection if connection is not None else repo._conn
+                conn.execute("INSERT INTO visual_local_tasks_v1(category,record_key,task_id,value_json) VALUES('binding',?,?,?)",
+                             (task, task, raw))
+    
+        def prepare_local(status):
+            with (repo._lock if backend == "memory" else repo._write_lock):
+                before = snapshot_unlocked()
+                local_message = message("local-message", task="local-task", status=status)
+                raw = local_message.model_dump_json(indent=2)
+                assert PendingMessage.model_validate_json(raw) == local_message
+                receipt = {"operation_id": "fixture-local-publication", "operation_sha256": "1" * 64,
+                    "job_id": "fixture-job", "attempt": 1, "lease_id": "fixture-lease", "epoch": "fixture-epoch",
+                    "generation": 1, "row_revision": 1, "phase": "COMPLETE", "event_record_hash": "2" * 64,
+                    "event_receipt_hash": "3" * 64, "job_receipt_hash": "4" * 64,
+                    "payload_json": json.dumps({"descriptive_fixture": True, "task_id": "local-task"}, indent=2)}
+                if backend == "memory":
+                    if ("binding", "local-task") not in repo._local_tasks:
+                        binding_unlocked("local-task")
+                    repo._local_tasks[("outbox", "local-message")] = raw
+                    repo._local_publications[receipt["operation_id"]] = json.dumps(receipt, indent=2)
+                else:
+                    with repo._conn:
+                        repo._conn.execute("BEGIN IMMEDIATE")
+                        if repo._conn.execute("SELECT 1 FROM visual_local_tasks_v1 WHERE category='binding' AND record_key='local-task'").fetchone() is None:
+                            binding_unlocked("local-task")
+                        repo._conn.execute("INSERT INTO visual_local_tasks_v1 VALUES('outbox',?,?,?) ON CONFLICT(category,record_key) DO UPDATE SET value_json=excluded.value_json",
+                                           ("local-message", "local-task", raw))
+                        columns = tuple(receipt)
+                        repo._conn.execute("INSERT OR REPLACE INTO visual_local_publications_v1(" + ",".join(columns) + ") VALUES(" + ",".join("?" for _ in columns) + ")", tuple(receipt.values()))
+                after = snapshot_unlocked()
+            packet["fixture_preparations"].append({"local_status": status.value, "before": before, "after": after,
+                                                 "valid_local_message_json": raw, "no_live_authority": True})
+    
+        try:
+            resources["repository_attempted"] = True
+            if backend == "sqlite":
+                resources["sqlite_connections_attempted"] += 1
+                repo = SQLiteEventAutonomyRepository(tmp_path / "events.db")
+                resources["sqlite_connections_opened"] += 1
+                resources["sqlite_connections_peak"] = 1
+            else:
+                repo = InMemoryEventAutonomyRepository()
+            resources["repository_constructed"] = True
+            value, error, _ = invoke("pure_empty", repo.claim_outbox_message)
+            assert value is None and error is None
+            baseline = message("pure-legacy")
+            assert repo.enqueue_outbox(baseline) == baseline
+            claimed("pure_legacy_claim", baseline)
+            value, error, _ = invoke("pure_no_double_claim", repo.claim_outbox_message)
+            assert value is None and error is None
+            assert repo.mark_outbox_sent(baseline.message_id) is True
+            packet["checks"]["pure_legacy_baseline"] = True
+    
+            prepare_local(MessageStatus.PENDING)
+            refused("local_only", repo.claim_outbox_message)
+            packet["checks"]["local_only_scope_refusal"] = True
+            mixed = message("mixed-pending")
+            assert repo.enqueue_outbox(mixed) == mixed
+>           claimed("mixed_pending", mixed, primary=True)
+
+tests/test_mixed_outbox_claim.py:197: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+label = 'mixed_pending'
+expected = PendingMessage(message_id='mixed-pending', task_id='legacy-mixed-pending', event_id=None, summary_id=None, request_id=...7, tzinfo=datetime.timezone.utc), retry_count=0, max_retries=5, last_error=None, next_retry_at=None, backoff_base_ms=0)
+
+    def claimed(label, expected, *, primary=False):
+        result, error, row = invoke(label, repo.claim_outbox_message)
+        if error is not None:
+            assert type(error) is ValueError and str(error) == SCOPE_ERROR
+        # Only this first valid mixed delivery assertion is an expected RED.
+        if primary:
+>           assert error is None and result is not None, "mixed legacy candidate must be delivered"
+E           AssertionError: mixed legacy candidate must be delivered
+E           assert (ValueError('operational task mutation requires the registered private publication scope') is None)
+
+tests/test_mixed_outbox_claim.py:120: AssertionError
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[memory]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.42s

@@ -1,0 +1,18 @@
+{
+  "batch": 11,
+  "invocation": {
+    "tool": "exec_command",
+    "args": {
+      "cmd": "python3 - <<'PY'\nimport json,hashlib,pathlib\nbase=pathlib.Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023\");m=json.loads((base/'reviews/T2/source-manifest.json').read_text());out=['BATCH 11 original spec and targeted observer/writer source'];p=base.parent/'round158-p6-stage-b-local-temporal-publication-20261013/plan.json';b=p.read_bytes();d=json.loads(b);out.append('FILE '+str(p)+' bytes='+str(len(b))+' sha256='+hashlib.sha256(b).hexdigest())\nfor k in ['dual_database_protocol','public_publication']:\n out.append('JSON $. '+k+' '+json.dumps(d[k],ensure_ascii=False))\nout.append('JSON $.tasks[1] '+json.dumps(d['tasks'][1],ensure_ascii=False))\ndef matching(v,path):\n if isinstance(v,dict):\n  for k,w in v.items():yield from matching(w,path+'.'+k)\n elif isinstance(v,list):\n  for i,w in enumerate(v):yield from matching(w,path+'['+str(i)+']')\n elif isinstance(v,str) and any(t in v.lower() for t in ['outbox','legacy','旧']):yield path,v\nfor path,v in matching(d['migration_targets'],'$.migration_targets'):out.append(path+' '+json.dumps(v,ensure_ascii=False))\ns=m['sources'][23];p=pathlib.Path(s['frozen']['path']);b=p.read_bytes();assert hashlib.sha256(b).hexdigest()==s['frozen']['sha256'];ls=b.decode().splitlines();out.append('FILE '+str(p)+' bytes='+str(len(b))+' sha256='+s['frozen']['sha256'])\nselected=[(i,ls[i-1]) for a,z in [(3517,3952),(4914,5055)] for i in range(a,z+1)]\nn=0\nfor i,l in selected:\n line=f'S23:{i}: {l}'\n if len(('\\n'.join(out+[line])+ '\\n').encode())>38500:break\n out.append(line);n+=1\nout.append('SOURCE_SELECTED_COVERAGE '+json.dumps([i for i,l in selected[:n]])+'; requested=578; displayed='+str(n))\ntext='\\n'.join(out)+'\\n';assert n<=600 and len(text.encode())<=40000,(n,len(text.encode()))\nprint(f'PRECOMPUTED source_lines={n} display_lines={len(text.splitlines())} display_utf8_bytes={len(text.encode())}');print(text,end='')\nPY",
+      "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "max_output_tokens": 15500
+    }
+  },
+  "return": {
+    "chunk_id": "ffbcbb",
+    "wall_time_seconds": 0.00000906,
+    "exit_code": 1,
+    "original_token_count": 26,
+    "output": "Traceback (most recent call last):\n  File \"<stdin>\", line 21, in <module>\nAssertionError: (452, 41232)\n"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "invocation": {
+    "tool": "exec_command",
+    "arguments": {
+      "cmd": "/usr/bin/python3 - <<'PY'\nimport json,hashlib,os,ast\nfrom pathlib import Path\nB=Path('artifacts/research/process/20261004-ced-development/astra-rounds');D=B/'round321-p6-observer-applicability-metadata-syntax-20261023';p=D/'plan.json';raw=p.read_bytes();assert hashlib.sha256(raw).hexdigest()=='2a6c19d3d588559fcacb0125232fba3b7c16f6bcbec835fc2381874d53c942b4';plan=json.loads(raw)\nfor q in plan['inputs']:\n b=Path(q['path']).read_bytes();assert len(b)==q['bytes'] and hashlib.sha256(b).hexdigest()==q['sha256'],q['path']\nout=Path(plan['validation']['output']);assert not out.exists() and not out.is_symlink()\nf=json.loads(Path(plan['original_failure']['path']).read_bytes());cmd=f['invocation']['arguments']['cmd'];rep=plan['scope']['replacement'];assert cmd.count(rep['before'])==rep['count']==1;cmd=cmd.replace(rep['before'],rep['after']);needle=plan['scope']['optional_provenance_insertion_before'];assert cmd.count(needle)==1;cmd=cmd.replace(needle,plan['scope']['provenance_code']+needle)\nbody=cmd.split(\"\\n\",1)[1].rsplit('\\nPY',1)[0];ast.parse(body)\nprint(json.dumps({'R321_inputs_checked':len(plan['inputs']),'output_absent':True,'exact_correction_count':1,'corrected_command_sha256':hashlib.sha256(cmd.encode()).hexdigest(),'parse_only_not_executed':True}))\nPY",
+      "max_output_tokens": 1600
+    }
+  },
+  "actual_return": {
+    "chunk_id": "e0fe1b",
+    "wall_time_seconds": 0.00001781,
+    "exit_code": 0,
+    "original_token_count": 53,
+    "output": "{\"R321_inputs_checked\": 34, \"output_absent\": true, \"exact_correction_count\": 1, \"corrected_command_sha256\": \"fff912bb83f561f0ad074b16c068ef935409a11c087d744883726a4e533a1da2\", \"parse_only_not_executed\": true}\n"
+  }
+}

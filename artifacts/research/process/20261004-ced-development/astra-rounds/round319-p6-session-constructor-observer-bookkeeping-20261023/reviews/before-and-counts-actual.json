@@ -1,0 +1,18 @@
+{
+  "round": "R319",
+  "invocation": {
+    "cmd": "/usr/bin/python3 - <<'PY'\nfrom pathlib import Path\nimport json,hashlib,base64,stat,os\nroot=Path('/home/ningyd/文档/ChatGPT/BIGsmall');base=root/'artifacts/research/process/20261004-ced-development/astra-rounds';d=base/'round319-p6-session-constructor-observer-bookkeeping-20261023';obs=json.loads((d/'input-observation.json').read_bytes())\ndef pin(p):\n b=p.read_bytes();return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\ndef write(p,b,mode=None):\n p.parent.mkdir(parents=True,exist_ok=True)\n with p.open('xb') as f:f.write(b);f.flush();os.fsync(f.fileno())\n if mode is not None:os.chmod(p,mode)\n assert p.read_bytes()==b\n return pin(p)\nfor row in obs['inputs']:\n now=pin(root/row['path']);assert now['bytes']==row['bytes'] and now['sha256']==row['sha256'],row['path']\nrows=[]\nfor name in ['tests/test_operational_runtime_closure.py','tests/test_t2_observer_lifecycle.py','artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/run-evidence.py','artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/run-evidence.py']:\n p=root/name;b=p.read_bytes();mode=stat.S_IMODE(p.lstat().st_mode);saved=write(d/'before/files'/name,b,mode);rows.append({'source':pin(p),'mode':mode,'base64':base64.b64encode(b).decode(),'archive':saved})\nmanifest=write(d/'before/manifest.json',(json.dumps({'round':'R319','inputs_checked':13,'files':rows,'runtime_executed':False},ensure_ascii=False,indent=2)+'\\n').encode())\ntemplate=(base/'round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/run-evidence.py').read_text();literals=['R315','r315','KEYS = (\"observer_red\", \"observer_green\", \"writer_memory\")','key == \"observer_red\"','key.startswith(\"observer_\")','if key not in (\"observer_red\", \"observer_green\"):','\"decode-memo-case.json\"','and path.name in helper.CASE_NAMES:'];print(json.dumps({'plan':pin(d/'plan.json'),'before':manifest,'measured_counts':{s:template.count(s) for s in literals},'runtime_executed':False},ensure_ascii=False))\nPY",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "yield_time_ms": 1000,
+    "max_output_tokens": 1800
+  },
+  "actual_tool_return": {
+    "chunk_id": "8ab613",
+    "wall_time_seconds": 0.000009331,
+    "exit_code": 0,
+    "original_token_count": 234,
+    "output": "{\"plan\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round319-p6-session-constructor-observer-bookkeeping-20261023/plan.json\", \"bytes\": 25012, \"sha256\": \"5404cd1dcf1c1b1b0a06e3063a1ca2a1a74aa090537d05ac704390be076772b9\"}, \"before\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round319-p6-session-constructor-observer-bookkeeping-20261023/before/manifest.json\", \"bytes\": 507642, \"sha256\": \"359127541c254a352653ef872531465fd4b693d8bb648002111aca55e5f73468\"}, \"measured_counts\": {\"R315\": 7, \"r315\": 2, \"KEYS = (\\\"observer_red\\\", \\\"observer_green\\\", \\\"writer_memory\\\")\": 1, \"key == \\\"observer_red\\\"\": 2, \"key.startswith(\\\"observer_\\\")\": 1, \"if key not in (\\\"observer_red\\\", \\\"observer_green\\\"):\": 1, \"\\\"decode-memo-case.json\\\"\": 1, \"and path.name in helper.CASE_NAMES:\": 1}, \"runtime_executed\": false}\n"
+  },
+  "independent_stdout": null,
+  "independent_stderr": null
+}

@@ -1,0 +1,16 @@
+{
+  "invocation": {
+    "tool": "exec_command",
+    "arguments": {
+      "cmd": "/usr/bin/python3 - <<'PY'\nimport json,hashlib\nfrom pathlib import Path\nB=Path('artifacts/research/process/20261004-ced-development/astra-rounds');D=B/'round326-p6-observer-generation-selector-continuation-20261023';R=B/'round319-p6-session-constructor-observer-bookkeeping-20261023';p=json.loads((D/'plan.json').read_bytes())\nassert hashlib.sha256((D/'plan.json').read_bytes()).hexdigest()=='b72287b417b12c0b5659811192aa6e1498908499d1ca4f66fbed1e3a544f0e5e'\nfor q in p['inputs']:\n b=Path(q['path']).read_bytes();assert len(b)==q['bytes'] and hashlib.sha256(b).hexdigest()==q['sha256'],q['path']\nfor name in p['expected']['outputs']:\n q=R/name;assert not q.exists() and not q.is_symlink(),str(q)\nf=json.loads((R/'reviews/observer-generation-actual.json').read_bytes());s=p['scope']['replacement'];assert f['invocation']['cmd'].count(s['before'])==1\nfor name in ['root-command-ledger.json','implementation/command-ledger.json']:\n c=json.loads((R/name).read_bytes())['commands'];assert c['session_init_red']['state']=='SPENT'\n for key in ['session_init_green','observer_selective_green']:assert c[key]['state']=='HELD' and c[key]['used']==0 and c[key]['remaining']==1\nprint(json.dumps({'round':'R326','inputs_checked':len(p['inputs']),'outputs_absent':True,'single_replacement_count':1,'RED':'SPENT','GREEN_SELECTIVE':'HELD'}))\nPY",
+      "max_output_tokens": 1000
+    }
+  },
+  "actual_tool_return": {
+    "chunk_id": "c07a5d",
+    "wall_time_seconds": 0.000008861,
+    "exit_code": 0,
+    "original_token_count": 35,
+    "output": "{\"round\": \"R326\", \"inputs_checked\": 16, \"outputs_absent\": true, \"single_replacement_count\": 1, \"RED\": \"SPENT\", \"GREEN_SELECTIVE\": \"HELD\"}\n"
+  }
+}

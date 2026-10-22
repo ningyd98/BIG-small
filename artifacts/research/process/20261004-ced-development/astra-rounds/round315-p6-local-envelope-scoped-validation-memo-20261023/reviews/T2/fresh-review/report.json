@@ -1,0 +1,606 @@
+{
+  "review_id": "R315-T2-fresh-independent-review-20261023",
+  "reviewer": {
+    "identity": "/root/fresh_t2_review",
+    "fresh_independent_seat": true,
+    "not_T1_reviewer": true,
+    "delegated": false
+  },
+  "mode": "Read-only source/evidence review; no product/test edits, tests, probes, project imports, AST, SQL or Git commands.",
+  "verdict": {
+    "spec": "Changes required",
+    "quality": "Incomplete",
+    "bounded_T2_software_acceptance_justified": false,
+    "reason": "A statically demonstrated mixed legacy/local outbox regression requires an actual Astra repair plan, and the original 12-attempt read budget ended with specified quality coverage gaps."
+  },
+  "input_pins": {
+    "release": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/reviews/T2/review-release.json",
+      "bytes": 2463,
+      "sha256": "b4389cb711e9810596707b9a35d67793f565b6ed301d8aed1c7b76b099975a9c"
+    },
+    "manifest": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/reviews/T2/source-manifest.json",
+      "bytes": 50552,
+      "sha256": "b7eeb898c28e607bab06354b8f76478d56045baa712169c329b1fe45a98fb2b6"
+    },
+    "coverage": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/t2-exit-coverage.json",
+      "bytes": 41061,
+      "sha256": "c66d893e0d3ffcce7e46c872b2fe9d77be02e04fbd3b158480584029677154e9"
+    },
+    "R315_plan": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/plan.json",
+      "bytes": 22679,
+      "sha256": "c71222fa4d71b4c8a51ed5a9bffb9d197edfef7a83e11444b1f7e75166ff50a3"
+    },
+    "R158_plan": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round158-p6-stage-b-local-temporal-publication-20261013/plan.json",
+      "bytes": 114866,
+      "sha256": "70f51381f8f401c5456304d9eb12f019e7f903a582407ab7819447b8cd1f871b"
+    }
+  },
+  "findings": [
+    {
+      "id": "T2-FR-01",
+      "severity": "Important",
+      "priority": "P1",
+      "title": "A local outbox row disables unrelated legacy outbox claims in the same repository",
+      "kind": "Static source defect; no reviewer runtime reproduction performed",
+      "primary_location": {
+        "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+        "start": 186,
+        "end": 189
+      },
+      "supporting_locations": [
+        {
+          "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+          "start": 220,
+          "end": 224,
+          "role": "Public dispatcher rejects before legacy candidate selection."
+        },
+        {
+          "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+          "start": 1784,
+          "end": 1796,
+          "role": "Legacy candidates are held in the separate _outbox collection; the repeated guard also rejects before selecting them."
+        },
+        {
+          "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+          "start": 2362,
+          "end": 2387,
+          "role": "Legacy candidates are read from event_outbox, separately from visual_local_tasks_v1; repeated guard rejects before SELECT."
+        },
+        {
+          "path": "tests/test_operational_runtime_closure.py",
+          "start": 4998,
+          "end": 5001,
+          "role": "Current writer case requests denial for local outbox operations."
+        },
+        {
+          "path": "tests/test_operational_runtime_closure.py",
+          "start": 5012,
+          "end": 5025,
+          "role": "Inventory verifies denial and unchanged snapshots, not unrelated legacy success."
+        }
+      ],
+      "requirement": "R158 tasks[1].interfaces preserves existing UTC_LEGACY_VETO routes and scopes fencing to mutations which can address an operational task; migration dispositions preserve legacy routes. Neither the reviewed plan nor the implementation requires a repository to contain only one mode.",
+      "reachable_path": [
+        "An actual private local runtime can enqueue a local message: worker_runtime.py.diff D02:608–643 supports enqueue_outbox and binds its task/request, then D02:666–668 commits category outbox into local storage.",
+        "A pending legacy message for another, unbound task can coexist in the same repository's _outbox/event_outbox; the ordinary enqueue writer is task-targeted and the stores are separate.",
+        "Outside a private local scope, claim_outbox_message() has no task argument. _local_target nevertheless returns True if ANY local outbox row exists, irrespective of its task or status.",
+        "dispatch raises ValueError at protocol.py:224 before original legacy selection. The storage-level guard repeats the same test. Thus neither backend can claim the unrelated eligible legacy message.",
+        "Because the predicate tests existence, a retained local row continues to block legacy claims after its local status changes."
+      ],
+      "impact": "One operational task can starve unrelated legacy message delivery in a shared event repository. This is availability/compatibility failure, not an authority bypass.",
+      "requested_resolution": "Have Astra define a candidate-specific, lock/transaction-protected legacy claim path that cannot claim an operational task, while preserving private local claiming. Do not merely remove the operational fence.",
+      "expected_regression_cases": [
+        "Both Memory and SQLite: retain a local outbox row and enqueue an unrelated eligible legacy message; the public claim must obtain only the legacy message and leave local data/receipts unchanged.",
+        "Repeat with the local row no longer PENDING to ensure historical local rows do not globally disable legacy claims.",
+        "Retain negative coverage proving public claims/mutations never acquire or modify a local operational message and private local claims still require a current scope.",
+        "Exercise the candidate check under the actual storage lock/transaction so a binding change cannot turn the fix into a check/use race."
+      ],
+      "repair_performed": false,
+      "requires_actual_gpt_6_astra_plan": true
+    }
+  ],
+  "assessed_paths": {
+    "locks_and_checks": "The new coordinator acquires the job private scope before the event lock/BEGIN and then checks the two authorities. The owner checks original startup/thread/repository/binding/source and sealed original acquisition; no broker/app numeric-domain comparison was introduced in the reviewed diff.",
+    "writers": "Both complete writer diffs were read: 36 guard insertions per backend, plus class dispatch. SQLite CAS first controlling get_checkpoint moved behind BEGIN IMMEDIATE and the guard. Exact positional CANCELLED is the only public local state exception in dispatch; positive RUNNING/COMPLETED remains denied. This does not clear the mixed legacy outbox regression.",
+    "budgets": "The reviewed production diff preserves original bootstrap limits, original references, staged prestate/CAS binding, durable pending debit, and a resume path which does not replay/refund the debit. Budget behavior JUnit documents pass on their recorded historical codec. Full unchanged replay helpers and budget fixture bodies were not read.",
+    "commit_protocol": "All four receipt stages and resume logic were read in worker_runtime.py.diff D02:269–384, plus event/job receipt helpers. Pending writes commit before the job receipt; completion then commits event and job markers; lost acknowledgment is not converted into success; detached reconciliation remains nonauthorizing. Actual seam test source and detailed seam reports were not independently covered.",
+    "private_authority": "Read changes require genuine worker poll code/globals/self to open the lease session, registered session/caller for a local view, owner/source/original checks, and private scope for local writes. Decoded envelopes only supply descriptions; reviewed decode code does not register live authority. Full unchanged ingress/view/CPU-observer implementation was outside achieved coverage.",
+    "resources": "Observed allocation-record creation includes initialization_attempted/initialized/error fields, constructed worker fields and resource append. Read setup/restoration-entry and early finally session/broker closure only. Full lifecycle denominator/partial-init/clock/thread restoration review is incomplete."
+  },
+  "source_generation_impact": {
+    "historical_five": {
+      "nodes": [
+        "wait_memory",
+        "wait_sqlite",
+        "dual_behavior",
+        "budget_memory",
+        "budget_sqlite"
+      ],
+      "codec": {
+        "bytes": 119154,
+        "sha256": "8d41d767ea77a0a2a41e191a25d2e95d8e3cc6e4f6908faddbedbe13dcca6ad7"
+      },
+      "other_delta": "The first three also used visual_owner.py SHA c344ddeed1d8948b6d4322bb6710338079ec6fbf6b17666854ed73398aa06d02; current adds two read-only contract_hash accessors.",
+      "boundary": "These are five source-specific historical passes, not reruns on the new codec."
+    },
+    "current_two": {
+      "nodes": [
+        "writer_memory",
+        "writer_sqlite"
+      ],
+      "codec": {
+        "bytes": 121298,
+        "sha256": "5675220d5dc4f895d542151f5dfe7ab03c19a4d080e3bcf95ae6bb7e9d21eb9b"
+      },
+      "current_source_deltas": [],
+      "elapsed_seconds": [
+        189.95865077000053,
+        189.01924665999832
+      ]
+    },
+    "memo_review": "The current LocalEnvelope.from_payload hunk keeps the former strict validators and descendant checks, caches only after success, keys by class plus full copied canonical envelope, returns a fresh object, and falls back to full validation when either 128 entries or conservative 8 MiB accounting is exceeded. It retains full diagnostics/original_time/decision/transaction content in the key. Context ownership reset rejects active foreign-context tokens and consumed stale tokens with ValueError/RuntimeError; outer finally resets the owned token.",
+    "micro_review": "Full 329-line current micro source was read: real pinned history, delegating semantic validator, duplicate-count RED, exact canonical/digest/projection/time/budget/evidence, mutation rejection, subclass separation/fresh identities, context isolation, successful/exceptional parent copied-context cleanup, BaseException cleanup, and cap fallback. The pinned ROOT micro acceptance reports all six groups and both copied-context cases passing; the raw micro case and its actual execution return were not independently decoded.",
+    "judgment": "No specific all-five rerun is justified solely by the reviewed pure scoped memo/read-only accessor changes. However this does not establish full T2 acceptance: the mixed legacy defect requires focused post-repair validation, and remaining source/evidence review gaps must be closed under an authorized plan.",
+    "original_SIGSEGV": "Earlier R311 writer_memory child -11 remains unresolved. Neither repeated-decode mechanism, bounded R313 CPU observation, nor current writer success proves the old SIGSEGV cause."
+  },
+  "actual_evidence": {
+    "seven_JUnit_documents_read_in_full": true,
+    "each_JUnit": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "actual_tool_return_files_hash_checked": 7,
+    "actual_tool_return_semantic_payload_reviewed": false,
+    "resource_counts_as_reported": {
+      "polls_attempted": 15,
+      "polls_entered": 15,
+      "polls_returned": 15,
+      "allocation_attempts": 5708,
+      "initialized": 5693,
+      "cleanup_observed": 5708,
+      "constructed_workers": 30,
+      "never_polled_workers": 15,
+      "database_pairs": 30
+    },
+    "resource_denominator_independently_cleared": false,
+    "no_synthetic_single_GREEN7": true,
+    "no_new_runtime_executed": true
+  },
+  "coverage": {
+    "attempt_budget": 12,
+    "attempts_used": 12,
+    "successful_payload_batches": 9,
+    "pre_output_refusals": [
+      7,
+      9,
+      11
+    ],
+    "displayed_source_line_total_including_recovery_and_declarations": 3798,
+    "complete_frozen_source_hash_inventory": 32,
+    "current_live_files_independently_hashed": false,
+    "current_equivalence_basis": "Pinned release metadata and ROOT freeze statement; independently hashed the 32 frozen files.",
+    "complete_diff_lines": 2884,
+    "diffs": [
+      {
+        "product_path": "src/cloud_edge_robot_arm/vision/operational_windows.py",
+        "diff_lines": 221,
+        "coverage": [
+          [
+            1,
+            221
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/vision/worker_owner.py",
+        "diff_lines": 53,
+        "coverage": [
+          [
+            1,
+            53
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/vision/worker_runtime.py",
+        "diff_lines": 968,
+        "coverage": [
+          [
+            1,
+            968
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/vision/owner_registration.py",
+        "diff_lines": 0,
+        "coverage": [],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+        "diff_lines": 93,
+        "coverage": [
+          [
+            1,
+            93
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_supervision.py",
+        "diff_lines": 0,
+        "coverage": [],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py",
+        "diff_lines": 24,
+        "coverage": [
+          [
+            1,
+            24
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py",
+        "diff_lines": 0,
+        "coverage": [],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+        "diff_lines": 187,
+        "coverage": [
+          [
+            1,
+            187
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+        "diff_lines": 315,
+        "coverage": [
+          [
+            1,
+            315
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+        "diff_lines": 396,
+        "coverage": [
+          [
+            1,
+            396
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+        "diff_lines": 0,
+        "coverage": [],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+        "diff_lines": 81,
+        "coverage": [
+          [
+            1,
+            81
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+        "diff_lines": 43,
+        "coverage": [
+          [
+            1,
+            43
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+        "diff_lines": 124,
+        "coverage": [
+          [
+            1,
+            124
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+        "diff_lines": 17,
+        "coverage": [
+          [
+            1,
+            17
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+        "diff_lines": 18,
+        "coverage": [
+          [
+            1,
+            18
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/edge/recovery/lifecycle.py",
+        "diff_lines": 36,
+        "coverage": [
+          [
+            1,
+            36
+          ]
+        ],
+        "fully_read": true
+      },
+      {
+        "product_path": "src/cloud_edge_robot_arm/vision/local_temporal.py",
+        "diff_lines": 308,
+        "coverage": [
+          [
+            1,
+            308
+          ]
+        ],
+        "fully_read": true
+      }
+    ],
+    "full_source_files": [
+      "tests/test_local_temporal_decode_memo.py:1–329"
+    ],
+    "source_ranges": [
+      {
+        "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+        "ranges": [
+          [
+            170,
+            245
+          ]
+        ]
+      },
+      {
+        "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+        "ranges": [
+          [
+            1780,
+            1805
+          ]
+        ]
+      },
+      {
+        "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+        "ranges": [
+          [
+            2355,
+            2392
+          ]
+        ]
+      },
+      {
+        "path": "tests/test_operational_runtime_closure.py",
+        "ranges": [
+          [
+            3517,
+            3576
+          ],
+          [
+            3833,
+            3876
+          ],
+          [
+            4914,
+            5055
+          ]
+        ],
+        "declaration_locators_only": [
+          45,
+          183,
+          233,
+          310,
+          351,
+          414,
+          482,
+          524,
+          563,
+          759,
+          914,
+          1017,
+          1152,
+          1179,
+          1234,
+          1315,
+          1384,
+          1577,
+          2617,
+          2679,
+          2708,
+          2743,
+          3124,
+          3171,
+          3189,
+          3203,
+          3273,
+          3287,
+          3314,
+          3336,
+          3366,
+          3375,
+          3388,
+          3438,
+          4350,
+          4435,
+          4591,
+          4914
+        ]
+      }
+    ],
+    "batches": [
+      {
+        "batch": 1,
+        "source_lines": 160,
+        "display_utf8_bytes": 24215,
+        "display_lines": 411,
+        "status": "read",
+        "coverage": "Both skill files in full; finite release, source manifest, coverage and R315 plan fields."
+      },
+      {
+        "batch": 2,
+        "source_lines": 449,
+        "display_utf8_bytes": 38910,
+        "display_lines": 510,
+        "status": "read_with_outer_display_recovery",
+        "coverage": "32 frozen source SHA/size pins; 19 diff inventory; R315 implementation/micro/root-cause fields; global diff lines 1–449.",
+        "note": "functions outer return truncated 9 tokens at D00:139; raw exec return remained complete; exact missing line displayed in batch 3."
+      },
+      {
+        "batch": 3,
+        "source_lines": 477,
+        "display_utf8_bytes": 38945,
+        "display_lines": 481,
+        "status": "read",
+        "coverage": "Global diff lines 450–925 plus D00:139 recovery."
+      },
+      {
+        "batch": 4,
+        "source_lines": 541,
+        "display_utf8_bytes": 38950,
+        "display_lines": 547,
+        "status": "read",
+        "coverage": "Global diff lines 926–1466."
+      },
+      {
+        "batch": 5,
+        "source_lines": 600,
+        "display_utf8_bytes": 38897,
+        "display_lines": 605,
+        "status": "read",
+        "coverage": "Global diff lines 1467–2066."
+      },
+      {
+        "batch": 6,
+        "source_lines": 559,
+        "display_utf8_bytes": 38966,
+        "display_lines": 569,
+        "status": "read",
+        "coverage": "Global diff lines 2067–2625."
+      },
+      {
+        "batch": 7,
+        "source_lines": 0,
+        "display_utf8_bytes": 0,
+        "status": "pre_output_bound_refusal",
+        "planned_source_lines": 588,
+        "planned_display_utf8_bytes": 42396,
+        "coverage": "No source/evidence payload displayed; traceback only. Attempt counted."
+      },
+      {
+        "batch": 8,
+        "source_lines": 588,
+        "display_utf8_bytes": 39129,
+        "display_lines": 592,
+        "status": "read",
+        "coverage": "Global diff lines 2626–2884; tests/test_local_temporal_decode_memo.py:1–329."
+      },
+      {
+        "batch": 9,
+        "source_lines": 0,
+        "display_utf8_bytes": 0,
+        "status": "pre_output_bound_refusal",
+        "planned_source_lines": 38,
+        "planned_display_utf8_bytes": 40344,
+        "coverage": "No source/evidence payload displayed; traceback only. Attempt counted."
+      },
+      {
+        "batch": 10,
+        "source_lines": 38,
+        "display_utf8_bytes": 31492,
+        "display_lines": 99,
+        "status": "read",
+        "coverage": "Finite seven-run coverage/generation/resource fields; all seven full JUnit documents; actual-tool-return hashes; ROOT status fields; complete current micro acceptance JSON; 38 test declaration locators.",
+        "note": "Selected top-level fields in actual-tool-return documents were absent (FINITE {}): their semantic payload was not inspected. Do not count them as decoded execution receipts."
+      },
+      {
+        "batch": 11,
+        "source_lines": 0,
+        "display_utf8_bytes": 0,
+        "status": "pre_output_bound_refusal",
+        "planned_source_lines": 452,
+        "planned_display_utf8_bytes": 41232,
+        "coverage": "Final coverage-list serialization exceeded cap before print. No source/evidence payload displayed; traceback only. Attempt counted."
+      },
+      {
+        "batch": 12,
+        "source_lines": 386,
+        "display_utf8_bytes": 38983,
+        "display_lines": 400,
+        "status": "read",
+        "coverage": "R158 dual_database_protocol, public_publication, tasks[1], four matched legacy migration dispositions; protocol.py:170–245; memory.py:1780–1805; sqlite.py:2355–2392; test_operational_runtime_closure.py:4914–5055,3517–3576,3833–3876.",
+        "note": "Requested later observer cleanup and current coordinator ranges were omitted by the precomputed cap; omitted ranges were not reviewed."
+      }
+    ],
+    "receipts": "batch-01-receipt.json through batch-12-receipt.json contain exact exec_command invocation arguments and raw returns. Receipt writes and this report creation are not additional source/evidence reads.",
+    "no_silent_quota_reset": true,
+    "outer_truncation_fully_recovered": true
+  },
+  "remaining_quality_gaps": [
+    "tests/test_operational_runtime_closure.py _b_t2_observe:3577–3832 and 3877–3952: connection/constructor partial-init handling, poll/thread/session/clock observation details, final cleanup and profile restoration.",
+    "_b_t2_attempt:3479–3516; _b_t2_exercise:4081–4142; _b_t2_wait_for_event_lock:4143–4233; _b_t2_detached_read:4303–4349.",
+    "The full wait test:4350–4434, dual seam test:4435–4590, and budget test:4591–4662 were not read beyond their declaration locators. Their JUnit passes alone cannot validate every asserted scenario.",
+    "Writer source builders _b_t2_adopt_writer_task:4698–4741, _b_t2_writer_inputs:4742–4873, and authorization helper:4874–4913 were not read. Full writer entry inventory and denial/cancellation assertions were read.",
+    "tests/test_t2_observer_lifecycle.py was hash-pinned only; its 195 lines were not read.",
+    "Unchanged complete private lease ingress/view/operational-transaction and original app CPU provenance implementations were not read beyond changed diff context.",
+    "Detailed per-case accepted seam/resource reports and actual-tool-return nested execution payloads were not semantically read; giant raw cases were deliberately not dumped.",
+    "Later event BEGIN IMMEDIATE occurs after an authority check in the coordinator, but R158 allows narrowly bound nonauthorizing completion-marker transactions. Without the remaining seam/consumer review this is an unresolved review question, not a second proven defect."
+  ],
+  "runtime_recommendation": {
+    "run_now": false,
+    "reason": "The statically proven legacy defect first requires an actual Astra plan. This reviewer has exhausted the original read budget and may neither repair nor launch more validation.",
+    "focused_after_plan": "Validate mixed local/legacy outbox coexistence on both event backends, local denial/private claiming, and candidate binding under actual storage synchronization.",
+    "blanket_historical_rerun_required_by_memo_alone": false,
+    "remaining_review": "Close listed quality evidence gaps in an explicitly authorized continuation; do not relabel this seat Approved."
+  },
+  "boundaries": {
+    "T2_accepted": false,
+    "T3_or_P6C_promoted": false,
+    "whole_P6B_accepted": false,
+    "native_run": false,
+    "physical_or_physics_qualification": false,
+    "formal_research_acceptance": false,
+    "full_remote_reproducibility_claim": false
+  },
+  "handoff": "ROOT should commission actual gpt-6-astra planning for T2-FR-01 before any repair. Preserve every original failure and all review receipts. No source changes were made by this reviewer."
+}
+

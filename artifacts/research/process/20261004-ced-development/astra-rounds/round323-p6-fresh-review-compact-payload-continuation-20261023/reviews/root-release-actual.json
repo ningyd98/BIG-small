@@ -1,0 +1,16 @@
+{
+  "invocation": {
+    "tool": "exec_command",
+    "arguments": {
+      "cmd": "/usr/bin/python3 - <<'PY'\nimport json,hashlib,os\nfrom pathlib import Path\nB=Path('artifacts/research/process/20261004-ced-development/astra-rounds').resolve();D=B/'round323-p6-fresh-review-compact-payload-continuation-20261023'\ndef pin(p):\n p=Path(p).resolve();b=p.read_bytes();return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\ndef check(q):\n p=pin(q['path']);assert all(p[k]==q[k] for k in ('bytes','sha256')),q['path'];return p\nplan=json.loads((D/'plan.json').read_bytes());assert pin(D/'plan.json')['sha256']=='4bfe2315813763d6e24d60991e24478c807ae7ab75bb0036f8efd65b6d7f8df9';checked=[check(q) for q in plan['inputs']]\nreceipt=json.loads(Path(plan['literal_transform']['template_receipt_path']).read_bytes());args=receipt['invocation']['args'].copy();cmd=args['cmd']\nfor x in plan['literal_transform']['replacements']:\n assert cmd.count(x['before'])==x['expected_count'];cmd=cmd.replace(x['before'],x['after'])\nargs['cmd']=cmd\nout=D/'reviews/root-release.json';out.parent.mkdir(parents=True,exist_ok=True);assert not out.exists();assert not Path(plan['output']).exists()\nrecord={'round':'R323','reviewer':'ROOT','plan':pin(D/'plan.json'),'failure':plan['failure_receipt'],'inputs_checked':checked,'actual_fresh_seat':'/root/fresh_t2_review','budget':plan['budget'],'literal_reader_command_sha256':hashlib.sha256(cmd.encode()).hexdigest(),'exact_replacements':7,'reader_executed_by_ROOT':False,'R322_current_report':pin(B/'round322-p6-fresh-review-output-bound-continuation-20261023/reviews/report.json'),'R322_batch2_completed':True,'R322_slots_SPENT':2,'R319_four_reads_released':False,'whole_T2_accepted':False}\nwith out.open('xb') as f:f.write((json.dumps(record,ensure_ascii=False,indent=2)+'\\n').encode());f.flush();os.fsync(f.fileno())\nprint(json.dumps({'release':pin(out),'checked_inputs':len(checked),'new_reader_attempts':1,'command_sha256':record['literal_reader_command_sha256'],'executed':False},ensure_ascii=False))\nPY",
+      "max_output_tokens": 1500
+    }
+  },
+  "actual_return": {
+    "chunk_id": "aa02bc",
+    "wall_time_seconds": 0.00001209,
+    "exit_code": 0,
+    "original_token_count": 116,
+    "output": "{\"release\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round323-p6-fresh-review-compact-payload-continuation-20261023/reviews/root-release.json\", \"bytes\": 6479, \"sha256\": \"7a4efa1478c52b1e2c8daa036e866260cac1f8e79f7e4e0c2cc3c57baf43a1cb\"}, \"checked_inputs\": 14, \"new_reader_attempts\": 1, \"command_sha256\": \"a4ffd4bfdbdccb9cfb6651810f522616f660e186fe232d0f0dc446be3f18cdba\", \"executed\": false}\n"
+  }
+}

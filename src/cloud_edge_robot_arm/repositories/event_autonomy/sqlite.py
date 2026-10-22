@@ -2363,7 +2363,6 @@ class SQLiteEventAutonomyRepository:
         now = _iso_now()
         with self._write_lock, self._conn:
             self._conn.execute("BEGIN IMMEDIATE")
-            _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (), {})
             row = self._conn.execute(
                 """SELECT message_id, payload_json FROM event_outbox
                    WHERE status IN ('PENDING', 'RETRY_WAIT')
@@ -2372,8 +2371,10 @@ class SQLiteEventAutonomyRepository:
                 (now,),
             ).fetchone()
             if row is None:
+                _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (), {})
                 return None
             msg = PendingMessage.model_validate_json(row["payload_json"])
+            _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (msg,), {})
             updated = msg.model_copy(update={"status": MessageStatus.SENDING}, deep=True)
             updated_payload = updated.model_dump_json()
             cursor = self._conn.execute(

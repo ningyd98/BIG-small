@@ -1,0 +1,16 @@
+{
+  "invocation": {
+    "tool": "exec_command",
+    "arguments": {
+      "cmd": "/usr/bin/python3 - <<'PY'\nimport json,hashlib\nfrom pathlib import Path\nB=Path('artifacts/research/process/20261004-ced-development/astra-rounds');D=B/'round324-p6-observer-root-acceptance-nested-return-20261023';R=B/'round319-p6-session-constructor-observer-bookkeeping-20261023';raw=(D/'plan.json').read_bytes();assert hashlib.sha256(raw).hexdigest()=='c73d4a2d13f7d7907b0498ec4fb646be0efd65f77076318d5451840f2795f3f8';plan=json.loads(raw)\nfor q in plan['inputs']:\n b=Path(q['path']).read_bytes();assert len(b)==q['bytes'] and hashlib.sha256(b).hexdigest()==q['sha256'],q['path']\nfor n in ['session_init_red-root-acceptance.json','session_init_red-root-settle.json','session_init_red-root-settle-before.json']:\n p=R/'reviews'/n;assert not p.exists() and not p.is_symlink()\np=R/'root-command-ledger.json.r319-settle';assert not p.exists() and not p.is_symlink()\nfor f,state in [('root-command-ledger.json','RESERVED'),('implementation/command-ledger.json','SPENT')]:\n row=json.loads((R/f).read_bytes())['commands']['session_init_red'];assert row['state']==state and row['used']==1 and row['remaining']==0\nprint(json.dumps({'inputs_checked':len(plan['inputs']),'metadata_outputs_absent':True,'RED_ROOT_reserved_AUTHOR_spent':True}))\nPY",
+      "max_output_tokens": 1200
+    }
+  },
+  "actual_return": {
+    "chunk_id": "95dbcc",
+    "wall_time_seconds": 0.00000865,
+    "exit_code": 0,
+    "original_token_count": 24,
+    "output": "{\"inputs_checked\": 16, \"metadata_outputs_absent\": true, \"RED_ROOT_reserved_AUTHOR_spent\": true}\n"
+  }
+}

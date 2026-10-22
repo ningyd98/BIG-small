@@ -1,0 +1,72 @@
+{
+  "round": "R318",
+  "actual_model": "gpt-6-astra",
+  "actual_author": "/root/proposal_edit_plan",
+  "status": "PLANNED_NOT_IMPLEMENTED",
+  "problem": "R317 calls the Memory repository lock RLock, but frozen memory.py constructs threading.Lock(). This is a planning terminology error found before implementation, not a runtime failure.",
+  "inputs": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/plan.json",
+      "bytes": 31785,
+      "sha256": "81c833ab00d5b27a7ee92140e9190b14f03bd27bd124650872d43f0a958bda46"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/plan.md",
+      "bytes": 4768,
+      "sha256": "b594e50b005884bdc25fece4d1e141758dfbd931d08a24080ea0bee1ad3176db"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "bytes": 90894,
+      "sha256": "caa6ecb39df1b35b310a8225ba96725384f1e836f0c8e6b595f048106434f1f0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "bytes": 28350,
+      "sha256": "52ad2afd5238916f25ed9dca5644ea96281da6cbf2069ba84bd51cb32e96c040"
+    }
+  ],
+  "evidence": {
+    "readonly_tool_chunk": "c022f9",
+    "exit_code": 0,
+    "memory_constructor": "memory.py:113 self._lock = threading.Lock()",
+    "dispatch": "protocol.py exits its with lock before return original(self, *args, **kwargs)",
+    "backend": "memory.py claim_outbox_message acquires that same actual non-reentrant lock",
+    "product_or_test_modified": false,
+    "runtime_dispatched": false,
+    "ROOT_gate_or_reservation_created": "not created, per ROOT task report"
+  },
+  "root_cause": "Planner misnamed the concrete lock while intending to preserve original synchronization; the original implementation always governs.",
+  "scope": [
+    "Interpret every R317 reference to Memory RLock as the repository original threading.Lock(). Do not edit frozen R317 plan.",
+    "Keep R317 candidate-under-original-lock repair and exact three-file product scope; do not change constructor, lock type, lock ownership, acquisition boundaries or public/private authority.",
+    "Test waited-binding behavior against the same genuine non-reentrant Lock. Any test observation delegates actual acquire/release/context-manager operations to that retained object without adding reentrancy, bypassing blocking or changing blocking/timeout arguments.",
+    "Do not use RLock-specific _is_owned or assume nested acquisition succeeds. While holder owns the lock, fixture preparation/snapshot reads use already-held raw storage access; do not recursively call repository methods that reacquire it. Claim runs in the separately bounded claimant thread and genuinely waits until holder releases.",
+    "Protocol outer dispatch releases before backend original acquires, as before; do not hold outer lock across original call or change product locking to accommodate a test."
+  ],
+  "continuation": [
+    "ROOT rechecks these exact source/plan pins and confirms no prior implementation/run.",
+    "Sol prepares R317 test/runner and exact product change using corrected lock interpretation; ROOT reviews against R317 plus this supplement.",
+    "Continue original R317 four once keys, original limits/RED-GREEN order and preservation rules. Record R318 reference in new applicability/source gate; do not create duplicate roles or alter spent/remaining counts."
+  ],
+  "budget": {
+    "new_runtime_slots": 0,
+    "new_tests_beyond_R317": 0,
+    "new_review_attempts": 0,
+    "R317_runtime_keys": [
+      "observer_red_memory",
+      "observer_red_sqlite",
+      "observer_green_memory",
+      "observer_green_sqlite"
+    ],
+    "R317_fresh_review_max_attempts": 16,
+    "original_fresh_12_spent_unchanged": true
+  },
+  "validation": [
+    "Static source/diff confirms original threading.Lock construction and acquisition boundaries unchanged.",
+    "Use only R317 already-authorized waited-binding and mixed-outbox RED/GREEN to establish actual behavior; no independent probe or extra run.",
+    "Preserve SQLite original BEGIN/lock requirements and all local snapshot/isolation/eligibility assertions unchanged."
+  ],
+  "acceptance_boundary": "This corrects a lock name and prevents an unintended synchronization change; it establishes no runtime pass or T2 approval. Independent unrelated review may continue within its existing authorization.",
+  "stop_boundary": "If actual non-reentrant behavior requires broader product changes or tests cannot follow existing bounded setup, stop affected work for Astra; do not substitute RLock or reset budgets."
+}

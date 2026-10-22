@@ -1,0 +1,25 @@
+{
+  "round": "R314",
+  "preconditions": {
+    "invocation": {
+      "cmd": "/usr/bin/python3 - <<'PY'\nfrom pathlib import Path\nimport json,hashlib\nbase=Path('artifacts/research/process/20261004-ced-development/astra-rounds');d=base/'round314-p6-writer-diagnostic-generator-selector-continuation-20261023';plan=json.loads((d/'plan.json').read_bytes());assert hashlib.sha256((d/'plan.json').read_bytes()).hexdigest()=='c0dabdf751896df9095e27f3e38571b6beeee7eab0296cf77155dd96374a1ebd'\nfor row in plan['inputs']:\n b=Path(row['path']).read_bytes();assert len(b)==row['bytes'] and hashlib.sha256(b).hexdigest()==row['sha256'],row['path']\nr=base/'round313-p6-t2-writer-crash-diagnosis-20261023';assert not(r/'implementation/run-evidence.py').exists() and not(r/'implementation/writer_memory_diagnostic').exists();print(json.dumps({'checked':len(plan['inputs']),'runner_absent':True,'diagnostic_absent':True}))\nPY",
+      "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "yield_time_ms": 1000,
+      "max_output_tokens": 1000
+    },
+    "actual_tool_return": {
+      "chunk_id": "0bc8aa",
+      "wall_time_seconds": 0.00001297,
+      "exit_code": 0,
+      "original_token_count": 17,
+      "output": "{\"checked\": 9, \"runner_absent\": true, \"diagnostic_absent\": true}\n"
+    }
+  },
+  "corrected_functions_exec_source": "const got=await tools.exec_command({cmd:\"cat artifacts/research/process/20261004-ced-development/astra-rounds/round311-p6-stage-b-continuation-20261023/implementation/run-evidence.py\",\"workdir\":\"/home/ningyd/文档/ChatGPT/BIGsmall\",\"yield_time_ms\":1000,\"max_output_tokens\":10000});\nif(got.exit_code!==0)throw Error(\"template unavailable\");\nconst old=got.output;store(\"R313_template\",old);\nlet src=old;\nconst mappings=[];\nfunction once(a,b){if(src.split(a).length!==2)throw Error(\"selector count: \"+a);src=src.replace(a,b);mappings.push({before:a,after:b,count:1});}\nfunction all(a,b,n){if(src.split(a).length!==n+1)throw Error(\"selector count \"+a);src=src.split(a).join(b);mappings.push({before:a,after:b,count:n});}\nall(\"R311\",\"R313\",6);\nall(\"r311\",\"r313\",2);\nonce(\"20e6092993170d7ec5112a79712410d385b1196294e373e8d9468c19bf4a40f8\",\"b651e87fce6370fed2e501a188be34e76e4f2bf002da84d1f0d5062308c5bbc0\");\nonce('KEYS = (\"budget_memory\", \"budget_sqlite\", \"writer_memory\", \"writer_sqlite\")','KEYS = (\"writer_memory_diagnostic\",)');\nonce('\"exact four-key ledgers\"','\"exact one-key ledgers\"');\nonce('    require(gate[\"sources\"][\"runner\"] == pin(__file__), \"runner not bound\")','    require(gate[\"sources\"][\"runner\"] == pin(__file__), \"runner not bound\")\\n    require(gate[\"sources\"][\"sampler\"] == pin(D / \"implementation/r313_writer_stack.py\"), \"sampler not bound\")');\nonce('        if key == \"dual_behavior\":\\n            (out / \"passive\").mkdir()\\n        if key not in (\"observer_red\", \"observer_green\"):\\n            (out / \"resources\").mkdir()','        (out / \"resources\").mkdir()\\n        (out / \"sampler\").mkdir()');\nconst begin=src.indexOf('    try:\\n        streams = {name: pin(out / name)');\nconst end=src.indexOf('    result[\"ROOT_acceptance_required\"] = True',begin);\nif(begin<0||end<0)throw Error(\"capture selectors\");\nconst before=src.slice(begin,end),after=load(\"R313_capture_source\");\nsrc=src.slice(0,begin)+after+src.slice(end);mappings.push({before,after,count:1});\nstore(\"R313_runner\",src);store(\"R313_runner_mappings\",mappings);\nconst patch=\"*** Begin Patch\\n*** Add File: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round313-p6-t2-writer-crash-diagnosis-20261023/implementation/run-evidence.py\\n\"+src.trimEnd().split(\"\\n\").map(x=>\"+\"+x).join(\"\\n\")+\"\\n*** End Patch\";\nconst actual=await tools.apply_patch(patch);store(\"R313_runner_native\",{invocation:patch,actual_tool_return:actual});text({actual,source_chars:src.length,mapping_count:mappings.length});",
+  "only_change": {
+    "before": "all(\"R311\",\"R313\",7);",
+    "after": "all(\"R311\",\"R313\",6);",
+    "count": 1
+  },
+  "capture_source_exactly_equal": true
+}

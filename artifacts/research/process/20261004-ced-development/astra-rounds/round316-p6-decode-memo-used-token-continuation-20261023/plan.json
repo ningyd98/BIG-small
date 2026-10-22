@@ -1,0 +1,115 @@
+{
+  "round": "R316",
+  "actual_model": "gpt-6-astra",
+  "actual_author": "/root/proposal_edit_plan",
+  "status": "PLANNED_NOT_EXECUTED",
+  "problem": "Copied active decode Context can retain memo after parent closes; ownership probe catches ValueError only and can reject valid decode on already-used-token RuntimeError.",
+  "evidence_kind": "STATIC_SOURCE_FINDING_NOT_DYNAMIC_FAILURE",
+  "input_manifest": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round316-p6-decode-memo-used-token-continuation-20261023/input-observation.json",
+    "inputs": [
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/plan.json",
+        "bytes": 22679,
+        "sha256": "c71222fa4d71b4c8a51ed5a9bffb9d197edfef7a83e11444b1f7e75166ff50a3"
+      },
+      {
+        "path": "src/cloud_edge_robot_arm/vision/local_temporal.py",
+        "bytes": 121282,
+        "sha256": "06e0c6cd5638f75a439f6403b88f4c70ed55229b2b451d40a74e5b05f1adc78b"
+      },
+      {
+        "path": "tests/test_local_temporal_decode_memo.py",
+        "bytes": 14523,
+        "sha256": "e7333fe9e56f5883da01392033881002c5fdae81dca1695040479ef31b86b35f"
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/product-source.diff",
+        "bytes": 7206,
+        "sha256": "c0119e0910a24d7e69cfc1f95db9507a0db826a63f00a334bc3865e8de792506"
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/product-generation-map.json",
+        "bytes": 18045,
+        "sha256": "9b9a8e51bfd09db8cdb0fa196101dd7d2485387289793574c684170fe4adbe7a"
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/root-command-ledger.json",
+        "bytes": 2388,
+        "sha256": "5da3d82ebe0a3a03b141148a80b8a6b0b0d084322929910817035f9c8dfd1697"
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/command-ledger.json",
+        "bytes": 1258,
+        "sha256": "dae25f073f5585ae4f41609afcc8093f4a95324172bece51e60a29ef54cd5c5a"
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/reviews/observer_red-root-acceptance.json",
+        "bytes": 2382,
+        "sha256": "f3f5201a1443612b27e23698f3f80626a8187d08f06e79c30ee1db2f502dfc5a"
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/reviews/observer_red-settlement.json",
+        "bytes": 2878,
+        "sha256": "5152b8bcef1438cb5e68a77b88598373607747032a956846c334cbc2b54a7c39"
+      }
+    ],
+    "bytes": 4722,
+    "sha256": "cce3c326e4b0c8c71128eb1128d69479fefb70652ae1f2523d629ad4eb33969a"
+  },
+  "root_cause": {
+    "source_url": "https://raw.githubusercontent.com/python/cpython/v3.12.0/Python/context.c",
+    "version": "CPython v3.12.0",
+    "lines": "81-98, 274-305, 369-379",
+    "read_method": "official source via web read; no executable downloaded or probe run",
+    "finding": "Context copies preserve variable-value references. Reset checks token used first and raises RuntimeError before checking Context mismatch (ValueError). This confirms the static used-token branch, not a recorded product failure."
+  },
+  "scope": {
+    "product_file": "src/cloud_edge_robot_arm/vision/local_temporal.py",
+    "function": "_decode_memo_owned_here",
+    "exact_replacement": {
+      "before": "    except ValueError:\n",
+      "after": "    except (ValueError, RuntimeError):\n",
+      "count_in_function": 1
+    },
+    "meaning": "Only reset ownership probe treats used-token RuntimeError as inactive/foreign memo and returns False, allowing existing outermost fresh-scope branch. Do not broaden any other catch or suppress final cleanup failures.",
+    "test_file": "tests/test_local_temporal_decode_memo.py",
+    "test_node": "tests/test_local_temporal_decode_memo.py::test_scoped_decode_memo_contract",
+    "test_addition": [
+      "Copy contextvars.copy_context() while real parent decode memo is active, after successful nested decoding. Complete parent successfully; then decode same known-valid payload in retained copied Context.",
+      "Repeat with copied active Context whose parent raises existing intentional BaseException after successful nested decoding. Catch only intentional test exception; then run valid decode in copied Context.",
+      "In each copied Context confirm stale memo existed before child run, a fresh product memo is created, real semantic validation occurs again, returned instance is fresh with exact canonical bytes/digest, and copied Context and parent cleanup end with product memo None. Parent successful entries cannot become child cache hits.",
+      "Retain all existing rejection, class/instance isolation and capacity checks. Record both cases and actual exceptions in existing micro case JSON.",
+      "If counting spy needs a fresh root, reset only its test-owned stack ContextVar inside the copied Context to (); never clear or substitute product _DECODE_MEMO before exercising the bug. Disable test action recursion using existing harness controls."
+    ],
+    "protected_test_prefix": {
+      "bytes": 5898,
+      "sha256": "eed5bbca47ed614be894da8b071ac9f4d998a250c024f4c8341ed9fbc3ef0185",
+      "extent": "file start through exact primary assert-not-duplicate line inclusive"
+    }
+  },
+  "preservation": [
+    "Archive G1 product and current test full bytes/modes plus existing generation map before edits; existing R315 original before/after/diff and RED evidence stay unchanged.",
+    "Generate new product/test generation mapping and diff in R316 metadata or new uniquely named R315 preparation outputs; do not overwrite old generation files.",
+    "R315 frozen plan unchanged; this supplement authorizes only the described correction and test extension."
+  ],
+  "prerequisites": [
+    "ROOT confirms exact inputs and both unconsumed R315 GREEN/writer slots. No new product run has occurred.",
+    "Actual Sol single writer performs changes; ROOT independently reviews exact one-line product change, additive tests and unchanged protected primary prefix.",
+    "Record any ROOT static finding receipt as additional evidence; do not relabel it actual test failure.",
+    "Prepare current new SHA source/argv gate using existing R315 process; preserve full-before role/gate artifacts and CAS only necessary pointers, without resetting RED SPENT or changing unused counts."
+  ],
+  "validation_order": [
+    "Source-only verify exact product replacement, primary prefix hash unchanged and test additions confined to described contexts.",
+    "Continue original R315 observer_green once with extended same node, original 120s child/240s outer/retry0. No additional RED or separate stdlib probe.",
+    "If GREEN independently accepted, continue original R315 writer_memory once with original 600s/900s bounds. Then R315 original source-generation mapping to R311 SQLite HELD, unchanged literal and budget."
+  ],
+  "budget": {
+    "new_slots": 0,
+    "additional_RED": 0,
+    "stdlib_probe": 0,
+    "reuse_only": "R315 observer_green and writer_memory remain HELD 0/1; R311 writer_sqlite stays its original HELD 0/1 until approved continuation; all spent unchanged."
+  },
+  "acceptance_boundary": "This is a static defect correction; it is not claimed reproduced before repair. GREEN must actually pass the full original contract plus new copied-context post-parent cases. Writer/T2 acceptance boundaries remain R315. No change to memo caps/keys, validators, TTL, observer, permissions, or wider runtime design.",
+  "stop_boundary": "Any mismatch, new failure, or need for broader ownership/cache changes stops affected work for Astra. Do not consume extra slots or rerun SPENT keys."
+}

@@ -1,0 +1,18 @@
+{
+  "batch": 9,
+  "invocation": {
+    "tool": "exec_command",
+    "args": {
+      "cmd": "python3 - <<'PY'\nimport json,hashlib,pathlib,re\nbase=pathlib.Path(\"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023\");p=base/'t2-exit-coverage.json';b=p.read_bytes();d=json.loads(b)\nout=['BATCH 9 finite evidence metadata','FILE '+str(p)+' sha256='+hashlib.sha256(b).hexdigest()+' bytes='+str(len(b))]\nfields=['node','command_id','run_round','result','actual_tool_return','invocation','junit','recorded_HEAD','codec_generation','current_source_deltas','missing_current_catalog_paths_in_run_gate','resource_counts','database_pairs','elapsed_seconds','behavior_accepted_on_recorded_generation']\nfor run in d['runs']:\n out.append('RUN '+json.dumps({k:run[k] for k in fields},ensure_ascii=False))\n for key in ['actual_tool_return','junit','ROOT_acceptance']:\n  pin=run[key];q=pathlib.Path(pin['path']);raw=q.read_bytes();assert hashlib.sha256(raw).hexdigest()==pin['sha256'] and len(raw)==pin['bytes'];out.append('PINNED '+key+' '+str(q)+' sha256='+pin['sha256']+' bytes='+str(len(raw)))\n  if key=='junit':out.append(raw.decode().strip())\n  else:\n   obj=json.loads(raw)\n   if key=='actual_tool_return':\n    view={k:obj[k] for k in ['exit_code','session_id','wall_time_seconds','output','result','status','child_exit_code','pytest_exit'] if k in obj}\n    if len(json.dumps(view,ensure_ascii=False).encode())>3000:view={'top_keys':list(obj)}\n   else:view={k:obj[k] for k in ['status','accepted','command_id','software_test_accepted','behavior_accepted','checks','reasons','source_review','formal_accepted'] if k in obj}\n   out.append('FINITE '+json.dumps(view,ensure_ascii=False))\nfor key in ['sum_resource_counts','total_database_pairs','historical_source_generation_boundary','current_codec_micro_acceptance','old_failure_SIGSEGV_cause_unresolved','native_physical_run','formal_accepted','whole_T2_accepted']:out.append(key+' '+json.dumps(d[key],ensure_ascii=False))\npin=d['current_codec_micro_acceptance'];q=pathlib.Path(pin['path']);raw=q.read_bytes();assert hashlib.sha256(raw).hexdigest()==pin['sha256'];obj=json.loads(raw);out.append('MICRO_ACCEPTANCE '+json.dumps(obj,ensure_ascii=False))\nm=json.loads((base/'reviews/T2/source-manifest.json').read_text());s=m['sources'][23];raw=pathlib.Path(s['frozen']['path']).read_bytes();ls=raw.decode().splitlines();selected=[(i,l) for i,l in enumerate(ls,1) if re.match(r'(?:class |def test_|def _t2|class _T2)',l)];out.append('TEST LOCATORS '+s['frozen']['path']+' sha256='+hashlib.sha256(raw).hexdigest())\nfor i,l in selected:out.append(f'S23:{i}: {l}')\ntext='\\n'.join(out)+'\\n';n=len(selected);assert n<=600 and len(text.encode())<=40000,(n,len(text.encode()))\nprint(f'PRECOMPUTED source_lines={n} display_lines={len(text.splitlines())} display_utf8_bytes={len(text.encode())}');print(text,end='')\nPY",
+      "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "max_output_tokens": 15500
+    }
+  },
+  "return": {
+    "chunk_id": "6f06d0",
+    "wall_time_seconds": 0.00000858,
+    "exit_code": 1,
+    "original_token_count": 26,
+    "output": "Traceback (most recent call last):\n  File \"<stdin>\", line 21, in <module>\nAssertionError: (38, 40344)\n"
+  }
+}

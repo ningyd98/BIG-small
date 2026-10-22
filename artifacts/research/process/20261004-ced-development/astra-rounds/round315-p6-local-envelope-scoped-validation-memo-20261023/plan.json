@@ -1,0 +1,286 @@
+{
+  "round": "R315",
+  "actual_model": "gpt-6-astra",
+  "actual_author": "/root/proposal_edit_plan",
+  "status": "PLANNED_NOT_IMPLEMENTED",
+  "HEAD": "942d82343e97e53dbbd8b96309a393ca6836a496",
+  "branch": "research/20261004-continuation",
+  "problem": "Writer adoption spends the bounded diagnostic in repeated strict local-envelope decoding; original memory behavior remains failed/unaccepted.",
+  "input_manifest": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/input-observation.json",
+    "inputs_count": 26,
+    "bytes": 8147,
+    "sha256": "bbaaf645eac25b3a7eec117da31dd883fd2d6ef1f15b85c06b9b6a46869a5ff1"
+  },
+  "evidence": {
+    "samples": 89,
+    "wall_sample_span_seconds": 177.902000666,
+    "process_cpu_delta_seconds": 178.39963458,
+    "sampler_cpu_delta_seconds": 0.040860742,
+    "closest_test": {
+      "none": 2,
+      "_b_t2_observe.<locals>.poll_once:3683": 6,
+      "_b_t2_adopt_writer_task:4715": 2,
+      "_b_t2_adopt_writer_task:4731": 1,
+      "_b_t2_adopt_writer_task:4733": 67,
+      "_b_t2_adopt_writer_task:4737": 11
+    },
+    "parent_exit": 0,
+    "child_exit": -15,
+    "diagnostic_budget_stop": true,
+    "behavior_pass": false
+  },
+  "root_cause": {
+    "confirmed_source_mechanism": [
+      "LocalEnvelope.from_payload -> _semantic -> _history -> semantic_projection -> LocalEnvelope.from_payload",
+      "_staged_original_body -> LocalEnvelope.from_payload of full bootstrap_record",
+      "LocalEnvelope.from_payload calls _validate_nested_local after _semantic, revisiting descendants already decoded by semantic/history checks"
+    ],
+    "hypothesis_to_verify": "Repeated successful validation of byte-equivalent nested envelopes amplifies work during history replay/adoption; per-root content memo should eliminate that repeated validation without reducing checks.",
+    "not_established": [
+      "No claim that repeated validation caused the earlier SIGSEGV.",
+      "Sampling does not measure exact call counts or isolate the fixture profile overhead.",
+      "CPU delta is process-wide, not attribution to a single function."
+    ]
+  },
+  "scope": {
+    "product": [
+      "src/cloud_edge_robot_arm/vision/local_temporal.py: LocalEnvelope.from_payload and private scoped memo support only"
+    ],
+    "test": [
+      "tests/test_local_temporal_decode_memo.py::test_scoped_decode_memo_contract (new)"
+    ],
+    "unchanged": [
+      "all _semantic/_history/_staged_original_body/_validate_nested_local validation predicates and projection recipes",
+      "worker_runtime, visual_owner R312 accessors, original T2 fixture/profile, source budgets, lease TTL, waits, permissions and schemas",
+      "R313 sampler and all previous failures/results/plans"
+    ]
+  },
+  "implementation_contract": [
+    "Wrap only a synchronous outermost LocalEnvelope.from_payload call in a private context-local memo, reused by recursive calls and always reset in finally on success or BaseException. No public trusted/skip-validation parameter, no global persistent cache, no task/lease/runtime authority caching.",
+    "First perform existing strict _object(payload, OUTER_FIELDS) snapshot/copy; derive key from exact class identity plus full canonical JSON text of that copied envelope, including diagnostics, original_time, decision and transaction. No object-id-only, digest-only, semantic-projection-only or schema-only key.",
+    "Only publish an entry after every original validation and descendant check succeeds. Do not cache errors or in-progress entries; an incomplete entry is never a successful hit.",
+    "A hit constructs a fresh instance of the requested class using the same immutable _json string; do not return a previously exposed object or mutable payload. Preserve canonical bytes/digest and detached copies from all accessors.",
+    "Fixed production bound: at most 128 entries and 8 MiB total UTF-8 canonical key/result content accounting (count any separately retained text); once an entry would exceed a bound, validate normally without inserting it. No rejection, widening bounds, eviction-dependent safety, external writes or acceptance shortcut. Canonicalization still costs O(input bytes) per lookup and is not claimed eliminated.",
+    "Memo is private per top-level synchronous call, isolated across threads/contexts, not inherited as reusable success across top-level calls. Class is part of key. Retain full checks even for equal semantic projection with different diagnostics/evidence.",
+    "ROOT review must confirm semantic validators remain unchanged and cached values carry no live authority. Any need to change replay logic, input schema, observer, timing, other product modules or error policy is new scope requiring Astra."
+  ],
+  "micro_contract": {
+    "seed": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round196-p6-t1-local-promotion-original-task-bindings-20261014/implementation/green63/cases/6d92899340e539991792be9037c073ce65513cc029918750cae4831bd0ef02f4.json",
+      "selection": "changed_payload (accepted full local promotion history); baseline_payload may also be used",
+      "source_is_frozen": true
+    },
+    "test_design": [
+      "Use real pinned golden envelopes and real decoder; no calls to old test functions or live runtime fixtures. Count full semantic validations with a delegating spy that always invokes the original validator; record distinct full canonical envelope/class keys. The bounded seed must fit memo caps.",
+      "First assertion demonstrates actual duplicate successful validations on old source and requires no more than one full validation for each identical class/full-content envelope within one top-level decode. This deterministic assertion is the only expected RED, not a wall-time threshold or missing helper error.",
+      "GREEN proves exact input/serialized canonical bytes/digest plus independent frozen projection equivalence; original budgets, original_time, decision and transaction remain exact, registries unchanged/no authority created.",
+      "Check fresh instance identity and mutation isolation of returned payload copies; two distinct subclasses retain their requested type and separate cache keys; repeated top-level successful calls perform validation again.",
+      "Check real invalid nested decision/transaction, original reference, diagnostic shape and exhausted-budget variants still reject; full-content variations cannot reuse an earlier success. Use bounded spy-driven nested decode calls if needed to exercise same-scope valid-then-mutated input; never bypass original validators.",
+      "Check ordinary success and exception clear context; subsequent valid decode works and no prior success is reused. Check two isolated contexts/threads with bounded joins and exact cleanup if threads are used.",
+      "Test entry/byte-cap fallback using private test monkeypatch of memo bounds to zero/small values; valid results stay exact, invalid values still reject, and overflow takes real full validation. Production caps stay fixed.",
+      "Save one finite case JSON containing source/seed hashes, raw output/digest, validation counters, invariants and actual exceptions; no profile sampling or polling added."
+    ]
+  },
+  "commands": {
+    "observer_red": {
+      "budget_identity": "R315.observer_red",
+      "authorized": 1,
+      "used": 0,
+      "remaining": 1,
+      "state": "HELD_PENDING_ROOT_SOURCE_ARGV_ACCEPTANCE",
+      "node": "tests/test_local_temporal_decode_memo.py::test_scoped_decode_memo_contract",
+      "child_argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r235_startup_prerequisite",
+        "--tb=long",
+        "--maxfail=1",
+        "--show-capture=all",
+        "-o",
+        "faulthandler_timeout=540",
+        "tests/test_local_temporal_decode_memo.py::test_scoped_decode_memo_contract",
+        "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/observer_red/persistent-basetemp",
+        "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/observer_red/junit.xml"
+      ],
+      "child_env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "BIGSMALL_R158_COMMAND": "observer_red",
+        "BIGSMALL_R158_T2_RESOURCE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/observer_red/resources",
+        "BIGSMALL_R235_PREREQUISITE_RECORD": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/observer_red/prerequisite.json"
+      },
+      "env_inheritance": false,
+      "tool_arguments": {
+        "cmd": "env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=15s 240s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/run-evidence.py' observer_red",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "yield_time_ms": 1000,
+        "max_output_tokens": 1800
+      },
+      "limits": {
+        "child_seconds": 120,
+        "outer_seconds": 240,
+        "cleanup_seconds": 15,
+        "TERM_grace_seconds": 5,
+        "retry": 0,
+        "raw_stream_threshold_bytes_each": 33554432,
+        "console_utf8_max": 6000
+      },
+      "output": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/observer_red",
+      "expected_exit": 1,
+      "expected_case_files": 1,
+      "expected_poll_lifecycles": 0,
+      "acceptance": "RED: exactly the deterministic repeated-successful-validation assertion fails on original source; all setup/codec decoding succeeds. GREEN: entire one-node contract passes, with complete micro evidence.",
+      "unit_only": true
+    },
+    "observer_green": {
+      "budget_identity": "R315.observer_green",
+      "authorized": 1,
+      "used": 0,
+      "remaining": 1,
+      "state": "HELD_PENDING_ROOT_SOURCE_ARGV_ACCEPTANCE",
+      "node": "tests/test_local_temporal_decode_memo.py::test_scoped_decode_memo_contract",
+      "child_argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r235_startup_prerequisite",
+        "--tb=long",
+        "--maxfail=1",
+        "--show-capture=all",
+        "-o",
+        "faulthandler_timeout=540",
+        "tests/test_local_temporal_decode_memo.py::test_scoped_decode_memo_contract",
+        "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/observer_green/persistent-basetemp",
+        "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/observer_green/junit.xml"
+      ],
+      "child_env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "BIGSMALL_R158_COMMAND": "observer_green",
+        "BIGSMALL_R158_T2_RESOURCE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/observer_green/resources",
+        "BIGSMALL_R235_PREREQUISITE_RECORD": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/observer_green/prerequisite.json"
+      },
+      "env_inheritance": false,
+      "tool_arguments": {
+        "cmd": "env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=15s 240s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/run-evidence.py' observer_green",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "yield_time_ms": 1000,
+        "max_output_tokens": 1800
+      },
+      "limits": {
+        "child_seconds": 120,
+        "outer_seconds": 240,
+        "cleanup_seconds": 15,
+        "TERM_grace_seconds": 5,
+        "retry": 0,
+        "raw_stream_threshold_bytes_each": 33554432,
+        "console_utf8_max": 6000
+      },
+      "output": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/observer_green",
+      "expected_exit": 0,
+      "expected_case_files": 1,
+      "expected_poll_lifecycles": 0,
+      "acceptance": "RED: exactly the deterministic repeated-successful-validation assertion fails on original source; all setup/codec decoding succeeds. GREEN: entire one-node contract passes, with complete micro evidence.",
+      "unit_only": true
+    },
+    "writer_memory": {
+      "budget_identity": "R315.writer_memory",
+      "authorized": 1,
+      "used": 0,
+      "remaining": 1,
+      "state": "HELD_PENDING_ROOT_SOURCE_ARGV_ACCEPTANCE",
+      "node": "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope[memory]",
+      "child_argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r235_startup_prerequisite",
+        "--tb=long",
+        "--maxfail=1",
+        "--show-capture=all",
+        "-o",
+        "faulthandler_timeout=540",
+        "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope[memory]",
+        "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/writer_memory/persistent-basetemp",
+        "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/writer_memory/junit.xml"
+      ],
+      "child_env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "BIGSMALL_R158_COMMAND": "writer_memory",
+        "BIGSMALL_R158_T2_RESOURCE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/writer_memory/resources",
+        "BIGSMALL_R235_PREREQUISITE_RECORD": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/writer_memory/prerequisite.json"
+      },
+      "env_inheritance": false,
+      "tool_arguments": {
+        "cmd": "env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=15s 900s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/run-evidence.py' writer_memory",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "yield_time_ms": 1000,
+        "max_output_tokens": 1800
+      },
+      "limits": {
+        "child_seconds": 600,
+        "outer_seconds": 900,
+        "cleanup_seconds": 15,
+        "TERM_grace_seconds": 5,
+        "retry": 0,
+        "raw_stream_threshold_bytes_each": 33554432,
+        "console_utf8_max": 6000
+      },
+      "output": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/writer_memory",
+      "expected_exit": 0,
+      "expected_case_files": 1,
+      "expected_poll_lifecycles": 1,
+      "acceptance": "Exact original memory writer node PASS, complete 2 bootstrap denials + 34 inventory checks + authorized positive/budget invariants and all actual cleanup/index/cases; ROOT independently accepts.",
+      "unit_only": false
+    }
+  },
+  "execution_order": [
+    "Create/freeze new micro and minimal runner/roles; ROOT full source/diff/argv review on current input; preserve before source full bytes/mode.",
+    "Consume new observer_red once before dispatch; accept only specified assertion RED with valid decoding/setup. Unexpected failure stops; no replay of old expensive behavior RED.",
+    "Sol implements exact scoped memo; preserve diff/after SHA; ROOT review semantic equivalence and new generation map.",
+    "Consume observer_green once; ROOT independently accepts complete micro contract.",
+    "Consume new R315 writer_memory once; ROOT independently accepts original full behavior and resource evidence; failure stops for Astra.",
+    "Only after new memory acceptance, map existing R311 writer_sqlite HELD gate to current local_temporal SHA and execute its original unchanged literal once under R311 limits; no new SQLite slot.",
+    "After both writers accepted, perform original fresh T2 review with explicit source-generation impact analysis before any whole-T2 or T3 progression."
+  ],
+  "runner_adaptation": "Reuse pinned R311 compact runner and already accepted unit handling from R312/R302. Only round/path/plan identity, exact three keys, unit classification, source generation, command/case metadata and micro case collection need mapping. observer_red/observer_green must be unit_only and retain genuine absent-basetemp handling; behavior keeps strict actual inventory. Preserve consume-before-start, cleanup and original helper. No new general framework, sampler or plugin. ROOT reviews all mappings before running.",
+  "generation_mapping": {
+    "new_gate": "R315 gate records original local_temporal SHA -> changed SHA plus new micro/runner pins; unchanged fixture/worker/accessor hashes retained. Preserve old source/gates full bytes/modes.",
+    "old_sqlite_continuation": "R311 source-gate/root-source-acceptance and ROOT/AUTHOR ledger pointer transition only after full-before archive and CAS; change local_temporal source pin and corresponding source pointer, preserve all SPENT entries byte-equivalent in meaning and SQLite HELD 0/1 until its original reserve/consume. Do not rewrite R311 plan/input observation, runner, original argv or old results.",
+    "reuse_boundary": "Old six PASS and two budget PASS remain historical accepted evidence on their recorded generations. Fixture/profile/wait/dual source is unchanged, but shared codec changed, so do not claim those runs directly tested new codec. New micro plus fresh T2 source impact review decides adequacy; any further required behavior run needs a separately bounded Astra allocation, not silent replay."
+  },
+  "prerequisites": [
+    "R313 independent acceptance and both SPENT ledgers match pinned terminal state; diagnostic-only acceptance remains distinct from behavior.",
+    "Current source/gate applicability checked finitely; ROOT supplied HEAD remains stable during runs. New memo/test hashes reviewed before new runs.",
+    "Actual Sol single writer, ROOT independent reserve/review/settlement. Use absolute .venv/bin/python and existing startup prerequisite plugin.",
+    "Each new output absent; exact key may dispatch once only. No retry/refund after failure. All prior scene/DB archives retained unchanged."
+  ],
+  "stop_boundary": "Any unexpected RED, GREEN failure, behavior failure, new source gap, scope expansion or capture/cleanup failure pauses affected work for Astra. Do not increase timeouts, skip checks or adjust thresholds to pass.",
+  "acceptance_boundary": "Micro establishes bounded duplicate-work removal and strict codec compatibility; real memory/sqlite behavior acceptance still requires original complete writer assertions and evidence. Diagnostic stop is not PASS. SIGSEGV cause remains unresolved unless new evidence establishes it. Whole T2 needs fresh review; no T3/P6C/native/formal promotion.",
+  "delivery": "Preserve raw failures/new actuals and full before/after source; ROOT writes step-report/phase overlay. Explicit-path Git delivery after verified work under existing authorization, local/upstream/remote three-SHA check. Original DB/raw exclusions and historical 35 DB/90 sidecar gaps remain; no source HEAD change during running keys.",
+  "planner_actions": "Source/evidence reading and SHA/JSON analysis only; no imported project module, SQL, pytest, runtime or Git writes."
+}

@@ -1,0 +1,116 @@
+--- G0/test_operational_runtime_closure.py
++++ G1/test_operational_runtime_closure.py
+@@ -3589,9 +3589,13 @@
+     def init_wrapper(original, kind):
+         def initialize(obj, *args, **kwargs):
+             record = add(obj, kind)
++            if kind == "lease_session":
++                record["constructor_outcome"] = "ENTERED"
+             try:
+                 result = original(obj, *args, **kwargs)
+             except BaseException as error:
++                if kind == "lease_session":
++                    record["constructor_outcome"] = "RAISED"
+                 record["initialization_error"] = {"type": type(error).__name__, "message": str(error)}
+                 if kind == "worker":
+                     record["initial_active_job_id"] = getattr(obj, "active_job_id", None)
+@@ -3600,6 +3604,8 @@
+                 raise
+             else:
+                 record["initialized"] = True
++                if kind == "lease_session":
++                    record["constructor_outcome"] = "RETURNED"
+                 if kind == "worker":
+                     record["initial_active_job_id"] = getattr(obj, "active_job_id", None)
+                     record["initial_state_observation"] = "constructor_return"
+@@ -3814,12 +3820,6 @@
+         elif code is session_code and event in ("call", "return"):
+             session = frame.f_locals["self"]
+             observe_session(session, frame.f_locals.get("worker"))
+-            if event == "return" and id(session) in objects:
+-                record = objects[id(session)][1]
+-                record["initialized"] = getattr(session, "_sealed", False) is True
+-                if not record["initialized"]:
+-                    record["initialization_error"] = {"type": "IncompleteConstructor",
+-                                                      "message": "actual session constructor did not seal"}
+         elif code is thread_start_code and event in ("call", "return"):
+             thread = frame.f_locals.get("self")
+             for session in tuple(session_refs):
+@@ -3846,6 +3846,7 @@
+             (SQLiteEventAutonomyRepository, "event_repository"),
+             (SQLiteSimulationJobRepository, "job_repository"),
+             (SimulationWorker, "worker"),
++            (lease_module.OperationalLeaseSession, "lease_session"),
+         ):
+             patch(cls, "__init__", init_wrapper(cls.__init__, kind))
+         patch(SimulationWorker, "poll_once", poll_once)
+--- G0/test_t2_observer_lifecycle.py
++++ G1/test_t2_observer_lifecycle.py
+@@ -81,6 +81,7 @@
+     # these explicit events test bookkeeping without creating authority or RPCs.
+     from cloud_edge_robot_arm.simulation_runtime import operational_lease as lease
+ 
++    original_session_code = lease.OperationalLeaseSession.__init__.__code__
+     original_profile = sys.getprofile()
+     original_thread_profile = threading.getprofile()
+     value = {"resources": [], "worker_lifecycles": [], "cleanup_errors": [],
+@@ -144,7 +145,7 @@
+         preinstall = _Worker(installed_field=False)
+         observed.add(preinstall, "worker")
+         partial = SimpleNamespace(_closed=True)
+-        constructor = _frame(lease.OperationalLeaseSession.__init__.__code__,
++        constructor = _frame(original_session_code,
+                              self=partial, worker=preinstall)
+         profile(constructor, "call", None)
+         partial_record = observed.objects[id(partial)][1]
+@@ -182,11 +183,49 @@
+ 
+         profile(constructor, "return", None)
+         assert partial_record["initialized"] is False
+-        assert partial_record["initialization_error"]["type"] == "IncompleteConstructor"
++        assert partial_record["initialization_error"] is None
++        assert partial_record.get("constructor_outcome") is None
+         assert sum(row["resource_id"] == id(partial) for row in value["resources"]) == 1
+         assert sum(row["resource_id"] == id(preinstall) for row in value["resources"]) == 1
+         assert preinstall not in [observed.objects[call["worker_resource_id"]][0]
+                                   for call in value["worker_lifecycles"]]
++
++        # Explicit synthetic-unit bookkeeping only: exercise the actual wrapper
++        # with a controlled raising callable, never a real session or authority.
++        class ConstructorAbort(BaseException):
++            pass
++
++        sentinel = ConstructorAbort("simulated-unit-constructor-abort")
++        failed = SimpleNamespace()
++        failed_record = observed.add(failed, "lease_session", simulated_unit=True,
++                                     real_constructor_invoked=False, cleanup_not_observed=True)
++        forwarded_constructor_calls = []
++        argument = object()
++
++        def raising_constructor(obj, *args, **kwargs):
++            forwarded_constructor_calls.append((obj, args, kwargs))
++            raise sentinel
++
++        wrapper = lease.OperationalLeaseSession.__init__
++        original_cell = _cell(wrapper, "original")
++        actual_constructor = original_cell.cell_contents
++        try:
++            original_cell.cell_contents = raising_constructor
++            try:
++                wrapper(failed, argument, marker=argument)
++            except ConstructorAbort as caught:
++                assert caught is sentinel
++            else:
++                raise AssertionError("constructor exception identity was not preserved")
++        finally:
++            original_cell.cell_contents = actual_constructor
++        assert forwarded_constructor_calls == [(failed, (argument,), {"marker": argument})]
++        assert failed_record["initialized"] is False
++        assert failed_record["constructor_outcome"] == "RAISED"
++        assert failed_record["initialization_error"] == {
++            "type": "ConstructorAbort", "message": "simulated-unit-constructor-abort"}
++        assert failed_record["cleanup_observed"] is None
++        assert id(failed) not in [row["worker_resource_id"] for row in value["worker_lifecycles"]]
+         idle_broker.alive = broker.alive = heartbeat.alive = foreign.alive = False
+ 
+     assert sys.getprofile() is original_profile

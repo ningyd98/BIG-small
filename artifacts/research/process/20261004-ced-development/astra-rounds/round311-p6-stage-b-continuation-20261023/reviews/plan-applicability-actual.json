@@ -1,0 +1,16 @@
+{
+  "round": "R311",
+  "invocation": {
+    "cmd": "/usr/bin/python3 - <<'PY'\nimport hashlib,json,subprocess\nfrom pathlib import Path\nD=Path('artifacts/research/process/20261004-ced-development/astra-rounds/round311-p6-stage-b-continuation-20261023');p=D/'plan.json';b=p.read_bytes();d=json.loads(b);m=Path(d['input_manifest']['path']);mb=m.read_bytes();o=json.loads(mb);records=o['inputs']+o['current_code_pins']+[r['pin'] for r in o['old_roles']]\nfor r in o['reusable_passes']:records.extend([r['result'],r['ROOT_acceptance']])\nchecks=[]\nfor r in records:\n q=Path(r['path']);raw=q.read_bytes();checks.append({'path':str(q),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),'match':len(raw)==r['bytes'] and hashlib.sha256(raw).hexdigest()==r['sha256']})\nhead=subprocess.check_output(['git','rev-parse','HEAD']).decode().strip();branch=subprocess.check_output(['git','branch','--show-current']).decode().strip()\nok=all(r['match'] for r in checks) and head==d['HEAD'] and branch==d['branch'] and hashlib.sha256(b).hexdigest()=='20e6092993170d7ec5112a79712410d385b1196294e373e8d9468c19bf4a40f8' and hashlib.sha256(mb).hexdigest()==d['input_manifest']['sha256']\nreport={'round':'R311','status':'PREPARATION_ONLY_ACCEPTED' if ok else 'APPLICABILITY_MISMATCH','HEAD':head,'branch':branch,'plan_sha256':hashlib.sha256(b).hexdigest(),'input_manifest_sha256':hashlib.sha256(mb).hexdigest(),'checks':checks,'checks_count':len(checks),'all_match':ok,'runtime_commands_released':[],'known_preexecution_followup':'R312 actual Astra planning missing publication.contract_hash read-only accessors; all R311 runtime commands stay HELD until that plan, repair, micro validation and explicit new-source gate. Original source pins remain frozen.'}\n(D/'reviews').mkdir(exist_ok=True)\nwith (D/'reviews/plan-applicability.json').open('x') as f:json.dump(report,f,ensure_ascii=False,indent=2);f.write('\\n')\nprint(json.dumps({'all_match':ok,'checks_count':len(checks),'mismatches':[r for r in checks if not r['match']],'status':report['status'],'plan_sha256':report['plan_sha256']},ensure_ascii=False))\nPY",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "max_output_tokens": 1800
+  },
+  "actual": {
+    "chunk_id": "805631",
+    "wall_time_seconds": 0.00001236,
+    "exit_code": 0,
+    "original_token_count": 46,
+    "output": "{\"all_match\": true, \"checks_count\": 277, \"mismatches\": [], \"status\": \"PREPARATION_ONLY_ACCEPTED\", \"plan_sha256\": \"20e6092993170d7ec5112a79712410d385b1196294e373e8d9468c19bf4a40f8\"}\n"
+  },
+  "scope": "Preparation only; all runtime held pending R312."
+}

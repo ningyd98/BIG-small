@@ -1,0 +1,18 @@
+--- before-T2/src/cloud_edge_robot_arm/simulation_runtime/recovery.py
++++ current/src/cloud_edge_robot_arm/simulation_runtime/recovery.py
+@@ -25,8 +25,15 @@
+         self.repository = repository
+         self.artifact_root = artifact_root
+         self.requeue_recoverable = requeue_recoverable
++        self.local_publication_history: tuple[dict[str, object], ...] = ()
+ 
+     def recover_interrupted_jobs(self) -> RecoveryResponse:
++        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
++
++        # Only the real SQLite job store owns this additive detached history.
++        # Reconciliation neither completes markers nor supplies execution authority.
++        if type(self.repository) is SQLiteSimulationJobRepository:
++            self.local_publication_history = tuple(self.repository.reconcile_local_publications())
+         # 先让 repository 标记过期租约，再基于 artifact 完整性决定是否进入
+         # RECOVERY_PENDING；只有显式允许时才重新入队，避免启动恢复无意中
+         # 重复执行已经需要人工复核的任务。

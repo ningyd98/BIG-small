@@ -1,0 +1,72 @@
+--- G1/local_temporal.py
++++ G2/local_temporal.py
+@@ -1850,7 +1850,7 @@
+         return False
+     try:
+         _DECODE_MEMO.reset(memo.token)
+-    except ValueError:
++    except (ValueError, RuntimeError):
+         return False
+     memo.token = _DECODE_MEMO.set(memo)
+     return True
+--- G0/test_local_temporal_decode_memo.py
++++ G1/test_local_temporal_decode_memo.py
+@@ -238,6 +238,58 @@
+         assert value.to_payload() == variant and successes[(separate, local.LocalEnvelope, canonical(variant))] == 1
+         packet["checks"]["top_calls_and_success_BaseException_failure_cleanup"] = True
+ 
++        copied_cases = []
++        packet["copied_context_after_parent_cases"] = copied_cases
++        for exceptional_parent in (False, True):
++            captured = {}
++
++            def retain_active_context():
++                parent_value = local.LocalEnvelope.from_payload(variant)
++                parent_memo = local._DECODE_MEMO.get()
++                assert parent_memo is not None
++                context = contextvars.copy_context()
++                # Only the test spy stack is reset; the real copied memo stays intact.
++                context.run(stack.set, ())
++                assert context.run(local._DECODE_MEMO.get) is parent_memo
++                captured.update(context=context, parent_memo=parent_memo, parent_value=parent_value)
++                if exceptional_parent:
++                    raise Abort("R316 copied-context parent BaseException")
++
++            action[0] = retain_active_context
++            if exceptional_parent:
++                with pytest.raises(Abort) as copied_abort:
++                    run("copied_parent_exception", small)
++                packet["exceptions"].append({"label": "copied_parent_exception",
++                    "type": type(copied_abort.value).__name__, "message": str(copied_abort.value)})
++            else:
++                run("copied_parent_success", small)
++            action[0] = None
++            assert local._DECODE_MEMO.get() is None
++            context = captured["context"]
++            assert context.run(local._DECODE_MEMO.get) is captured["parent_memo"]
++            child_memos = []
++
++            def observe_fresh_child_scope():
++                child_memo = local._DECODE_MEMO.get()
++                assert child_memo is not None and child_memo is not captured["parent_memo"]
++                child_memos.append(child_memo)
++
++            action[0] = observe_fresh_child_scope
++            child, child_root = context.run(run, "copied_child_" + str(exceptional_parent), variant)
++            action[0] = None
++            assert len(child_memos) == 1
++            assert child is not captured["parent_value"]
++            assert canonical(child.to_payload()) == canonical(variant)
++            assert child.digest() == captured["parent_value"].digest() == digest(variant)
++            assert successes[(child_root, local.LocalEnvelope, canonical(variant))] == 1
++            assert context.run(local._DECODE_MEMO.get) is None and local._DECODE_MEMO.get() is None
++            copied_cases.append({"exceptional_parent": exceptional_parent,
++                "stale_parent_memo_was_preserved": True, "fresh_child_memo": True,
++                "successful_revalidations": successes[(child_root, local.LocalEnvelope, canonical(variant))],
++                "fresh_instance": True, "exact_canonical_sha256": child.digest(),
++                "parent_and_copied_context_cleared": True})
++        packet["checks"]["copied_context_after_normal_and_exceptional_parent_cleanup"] = True
++
+         def overflow_checks():
+             root_id = stack.get()[0][0]
+             a = local.LocalEnvelope.from_payload(variant)

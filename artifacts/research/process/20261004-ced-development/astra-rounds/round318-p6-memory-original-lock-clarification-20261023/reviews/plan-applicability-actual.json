@@ -1,0 +1,16 @@
+{
+  "invocation": {
+    "tool": "exec_command",
+    "arguments": {
+      "cmd": "/usr/bin/python3 - <<'PY'\nimport json,hashlib,os\nfrom pathlib import Path\nB=Path('artifacts/research/process/20261004-ced-development/astra-rounds')\nD=B/'round318-p6-memory-original-lock-clarification-20261023';P=B/'round317-p6-mixed-outbox-candidate-claim-20261023'\ndef pin(p):\n p=Path(p); b=p.read_bytes(); return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\ndef save(p,v):\n p.parent.mkdir(exist_ok=True,parents=True)\n with p.open('x') as f: f.write(json.dumps(v,ensure_ascii=False,indent=2)+'\\n');f.flush();os.fsync(f.fileno())\n return pin(p)\nplan=json.loads((D/'plan.json').read_bytes()); prior=json.loads((P/'plan.json').read_bytes())\nchecks=[{'expected':p,'actual':pin(p['path']),'matches':p==pin(p['path'])} for p in plan['inputs']]\nexpected='362b8295f5af22baa977dfb67a470f58c294604c23d604ccb11994bfbfe00339'\nok=all(x['matches'] for x in checks) and pin(D/'plan.json')['sha256']==expected\nreport={'round':'R318','reviewer':'ROOT','applicable':ok,'plan':pin(D/'plan.json'),'inputs':checks,'original_lock_observed':'threading.Lock() at memory.py:113; ROOT native bcdebd exit0','correction_to_R317_applicability':'R317 ROOT report used planner name RLock; this supplement corrects to original threading.Lock without changing its identity, non-reentrancy, or product acquisition boundaries. The prior report remains unchanged.','test_or_product_edits_before_correction':False,'runtime_before_correction':False,'new_runtime_slots':0,'may_prepare_R317_test_runner':ok,'may_dispatch_unreserved_command':False}\np=save(D/'reviews/plan-applicability.json',report)\nledger={'round':'R317','role':'ROOT','plan':{**pin(P/'plan.json'),'path':str((P/'plan.json').resolve())},'supplement_plan':{**pin(D/'plan.json'),'path':str((D/'plan.json').resolve())},'commands':{k:{'budget_identity':v['budget_identity'],'authorized':1,'used':0,'remaining':1,'state':'HELD'} for k,v in prior['commands'].items()}}\nl=save(P/'root-command-ledger.json',ledger)\nprint(json.dumps({'applicable':ok,'applicability':p,'ROOT_ledger':l,'input_mismatches':[x for x in checks if not x['matches']]},ensure_ascii=False))\nPY",
+      "max_output_tokens": 2200
+    }
+  },
+  "actual_return": {
+    "chunk_id": "56d069",
+    "wall_time_seconds": 0.00000807,
+    "exit_code": 0,
+    "original_token_count": 146,
+    "output": "{\"applicable\": true, \"applicability\": {\"path\": \"artifacts/research/process/20261004-ced-development/astra-rounds/round318-p6-memory-original-lock-clarification-20261023/reviews/plan-applicability.json\", \"bytes\": 3029, \"sha256\": \"d96fd3f54045fbe22b8b7e60628883eb64cc26c5ece99a1385aad3e66edb2567\"}, \"ROOT_ledger\": {\"path\": \"artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/root-command-ledger.json\", \"bytes\": 1366, \"sha256\": \"6bd3bc7c0711d9d8b6cdf970a8c70503fdf370d48157914789a27040a06f7eef\"}, \"input_mismatches\": []}\n"
+  }
+}

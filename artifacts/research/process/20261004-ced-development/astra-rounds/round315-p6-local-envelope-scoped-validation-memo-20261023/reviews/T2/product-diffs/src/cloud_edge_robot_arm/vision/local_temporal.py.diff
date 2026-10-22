@@ -1,0 +1,308 @@
+--- before-T2/src/cloud_edge_robot_arm/vision/local_temporal.py
++++ current/src/cloud_edge_robot_arm/vision/local_temporal.py
+@@ -2,6 +2,7 @@
+ from __future__ import annotations
+ 
+ from collections.abc import Mapping
++from contextvars import ContextVar, Token
+ from dataclasses import dataclass
+ from datetime import datetime
+ import hashlib
+@@ -258,7 +259,7 @@
+         if ref["fencing"] != task["fencing"]:
+             raise ValueError("immutable original references must retain the same fence")
+     provenance = _object(original["contract_provenance"], frozenset(("kind", "content_sha256")))
+-    if provenance["kind"] not in {"LOCAL_APP_PRODUCED", "EXTERNAL_UTC"}:
++    if provenance["kind"] not in {"LOCAL_APP_PRODUCED", "EXTERNAL_UTC", "LOCAL_BOOTSTRAP_SOURCE_V1"}:
+         raise ValueError("explicit immutable contract provenance required")
+     _sha(provenance["content_sha256"])
+     return original
+@@ -623,10 +624,95 @@
+             != (lease["job_id"], lease["run_id"], lease["worker_id"], lease["lease_id"],
+                 lease["attempt"], lease["epoch"])):
+         raise ValueError("audit original task lease/fence/epoch binding differs")
+-    if (_copy(dict(prior.source_hashes)) != original["source_hashes"]
+-            or _object(original["contract_provenance"])["content_sha256"]
+-            != _hash(_copy(prior.contract.model_dump(mode="json")))):
++    if _copy(dict(prior.source_hashes)) != original["source_hashes"]:
+         raise ValueError("audit original source/contract binding differs")
++    if _object(original["contract_provenance"])["kind"] == "LOCAL_BOOTSTRAP_SOURCE_V1":
++        if type(prior) is not LocalVisualOriginalPlan:
++            raise ValueError("staged source requires exact staged local original")
++        _staged_original_body(prior.semantic, original)
++    elif _object(original["contract_provenance"])["content_sha256"] != _hash(_copy(prior.contract.model_dump(mode="json"))):
++        raise ValueError("audit original source/contract binding differs")
++
++
++def bootstrap_source_commitment(definition: dict[str, JSONValue]) -> str:
++    definition = _object(definition, FIELDS["visual.bootstrap.definition.local.v1"])
++    return _hash({"schema_version": "visual.local-bootstrap-source.v1", "definition": definition})
++
++
++def _staged_original_body(body: dict[str, JSONValue], original: dict[str, JSONValue]) -> dict[str, JSONValue]:
++    """Validate a finite, complete pre-adoption source; no issuer or current clock."""
++    from cloud_edge_robot_arm.contracts.models import TaskContract
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from cloud_edge_robot_arm.vision.worker_owner import _local_worker_policy
++
++    source_provenance = _object(original["contract_provenance"])
++    if source_provenance["kind"] != "LOCAL_BOOTSTRAP_SOURCE_V1":
++        raise ValueError("staged adoption requires explicit bootstrap source provenance")
++    provenance = _object(body["contract_provenance"], frozenset("kind content_sha256 bootstrap_record".split()))
++    if provenance["kind"] != "LOCAL_BOOTSTRAP_ADOPTED_V1" or _sha(provenance["content_sha256"]) != _hash(body["contract"]):
++        raise ValueError("staged adopted complete contract commitment differs")
++    raw = _object(provenance["bootstrap_record"], OUTER_FIELDS)
++    if raw["schema_version"] != "visual.bootstrap.record.local.v1" or raw["original_time"] != original:
++        raise ValueError("staged adoption bootstrap root/original differs")
++    pre = _object(raw["payload"], FIELDS["visual.bootstrap.record.local.v1"])
++    if (pre["terminal_reason"] is not None or pre["adopted_original_hash"] is not None
++            or pre["pending"] is not None or pre["planning_source_usable"] is not True
++            or pre["observation"] is None or pre["draft"] is None
++            or _object(pre["state"])["exhausted_reason"] is not None):
++        raise ValueError("complete nonterminal promotion-free bootstrap prestate required")
++    for event in _array(pre["history"]):
++        if _object(_object(event)["request"])["schema_version"] != "visual.bootstrap.transition.local.v1":
++            raise ValueError("staged bootstrap history cannot embed a promotion")
++    decoded = LocalEnvelope.from_payload(raw)
++    pre = decoded.semantic
++    definition = _object(_object(pre["definition"])["payload"])
++    if bootstrap_source_commitment(definition) != source_provenance["content_sha256"]:
++        raise ValueError("staged bootstrap definition commitment differs")
++    contract = _model(body["contract"], TaskContract)
++    draft_contract = _object(_object(pre["draft"])["parsed_json"])
++    for name in ("timestamp", "issued_at", "valid_until"):
++        if _object(body["contract"])[name] != draft_contract.get(name):
++            raise ValueError("staged adopted UTC model bytes differ from the actual saved proposal")
++    proposal = _proposal_projection(_object(pre["draft"]), definition)
++    if proposal is None:
++        raise ValueError("staged bootstrap saved proposal is unusable")
++    expected = _object(_copy(contract.model_dump(mode="json")))
++    for name in ("task_id", "plan_version", "command_seq", "timestamp", "issued_at", "valid_until"):
++        expected.pop(name)
++    aliases = {"visual_target": "object", "visual_destination": "target_region"}
++    target = _object(proposal["task_target"])
++    for name in ("object_id", "target_region_id"):
++        if isinstance(target.get(name), str) and target[name] in aliases:
++            target[name] = aliases[target[name]]
++    proposal["task_target"] = target
++    for raw_step in _array(proposal["steps"]):
++        step = _object(raw_step); parameters = _object(step["parameters"])
++        for name in ("object_id", "region_id"):
++            if isinstance(parameters.get(name), str) and parameters[name] in aliases:
++                parameters[name] = aliases[parameters[name]]
++        step["parameters"] = parameters
++        if not isinstance(raw_step, dict):
++            raise ValueError("complete staged proposal step required")
++        raw_step.update(step)
++    identity = _object(body["identity"])
++    if (_canonical(expected) != _canonical(proposal) or contract.task_id != definition["episode_id"]
++            or identity["episode_id"] != definition["episode_id"] or identity["task_id"] != contract.task_id
++            or contract.plan_version != 1 or contract.command_seq != 1
++            or body["proposal_hash"] != pre["proposal_hash"]
++            or body["proposal_hash"] != _hash(_object(pre["draft"])["parsed_json"])
++            or body["role_bundle_hash"] != definition["role_bundle_hash"]
++            or body["compiler_source_hashes"] != definition["source_hashes"]
++            or body["source_hashes"] != definition["source_hashes"]):
++        raise ValueError("staged full contract/proposal/compiler source differs")
++    frame = _model(pre["observation"], RGBDObservation)
++    requirements, graph = _local_worker_policy(contract, frame, _hashes(definition["source_hashes"]))
++    if (body["requirements"] != _copy({key: value.to_payload() for key, value in requirements.items()})
++            or body["dependencies"] != _copy(graph)):
++        raise ValueError("staged requirements/camera/dependency policy differs")
++    state = _state(pre["state"]); limits = _object(state["limits"])
++    if state["remaining_retries"] != limits["max_retries"] or _integer(limits["max_retries"]) > contract.failure_policy.local_retry_limit:
++        raise ValueError("staged original retry allocation differs")
++    return raw
+ 
+ 
+ def _route_parts(value: JSONValue) -> tuple[str, dict[str, JSONValue], dict[str, JSONValue] | None]:
+@@ -957,6 +1043,10 @@
+     if promotion:
+         prior = _audit_original(body["original"])
+         _join_audit_original(prior, original)
++        if _object(original["contract_provenance"])["kind"] == "LOCAL_BOOTSTRAP_SOURCE_V1":
++            pre = _staged_original_body(_object(_object(body["original"])["payload"]), original)
++            if _canonical(_object(pre["payload"])) != _canonical(state):
++                raise ValueError("staged promotion must use the actual complete live prestate")
+         if (pending is not None or state["planning_source_usable"] is not True
+                 or state["draft"] is None or state["observation"] is None
+                 or budget["exhausted_reason"] is not None):
+@@ -1404,6 +1494,9 @@
+         _hashes(body["source_hashes"])
+         if body["source_hashes"] != original["source_hashes"]:
+             raise ValueError("bootstrap source inventory changed")
++        provenance = _object(original["contract_provenance"])
++        if provenance["kind"] == "LOCAL_BOOTSTRAP_SOURCE_V1" and provenance["content_sha256"] != bootstrap_source_commitment(body):
++            raise ValueError("bootstrap source definition commitment differs")
+     if tag == "visual.bootstrap.record.local.v1":
+         definition = VisualBootstrapDefinition.from_payload(_object(body["definition"]))
+         state = _state(body["state"])
+@@ -1436,7 +1529,13 @@
+             _sha(body["claim_id"])
+     if tag == "visual.bootstrap.promotion.local.v1":
+         promoted = _audit_original(body["original"])
+-        if _object(original["contract_provenance"])["content_sha256"] != _hash(_copy(promoted.contract.model_dump(mode="json"))):
++        if _object(original["contract_provenance"])["kind"] == "LOCAL_BOOTSTRAP_SOURCE_V1":
++            pre = _staged_original_body(_object(_object(body["original"])["payload"]), original)
++            source = _object(pre["payload"])
++            if (body["definition_hash"] != _hash(source["definition"])
++                    or body["expected_record_hash"] != _history_state_hash("visual.bootstrap.record.local.v1", source, original)):
++                raise ValueError("staged promotion prestate definition/CAS differs")
++        elif _object(original["contract_provenance"])["content_sha256"] != _hash(_copy(promoted.contract.model_dump(mode="json"))):
+             raise ValueError("promotion must preserve the original contract source")
+     if tag.startswith("visual.supervision."):
+         if tag.endswith(".definition.local.v1") or tag.endswith(".transition.local.v1"):
+@@ -1492,7 +1591,8 @@
+     if tag == "visual.owner.original.local.v1":
+         contract = _model(body["contract"], TaskContract)
+         identity = local_owner_identity(_object(body["identity"]))
+-        if body["contract_provenance"] != original["contract_provenance"] or _object(body["contract_provenance"])["content_sha256"] != _hash(body["contract"]):
++        staged = _object(original["contract_provenance"])["kind"] == "LOCAL_BOOTSTRAP_SOURCE_V1"
++        if not staged and (body["contract_provenance"] != original["contract_provenance"] or _object(body["contract_provenance"])["content_sha256"] != _hash(body["contract"])):
+             raise ValueError("original contract provenance/content changed")
+         if identity.task_id != contract.task_id:
+             raise ValueError("semantic task identity changed")
+@@ -1525,6 +1625,8 @@
+         lease = _object(original["lease_identity"])
+         if (identity.job_id, identity.run_id, identity.worker_id, identity.lease_id, identity.attempt, identity.owner_epoch) != (lease["job_id"], lease["run_id"], lease["worker_id"], lease["lease_id"], lease["attempt"], lease["epoch"]):
+             raise ValueError("original job/fence/epoch changed")
++        if staged:
++            _staged_original_body(body, original)
+     if tag == "visual.owner.grounding.local.v1":
+         identity = local_owner_identity(_object(body["current_identity"]))
+         lease = _object(original["lease_identity"])
+@@ -1725,46 +1827,100 @@
+         return _reference(self.to_payload()["original_budget_reference"])
+ 
+ 
++_DECODE_MEMO_ENTRY_CAP = 128
++_DECODE_MEMO_BYTE_CAP = 8 * 1024 * 1024
++
++
++class _DecodeMemo:
++    __slots__ = ("entries", "content_bytes", "token")
++
++    def __init__(self) -> None:
++        self.entries: dict[tuple[type, str], str] = {}
++        self.content_bytes = 0
++        self.token: Token | None = None
++
++
++_DECODE_MEMO: ContextVar[_DecodeMemo | None] = ContextVar("local_envelope_decode_memo", default=None)
++
++
++def _decode_memo_owned_here(memo: _DecodeMemo) -> bool:
++    # Token reset checks actual Context ownership, including copied contexts.
++    # Refresh the token in its owner so the outer finally can always reset it.
++    if memo.token is None:
++        return False
++    try:
++        _DECODE_MEMO.reset(memo.token)
++    except (ValueError, RuntimeError):
++        return False
++    memo.token = _DECODE_MEMO.set(memo)
++    return True
++
++
+ @dataclass(frozen=True, init=False)
+ class LocalEnvelope:
+     _json: str
+ 
+     @classmethod
+     def from_payload(cls, payload: Mapping[str, JSONValue]) -> Self:
+-        raw = _object(payload, OUTER_FIELDS)
+-        tag = _text(raw["schema_version"])
+-        if tag not in FIELDS:
+-            raise ValueError("exact local semantic tag required")
+-        body = _object(raw["payload"], FIELDS[tag])
+-        original = _original(raw["original_time"])
+-        diagnostics = _object(raw["diagnostics"], frozenset(("utc", "monotonic")))
+-        for name, value in _object(diagnostics["utc"]).items():
+-            _text(name)
+-            if value is not None:
+-                stamp = datetime.fromisoformat(_text(value))
+-                if stamp.tzinfo is None or stamp.utcoffset() is None:
+-                    raise ValueError("typed diagnostic UTC required")
+-        if diagnostics["monotonic"] is not None:
+-            _number(diagnostics["monotonic"])
+-        original_or_request = tag.endswith((".definition.local.v1", ".original.local.v1", ".transition.local.v1", ".promotion.local.v1", ".route-input.local.v1"))
+-        decision: dict[str, JSONValue] | None = None
+-        transaction: dict[str, JSONValue] | None = None
+-        if original_or_request:
+-            if raw["decision"] is not None or raw["transaction"] is not None:
+-                raise ValueError("original/request cannot self-install a current decision")
+-        else:
+-            decision = _decision(raw["decision"])
+-            transaction = _transaction(raw["transaction"])
+-            _join_decision(original, decision)
+-            for current_name, decision_name in (("operation_id", "operation_id"), ("operation_sha256", "operation_sha256"), ("job_id", "job_id"), ("attempt", "attempt"), ("lease_id", "lease_id"), ("epoch", "lease_epoch"), ("generation", "lease_generation"), ("row_revision", "lease_row_revision")):
+-                if transaction[current_name] != decision[decision_name]:
+-                    raise ValueError("transaction and two-authority evidence disagree")
+-        _semantic(tag, body, original, diagnostics,
+-                  evidence_decision=decision, evidence_transaction=transaction)
+-        _validate_nested_local(body)
+-        result = object.__new__(cls)
+-        object.__setattr__(result, "_json", _canonical(raw))
+-        return result
++        memo = _DECODE_MEMO.get()
++        outermost = memo is None or not _decode_memo_owned_here(memo)
++        if outermost:
++            # A copied Context must not inherit an active parent's successes.
++            if memo is not None:
++                _DECODE_MEMO.set(None)
++            memo = _DecodeMemo()
++            memo.token = _DECODE_MEMO.set(memo)
++        try:
++            raw = _object(payload, OUTER_FIELDS)
++            text = _canonical(raw)
++            key = (cls, text)
++            cached = memo.entries.get(key)
++            if cached is not None:
++                result = object.__new__(cls)
++                object.__setattr__(result, "_json", cached)
++                return result
++            tag = _text(raw["schema_version"])
++            if tag not in FIELDS:
++                raise ValueError("exact local semantic tag required")
++            body = _object(raw["payload"], FIELDS[tag])
++            original = _original(raw["original_time"])
++            diagnostics = _object(raw["diagnostics"], frozenset(("utc", "monotonic")))
++            for name, value in _object(diagnostics["utc"]).items():
++                _text(name)
++                if value is not None:
++                    stamp = datetime.fromisoformat(_text(value))
++                    if stamp.tzinfo is None or stamp.utcoffset() is None:
++                        raise ValueError("typed diagnostic UTC required")
++            if diagnostics["monotonic"] is not None:
++                _number(diagnostics["monotonic"])
++            original_or_request = tag.endswith((".definition.local.v1", ".original.local.v1", ".transition.local.v1", ".promotion.local.v1", ".route-input.local.v1"))
++            decision: dict[str, JSONValue] | None = None
++            transaction: dict[str, JSONValue] | None = None
++            if original_or_request:
++                if raw["decision"] is not None or raw["transaction"] is not None:
++                    raise ValueError("original/request cannot self-install a current decision")
++            else:
++                decision = _decision(raw["decision"])
++                transaction = _transaction(raw["transaction"])
++                _join_decision(original, decision)
++                for current_name, decision_name in (("operation_id", "operation_id"), ("operation_sha256", "operation_sha256"), ("job_id", "job_id"), ("attempt", "attempt"), ("lease_id", "lease_id"), ("epoch", "lease_epoch"), ("generation", "lease_generation"), ("row_revision", "lease_row_revision")):
++                    if transaction[current_name] != decision[decision_name]:
++                        raise ValueError("transaction and two-authority evidence disagree")
++            _semantic(tag, body, original, diagnostics,
++                      evidence_decision=decision, evidence_transaction=transaction)
++            _validate_nested_local(body)
++            result = object.__new__(cls)
++            object.__setattr__(result, "_json", text)
++            # Conservatively charge both key and result text even when shared.
++            content_bytes = 2 * len(text.encode("utf-8"))
++            if (key not in memo.entries and len(memo.entries) < _DECODE_MEMO_ENTRY_CAP
++                    and memo.content_bytes + content_bytes <= _DECODE_MEMO_BYTE_CAP):
++                memo.entries[key] = text
++                memo.content_bytes += content_bytes
++            return result
++        finally:
++            if outermost:
++                _DECODE_MEMO.reset(memo.token)
+ 
+     def to_payload(self) -> dict[str, JSONValue]:
+         return _object(json.loads(self._json))

@@ -1,0 +1,951 @@
+{
+  "id": "T2-FR-02",
+  "title": "Observer misclassifies mutable operational lease sessions as incomplete constructors",
+  "severity": "Important",
+  "category": "Evidence/observer correctness",
+  "status": "Changes required; no product-runtime failure asserted",
+  "reviewer": "/root/fresh_t2_review (same original independent seat)",
+  "budget": {
+    "original_attempts_spent": 12,
+    "continuation_attempts_spent": 6,
+    "continuation_limit": 16,
+    "note": "This finding is an administrative write using already read batches 2, 4, 5, 6; no new source/evidence read attempt."
+  },
+  "locations": [
+    {
+      "path": "tests/test_operational_runtime_closure.py",
+      "lines": "3817-3822",
+      "detail": "Constructor return profiling uses getattr(session, '_sealed', False) is True as the successful-initialization predicate and synthesizes IncompleteConstructor otherwise."
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "lines": "416-460",
+      "detail": "Actual OperationalLeaseSession constructor initializes mutable session state, registers the session, starts the broker and waits for readiness; it does not set _sealed."
+    }
+  ],
+  "finding": "A valid OperationalLeaseSession cannot satisfy the observer's _sealed predicate. All fifteen recorded lease_session objects in the seven original behavioral runs are consequently classified initialized=false with the same synthesized error, while separate records show worker association, normal polls, observed owned session/heartbeat, and cleanup. The field describes the observer's classification, not a captured constructor exception.",
+  "reachability": "Every observed return from the real OperationalLeaseSession constructor reaches the _sealed-based classifier. This affects the original seven software behavioral nodes, independent of the mixed outbox claim defect and its repair.",
+  "evidence": [
+    {
+      "command_id": "wait_memory",
+      "actual_return_pin": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/wait_memory/actual-tool-return.json",
+        "bytes": 2475,
+        "sha256": "5c3fc97cc5436d095fb9830e17d817d01b3e6c508770eca100e5c0b63852ae1f"
+      },
+      "actual_exit": 0,
+      "decoded_output": {
+        "command_id": "wait_memory",
+        "child_exit": 0,
+        "elapsed_seconds": 12.95170305299689,
+        "capture_integrity_complete": true,
+        "behavior_candidate_pass": true,
+        "errors": []
+      },
+      "resource_files": [
+        {
+          "pin": {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/wait_memory/resources/b19d08e3d464a0d299421b035233b275c13285446ac5830e1605936b5c94bdc3.json",
+            "bytes": 455053,
+            "sha256": "fd36afb64256ff075d7208d3c1089ccf840d798cab25e16bd821b601adaceb24"
+          },
+          "resource_selector": "$.resources[?(@.kind == 'lease_session')]",
+          "record_key": "resource_id",
+          "sessions": [
+            {
+              "id": 123545814122912,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 123545819416768,
+              "broker_alive": false
+            },
+            {
+              "id": 123545812135104,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 123545812124016,
+              "broker_alive": false
+            }
+          ],
+          "worker_selector": "$.resources[?(@.kind == 'worker')]",
+          "workers": [
+            {
+              "resource_id": 123545809486336,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 123545819416768,
+              "initialized": true,
+              "poll_ids": [
+                1
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            },
+            {
+              "resource_id": 123545814135680,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 123545812124016,
+              "initialized": true,
+              "poll_ids": [
+                2
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            }
+          ],
+          "poll_selector": "$.worker_lifecycles",
+          "polls": [
+            {
+              "poll_id": 1,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            },
+            {
+              "poll_id": 2,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            }
+          ],
+          "allocation_attempts": 495,
+          "initialized_true": 493,
+          "cleanup_true": 495,
+          "not_clean": [],
+          "cleanup_errors": [],
+          "observations": {
+            "assertions_completed": true,
+            "observers_restored": true,
+            "method_restoration": true,
+            "exit_exception": null
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "wait_sqlite",
+      "actual_return_pin": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/wait_sqlite/actual-tool-return.json",
+        "bytes": 2477,
+        "sha256": "29336b6eb8f9a798b36b6fb29406577d0bf3ed2641ba20a2845123cd33e68c4d"
+      },
+      "actual_exit": 0,
+      "decoded_output": {
+        "command_id": "wait_sqlite",
+        "child_exit": 0,
+        "elapsed_seconds": 11.451114798997878,
+        "capture_integrity_complete": true,
+        "behavior_candidate_pass": true,
+        "errors": []
+      },
+      "resource_files": [
+        {
+          "pin": {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round302-p6-t2-selective-observer-and-dual-behavior-20261022/implementation/wait_sqlite/resources/6d5986b581e0d1d96315725cd768e9acc5ca2ebc807503c29bebbed0a195f85b.json",
+            "bytes": 455665,
+            "sha256": "7d3b662aa2f575640f76ff514ff7dce61fa874d30c50b1fc2660d8923dc64038"
+          },
+          "resource_selector": "$.resources[?(@.kind == 'lease_session')]",
+          "record_key": "resource_id",
+          "sessions": [
+            {
+              "id": 131796421539264,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 131796406179104,
+              "broker_alive": false
+            },
+            {
+              "id": 131796417379744,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 131796414281296,
+              "broker_alive": false
+            }
+          ],
+          "worker_selector": "$.resources[?(@.kind == 'worker')]",
+          "workers": [
+            {
+              "resource_id": 131796411415920,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 131796406179104,
+              "initialized": true,
+              "poll_ids": [
+                1
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            },
+            {
+              "resource_id": 131796414278416,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 131796414281296,
+              "initialized": true,
+              "poll_ids": [
+                2
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            }
+          ],
+          "poll_selector": "$.worker_lifecycles",
+          "polls": [
+            {
+              "poll_id": 1,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            },
+            {
+              "poll_id": 2,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            }
+          ],
+          "allocation_attempts": 495,
+          "initialized_true": 493,
+          "cleanup_true": 495,
+          "not_clean": [],
+          "cleanup_errors": [],
+          "observations": {
+            "assertions_completed": true,
+            "observers_restored": true,
+            "method_restoration": true,
+            "exit_exception": null
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "dual_behavior",
+      "actual_return_pin": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round307-p6-t2-detached-publication-phase-expectation-20261022/implementation/dual_behavior/actual-tool-return.json",
+        "bytes": 3971,
+        "sha256": "f311c435733303d322ad48346a572a7e6f6f924665366120e05af2959bedc898"
+      },
+      "actual_exit": 0,
+      "decoded_output": {
+        "command_id": "dual_behavior",
+        "child_exit": 0,
+        "elapsed_seconds": 260.5059308799973,
+        "capture_integrity_complete": true,
+        "behavior_candidate_pass": true,
+        "errors": []
+      },
+      "resource_files": [
+        {
+          "pin": {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round307-p6-t2-detached-publication-phase-expectation-20261022/implementation/dual_behavior/resources/673b30711d71965bf94e76d749abc0a089b08001e5a8f6f174a46f2ece1b2234.json",
+            "bytes": 4438164,
+            "sha256": "3e6ffbea1acf5001364bda1ab914bb2b719c8c26d1d3db1c4ee207a3d84af167"
+          },
+          "resource_selector": "$.resources[?(@.kind == 'lease_session')]",
+          "record_key": "resource_id",
+          "sessions": [
+            {
+              "id": 123902913710560,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 123902913710032,
+              "broker_alive": false
+            },
+            {
+              "id": 123902909159120,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 123902853865136,
+              "broker_alive": false
+            },
+            {
+              "id": 123902913715504,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 123902913723184,
+              "broker_alive": false
+            },
+            {
+              "id": 123902854120848,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 123902854126608,
+              "broker_alive": false
+            },
+            {
+              "id": 123902909167232,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 123902909160944,
+              "broker_alive": false
+            }
+          ],
+          "worker_selector": "$.resources[?(@.kind == 'worker')]",
+          "workers": [
+            {
+              "resource_id": 123902905972592,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 123902913710032,
+              "initialized": true,
+              "poll_ids": [
+                1
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            },
+            {
+              "resource_id": 123902897061568,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 123902853865136,
+              "initialized": true,
+              "poll_ids": [
+                2
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            },
+            {
+              "resource_id": 123902913722032,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 123902913723184,
+              "initialized": true,
+              "poll_ids": [
+                3
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            },
+            {
+              "resource_id": 123902906419680,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 123902854126608,
+              "initialized": true,
+              "poll_ids": [
+                4
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            },
+            {
+              "resource_id": 123902909161088,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 123902909160944,
+              "initialized": true,
+              "poll_ids": [
+                5
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            }
+          ],
+          "poll_selector": "$.worker_lifecycles",
+          "polls": [
+            {
+              "poll_id": 1,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            },
+            {
+              "poll_id": 2,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            },
+            {
+              "poll_id": 3,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            },
+            {
+              "poll_id": 4,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            },
+            {
+              "poll_id": 5,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            }
+          ],
+          "allocation_attempts": 2070,
+          "initialized_true": 2065,
+          "cleanup_true": 2070,
+          "not_clean": [],
+          "cleanup_errors": [],
+          "observations": {
+            "assertions_completed": true,
+            "observers_restored": true,
+            "method_restoration": true,
+            "exit_exception": null
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "budget_memory",
+      "actual_return_pin": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round311-p6-stage-b-continuation-20261023/implementation/budget_memory/actual-tool-return.json",
+        "bytes": 2416,
+        "sha256": "89687046b3e4af5ee1136f0a3d26d7000111dfdfbbecf8b7fd73744711a1cc8d"
+      },
+      "actual_exit": 0,
+      "decoded_output": {
+        "command_id": "budget_memory",
+        "child_exit": 0,
+        "elapsed_seconds": 59.03319603999262,
+        "capture_integrity_complete": true,
+        "behavior_candidate_pass": true,
+        "errors": []
+      },
+      "resource_files": [
+        {
+          "pin": {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round311-p6-stage-b-continuation-20261023/implementation/budget_memory/resources/e170f1887a260e9a78a6cd2a8904462f52922ff60fe71a20a32a5e43e95fe6e4.json",
+            "bytes": 1374595,
+            "sha256": "4871338ea68a9d7d9ed52e97775383668de4d5851cf7b8ac8a9e5bbf72f9c4b7"
+          },
+          "resource_selector": "$.resources[?(@.kind == 'lease_session')]",
+          "record_key": "resource_id",
+          "sessions": [
+            {
+              "id": 132394313446416,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 132394313670320,
+              "broker_alive": false
+            },
+            {
+              "id": 132394313445888,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 132394317175488,
+              "broker_alive": false
+            }
+          ],
+          "worker_selector": "$.resources[?(@.kind == 'worker')]",
+          "workers": [
+            {
+              "resource_id": 132394318429648,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 132394313670320,
+              "initialized": true,
+              "poll_ids": [
+                1
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            },
+            {
+              "resource_id": 132394324051824,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 132394317175488,
+              "initialized": true,
+              "poll_ids": [
+                2
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            }
+          ],
+          "poll_selector": "$.worker_lifecycles",
+          "polls": [
+            {
+              "poll_id": 1,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            },
+            {
+              "poll_id": 2,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            }
+          ],
+          "allocation_attempts": 825,
+          "initialized_true": 823,
+          "cleanup_true": 825,
+          "not_clean": [],
+          "cleanup_errors": [],
+          "observations": {
+            "assertions_completed": true,
+            "observers_restored": true,
+            "method_restoration": true,
+            "exit_exception": null
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "budget_sqlite",
+      "actual_return_pin": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round311-p6-stage-b-continuation-20261023/implementation/budget_sqlite/actual-tool-return.json",
+        "bytes": 2416,
+        "sha256": "252960bdcc68cc7329a3a7ef1c03673f63686ec98a220a8d9470d72359554c45"
+      },
+      "actual_exit": 0,
+      "decoded_output": {
+        "command_id": "budget_sqlite",
+        "child_exit": 0,
+        "elapsed_seconds": 59.650122922990704,
+        "capture_integrity_complete": true,
+        "behavior_candidate_pass": true,
+        "errors": []
+      },
+      "resource_files": [
+        {
+          "pin": {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round311-p6-stage-b-continuation-20261023/implementation/budget_sqlite/resources/783b337347ecaac44b0b2d1c6a3815ee91949b6b2d8883af7aaa80be4295023e.json",
+            "bytes": 1377998,
+            "sha256": "f130761aa609c49948f88e40b070225b275d42582b603004fe82272e80a4a221"
+          },
+          "resource_selector": "$.resources[?(@.kind == 'lease_session')]",
+          "record_key": "resource_id",
+          "sessions": [
+            {
+              "id": 130184871966192,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 130184872092416,
+              "broker_alive": false
+            },
+            {
+              "id": 130184877018144,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 130184871958128,
+              "broker_alive": false
+            }
+          ],
+          "worker_selector": "$.resources[?(@.kind == 'worker')]",
+          "workers": [
+            {
+              "resource_id": 130184870530560,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 130184872092416,
+              "initialized": true,
+              "poll_ids": [
+                1
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            },
+            {
+              "resource_id": 130184870212672,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 130184871958128,
+              "initialized": true,
+              "poll_ids": [
+                2
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            }
+          ],
+          "poll_selector": "$.worker_lifecycles",
+          "polls": [
+            {
+              "poll_id": 1,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            },
+            {
+              "poll_id": 2,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            }
+          ],
+          "allocation_attempts": 825,
+          "initialized_true": 823,
+          "cleanup_true": 825,
+          "not_clean": [],
+          "cleanup_errors": [],
+          "observations": {
+            "assertions_completed": true,
+            "observers_restored": true,
+            "method_restoration": true,
+            "exit_exception": null
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "writer_memory",
+      "actual_return_pin": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/writer_memory/actual-tool-return.json",
+        "bytes": 3588,
+        "sha256": "43e58964f23fa17fcbed0565daf7e2c5cf6c9b2c9fcaf1dbf62154c0bc914b6d"
+      },
+      "actual_exit": 0,
+      "decoded_output": {
+        "command_id": "writer_memory",
+        "child_exit": 0,
+        "elapsed_seconds": 189.95865077000053,
+        "capture_integrity_complete": true,
+        "behavior_candidate_pass": true,
+        "errors": []
+      },
+      "resource_files": [
+        {
+          "pin": {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/writer_memory/resources/2debbb7a87e72b5dcfad14b964aa3fa134ada0e1830dfb634c934ce4803a4a24.json",
+            "bytes": 461561,
+            "sha256": "ace42a72222de0894d8af90c9b391be6086113fed7420e390a99756913da1bd5"
+          },
+          "resource_selector": "$.resources[?(@.kind == 'lease_session')]",
+          "record_key": "resource_id",
+          "sessions": [
+            {
+              "id": 129024689701712,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 129024697242144,
+              "broker_alive": false
+            }
+          ],
+          "worker_selector": "$.resources[?(@.kind == 'worker')]",
+          "workers": [
+            {
+              "resource_id": 129024683932656,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 129024697242144,
+              "initialized": true,
+              "poll_ids": [
+                1
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            }
+          ],
+          "poll_selector": "$.worker_lifecycles",
+          "polls": [
+            {
+              "poll_id": 1,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            }
+          ],
+          "allocation_attempts": 499,
+          "initialized_true": 498,
+          "cleanup_true": 499,
+          "not_clean": [],
+          "cleanup_errors": [],
+          "observations": {
+            "assertions_completed": true,
+            "observers_restored": true,
+            "method_restoration": true,
+            "exit_exception": null
+          }
+        }
+      ]
+    },
+    {
+      "command_id": "writer_sqlite",
+      "actual_return_pin": {
+        "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round311-p6-stage-b-continuation-20261023/implementation/writer_sqlite/actual-tool-return.json",
+        "bytes": 3554,
+        "sha256": "47d0d63b22ba8ed9227b9860d0ad99e51a8319f924466b8e83fe6b98fbc1b511"
+      },
+      "actual_exit": 0,
+      "decoded_output": {
+        "command_id": "writer_sqlite",
+        "child_exit": 0,
+        "elapsed_seconds": 189.01924665999832,
+        "capture_integrity_complete": true,
+        "behavior_candidate_pass": true,
+        "errors": []
+      },
+      "resource_files": [
+        {
+          "pin": {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round311-p6-stage-b-continuation-20261023/implementation/writer_sqlite/resources/d4944952d04a5c74b2b4893f842fb3cb5c24a312bf4a00f6f53f8d53f6aaf78e.json",
+            "bytes": 453589,
+            "sha256": "1bdfdb583fe1d2938b7fd5aa5d12fb468408e9dccc40a0e85313ec7710cfe71c"
+          },
+          "resource_selector": "$.resources[?(@.kind == 'lease_session')]",
+          "record_key": "resource_id",
+          "sessions": [
+            {
+              "id": 126250537580736,
+              "initialized": false,
+              "error": {
+                "type": "IncompleteConstructor",
+                "message": "actual session constructor did not seal"
+              },
+              "cleanup": true,
+              "worker": 126250519040064,
+              "broker_alive": false
+            }
+          ],
+          "worker_selector": "$.resources[?(@.kind == 'worker')]",
+          "workers": [
+            {
+              "resource_id": 126250524942576,
+              "initialized": true,
+              "poll_ids": [],
+              "cleanup_basis": "never_polled_no_owned_runtime",
+              "cleanup_observed": true,
+              "session_observed": false,
+              "heartbeat_observed": false
+            },
+            {
+              "resource_id": 126250519040064,
+              "initialized": true,
+              "poll_ids": [
+                1
+              ],
+              "cleanup_basis": "poll_finished_runtime_released",
+              "cleanup_observed": true,
+              "session_observed": true,
+              "heartbeat_observed": true
+            }
+          ],
+          "poll_selector": "$.worker_lifecycles",
+          "polls": [
+            {
+              "poll_id": 1,
+              "attempted": true,
+              "entered": true,
+              "returned_normally": true,
+              "exception": null
+            }
+          ],
+          "allocation_attempts": 499,
+          "initialized_true": 498,
+          "cleanup_true": 499,
+          "not_clean": [],
+          "cleanup_errors": [],
+          "observations": {
+            "assertions_completed": true,
+            "observers_restored": true,
+            "method_restoration": true,
+            "exit_exception": null
+          }
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "allocation_attempts": 5708,
+    "unique_ids_sum_within_each_run": 5708,
+    "recorded_initialized_true": 5693,
+    "recorded_initialized_false": 15,
+    "misclassified_kind": "lease_session",
+    "cleanup_observed_true": 5708,
+    "normal_poll_returns": 15
+  },
+  "strength_and_limits": [
+    "The classifier defect is established by the actual constructor source and exact fifteen resource records; it is not inferred solely from passing JUnit.",
+    "The resources independently retain allocation IDs, worker association, polls, owned session/heartbeat observations, and cleanup. Allocation and cleanup counts do not filter on initialized and therefore retain all fifteen sessions in their denominators.",
+    "A normally returned worker poll and association to a session strongly support usable session construction; the saved finite records do not contain an explicit normal-constructor-return trace. Do not retrofit such a trace or silently turn the original initialized fields into true.",
+    "If all fifteen associated sessions are established as successfully constructed by the source assignment path and retained linkage, the interpretive initialized total is 5708; recorded_initialized remains 5693. This report does not present the interpretive total as an original recorded fact."
+  ],
+  "required_resolution": "Actual Astra plan before changes. Preserve raw resource bytes and old review. Correct future constructor classification with a supported criterion and provide a separately identified historical interpretation/limitation; add healthy-session coverage as well as existing partial-construction coverage. Independently bind the worker assignment path before strengthening historical constructor completion claims.",
+  "not_asserted": [
+    "No evidence here establishes leaked resources, failed lease ownership or failed behavioral runtime.",
+    "No native, physical, formal, whole P6B or P6C acceptance.",
+    "No cause is asserted for the historical writer SIGSEGV."
+  ],
+  "receipt": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/reviews/fresh-review-continuation/batch-06-receipt.json"
+}

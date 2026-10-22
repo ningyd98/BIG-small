@@ -1,0 +1,18 @@
+{
+  "round": "R317",
+  "invocation": {
+    "cmd": "/usr/bin/python3 - <<'PY'\nfrom pathlib import Path\nimport json,hashlib,base64,stat,os\nroot=Path('/home/ningyd/文档/ChatGPT/BIGsmall');base=root/'artifacts/research/process/20261004-ced-development/astra-rounds';d=base/'round317-p6-mixed-outbox-candidate-claim-20261023';obs=json.loads((d/'input-observation.json').read_bytes())\ndef pin(p):\n b=p.read_bytes();return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\ndef write(p,b,mode=None):\n p.parent.mkdir(parents=True,exist_ok=True)\n with p.open('xb') as f:f.write(b);f.flush();os.fsync(f.fileno())\n if mode is not None:os.chmod(p,mode)\n assert p.read_bytes()==b\n return pin(p)\nassert pin(d/'plan.json')['sha256']=='81c833ab00d5b27a7ee92140e9190b14f03bd27bd124650872d43f0a958bda46'\nfor r in obs['inputs']:\n p=root/r['path'];got=pin(p);assert got['bytes']==r['bytes'] and got['sha256']==r['sha256'],r['path']\nrows=[]\nfor name in ['protocol.py','memory.py','sqlite.py']:\n p=root/'src/cloud_edge_robot_arm/repositories/event_autonomy'/name;b=p.read_bytes();mode=stat.S_IMODE(p.lstat().st_mode);archive=write(d/'before/files'/p.relative_to(root),b,mode);rows.append({'source':pin(p),'mode':mode,'base64':base64.b64encode(b).decode(),'archive':archive})\nmanifest=write(d/'before/manifest.json',(json.dumps({'round':'R317','files':rows,'inputs_checked':23,'runtime_executed':False},ensure_ascii=False,indent=2)+'\\n').encode())\np=base/'round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/run-evidence.py';s=p.read_text();literals=['R315','r315','c71222fa4d71b4c8a51ed5a9bffb9d197edfef7a83e11444b1f7e75166ff50a3','KEYS = (\"observer_red\", \"observer_green\", \"writer_memory\")','\"exact three-key ledgers\"','key == \"observer_red\"','if key not in (\"observer_red\", \"observer_green\"):','decode-memo-case.json'];counts={literal:s.count(literal) for literal in literals};print(json.dumps({'before_manifest':manifest,'template':pin(p),'counts':counts,'runtime_executed':False},ensure_ascii=False))\nPY",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "yield_time_ms": 1000,
+    "max_output_tokens": 1900
+  },
+  "actual_tool_return": {
+    "chunk_id": "fe43dc",
+    "wall_time_seconds": 0.00000972,
+    "exit_code": 0,
+    "original_token_count": 242,
+    "output": "{\"before_manifest\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/before/manifest.json\", \"bytes\": 358520, \"sha256\": \"cf0f91a27f155f4e04d6f2acae1f0b2732164e15d911c3c10dd85209f608a7b5\"}, \"template\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/run-evidence.py\", \"bytes\": 15581, \"sha256\": \"80771ca6c9c640efbfd9a582056cb317852c4eb5f69630b18c16db2601dcd698\"}, \"counts\": {\"R315\": 7, \"r315\": 2, \"c71222fa4d71b4c8a51ed5a9bffb9d197edfef7a83e11444b1f7e75166ff50a3\": 1, \"KEYS = (\\\"observer_red\\\", \\\"observer_green\\\", \\\"writer_memory\\\")\": 1, \"\\\"exact three-key ledgers\\\"\": 1, \"key == \\\"observer_red\\\"\": 2, \"if key not in (\\\"observer_red\\\", \\\"observer_green\\\"):\": 1, \"decode-memo-case.json\": 1}, \"runtime_executed\": false}\n"
+  },
+  "independent_stdout": null,
+  "independent_stderr": null
+}

@@ -1,0 +1,14 @@
+{
+  "tool": "exec_command",
+  "arguments": {
+    "cmd": "/usr/bin/python3 - <<'PY'\nfrom pathlib import Path\nimport json,hashlib\nbase=Path('artifacts/research/process/20261004-ced-development/astra-rounds');r=base/'round314-p6-writer-diagnostic-generator-selector-continuation-20261023';p=r/'plan.json';pb=p.read_bytes();assert hashlib.sha256(pb).hexdigest()=='c0dabdf751896df9095e27f3e38571b6beeee7eab0296cf77155dd96374a1ebd';d=json.loads(pb)\nfor x in d['inputs']:\n b=Path(x['path']).read_bytes();assert len(b)==x['bytes'] and hashlib.sha256(b).hexdigest()==x['sha256']\nf=json.loads(Path(d['failure']['full_input']).read_bytes());s=f['failed_functions_exec_source'];assert s.count(d['exact_change']['before'])==1\nr313=base/'round313-p6-t2-writer-crash-diagnosis-20261023';assert not (r313/'implementation/run-evidence.py').exists();assert not (r313/'implementation/writer_memory_diagnostic').exists()\nt=Path(d['inputs'][-1]['path']).read_text();assert t.count('R311')==6 and t.count('r311')==2\nout=r/'root-plan-applicability.json';report={'round':'R314','reviewer':'ROOT','plan_sha256':hashlib.sha256(pb).hexdigest(),'inputs_checked':d['inputs'],'applicable':True,'runner_absent':True,'diagnostic_output_absent':True,'actual_uppercase_count':6,'actual_lowercase_count':2,'exact_change_occurrences':1,'runtime_released':False}\nwith out.open('x',encoding='utf-8') as f:json.dump(report,f,ensure_ascii=False,indent=2);f.write('\\n')\nb=out.read_bytes();print(json.dumps({'path':str(out),'sha256':hashlib.sha256(b).hexdigest(),'bytes':len(b),'applicable':True},ensure_ascii=False))\nPY",
+    "max_output_tokens": 1000
+  },
+  "actual": {
+    "chunk_id": "076f60",
+    "wall_time_seconds": 0.00000883,
+    "exit_code": 0,
+    "original_token_count": 73,
+    "output": "{\"path\": \"artifacts/research/process/20261004-ced-development/astra-rounds/round314-p6-writer-diagnostic-generator-selector-continuation-20261023/root-plan-applicability.json\", \"sha256\": \"882919477547fd9627002b8a34f2574fc0371ca822f63772c5f0dea1fcd3cb65\", \"bytes\": 2910, \"applicable\": true}\n"
+  }
+}

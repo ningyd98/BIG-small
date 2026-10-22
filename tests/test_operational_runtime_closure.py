@@ -3589,9 +3589,13 @@ def _b_t2_observe(monkeypatch, value):
     def init_wrapper(original, kind):
         def initialize(obj, *args, **kwargs):
             record = add(obj, kind)
+            if kind == "lease_session":
+                record["constructor_outcome"] = "ENTERED"
             try:
                 result = original(obj, *args, **kwargs)
             except BaseException as error:
+                if kind == "lease_session":
+                    record["constructor_outcome"] = "RAISED"
                 record["initialization_error"] = {"type": type(error).__name__, "message": str(error)}
                 if kind == "worker":
                     record["initial_active_job_id"] = getattr(obj, "active_job_id", None)
@@ -3600,6 +3604,8 @@ def _b_t2_observe(monkeypatch, value):
                 raise
             else:
                 record["initialized"] = True
+                if kind == "lease_session":
+                    record["constructor_outcome"] = "RETURNED"
                 if kind == "worker":
                     record["initial_active_job_id"] = getattr(obj, "active_job_id", None)
                     record["initial_state_observation"] = "constructor_return"
@@ -3814,12 +3820,6 @@ def _b_t2_observe(monkeypatch, value):
         elif code is session_code and event in ("call", "return"):
             session = frame.f_locals["self"]
             observe_session(session, frame.f_locals.get("worker"))
-            if event == "return" and id(session) in objects:
-                record = objects[id(session)][1]
-                record["initialized"] = getattr(session, "_sealed", False) is True
-                if not record["initialized"]:
-                    record["initialization_error"] = {"type": "IncompleteConstructor",
-                                                      "message": "actual session constructor did not seal"}
         elif code is thread_start_code and event in ("call", "return"):
             thread = frame.f_locals.get("self")
             for session in tuple(session_refs):
@@ -3846,6 +3846,7 @@ def _b_t2_observe(monkeypatch, value):
             (SQLiteEventAutonomyRepository, "event_repository"),
             (SQLiteSimulationJobRepository, "job_repository"),
             (SimulationWorker, "worker"),
+            (lease_module.OperationalLeaseSession, "lease_session"),
         ):
             patch(cls, "__init__", init_wrapper(cls.__init__, kind))
         patch(SimulationWorker, "poll_once", poll_once)

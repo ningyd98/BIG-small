@@ -1,0 +1,90 @@
+{
+  "round": "R312",
+  "command_id": "observer_red",
+  "child_exit": 1,
+  "pid": 5,
+  "elapsed_seconds": 0.7248985630139941,
+  "timed_out": false,
+  "output_limited": false,
+  "cleanup": {
+    "leader_reaped": true,
+    "group_remaining": false,
+    "cleanup_errors": [],
+    "cleanup_seconds_bound": 15
+  },
+  "errors": [],
+  "unit_only": true,
+  "formal_accepted": false,
+  "whole_T2_accepted": false,
+  "environment_difference": "Explicit plugins only; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+  "raw_streams": {
+    "stdout.txt": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round312-p6-publication-contract-hash-accessor-20261023/implementation/observer_red/stdout.txt",
+      "bytes": 7571,
+      "sha256": "9736cd021cdc485b49a12503533f666309d2458f302a5eaa577e0cd8c6e076ad"
+    },
+    "stderr.txt": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round312-p6-publication-contract-hash-accessor-20261023/implementation/observer_red/stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "raw_threshold_bytes_each": 33554432,
+  "raw_overshoot_bytes": {
+    "stdout.txt": 0,
+    "stderr.txt": 0
+  },
+  "junit": {
+    "pin": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round312-p6-publication-contract-hash-accessor-20261023/implementation/observer_red/junit.xml",
+      "bytes": 7524,
+      "sha256": "b376d1e543886b52cc7a66374446eae93004e48b4469ba5f6b296f36e7457036"
+    },
+    "available": true,
+    "records": [
+      {
+        "nodeid": "tests/test_publication_contract_hash.py::test_publication_contract_hash_readonly",
+        "attributes": {
+          "classname": "tests.test_publication_contract_hash",
+          "name": "test_publication_contract_hash_readonly",
+          "time": "0.213"
+        },
+        "outcomes": [
+          {
+            "tag": "failure",
+            "attributes": {
+              "message": "AssertionError: missing contract_hash accessors\nassert ['legacy', 'local'] == []\n  \n  Left contains 2 more items, first extra item: 'legacy'\n  Use -v to get more diff"
+            },
+            "text": "tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round312-...ation-contract-hash-accessor-20261023/implementation/observer_red/persistent-basetemp/test_publication_contract_hash0')\n\n    def test_publication_contract_hash_readonly(tmp_path):\n        from cloud_edge_robot_arm.simulation_runtime import operational_lease as lease\n        from cloud_edge_robot_arm.vision import operational_windows as windows\n    \n        registries = [\n            (\"windows._OWNERS\", windows._OWNERS), (\"windows._PENDING\", windows._PENDING),\n            (\"windows._HANDOFFS\", windows._HANDOFFS), (\"windows._SCOPES\", windows._SCOPES),\n            (\"windows._TRANSITIONS\", windows._TRANSITIONS), (\"lease._SESSIONS\", lease._SESSIONS),\n            (\"lease._VIEWS\", lease._VIEWS), (\"lease._PROPOSALS\", lease._PROPOSALS),\n            (\"lease._ACKS\", lease._ACKS),\n        ]\n        registry_before = [dict(values) for _, values in registries]\n        packet = {\"round\": \"R312\", \"cases\": [], \"missing_accessors\": [],\n                  \"registry_before\": _registry_summary(registries),\n                  \"live_authority_created\": False}\n        try:\n            for variant, filename, size, file_sha, leaf_sha, schema in FIXTURES:\n                case = {\"variant\": variant, \"source\": {\"path\": filename, \"bytes\": size, \"sha256\": file_sha},\n                        \"selection\": ('document[\"visual.owner.publication.v1\"] decoded JSON'\n                                      if variant == \"legacy\" else\n                                      'document[\"baseline_payload\"][\"payload\"][\"publication\"]'),\n                        \"payload_canonical_sha256\": leaf_sha, \"schema\": schema, \"checks\": {}}\n                packet[\"cases\"].append(case)\n                obj = None\n                try:\n                    path = Path(filename)\n                    raw = path.read_bytes()\n                    assert len(raw) == size and hashlib.sha256(raw).hexdigest() == file_sha\n                    document = json.loads(raw)\n                    seed = (json.loads(document[\"visual.owner.publication.v1\"]) if variant == \"legacy\"\n                            else document[\"baseline_payload\"][\"payload\"][\"publication\"])\n                    assert seed[\"schema_version\"] == schema and _hash(seed) == leaf_sha\n                    obj = VisualOwnerPublicationRecord.from_payload(seed)\n                    before = obj.to_payload()\n                    before_bytes = _canonical(before)\n                    digest = obj.digest()\n                    budget_time = _budgets_and_time(before)\n                    case.update(type=type(obj).__name__, before_payload=before, before_digest=digest,\n                                before_budget_time=budget_time, before_budget_time_sha256=_hash(budget_time))\n                    assert before_bytes == _canonical(seed)\n                    roundtrip = VisualOwnerPublicationRecord.from_payload(before)\n                    assert _canonical(roundtrip.to_payload()) == before_bytes and roundtrip.digest() == digest\n                    case[\"checks\"][\"valid_real_codec_and_roundtrip\"] = True\n                    body = before if variant == \"legacy\" else before[\"payload\"]\n                    expected = body[\"contract_hash\"]\n                    missing = False\n                    try:\n                        actual = obj.contract_hash\n                    except AttributeError as error:\n                        missing = True\n                        case[\"accessor_error\"] = {\"type\": type(error).__name__, \"message\": str(error)}\n                        packet[\"missing_accessors\"].append(variant)\n                    else:\n                        case[\"accessor_value\"] = actual\n                        assert type(actual) is str and actual == expected\n                        assert all(obj.contract_hash == expected for _ in range(3))\n                        assert roundtrip.contract_hash == expected\n                        assert obj.detached().contract_hash == expected\n                        case[\"checks\"][\"exact_repeat_detached_value\"] = True\n    \n                    exported = obj.to_payload()\n                    exported_body = exported if variant == \"legacy\" else exported[\"payload\"]\n                    exported_body[\"contract_hash\"] = \"0\" * 64\n                    assert _canonical(obj.to_payload()) == before_bytes and obj.digest() == digest\n                    if not missing:\n                        assert obj.contract_hash == expected\n                    case[\"checks\"][\"exported_copy_isolated\"] = True\n                    with pytest.raises((AttributeError, TypeError)):\n                        obj.contract_hash = \"0\" * 64\n                    case[\"checks\"][\"assignment_rejected\"] = True\n                    for mutation in (\"missing_field\", \"non_SHA\"):\n                        invalid = copy.deepcopy(seed)\n                        invalid_body = invalid if variant == \"legacy\" else invalid[\"payload\"]\n                        if mutation == \"missing_field\":\n                            del invalid_body[\"contract_hash\"]\n                        else:\n                            invalid_body[\"contract_hash\"] = \"not-a-sha256\"\n                        with pytest.raises(ValueError):\n                            VisualOwnerPublicationRecord.from_payload(invalid)\n                    case[\"checks\"][\"unchanged_decoder_rejects_invalid_fields\"] = True\n                    assert _canonical(obj.to_payload()) == before_bytes and obj.digest() == digest\n                    assert _canonical(_budgets_and_time(obj.to_payload())) == _canonical(budget_time)\n                    assert [dict(values) for _, values in registries] == registry_before\n                    assert path.read_bytes() == raw\n                    case[\"checks\"][\"payload_digest_budget_time_fixture_registries_unchanged\"] = True\n                except BaseException as error:\n                    case[\"unexpected_exception\"] = {\"type\": type(error).__name__, \"message\": str(error)}\n                    raise\n                finally:\n                    if obj is not None:\n                        case[\"after_payload\"] = obj.to_payload()\n                        case[\"after_digest\"] = obj.digest()\n                        case[\"after_budget_time_sha256\"] = _hash(_budgets_and_time(obj.to_payload()))\n                    case[\"registries_unchanged\"] = [dict(values) for _, values in registries] == registry_before\n            assert [dict(values) for _, values in registries] == registry_before\n>           assert packet[\"missing_accessors\"] == [], \"missing contract_hash accessors\"\nE           AssertionError: missing contract_hash accessors\nE           assert ['legacy', 'local'] == []\nE             \nE             Left contains 2 more items, first extra item: 'legacy'\nE             Use -v to get more diff\n\ntests/test_publication_contract_hash.py:137: AssertionError"
+          }
+        ]
+      }
+    ],
+    "tests": 1,
+    "failures": 1,
+    "errors": 0,
+    "skips": 0
+  },
+  "persistent_basetemp": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round312-p6-publication-contract-hash-accessor-20261023/implementation/observer_red/persistent-basetemp",
+    "exists": true,
+    "is_symlink": false,
+    "observation": "existing_path_strictly_indexed"
+  },
+  "new_databases": [],
+  "persistent_index": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round312-p6-publication-contract-hash-accessor-20261023/implementation/observer_red/persistent-file-database-index.json",
+    "bytes": 1820,
+    "sha256": "84cdbe9689c26e44e025032a19245c3021d2f6369f5681f1b49bd9c256fe6532"
+  },
+  "capture_integrity_complete": true,
+  "child_matched_expected_exit": true,
+  "behavior_candidate_pass": false,
+  "ROOT_acceptance_required": true,
+  "unobserved": {
+    "OS_handles": null,
+    "external_models": null,
+    "GPU_native": null,
+    "native_tool_exit": null
+  }
+}

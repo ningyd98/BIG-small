@@ -1,0 +1,16 @@
+{
+  "invocation": {
+    "tool": "exec_command",
+    "arguments": {
+      "cmd": "/usr/bin/python3 - <<'PY'\nimport json,hashlib\nfrom pathlib import Path\nD=Path('artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/delivery/gzip-originals');m=json.loads((D/'manifest.json').read_bytes());out=[]\nfor r in m['files']:\n q=r['gzip'];p=Path(q['path']);h=hashlib.sha256();n=0\n with p.open('rb') as f:\n  for b in iter(lambda:f.read(1024*1024),b''):h.update(b);n+=len(b)\n assert n==q['bytes'] and h.hexdigest()==q['sha256'];s=Path(r['source']['path']).stat();same=all(getattr(s,k)==v for k,v in r['source_identity_before_after'].items());assert same\n assert r['decompressed_bytes']==r['source']['bytes'] and r['decompressed_sha256']==r['source']['sha256']\n out.append({'gzip':q,'source_identity_retained':same,'previous_independent_decompression_matches_original':True})\nprint(json.dumps({'compressed_files_rehashed':out,'total_compressed_bytes':sum(r['gzip']['bytes'] for r in m['files']),'original_bytes':sum(r['source']['bytes'] for r in m['files']),'new_decompression_run':False},ensure_ascii=False))\nPY",
+      "max_output_tokens": 2500
+    }
+  },
+  "actual_tool_return": {
+    "chunk_id": "a3ce1a",
+    "wall_time_seconds": 0.00001119,
+    "exit_code": 0,
+    "original_token_count": 460,
+    "output": "{\"compressed_files_rehashed\": [{\"gzip\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/delivery/gzip-originals/memory-aggregate.json.gz\", \"bytes\": 36070681, \"sha256\": \"7c45316ae02f54c4c1b1d305d100d1794bec5d894723765253741edba46af726\"}, \"source_identity_retained\": true, \"previous_independent_decompression_matches_original\": true}, {\"gzip\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/delivery/gzip-originals/memory-original-case.json.gz\", \"bytes\": 36058898, \"sha256\": \"267eb46754a2bf217bdfd18fa27d2ffe348fd2d09602991cf049c907caafc997\"}, \"source_identity_retained\": true, \"previous_independent_decompression_matches_original\": true}, {\"gzip\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/delivery/gzip-originals/sqlite-aggregate.json.gz\", \"bytes\": 34762532, \"sha256\": \"62777169fd8f0293e1193fde5aa6c8cd865345f02a4248641bf08916ecf657cc\"}, \"source_identity_retained\": true, \"previous_independent_decompression_matches_original\": true}, {\"gzip\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/delivery/gzip-originals/sqlite-original-case.json.gz\", \"bytes\": 34746604, \"sha256\": \"ddd07792d2fe48397d3e2cc0ead773778c7855f655cb40b457b9ce7c948342dc\"}, \"source_identity_retained\": true, \"previous_independent_decompression_matches_original\": true}], \"total_compressed_bytes\": 141638715, \"original_bytes\": 3600287803, \"new_decompression_run\": false}\n"
+  }
+}

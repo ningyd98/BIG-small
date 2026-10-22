@@ -1,0 +1,18 @@
+{
+  "round": "R315",
+  "invocation": {
+    "cmd": "/usr/bin/python3 - <<'PY'\nfrom pathlib import Path\nimport json,hashlib,base64,stat,os\nroot=Path('/home/ningyd/文档/ChatGPT/BIGsmall');base=root/'artifacts/research/process/20261004-ced-development/astra-rounds';d=base/'round315-p6-local-envelope-scoped-validation-memo-20261023';obs=json.loads((d/'input-observation.json').read_bytes())\ndef pin(p):\n b=p.read_bytes();return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\ndef write(p,b):\n p.parent.mkdir(parents=True,exist_ok=True)\n with p.open('xb') as f:f.write(b);f.flush();os.fsync(f.fileno())\n assert p.read_bytes()==b\n return pin(p)\nfor row in obs['inputs']:\n p=Path(row['path']);p=p if p.is_absolute() else root/p;actual=pin(p);assert actual['bytes']==row['bytes'] and actual['sha256']==row['sha256'],str(p)\np=root/'src/cloud_edge_robot_arm/vision/local_temporal.py';b=p.read_bytes();mode=stat.S_IMODE(p.lstat().st_mode);archive=write(d/'before/local_temporal.py',b);os.chmod(d/'before/local_temporal.py',mode)\nrecord={'round':'R315','source':pin(p),'mode':mode,'base64':base64.b64encode(b).decode(),'archive':archive,'archive_mode':stat.S_IMODE((d/'before/local_temporal.py').lstat().st_mode),'all_original_semantic_validators_included':True,'runtime_executed':False}\nbefore=write(d/'before/source.json',(json.dumps(record,ensure_ascii=False,indent=2)+'\\n').encode())\ntemplate=base/'round311-p6-stage-b-continuation-20261023/implementation/run-evidence.py';text=template.read_text();counts={value:text.count(value) for value in ['R311','r311','20e6092993170d7ec5112a79712410d385b1196294e373e8d9468c19bf4a40f8','KEYS = (\"budget_memory\", \"budget_sqlite\", \"writer_memory\", \"writer_sqlite\")','\"exact four-key ledgers\"']}\nprint(json.dumps({'inputs_checked':len(obs['inputs']),'before':before,'archive':archive,'mode':mode,'template':pin(template),'measured_literal_counts':counts,'runtime_executed':False},ensure_ascii=False))\nPY",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "yield_time_ms": 1000,
+    "max_output_tokens": 1800
+  },
+  "actual_tool_return": {
+    "chunk_id": "e25920",
+    "wall_time_seconds": 0.00000877,
+    "exit_code": 0,
+    "original_token_count": 302,
+    "output": "{\"inputs_checked\": 26, \"before\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/before/source.json\", \"bytes\": 159576, \"sha256\": \"e79e5f3d5fa5cfe76fc495df64919730122a9fac210a56477a979cd9b5c00e7c\"}, \"archive\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/before/local_temporal.py\", \"bytes\": 119154, \"sha256\": \"8d41d767ea77a0a2a41e191a25d2e95d8e3cc6e4f6908faddbedbe13dcca6ad7\"}, \"mode\": 436, \"template\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round311-p6-stage-b-continuation-20261023/implementation/run-evidence.py\", \"bytes\": 15104, \"sha256\": \"b3a940c0ef9e22afc2c99005fb6e6b628e2d06d99064952b5e6c2b21ed43abe3\"}, \"measured_literal_counts\": {\"R311\": 6, \"r311\": 2, \"20e6092993170d7ec5112a79712410d385b1196294e373e8d9468c19bf4a40f8\": 1, \"KEYS = (\\\"budget_memory\\\", \\\"budget_sqlite\\\", \\\"writer_memory\\\", \\\"writer_sqlite\\\")\": 1, \"\\\"exact four-key ledgers\\\"\": 1}, \"runtime_executed\": false}\n"
+  },
+  "independent_stdout": null,
+  "independent_stderr": null
+}

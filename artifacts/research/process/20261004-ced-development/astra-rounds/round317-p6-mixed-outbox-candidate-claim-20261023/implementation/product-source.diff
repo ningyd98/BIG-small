@@ -1,0 +1,63 @@
+--- G0/protocol.py
++++ G1/protocol.py
+@@ -183,7 +183,7 @@
+             key = value if isinstance(value, str) else getattr(value, "request_id", None)
+             if key and local_get_unlocked(repository, category, key) is not None:
+                 return True
+-    if name == "claim_outbox_message":
++    if name == "claim_outbox_message" and not args and not kwargs:
+         if hasattr(repository, "_conn"):
+             return repository._conn.execute("SELECT 1 FROM visual_local_tasks_v1 WHERE category='outbox' LIMIT 1").fetchone() is not None
+         return any(category == "outbox" for category, _ in repository._local_tasks)
+@@ -217,7 +217,7 @@
+                     result = _local_read_record(self, name, args, kwargs)
+                     if result is not _LOCAL_MISSING:
+                         return result
+-                elif _local_target(self, name, args, kwargs):
++                elif name != "claim_outbox_message" and _local_target(self, name, args, kwargs):
+                     negative = (name == "save_state" and len(args) >= 2 and type(args[1]) is str
+                                 and args[1] == "CANCELLED" and not kwargs)
+                     if not negative:
+--- G0/memory.py
++++ G1/memory.py
+@@ -1783,17 +1783,18 @@
+ 
+     def claim_outbox_message(self) -> PendingMessage | None:
+         with self._lock:
+-            _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (), {})
+             for msg in self._outbox.values():
+                 now = _utc_now()
+                 if msg.status not in {MessageStatus.PENDING, MessageStatus.RETRY_WAIT}:
+                     continue
+                 if msg.next_retry_at is not None and msg.next_retry_at > now:
+                     continue
++                _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (msg,), {})
+                 updated = msg.model_copy(update={"status": MessageStatus.SENDING}, deep=True)
+                 self._outbox[msg.message_id] = updated
+                 self._outbox_hashes[msg.message_id] = _canonical_hash(updated)
+                 return updated.model_copy(deep=True)
++            _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (), {})
+             return None
+ 
+     def mark_outbox_sent(self, message_id: str) -> bool:
+--- G0/sqlite.py
++++ G1/sqlite.py
+@@ -2363,7 +2363,6 @@
+         now = _iso_now()
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
+-            _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (), {})
+             row = self._conn.execute(
+                 """SELECT message_id, payload_json FROM event_outbox
+                    WHERE status IN ('PENDING', 'RETRY_WAIT')
+@@ -2372,8 +2371,10 @@
+                 (now,),
+             ).fetchone()
+             if row is None:
++                _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (), {})
+                 return None
+             msg = PendingMessage.model_validate_json(row["payload_json"])
++            _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (msg,), {})
+             updated = msg.model_copy(update={"status": MessageStatus.SENDING}, deep=True)
+             updated_payload = updated.model_dump_json()
+             cursor = self._conn.execute(

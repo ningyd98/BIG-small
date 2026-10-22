@@ -1,0 +1,221 @@
+--- before-T2/src/cloud_edge_robot_arm/vision/operational_windows.py
++++ current/src/cloud_edge_robot_arm/vision/operational_windows.py
+@@ -10,6 +10,7 @@
+ import hashlib
+ import json
+ import math
++import sys
+ import threading
+ from collections.abc import Iterator, Mapping
+ from contextlib import contextmanager
+@@ -45,6 +46,7 @@
+ _HANDOFFS: dict[object, OperationalWindowOwner] = {}
+ _SCOPES: dict[int, list[OperationalWindowOwner]] = {}
+ _TRANSITIONS: dict[int, tuple[OperationalWindowOwner, str, tuple[str, ...]]] = {}
++_LOCAL_ORIGINALS: dict[OperationalWindowOwner, str] = {}
+ _CONSTRUCTION = object()
+ 
+ 
+@@ -134,6 +136,7 @@
+     binding: object
+     binding_hash: str
+     thread_id: int
++    mode: str
+ 
+ 
+ @dataclass(frozen=True)
+@@ -196,13 +199,21 @@
+     if worker in _PENDING or worker in _OWNERS:
+         raise OperationalTimeError("startup cannot be issued twice")
+     current = worker.repository.get_job(job.job_id)
+-    lease = read_visual_worker_lease(
+-        worker.repository,
+-        job_id=current.job_id,
+-        run_id=current.run_id,
+-        worker_id=worker.worker_id,
+-        lease_id=current.lease_id,
+-    )
++    mode = worker._frozen_operational_time_mode
++    if mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++        session = worker._operational_lease_session
++        with worker.repository._local_read_scope(
++            session, job_id=current.job_id, purpose="startup", operation_sha256=_hash(["startup", current.job_id])
++        ) as view:
++            observed = session.evaluate_locked(view)
++            attempt = observed.attempt
++            acquired = observed.original_acquisition["event_id"]
++    else:
++        lease = read_visual_worker_lease(
++            worker.repository, job_id=current.job_id, run_id=current.run_id,
++            worker_id=worker.worker_id, lease_id=current.lease_id,
++        )
++        attempt, acquired = lease.attempt, lease.acquired_at
+     binding = worker.visual_role_binding
+     binding_hash = _hash(binding.evidence())
+     policy = binding.evidence()["edge_policy"]["verification_budget"]
+@@ -212,14 +223,15 @@
+         current.job_id,
+         current.run_id,
+         current.lease_id,
+-        lease.attempt,
+-        lease.acquired_at,
++        attempt,
++        acquired,
+         _job_source(current),
+         _seconds_ns(current.timeout_seconds),
+         _seconds_ns(policy["deadline_s"]),
+         binding,
+         binding_hash,
+         threading.get_ident(),
++        mode,
+     )
+     return True
+ 
+@@ -284,6 +296,9 @@
+         return self._clock
+ 
+     def _check_live(self) -> None:
++        if self._startup.mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            self._check_app_live(require_origin=False)
++            return
+         s = self._startup
+         worker = s.worker
+         if self._closed or _OWNERS.get(worker) is not self or threading.get_ident() != s.thread_id:
+@@ -383,7 +398,80 @@
+                 "plan": source.plan_id,
+             }
+         )
++        if s.mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            session = s.worker._operational_lease_session
++            with s.repository._local_read_scope(
++                session, job_id=s.job_id, purpose="bind", operation_sha256=_hash(["bind", hashes])
++            ) as view:
++                self._source_identity = str(view.snapshot["original_policy_digest"])
+         self._check_live()
++
++    def _check_app_live(self, *, require_origin: bool = True) -> None:
++        """Check the original issuer and D_app only; never compare broker numbers."""
++        s = self._startup
++        worker = s.worker
++        if (self._closed or _OWNERS.get(worker) is not self
++                or threading.get_ident() != s.thread_id or worker.repository is not s.repository
++                or worker.active_job_id != s.job_id or worker.visual_role_binding is not s.binding
++                or worker._frozen_operational_time_mode != s.mode):
++            raise OperationalTimeError("current exact app owner/startup source unavailable")
++        if _hash(s.binding.evidence()) != s.binding_hash or _job_source(s.repository.get_job(s.job_id)) != s.job_source:
++            raise OperationalTimeError("original app source/policy changed")
++        if self._origin_tuple is not None and worker._active_task_origin != self._origin_tuple:
++            raise OperationalTimeError("original task origin changed")
++        _ = self._clock.domain
++        if self._source_hashes is not None:
++            pin_worker_source_inventory(self._source_root, self._source_hashes,
++                                        required_paths=frozenset(self._source_hashes))
++        if require_origin:
++            if self.task_origin is None or self.task_origin_token is None or not self._hard:
++                raise OperationalTimeError("original app origin unavailable")
++            for hard in self._hard:
++                current = self._clock.read_current(after=_event_token(self, hard.deadline.origin))
++                if not self._clock.before_deadline(hard.deadline, current):
++                    raise OperationalTimeError("original app deadline expired")
++
++    def _check_local_locked(self, view, *, purpose: str, operation_sha256: str):
++        from cloud_edge_robot_arm.simulation_runtime.operational_lease import LockedLeaseView, _view_record
++        from cloud_edge_robot_arm.vision.local_temporal import LocalAuthorityDecision
++
++        self._check_app_live()
++        s = self._startup
++        if type(view) is not LockedLeaseView:
++            raise OperationalTimeError("private genuine locked view required")
++        issued = _view_record(view)
++        session = s.worker._operational_lease_session
++        if (issued.session is not session or issued.repository is not s.repository
++                or view.purpose != purpose or view.operation_sha256 != operation_sha256):
++            raise OperationalTimeError("private local view/source operation mismatch")
++        observed = session.evaluate_locked(view)
++        if observed.status != "VALID" or observed.attempt != s.attempt:
++            raise OperationalTimeError("current broker lease authority invalid")
++        frozen = _LOCAL_ORIGINALS.get(self)
++        if frozen is None or _json(self._local_original) != frozen:
++            raise OperationalTimeError("registered immutable local original source changed")
++        original = json.loads(frozen)
++        if (dict(observed.original_acquisition) != original["lease_identity"]["original_acquisition"]
++                or observed.source_identity != self._source_identity):
++            raise OperationalTimeError("original broker acquisition/source changed")
++        self._check_app_live()
++        current = self._clock.read_current(after=self.task_origin_token)
++        row = dict(view.snapshot)
++        return LocalAuthorityDecision.from_payload(_descriptor_plain({
++            "schema_version": "visual.local-two-authority-decision.v1",
++            "operation_id": purpose, "operation_sha256": operation_sha256,
++            "original_time_hash": _hash(original), "app_domain": asdict(self._clock.domain),
++            "app_current": {"domain": asdict(current.domain), "lower_ns": current.lower_ns,
++                            "upper_ns": current.upper_ns, "event_identity": self.task_origin_token.event_identity},
++            "app_verdict": {"status": "VALID", "reasons": []},
++            "app_references": [self.export_record(self.task_window)],
++            "lease_observation": _descriptor_plain({**observed.__dict__, "domain": asdict(observed.domain)}),
++            "lease_epoch": session.epoch, "lease_generation": row["generation"],
++            "lease_row_revision": row["row_revision"], "lease_row_digest": row["proposed_row_digest"],
++            "source_identity": observed.source_identity, "job_id": s.job_id, "run_id": s.run_id,
++            "worker_id": s.worker.worker_id, "lease_id": s.lease_id, "attempt": s.attempt,
++            "disposition": "VALID", "reasons": [],
++        }))
+ 
+     def issue(
+         self, kind: str, event: OperationalBracket, *, budget_ns: int, parent_ids: tuple[str, ...]
+@@ -410,7 +498,7 @@
+             else [_Age(event, budget_ns, self._source_identity + ":" + kind)]
+         )
+         hard = list(self._hard)
+-        if kind == "bootstrap":
++        if kind == "bootstrap" and self._startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1":
+             hard.append(
+                 _Hard(
+                     self._clock.start_deadline(
+@@ -486,7 +574,8 @@
+         upper = min([deadline, *(age["expiry_upper_ns"] for age in ages)])
+         s = self._startup
+         return {
+-            "schema_version": _SCHEMA,
++            "schema_version": ("simulation.operational-window.local.v1"
++                               if s.mode == "LOCAL_TEMPORAL_PUBLICATION_V1" else _SCHEMA),
+             "window_id": window_id,
+             "kind": window.kind,
+             "kind_policy": (
+@@ -513,7 +602,8 @@
+             "deadline_ns": deadline,
+             "deadline_semantics": "HARD_OPEN",
+             "effective_upper": {"value_ns": upper, "inclusive": upper < deadline},
+-            "lease_deadline_domain": "UTC_LEGACY_VETO",
++            "lease_deadline_domain": ("SEPARATE_D_LEASE_DECISION"
++                                      if s.mode == "LOCAL_TEMPORAL_PUBLICATION_V1" else "UTC_LEGACY_VETO"),
+             "live_authority": "NOT_EXPORTED",
+         }
+ 
+@@ -536,11 +626,27 @@
+     return owner
+ 
+ 
++def _register_local_original(owner: OperationalWindowOwner, original: object) -> None:
++    """Seal one validated description to the existing live startup, never issue D."""
++    from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++
++    if sys._getframe(1).f_code is not VisualWorkerRuntime._initialize_local.__code__:
++        raise OperationalTimeError("only the original private local bootstrap may bind its source")
++    owner._check_app_live()
++    if owner._startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1" or owner in _LOCAL_ORIGINALS:
++        raise OperationalTimeError("original local source cannot be initialized or refreshed twice")
++    frozen = _json(original)
++    if _json(owner._local_original) != frozen:
++        raise OperationalTimeError("bootstrap validated original differs from issuer source")
++    _LOCAL_ORIGINALS[owner] = frozen
++
++
+ def _revoke_worker(worker: object) -> None:
+     _PENDING.pop(worker, None)
+     owner = _OWNERS.pop(worker, None)
+     if owner is None:
+         return
++    _LOCAL_ORIGINALS.pop(owner, None)
+     owner._closed = True
+     for token, candidate in list(_HANDOFFS.items()):
+         if candidate is owner:

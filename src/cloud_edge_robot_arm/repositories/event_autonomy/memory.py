@@ -1783,17 +1783,18 @@ class InMemoryEventAutonomyRepository:
 
     def claim_outbox_message(self) -> PendingMessage | None:
         with self._lock:
-            _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (), {})
             for msg in self._outbox.values():
                 now = _utc_now()
                 if msg.status not in {MessageStatus.PENDING, MessageStatus.RETRY_WAIT}:
                     continue
                 if msg.next_retry_at is not None and msg.next_retry_at > now:
                     continue
+                _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (msg,), {})
                 updated = msg.model_copy(update={"status": MessageStatus.SENDING}, deep=True)
                 self._outbox[msg.message_id] = updated
                 self._outbox_hashes[msg.message_id] = _canonical_hash(updated)
                 return updated.model_copy(deep=True)
+            _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (), {})
             return None
 
     def mark_outbox_sent(self, message_id: str) -> bool:

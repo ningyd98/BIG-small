@@ -1,0 +1,396 @@
+--- before-T2/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
++++ current/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
+@@ -34,6 +34,8 @@
+ )
+ from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
+     IdempotencyConflictError,
++    _local_legacy_write_guard_unlocked,
++    local_event_repository,
+ )
+ 
+ 
+@@ -105,6 +107,7 @@
+     )
+ 
+ 
++@local_event_repository
+ class SQLiteEventAutonomyRepository:
+     """SQLite-backed persistent repository with CAS and conflict semantics."""
+ 
+@@ -119,6 +122,16 @@
+         self._visual_supervision_verified_bytes: dict[str, tuple[Any, ...]] = {}
+         self._create_schema()
+         self._migrate_schema()
++        with self._conn:
++            self._conn.execute("CREATE TABLE IF NOT EXISTS visual_local_tasks_v1 (category TEXT NOT NULL, "
++                               "record_key TEXT NOT NULL, task_id TEXT NOT NULL, value_json TEXT NOT NULL, "
++                               "PRIMARY KEY(category,record_key))")
++            self._conn.execute("CREATE TABLE IF NOT EXISTS visual_local_publications_v1 ("
++                               "operation_id TEXT PRIMARY KEY, operation_sha256 TEXT NOT NULL, job_id TEXT NOT NULL, "
++                               "attempt INTEGER NOT NULL, lease_id TEXT NOT NULL, epoch TEXT NOT NULL, "
++                               "generation INTEGER NOT NULL, row_revision INTEGER NOT NULL, phase TEXT NOT NULL, "
++                               "event_record_hash TEXT NOT NULL, event_receipt_hash TEXT NOT NULL, "
++                               "job_receipt_hash TEXT NOT NULL, payload_json TEXT NOT NULL)")
+ 
+     def _visual_supervision_locked(self, task_id: str) -> VisualSupervisionRecord | None:
+         from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import (
+@@ -195,6 +208,7 @@
+         task = definition.task_id
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "initialize_visual_supervision_if_absent", (definition,), {})
+             stored = self._visual_supervision_locked(task)
+             if stored is not None:
+                 if stored.definition.digest() != definition.digest():
+@@ -239,6 +253,7 @@
+         task = request.task_id
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "transition_visual_supervision_if_current", (), {'request': request})
+             stored = self._visual_supervision_locked(task)
+             prior = self._visual_record_locked(task)
+             if stored is None or prior is None:
+@@ -331,6 +346,7 @@
+         initial = VisualBootstrapRecord.start(definition)
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "initialize_visual_bootstrap_if_absent", (definition,), {})
+             existing = self._visual_bootstrap_locked(definition.bootstrap_id)
+             if existing is not None:
+                 if existing.definition.digest() != definition.digest():
+@@ -384,6 +400,7 @@
+         body = request.to_payload()
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "transition_visual_bootstrap_if_current", (), {'request': request})
+             current = self._visual_bootstrap_locked(body["bootstrap_id"])
+             if current is None:
+                 return None
+@@ -798,7 +815,9 @@
+         payload = event.model_dump_json()
+         payload_hash = _canonical_hash(event)
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_event", (event,), {})
+             row = self._existing_by_key("edge_events", "event_id", event.event_id)
+             if row is not None:
+                 _same_or_conflict(
+@@ -854,7 +873,9 @@
+ 
+     def mark_event_handled(self, event_id: str, handled_at: datetime | None = None) -> bool:
+         now = (handled_at or datetime.now(UTC)).isoformat()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "mark_event_handled", (event_id, handled_at), {})
+             cursor = self._conn.execute(
+                 "UPDATE edge_events SET handled = 1, updated_at = ? WHERE event_id = ?",
+                 (now, event_id),
+@@ -867,7 +888,9 @@
+     def save_retry_budget(self, budget: RecoveryBudget) -> RecoveryBudget:
+         now = _iso_now()
+         deadline = budget.retry_deadline.isoformat() if budget.retry_deadline else None
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_retry_budget", (budget,), {})
+             self._conn.execute(
+                 """INSERT INTO recovery_budgets (
+                     budget_id, task_id, per_step_retry_limit, per_skill_retry_limit,
+@@ -949,6 +972,7 @@
+         budget = RecoveryBudget.model_validate(budget.model_dump())
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "initialize_retry_budget_if_absent", (budget,), {})
+             existing = self.get_retry_budget(budget.task_id)
+             if existing is not None:
+                 return existing.model_copy(deep=True)
+@@ -994,7 +1018,9 @@
+         expected_count: int,
+         event_id: str = "",
+     ) -> tuple[bool, RecoveryBudget | None]:
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "consume_retry_if_available", (task_id, step_id, skill, expected_count, event_id), {})
+             return self._consume_retry_locked(task_id, step_id, skill, expected_count, event_id)
+ 
+     def _consume_retry_locked(
+@@ -1078,6 +1104,7 @@
+             raise ValueError("nonempty task identity required")
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "initialize_verification_budget_if_absent", (task_id, state), {})
+             existing = self.get_verification_budget(task_id)
+             if existing is None:
+                 existing = VerificationBudgetRecord.create(task_id, state)
+@@ -1133,6 +1160,7 @@
+         record = record.detached()
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "initialize_recovery_if_absent", (record,), {})
+             row = self._conn.execute(
+                 "SELECT initial_hash FROM recovery_records WHERE recovery_id=?",
+                 (record.recovery_id,),
+@@ -1222,6 +1250,7 @@
+ 
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "advance_recovery_if_current", (record,), {'expected_state': expected_state, 'expected_revision': expected_revision, 'expected_budget_revision': expected_budget_revision, 'verified_transition': verified_transition})
+             current = self.get_recovery(record.recovery_id)
+             pool = self.get_verification_budget(current.task_id) if current else None
+             if not (
+@@ -1268,6 +1297,7 @@
+ 
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "reserve_reobservation_if_current", (), {'recovery_id': recovery_id, 'expected_revision': expected_revision, 'expected_budget_revision': expected_budget_revision, 'reservation': reservation})
+             current = self.get_recovery(recovery_id)
+             pool = self.get_verification_budget(current.task_id) if current else None
+             if not (
+@@ -1317,6 +1347,7 @@
+ 
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "consume_retry_and_authorize_recovery_if_current", (), {'recovery_id': recovery_id, 'expected_recovery_revision': expected_recovery_revision, 'expected_verification_budget_revision': expected_verification_budget_revision, 'expected_retry_count': expected_retry_count, 'step_id': step_id, 'skill': skill, 'authorization': authorization})
+             record = self.get_recovery(recovery_id)
+             pool = self.get_verification_budget(record.task_id) if record else None
+             budget = self.get_retry_budget(record.task_id) if record else None
+@@ -1395,7 +1426,9 @@
+ 
+     def save_state(self, task_id: str, state: str, reason: str, event_id: str = "") -> None:
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_state", (task_id, state, reason, event_id), {})
+             self._conn.execute(
+                 """INSERT INTO event_mode_states
+                    (task_id, current_state, reason, event_id, updated_at)
+@@ -1420,7 +1453,9 @@
+         self, task_id: str, from_state: str, to_state: str, reason: str, event_id: str = ""
+     ) -> None:
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_state_transition", (task_id, from_state, to_state, reason, event_id), {})
+             self._conn.execute(
+                 """INSERT INTO event_mode_transitions
+                    (task_id, from_state, to_state, reason, event_id, created_at)
+@@ -1454,7 +1489,9 @@
+         payload_hash = _canonical_hash(summary)
+         payload = summary.model_dump_json()
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_failure_summary", (summary,), {})
+             row = self._existing_by_key("failure_summaries", "summary_id", summary.summary_id)
+             if row is not None:
+                 _same_or_conflict(
+@@ -1511,7 +1548,9 @@
+         payload_hash = _canonical_hash(summary)
+         payload = summary.model_dump_json()
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_completion_summary", (summary,), {})
+             row = self._existing_by_key("completion_summaries", "summary_id", summary.summary_id)
+             if row is not None:
+                 existing = CompletionSummary.model_validate_json(row["payload_json"])
+@@ -1575,7 +1614,9 @@
+         payload_hash = _canonical_hash(request)
+         payload = request.model_dump_json()
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_replan_request", (request,), {})
+             row = self._existing_by_key("replan_requests", "request_id", request.request_id)
+             if row is not None:
+                 _same_or_conflict(
+@@ -1639,7 +1680,9 @@
+         payload_hash = _canonical_hash(result)
+         payload = result.model_dump_json()
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_replan_result", (result,), {})
+             row = self._existing_by_key("replan_results", "request_id", result.request_id)
+             if row is not None:
+                 _same_or_conflict(
+@@ -1707,7 +1750,9 @@
+         based_on_plan_version: int | None = None,
+         correlation_id: str = "",
+     ) -> ActiveTaskContractRecord:
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_active_contract", (contract,), {'plan_id': plan_id, 'robot_id': robot_id, 'status': status, 'based_on_plan_version': based_on_plan_version, 'correlation_id': correlation_id})
+             return self._save_active_contract_locked(
+                 contract,
+                 plan_id=plan_id,
+@@ -1891,6 +1936,7 @@
+         new_contract = TaskContract.model_validate(new_contract.model_dump())
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "advance_active_contract_if_current", (), {'task_id': task_id, 'expected_plan_version': expected_plan_version, 'expected_command_seq': expected_command_seq, 'new_contract': new_contract, 'plan_id': plan_id, 'robot_id': robot_id, 'based_on_plan_version': based_on_plan_version, 'correlation_id': correlation_id, 'replan_record': replan_record, 'activation_guard': activation_guard})
+             active = self.get_active_contract(task_id)
+             if (
+                 active is None
+@@ -1963,7 +2009,9 @@
+         saved = checkpoint.model_copy(update={"checkpoint_hash": h}, deep=True)
+         payload = saved.model_dump_json()
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_execution_checkpoint", (checkpoint,), {})
+             row = self._conn.execute(
+                 """SELECT payload_json, checkpoint_hash FROM execution_checkpoints
+                    WHERE checkpoint_id = ?""",
+@@ -2020,13 +2068,15 @@
+         expected_checkpoint_hash: str,
+         new_checkpoint: ExecutionCheckpoint,
+     ) -> bool:
+-        existing = self.get_checkpoint(checkpoint_id)
+-        if existing is None or existing.checkpoint_hash != expected_checkpoint_hash:
+-            return False
+-        h = new_checkpoint.checkpoint_hash or _checkpoint_hash(new_checkpoint)
+-        saved = new_checkpoint.model_copy(update={"checkpoint_hash": h}, deep=True)
+-        payload = saved.model_dump_json()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "compare_and_set_checkpoint", (), {'checkpoint_id': checkpoint_id, 'expected_checkpoint_hash': expected_checkpoint_hash, 'new_checkpoint': new_checkpoint})
++            existing = self.get_checkpoint(checkpoint_id)
++            if existing is None or existing.checkpoint_hash != expected_checkpoint_hash:
++                return False
++            h = new_checkpoint.checkpoint_hash or _checkpoint_hash(new_checkpoint)
++            saved = new_checkpoint.model_copy(update={"checkpoint_hash": h}, deep=True)
++            payload = saved.model_dump_json()
+             if saved.checkpoint_id == checkpoint_id:
+                 cursor = self._conn.execute(
+                     """UPDATE execution_checkpoints
+@@ -2114,6 +2164,7 @@
+         payload = saved.model_dump_json()
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_replan_apply_record", (record,), {})
+             row = self._conn.execute(
+                 """SELECT payload_json, apply_hash FROM replan_apply_records
+                    WHERE apply_id = ? OR request_id = ?""",
+@@ -2162,6 +2213,7 @@
+         record = ReplanApplyRecord.model_validate(record.model_dump())
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "update_replan_apply_record_if_current", (record,), {'expected_status': expected_status})
+             previous = self.get_replan_apply_record(record.apply_id)
+             if previous is None:
+                 return None
+@@ -2212,7 +2264,9 @@
+         key = ack.request_id or f"{ack.task_id}:{ack.plan_version}:{ack.command_seq}"
+         h = _canonical_hash(ack)
+         payload = ack.model_dump_json()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "save_command_ack", (ack,), {})
+             row = self._conn.execute(
+                 "SELECT payload_json, payload_hash FROM command_acks WHERE ack_key = ?",
+                 (key,),
+@@ -2256,7 +2310,9 @@
+         payload_hash = _canonical_hash(message)
+         payload = message.model_dump_json()
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "enqueue_outbox", (message,), {})
+             row = self._existing_by_key("event_outbox", "message_id", message.message_id)
+             if row is not None:
+                 _same_or_conflict(
+@@ -2305,7 +2361,9 @@
+ 
+     def claim_outbox_message(self) -> PendingMessage | None:
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "claim_outbox_message", (), {})
+             row = self._conn.execute(
+                 """SELECT message_id, payload_json FROM event_outbox
+                    WHERE status IN ('PENDING', 'RETRY_WAIT')
+@@ -2330,7 +2388,9 @@
+ 
+     def mark_outbox_sent(self, message_id: str) -> bool:
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "mark_outbox_sent", (message_id,), {})
+             row = self._conn.execute(
+                 "SELECT status, payload_json FROM event_outbox WHERE message_id = ?",
+                 (message_id,),
+@@ -2354,7 +2414,9 @@
+ 
+     def mark_outbox_failed(self, message_id: str, error: str) -> bool:
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "mark_outbox_failed", (message_id, error), {})
+             row = self._conn.execute(
+                 """SELECT retry_count, max_retries, backoff_base_ms, payload_json
+                    FROM event_outbox WHERE message_id = ?""",
+@@ -2426,7 +2488,9 @@
+         if new_plan_version <= expected_plan_version or new_command_seq <= expected_command_seq:
+             return False
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "advance_plan_version_if_current", (task_id, expected_plan_version, expected_command_seq, new_plan_version, new_command_seq), {})
+             row = self._conn.execute(
+                 "SELECT plan_version, command_seq FROM plan_versions WHERE task_id = ?",
+                 (task_id,),
+@@ -2464,7 +2528,9 @@
+ 
+     def record_audit_event(self, task_id: str, event_type: str, details: dict[str, object]) -> None:
+         now = _iso_now()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "record_audit_event", (task_id, event_type, details), {})
+             self._conn.execute(
+                 """INSERT INTO event_audit_events
+                    (task_id, event_type, details_json, created_at)
+@@ -2775,6 +2841,7 @@
+         task_id = request.task_id
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "route_visual_verification_if_current", (), {'request': request})
+             stored = self._visual_verification_record_locked(task_id, event_key=request.event_key)
+             same_event = stored is not None
+             if stored is None:
+@@ -2918,6 +2985,7 @@
+         task = original.identity.task_id
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "initialize_visual_owner_if_absent", (original, checkpoint, verification_state, retry_budget), {'bootstrap_promotion': bootstrap_promotion})
+             bootstrap = self._visual_bootstrap_for_original_locked(original)
+             first = self._visual_record_locked(task, 1)
+             promoted: VisualBootstrapRecord | None = None
+@@ -3106,6 +3174,7 @@
+         )
+         with self._write_lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
++            _local_legacy_write_guard_unlocked(self, "publish_visual_boundary_if_current", (), {'task_id': task_id, 'owner_epoch': owner_epoch, 'expected_owner_revision': expected_owner_revision, 'expected_contract_hash': expected_contract_hash, 'expected_checkpoint_hash': expected_checkpoint_hash, 'checkpoint': checkpoint, 'grounding': grounding, 'state_generation': state_generation})
+             duplicate = self._visual_record_locked(task_id, expected_owner_revision + 1)
+             if duplicate is not None and duplicate.to_payload()["operation_hash"] == key:
+                 return duplicate.detached()

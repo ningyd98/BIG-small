@@ -81,6 +81,7 @@ def test_observer_selective_lifecycle_contract(monkeypatch):
     # these explicit events test bookkeeping without creating authority or RPCs.
     from cloud_edge_robot_arm.simulation_runtime import operational_lease as lease
 
+    original_session_code = lease.OperationalLeaseSession.__init__.__code__
     original_profile = sys.getprofile()
     original_thread_profile = threading.getprofile()
     value = {"resources": [], "worker_lifecycles": [], "cleanup_errors": [],
@@ -144,7 +145,7 @@ def test_observer_selective_lifecycle_contract(monkeypatch):
         preinstall = _Worker(installed_field=False)
         observed.add(preinstall, "worker")
         partial = SimpleNamespace(_closed=True)
-        constructor = _frame(lease.OperationalLeaseSession.__init__.__code__,
+        constructor = _frame(original_session_code,
                              self=partial, worker=preinstall)
         profile(constructor, "call", None)
         partial_record = observed.objects[id(partial)][1]
@@ -182,11 +183,49 @@ def test_observer_selective_lifecycle_contract(monkeypatch):
 
         profile(constructor, "return", None)
         assert partial_record["initialized"] is False
-        assert partial_record["initialization_error"]["type"] == "IncompleteConstructor"
+        assert partial_record["initialization_error"] is None
+        assert partial_record.get("constructor_outcome") is None
         assert sum(row["resource_id"] == id(partial) for row in value["resources"]) == 1
         assert sum(row["resource_id"] == id(preinstall) for row in value["resources"]) == 1
         assert preinstall not in [observed.objects[call["worker_resource_id"]][0]
                                   for call in value["worker_lifecycles"]]
+
+        # Explicit synthetic-unit bookkeeping only: exercise the actual wrapper
+        # with a controlled raising callable, never a real session or authority.
+        class ConstructorAbort(BaseException):
+            pass
+
+        sentinel = ConstructorAbort("simulated-unit-constructor-abort")
+        failed = SimpleNamespace()
+        failed_record = observed.add(failed, "lease_session", simulated_unit=True,
+                                     real_constructor_invoked=False, cleanup_not_observed=True)
+        forwarded_constructor_calls = []
+        argument = object()
+
+        def raising_constructor(obj, *args, **kwargs):
+            forwarded_constructor_calls.append((obj, args, kwargs))
+            raise sentinel
+
+        wrapper = lease.OperationalLeaseSession.__init__
+        original_cell = _cell(wrapper, "original")
+        actual_constructor = original_cell.cell_contents
+        try:
+            original_cell.cell_contents = raising_constructor
+            try:
+                wrapper(failed, argument, marker=argument)
+            except ConstructorAbort as caught:
+                assert caught is sentinel
+            else:
+                raise AssertionError("constructor exception identity was not preserved")
+        finally:
+            original_cell.cell_contents = actual_constructor
+        assert forwarded_constructor_calls == [(failed, (argument,), {"marker": argument})]
+        assert failed_record["initialized"] is False
+        assert failed_record["constructor_outcome"] == "RAISED"
+        assert failed_record["initialization_error"] == {
+            "type": "ConstructorAbort", "message": "simulated-unit-constructor-abort"}
+        assert failed_record["cleanup_observed"] is None
+        assert id(failed) not in [row["worker_resource_id"] for row in value["worker_lifecycles"]]
         idle_broker.alive = broker.alive = heartbeat.alive = foreign.alive = False
 
     assert sys.getprofile() is original_profile

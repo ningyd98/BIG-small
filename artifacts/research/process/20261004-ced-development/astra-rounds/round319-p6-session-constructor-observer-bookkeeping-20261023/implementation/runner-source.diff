@@ -1,0 +1,126 @@
+--- R315/implementation/run-evidence.py
++++ R319/implementation/run-evidence.py
+@@ -1,4 +1,4 @@
+-"""R315 finite selected-command evidence runner; stdlib parent only."""
++"""R319 finite selected-command evidence runner; stdlib parent only."""
+ from __future__ import annotations
+ import base64
+ import copy
+@@ -15,10 +15,10 @@
+ 
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+ D = Path(__file__).resolve().parent.parent
+-PLAN_SHA = "c71222fa4d71b4c8a51ed5a9bffb9d197edfef7a83e11444b1f7e75166ff50a3"
+-HELPER = D.parent / "round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/run-evidence.py"
+-HELPER_SHA = "1371a63dc6faf3c784eea25a71a07b2a42320bdca0951f3bbb5ac7038fc19fe3"
+-KEYS = ("observer_red", "observer_green", "writer_memory")
++PLAN_SHA = "5404cd1dcf1c1b1b0a06e3063a1ca2a1a74aa090537d05ac704390be076772b9"
++HELPER = D / "implementation/resource-evidence-helpers.py"
++HELPER_SHA = "71b2f491efb9d337f3af255eeb915211ee254527ff21c6c66a490778d30ebbbb"
++KEYS = ("session_init_red", "session_init_green", "observer_selective_green")
+ 
+ 
+ def require(ok, message):
+@@ -66,7 +66,7 @@
+     require(stat.S_IMODE(path.stat().st_mode) == before["mode"], "ledger mode changed")
+     require(path.read_bytes() == base64.b64decode(before["base64"]), "ledger CAS bytes changed")
+     write(receipt.with_name(receipt.stem + "-before.json"), before)
+-    temp = path.with_name(path.name + ".r315-next")
++    temp = path.with_name(path.name + ".r319-next")
+     write(temp, after)
+     os.chmod(temp, before["mode"])
+     check(before)
+@@ -105,24 +105,24 @@
+             else:
+                 sides.append({"path": str(side), "exists": False, "pin": None, "archive": None})
+         rows.append({"pin": pin(original), "archive": archive, "sidecars": sides,
+-                     "provenance": "Genuine new R315 run only; old missing bytes not recovered"})
++                     "provenance": "Genuine new R319 run only; old missing bytes not recovered"})
+     return rows
+ 
+ 
+ def main():
+-    require(len(sys.argv) == 2 and sys.argv[1] in KEYS, "one exact R315 command key")
++    require(len(sys.argv) == 2 and sys.argv[1] in KEYS, "one exact R319 command key")
+     key = sys.argv[1]
+     plan_pin = pin(D / "plan.json")
+     require(plan_pin["sha256"] == PLAN_SHA, "actual Astra plan changed")
+     plan = json.loads((D / "plan.json").read_bytes())
+     command = plan["commands"][key]
+-    gate_path = D / ("red-source-gate.json" if key == "observer_red" else "source-gate.json")
+-    accepted_path = D / ("root-red-source-acceptance.json" if key == "observer_red" else "root-source-acceptance.json")
++    gate_path = D / ("red-source-gate.json" if key == "session_init_red" else "source-gate.json")
++    accepted_path = D / ("root-red-source-acceptance.json" if key == "session_init_red" else "root-source-acceptance.json")
+     gate = json.loads(gate_path.read_bytes())
+     accepted = json.loads(accepted_path.read_bytes())
+     require(accepted["reviewed"] is True and accepted["source_gate"] == pin(gate_path),
+             "ROOT acceptance does not bind gate")
+-    require(gate["round"] == "R315" and gate["commands"] == plan["commands"], "literal command table differs")
++    require(gate["round"] == "R319" and gate["commands"] == plan["commands"], "literal command table differs")
+     require(gate["sources"]["runner"] == pin(__file__), "runner not bound")
+     root = json.loads((D / "root-command-ledger.json").read_bytes())
+     author_path = D / "implementation/command-ledger.json"
+@@ -143,12 +143,14 @@
+                                   "executor_binding": gate["executor_binding"]})
+     write(out / "source-before.json", snapshot(gate))
+     require(pin(HELPER)["sha256"] == HELPER_SHA, "reviewed helper changed")
+-    spec = importlib.util.spec_from_file_location("r315_frozen_helpers", HELPER)
++    spec = importlib.util.spec_from_file_location("r319_frozen_helpers", HELPER)
+     helper = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(helper)  # main guard remains false; stdlib definitions only.
+     write(out / "helper-provenance.json", {"source": pin(HELPER),
+-          "unchanged_functions": ["_t2_cleanup", "diagnostic_resources", "_t2_index",
++          "unchanged_functions": ["_t2_cleanup", "_t2_index",
+              "strict_index", "junit_observation", "prerequisite", "behavior_resources_complete"],
++          "diagnostic_resources_change": "Only scenario_caps test_real_session_constructor_completion:1 added",
++          "original_helper_sha256": "1371a63dc6faf3c784eea25a71a07b2a42320bdca0951f3bbb5ac7038fc19fe3",
+           "product_imported_in_parent": False})
+     author["commands"][key].update(state="CONSUMED_BEFORE_START", used=1, remaining=0,
+                                   reservation_id=reserved["reservation_id"])
+@@ -163,7 +165,7 @@
+     try:
+         if key == "dual_behavior":
+             (out / "passive").mkdir()
+-        if key not in ("observer_red", "observer_green"):
++        if not key.startswith("observer_"):
+             (out / "resources").mkdir()
+         with (out / "stdout.txt").open("xb") as stdout, (out / "stderr.txt").open("xb") as stderr:
+             process = subprocess.Popen(command["child_argv"], cwd=ROOT, env=command["child_env"],
+@@ -189,7 +191,7 @@
+         spent["commands"][key]["state"] = "SPENT"
+         cas(author_path, current, spent, out / "author-spent.json")
+     elapsed = time.monotonic() - start
+-    result = {"round": "R315", "command_id": key, "child_exit": process.returncode if process else None,
++    result = {"round": "R319", "command_id": key, "child_exit": process.returncode if process else None,
+               "pid": process.pid if process else None, "elapsed_seconds": elapsed,
+               "timed_out": timed_out, "output_limited": output_limited, "cleanup": cleanup,
+               "errors": errors, "unit_only": key.startswith("observer_"),
+@@ -224,11 +226,10 @@
+         result["persistent_index"] = write(out / "persistent-file-database-index.json",
+                                            {"root": result["persistent_basetemp"], "files": index, "databases": dbs})
+         if result["unit_only"]:
+-            micro = [{"pin": pin(Path(item["path"])), "data": json.loads(Path(item["path"]).read_bytes())}
+-                     for item in index if stat.S_ISREG(item["mode"])
+-                     and Path(item["path"]).name == "decode-memo-case.json"]
+-            require(len(micro) == command["expected_case_files"] == 1, "one actual micro case required")
+-            result["micro_cases"] = write(out / "micro-cases.json", {"round": "R315", "files": micro})
++            require(command["expected_case_files"] == 0, "selective unit expects zero real cases")
++            require(not any(stat.S_ISREG(item["mode"]) and Path(item["path"]).name == "session-init-case.json"
++                            for item in index), "selective unit cannot contain a real-poll case")
++            result["micro_cases"] = write(out / "micro-cases.json", {"round": "R319", "files": []})
+         if not result["unit_only"]:
+             summary = helper.diagnostic_resources(out / "resources", key, command["child_argv"], process.pid)
+             result["resource_summary"] = write(out / "resource-summary.json", summary)
+@@ -241,9 +242,10 @@
+             cases = []
+             for item in index:
+                 path = Path(item["path"])
+-                if stat.S_ISREG(item["mode"]) and path.name in helper.CASE_NAMES:
++                if stat.S_ISREG(item["mode"]) and (path.name in helper.CASE_NAMES or path.name == "session-init-case.json"):
+                     cases.append({"pin": pin(path), "data": json.loads(path.read_bytes())})
+-            result["cases"] = write(out / "cases.json", {"round": "R315", "node": command["node"], "files": cases})
++            require(len(cases) == command["expected_case_files"] == 1, "one genuine session case required")
++            result["cases"] = write(out / "cases.json", {"round": "R319", "node": command["node"], "files": cases})
+             pre = helper.prerequisite(out / "prerequisite.json", {"module": helper.MODULE_PIN}, process.pid)
+             result["prerequisite"] = pre
+             require(pre["accepted"], "startup prerequisite did not pass")

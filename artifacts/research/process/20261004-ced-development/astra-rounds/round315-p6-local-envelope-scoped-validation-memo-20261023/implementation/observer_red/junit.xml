@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.515" timestamp="2026-10-23T02:31:34.941588+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_local_temporal_decode_memo" name="test_scoped_decode_memo_contract" time="0.369"><failure message="AssertionError: identical scoped envelopes repeated successful semantic validation&#10;assert not [3, 3, 3, 3, 8, 3]">tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-...elope-scoped-validation-memo-20261023/implementation/observer_red/persistent-basetemp/test_scoped_decode_memo_contra0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x73509cea96a0&gt;
+
+    def test_scoped_decode_memo_contract(tmp_path, monkeypatch):
+        from cloud_edge_robot_arm.simulation_runtime import operational_lease as lease
+        from cloud_edge_robot_arm.vision import operational_windows as windows
+    
+        registries = [(name, getattr(module, name)) for module, names in (
+            (windows, ("_OWNERS", "_PENDING", "_HANDOFFS", "_SCOPES", "_TRANSITIONS")),
+            (lease, ("_SESSIONS", "_VIEWS", "_PROPOSALS", "_ACKS"))) for name in names]
+        before_registries = [dict(value) for _, value in registries]
+        source = Path(local.__file__)
+        source_bytes = source.read_bytes()
+        packet = {"round": "R315", "seed": {"path": str(SEED), "bytes": 524867, "sha256": SEED_SHA},
+                  "source": {"path": str(source), "bytes": len(source_bytes),
+                             "sha256": hashlib.sha256(source_bytes).hexdigest()},
+                  "selection": "changed_payload", "checks": {}, "exceptions": [], "live_authority_created": False}
+        stack = contextvars.ContextVar("r315_test_decode_stack", default=())
+        attempts, successes = Counter(), Counter()
+        roots = {}
+        phase = ["primary"]
+        next_root = [0]
+        action, acting = [None], [False]
+        real_from_payload = local.LocalEnvelope.from_payload.__func__
+        real_semantic = local._semantic
+    
+        def tracked_decode(cls, payload):
+            parents = stack.get()
+            if parents:
+                root_id = parents[0][0]
+            else:
+                next_root[0] += 1
+                root_id = next_root[0]
+                roots[root_id] = phase[0]
+            # Same strict-copy/canonical recipe as the actual decoder key, no trusted path.
+            key = (root_id, cls, canonical(local._object(payload, local.OUTER_FIELDS)))
+            token = stack.set(parents + (key,))
+            try:
+                return real_from_payload(cls, payload)
+            finally:
+                stack.reset(token)
+    
+        def delegating_semantic(*args, **kwargs):
+            key = stack.get()[-1]
+            attempts[key] += 1
+            result = real_semantic(*args, **kwargs)
+            successes[key] += 1
+            if len(stack.get()) == 1 and action[0] is not None and not acting[0]:
+                acting[0] = True
+                try:
+                    action[0]()
+                finally:
+                    acting[0] = False
+            return result
+    
+        monkeypatch.setattr(local.LocalEnvelope, "from_payload", classmethod(tracked_decode))
+        monkeypatch.setattr(local, "_semantic", delegating_semantic)
+    
+        def run(label, payload, cls=local.LocalEnvelope):
+            previous = phase[0]
+            phase[0] = label
+            try:
+                value = cls.from_payload(payload)
+                return value, next_root[0]
+            finally:
+                phase[0] = previous
+    
+        def rejected(label, payload):
+            try:
+                local.LocalEnvelope.from_payload(payload)
+            except ValueError as error:
+                packet["exceptions"].append({"label": label, "type": type(error).__name__, "message": str(error)})
+            else:
+                pytest.fail("invalid complete envelope accepted: " + label)
+    
+        try:
+            seed_bytes = SEED.read_bytes()
+            assert len(seed_bytes) == 524867 and hashlib.sha256(seed_bytes).hexdigest() == SEED_SHA
+            document = json.loads(seed_bytes)
+            assert document["category"] == "full-promotion:local" and document["test_exit_exception"] is None
+            seed = document["changed_payload"]
+            assert digest(seed) == LEAF_SHA == document["changed_payload_sha256"]
+            expected = canonical(seed)
+            decoded, primary = run("primary", seed)
+            assert canonical(decoded.to_payload()) == expected and decoded.digest() == LEAF_SHA
+            packet.update(output_payload=decoded.to_payload(), output_digest=decoded.digest(),
+                          frozen_projection_sha256=digest(frozen_projection(seed)))
+            packet["checks"]["real_full_promotion_decoded_exactly"] = True
+            primary_counts = {key: count for key, count in successes.items() if key[0] == primary}
+            duplicate = [count for count in primary_counts.values() if count &gt; 1]
+            packet["primary_duplicate_success_counts"] = duplicate
+            # Sole approved RED on original code: valid inputs were decoded successfully.
+&gt;           assert not duplicate, "identical scoped envelopes repeated successful semantic validation"
+E           AssertionError: identical scoped envelopes repeated successful semantic validation
+E           assert not [3, 3, 3, 3, 8, 3]
+
+tests/test_local_temporal_decode_memo.py:130: AssertionError</failure></testcase></testsuite></testsuites>

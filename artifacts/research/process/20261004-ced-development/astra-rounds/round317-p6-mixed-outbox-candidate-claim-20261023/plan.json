@@ -1,0 +1,402 @@
+{
+  "round": "R317",
+  "actual_model": "gpt-6-astra",
+  "actual_author": "/root/proposal_edit_plan",
+  "status": "PLANNED_NOT_IMPLEMENTED",
+  "HEAD": "942d82343e97e53dbbd8b96309a393ca6836a496",
+  "branch": "research/20261004-continuation",
+  "problem": "T2-FR-01: any retained local outbox row starves unrelated eligible legacy claims in a mixed repository. Static defect, not yet dynamically reproduced.",
+  "input_manifest": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/input-observation.json",
+    "bytes": 14980,
+    "sha256": "e6c977e4e6f366b10a6bdedb897e7408a6f2cfe7a22c38a05a8fff76a8d31170",
+    "count": 23
+  },
+  "original_evidence": {
+    "fresh_report": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/reviews/T2/fresh-review/report.json",
+      "bytes": 25800,
+      "sha256": "0ea5533ba5fca934571855294650cfd8349e54233eb1fd7328180a3a085ac7ad"
+    },
+    "fresh_markdown": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/reviews/T2/fresh-review/report.md",
+      "bytes": 9722,
+      "sha256": "8d40b7a83f5da844eea2de46111faaa51f4ea9de0f24e5da26f501154c3bb8a0"
+    },
+    "verdict": {
+      "spec": "Changes required",
+      "quality": "Incomplete",
+      "bounded_T2_software_acceptance_justified": false,
+      "reason": "A statically demonstrated mixed legacy/local outbox regression requires an actual Astra repair plan, and the original 12-attempt read budget ended with specified quality coverage gaps."
+    },
+    "original_review_attempts": 12,
+    "original_attempts_used": 12,
+    "guard_refusals_counted": [
+      7,
+      9,
+      11
+    ],
+    "seven_node_coverage": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/t2-exit-coverage.json",
+      "bytes": 41061,
+      "sha256": "c66d893e0d3ffcce7e46c872b2fe9d77be02e04fbd3b158480584029677154e9"
+    }
+  },
+  "root_cause": [
+    "protocol._local_target classifies all no-argument outbox claims as local on existence of any local outbox row.",
+    "Both dispatch and backend guard run before existing separate legacy store candidate selection.",
+    "Memory selection preserves dict insertion iteration and per-candidate _utc_now eligibility; SQLite selection preserves BEGIN IMMEDIATE, existing now, status/next_attempt predicate and ORDER BY id LIMIT 1.",
+    "Private operational scope dispatch goes directly to runtime._local_mutate and must remain byte-identical.",
+    "Candidate-specific guard under the same storage lock/transaction can preserve local refusal while allowing unrelated unbound legacy delivery."
+  ],
+  "scope": {
+    "product": [
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py: _local_target and public dispatch branch only for claim_outbox_message",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py: claim_outbox_message only",
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py: claim_outbox_message only"
+    ],
+    "test": [
+      "tests/test_mixed_outbox_claim.py (new, two backend parameters)"
+    ],
+    "unchanged": [
+      "private-scope dispatch and worker_runtime local mutation/claim code",
+      "all other writer routing, actual storage locks and SQLite transaction boundaries",
+      "original candidate ordering, status/retry-time predicates, timestamp evaluation placement, UPDATE/CAS and hash serialization",
+      "local codec/accessors, original T2 fixtures/observer, TTL/authority/budget assertions, schema/migrations"
+    ]
+  },
+  "implementation_contract": [
+    "For public no-private-scope claim_outbox_message only, defer local target judgment in outer dispatch to actual backend candidate selection under its original storage synchronization. Do not skip checks for any other public writer.",
+    "Within memory actual RLock and SQLite actual write lock plus existing BEGIN IMMEDIATE, select the same candidate from the same legacy store with exactly the current iteration/SQL eligibility and order. Check the selected PendingMessage using _local_legacy_write_guard_unlocked with candidate as its argument before mutation. Task binding checks must therefore use current state after waiting for the real lock/transaction.",
+    "Adjust _local_target claim-specific global local-outbox-existence fallback to apply only when there is no selected candidate argument. A candidate whose task has a local binding still rejects through existing argument/task checks. An unrelated unbound legacy candidate is not a local target merely because a different local row exists.",
+    "When no eligible legacy candidate exists, invoke the original no-argument local guard inside the same actual lock/transaction: retained local outbox implies same scope ValueError and no mutation; otherwise retain None. Do not fall through to reading/claiming local storage.",
+    "Do not add a duplicated preflight selection query or time calculation, move check outside synchronization, skip a bound candidate to deliver another, delete local rows, or grant any new scope. Preserve existing private operational branch byte-for-byte."
+  ],
+  "regression_contract": {
+    "new_node": "tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[backend]",
+    "setup": "Use real Memory/SQLite repository instances and real PendingMessage models. Legacy setup uses public enqueue/mark APIs. Local binding/outbox/receipt rows may be explicit test-only persisted-state fixtures under real synchronization; label them descriptive storage fixtures, not live authority or proof of a private run. Include nonempty local receipt data and valid serialized outbox values. No forged private capability or product validator patch.",
+    "cases": [
+      "Pure legacy baseline retains original claim behavior; local-only public claim refuses with original scope error. Freeze before/after full local tasks and publication receipt snapshots, preserving raw value_json/receipt text or memory strings exactly.",
+      "Mixed local PENDING row plus unrelated eligible legacy PENDING message: public claim returns exactly legacy id/task with SENDING, updates only expected legacy storage, and all local tasks/receipts remain byte-equivalent. Catch and preserve original ValueError on old source; explicit mixed-legacy-delivery assertion is sole expected RED. Both backend RED runs required.",
+      "Repeat a new eligible legacy claim with retained local outbox status SENDING and SENT (test-only state setup under lock, snapshot after setup); local historical status must not globally block. Confirm no double-claim when legacy candidate already SENDING and preserve no-candidate local refusal.",
+      "Use existing public legacy failure/backoff path to cover due RETRY_WAIT and future retry suppression without changing product clocks or retry budgets. Verify eligible order remains original when a future-wait legacy row precedes a due message. Local-key mark_outbox_sent/failed continue to refuse with all local snapshots unchanged.",
+      "Waited binding recheck: arrange a legacy candidate while task is unbound, start public claimant that waits on actual Memory RLock or actual SQLite independent-connection BEGIN IMMEDIATE. While the real synchronization is held, add binding for that candidate task in the holder, then release/commit. Claim must reject on current binding with no candidate state change and no local modification by claimant. SQLite test uses its real independent connection and original lock/transaction policy, not a fake BEGIN. Record attempted entry, held interval, release and completion.",
+      "Test-only delegating lock/connection observation may signal attempted entry but must call the real primitive unchanged. Use Events with bounded waits/joins (5 seconds each), at most one claimant thread per node and two simultaneous SQLite connections. A brief bounded no-completion check while lock held is allowed; no unbounded sleeps, new global profiling, TTL edits or skipped predicate. Finally releases holder/rolls back and joins/closes every actually allocated resource even on RED/failure.",
+      "For waited case, take post-binding holder-commit snapshot before claimant proceeds; compare claimant before/after local tasks and receipts byte-for-byte. Also retain original pre-binding snapshot to distinguish authorized fixture preparation from forbidden claimant writes.",
+      "Save one case record per node with real source/input hashes, before/after local snapshots, legacy returned record/status, exact exceptions, synchronization phases, thread/connection attempts+closure and registry/no-authority checks. Actual DB files and existing sidecars receive original/archive hashes under existing delivery boundary. No synthetic runtime poll/worker evidence."
+    ]
+  },
+  "commands": {
+    "observer_red_memory": {
+      "budget_identity": "R317.observer_red_memory",
+      "authorized": 1,
+      "used": 0,
+      "remaining": 1,
+      "state": "HELD_PENDING_ROOT_SOURCE_ARGV_ACCEPTANCE",
+      "node": "tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[memory]",
+      "child_argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r235_startup_prerequisite",
+        "--tb=long",
+        "--maxfail=1",
+        "--show-capture=all",
+        "-o",
+        "faulthandler_timeout=540",
+        "tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[memory]",
+        "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/persistent-basetemp",
+        "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/junit.xml"
+      ],
+      "child_env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "BIGSMALL_R158_COMMAND": "observer_red_memory",
+        "BIGSMALL_R158_T2_RESOURCE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/resources",
+        "BIGSMALL_R235_PREREQUISITE_RECORD": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/prerequisite.json"
+      },
+      "env_inheritance": false,
+      "tool_arguments": {
+        "cmd": "env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=15s 240s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/run-evidence.py' observer_red_memory",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "yield_time_ms": 1000,
+        "max_output_tokens": 1800
+      },
+      "limits": {
+        "child_seconds": 120,
+        "outer_seconds": 240,
+        "cleanup_seconds": 15,
+        "TERM_grace_seconds": 5,
+        "retry": 0,
+        "raw_stream_threshold_bytes_each": 33554432,
+        "console_utf8_max": 6000
+      },
+      "output": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory",
+      "expected_exit": 1,
+      "expected_case_files": 1,
+      "expected_poll_lifecycles": 0,
+      "acceptance": "RED: valid mixed setup reaches unrelated legacy claim, captures exact original operational-scope ValueError and fails only explicit legacy-delivery assertion. GREEN: entire same backend node passes all isolation/eligibility/waited-binding checks.",
+      "unit_only": true
+    },
+    "observer_red_sqlite": {
+      "budget_identity": "R317.observer_red_sqlite",
+      "authorized": 1,
+      "used": 0,
+      "remaining": 1,
+      "state": "HELD_PENDING_ROOT_SOURCE_ARGV_ACCEPTANCE",
+      "node": "tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[sqlite]",
+      "child_argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r235_startup_prerequisite",
+        "--tb=long",
+        "--maxfail=1",
+        "--show-capture=all",
+        "-o",
+        "faulthandler_timeout=540",
+        "tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[sqlite]",
+        "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_sqlite/persistent-basetemp",
+        "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_sqlite/junit.xml"
+      ],
+      "child_env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "BIGSMALL_R158_COMMAND": "observer_red_sqlite",
+        "BIGSMALL_R158_T2_RESOURCE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_sqlite/resources",
+        "BIGSMALL_R235_PREREQUISITE_RECORD": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_sqlite/prerequisite.json"
+      },
+      "env_inheritance": false,
+      "tool_arguments": {
+        "cmd": "env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=15s 240s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/run-evidence.py' observer_red_sqlite",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "yield_time_ms": 1000,
+        "max_output_tokens": 1800
+      },
+      "limits": {
+        "child_seconds": 120,
+        "outer_seconds": 240,
+        "cleanup_seconds": 15,
+        "TERM_grace_seconds": 5,
+        "retry": 0,
+        "raw_stream_threshold_bytes_each": 33554432,
+        "console_utf8_max": 6000
+      },
+      "output": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_sqlite",
+      "expected_exit": 1,
+      "expected_case_files": 1,
+      "expected_poll_lifecycles": 0,
+      "acceptance": "RED: valid mixed setup reaches unrelated legacy claim, captures exact original operational-scope ValueError and fails only explicit legacy-delivery assertion. GREEN: entire same backend node passes all isolation/eligibility/waited-binding checks.",
+      "unit_only": true
+    },
+    "observer_green_memory": {
+      "budget_identity": "R317.observer_green_memory",
+      "authorized": 1,
+      "used": 0,
+      "remaining": 1,
+      "state": "HELD_PENDING_ROOT_SOURCE_ARGV_ACCEPTANCE",
+      "node": "tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[memory]",
+      "child_argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r235_startup_prerequisite",
+        "--tb=long",
+        "--maxfail=1",
+        "--show-capture=all",
+        "-o",
+        "faulthandler_timeout=540",
+        "tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[memory]",
+        "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_green_memory/persistent-basetemp",
+        "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_green_memory/junit.xml"
+      ],
+      "child_env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "BIGSMALL_R158_COMMAND": "observer_green_memory",
+        "BIGSMALL_R158_T2_RESOURCE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_green_memory/resources",
+        "BIGSMALL_R235_PREREQUISITE_RECORD": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_green_memory/prerequisite.json"
+      },
+      "env_inheritance": false,
+      "tool_arguments": {
+        "cmd": "env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=15s 240s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/run-evidence.py' observer_green_memory",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "yield_time_ms": 1000,
+        "max_output_tokens": 1800
+      },
+      "limits": {
+        "child_seconds": 120,
+        "outer_seconds": 240,
+        "cleanup_seconds": 15,
+        "TERM_grace_seconds": 5,
+        "retry": 0,
+        "raw_stream_threshold_bytes_each": 33554432,
+        "console_utf8_max": 6000
+      },
+      "output": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_green_memory",
+      "expected_exit": 0,
+      "expected_case_files": 1,
+      "expected_poll_lifecycles": 0,
+      "acceptance": "RED: valid mixed setup reaches unrelated legacy claim, captures exact original operational-scope ValueError and fails only explicit legacy-delivery assertion. GREEN: entire same backend node passes all isolation/eligibility/waited-binding checks.",
+      "unit_only": true
+    },
+    "observer_green_sqlite": {
+      "budget_identity": "R317.observer_green_sqlite",
+      "authorized": 1,
+      "used": 0,
+      "remaining": 1,
+      "state": "HELD_PENDING_ROOT_SOURCE_ARGV_ACCEPTANCE",
+      "node": "tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[sqlite]",
+      "child_argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r235_startup_prerequisite",
+        "--tb=long",
+        "--maxfail=1",
+        "--show-capture=all",
+        "-o",
+        "faulthandler_timeout=540",
+        "tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[sqlite]",
+        "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_green_sqlite/persistent-basetemp",
+        "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_green_sqlite/junit.xml"
+      ],
+      "child_env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "BIGSMALL_R158_COMMAND": "observer_green_sqlite",
+        "BIGSMALL_R158_T2_RESOURCE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_green_sqlite/resources",
+        "BIGSMALL_R235_PREREQUISITE_RECORD": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_green_sqlite/prerequisite.json"
+      },
+      "env_inheritance": false,
+      "tool_arguments": {
+        "cmd": "env -i 'PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin' LANG=C.UTF-8 PYTHONDONTWRITEBYTECODE=1 /usr/bin/timeout --signal=TERM --kill-after=15s 240s '/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/run-evidence.py' observer_green_sqlite",
+        "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+        "yield_time_ms": 1000,
+        "max_output_tokens": 1800
+      },
+      "limits": {
+        "child_seconds": 120,
+        "outer_seconds": 240,
+        "cleanup_seconds": 15,
+        "TERM_grace_seconds": 5,
+        "retry": 0,
+        "raw_stream_threshold_bytes_each": 33554432,
+        "console_utf8_max": 6000
+      },
+      "output": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_green_sqlite",
+      "expected_exit": 0,
+      "expected_case_files": 1,
+      "expected_poll_lifecycles": 0,
+      "acceptance": "RED: valid mixed setup reaches unrelated legacy claim, captures exact original operational-scope ValueError and fails only explicit legacy-delivery assertion. GREEN: entire same backend node passes all isolation/eligibility/waited-binding checks.",
+      "unit_only": true
+    }
+  },
+  "sequence": [
+    "Freeze new tests and narrowly mapped runner/ledgers; ROOT review actual current input and test scope.",
+    "Run red_memory then red_sqlite once each on original product; ROOT reserves/settles each. Only specified mixed-delivery assertion is legal expected RED.",
+    "Sol applies exact three-file candidate routing fix; preserve complete before bytes/modes and source diff. ROOT independently reads entire diff and verifies unchanged private branch, order/time/lock semantics.",
+    "New source/argv gate maps only three product SHAs plus test/runner. Run green_memory then green_sqlite once each; ROOT verifies complete cases/DB/resource cleanup and settles each.",
+    "Complete bounded independent fresh-review supplement and resolve source-generation evidence coverage; ROOT may accept bounded T2 only if Spec and Quality genuinely approve. Do not enter T3/P6C/native/formal in this repair round."
+  ],
+  "runner": "Reuse R315 compact runner and existing unit resource/evidence machinery; adapt exact four keys and per-key expected exit, round/paths/plan/source pins, two RED-key source-gate classification and one new case filename. All four observer_ keys unit_only, same consume-before-start/absent-basetemp/cleanup rules. Extend no runtime framework. Capture actual SQLite fixtures/sidecars despite unit_only; missing data is a capture failure, not a reason to omit archives.",
+  "resources": {
+    "new_runtime_slots": 4,
+    "each_child_seconds": 120,
+    "each_outer_seconds": 240,
+    "retry": 0,
+    "per_node_max_claimant_threads": 1,
+    "per_node_max_simultaneous_sqlite_connections": 2,
+    "thread_event_join_bound_seconds_each": 5,
+    "no_old_node_reruns": true,
+    "old_spent_refunded": false
+  },
+  "fresh_review_supplement": {
+    "budget_identity": "R317.fresh_T2_continuation",
+    "max_read_attempts": 16,
+    "per_attempt_source_lines_max": 600,
+    "per_attempt_display_utf8_bytes_max": 39000,
+    "attempt_accounting": "New separate ledger; every read attempt including guard refusal or tool failure consumes one; original 12/12 remain SPENT. No silent refill or automatic retry. Administrative saves of exact receipts/report do not authorize extra source reads.",
+    "seat": "Reuse actual /root/fresh_t2_review if successfully resumed and independently bound. If unavailable, ROOT may bind a genuinely new independent reviewer and record real creation/identity; never impersonate old seat. No implementation by reviewer.",
+    "allowed_scope": [
+      "New three-file diff and new test in full; RED/GREEN raw/JUnit/cases/resource/DB hash evidence and precise original no-legacy-candidate denial equivalence.",
+      {
+        "file": "tests/test_operational_runtime_closure.py",
+        "remaining_ranges": [
+          [
+            3479,
+            3516
+          ],
+          [
+            3577,
+            3832
+          ],
+          [
+            3877,
+            3952
+          ],
+          [
+            4081,
+            4233
+          ],
+          [
+            4303,
+            4662
+          ],
+          [
+            4698,
+            4913
+          ]
+        ]
+      },
+      "Complete tests/test_t2_observer_lifecycle.py (195 lines in frozen report).",
+      "Complete unchanged simulation_runtime/operational_lease.py and vision/operational_windows.py private ingress/view/session and app provenance implementation; research/operational_time_v1.py CPU provenance/owner implementation only as their direct dependency.",
+      "simulation_runtime/sqlite_repository.py actual private lock/transaction/view/proposal/commit/cleanup bodies (publication_guard, _job_writer, _operational_transaction, _validate_operational_row, _commit_operational_proposal, _writer_call and directly used completion-marker paths); worker_runtime private source/scope/commit/resume checks necessary to resolve reported later-BEGIN review question.",
+      "Nested real execution payloads from each of seven actual-tool-return records; current codec micro raw case/actual; exact accepted seam case summaries and resource inventories sufficient to independently recompute poll/allocation/init/cleanup/DB denominators and verify true commit-loss/restart/no-authority/no-repeat-debit cases. Use bounded selected fields and stream hashes, not giant raw JSON dumps.",
+      "Finite live/frozen source equivalence for already pinned 32-source T2 manifest, mapping only authorized new source generations. No recursive historic gate audit."
+    ],
+    "suggested_allocation": "About 3 attempts new patch/test/result impact, 3 remaining fixture/lifecycle bodies, 6 unchanged authority/CPU/transaction implementation, 4 native/seam/resource evidence and generation closure; may redistribute within 16 and listed scope without extra quota.",
+    "read_method": "Choose deterministic byte/line windows that fit the complete formatted output cap; reserve metadata overhead. For nested JSON inspect exact keys and selected values so receipt payloads are actually decoded; hash-only is not semantic review. Keep exact invocation/raw return for every attempt, plus covered ranges/remaining gaps. No tests, product imports, AST execution, SQL, probes, source edits or Git commands by reviewer.",
+    "outputs": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/reviews/fresh-review-continuation",
+    "acceptance": "Write separate Spec/Quality verdicts and old+new cumulative coverage with original report linked unchanged. If cap exhausted or gap remains, Quality stays Incomplete; no planned outcome implies approval."
+  },
+  "seven_node_evidence_decision": "Retain seven actual source-specific PASS records. Targeted new both-backend regression plus candidate-under-lock review can cover the changed public outbox branch, including old writer no-candidate denial equivalence; other private/lifecycle paths are unchanged. No blanket rerun of seven is justified solely by memo/accessors or this bounded outbox fix. Their sufficiency for bounded T2 is conditional on actual new GREEN and fresh reviewer closure of all listed quality gaps; unresolved evidence or new defect requires new bounded Astra decision, not synthetic current GREEN7.",
+  "prerequisites": [
+    "Fresh report and all pinned current sources match; ROOT checks applicability without recursive history audit. HEAD stays stable during command keys.",
+    "Actual Sol single writer, ROOT independent gate/reservation/acceptance/settlement; new outputs absent and old source/test/roles/results frozen.",
+    "RED tests are reviewed before dispatch; no product fix before both accepted legal REDs. Additional root causes pause affected repair.",
+    "ROOT can bind new review supplement while independent unchanged reads proceed, but final impact verdict waits for actual patch/test results."
+  ],
+  "stop_boundary": "Unexpected RED, failed GREEN, snapshot mutation, missing cleanup, new source gap or any expanded repair scope stops affected work for Astra. Never relax wait/TTL/permission/order/assertion criteria or rerun spent keys.",
+  "acceptance_boundary": "New repository integration tests establish only selected software compatibility/isolation. Fresh Quality currently Incomplete and Spec Changes required until actually resolved. Earlier writer SIGSEGV cause still unknown; no P6/T3/native/physical/formal promotion. Original 35 DB/90 sidecar gaps and original failures remain.",
+  "delivery": "Preserve before/after files, all actuals and raw failures, write step report/new phase overlay, and explicit-path Git commit/push under existing user authorization only after verified delivery with local/upstream/remote SHA check. Existing four compressed large raw packages and exact exclusions stay untouched; no force-add raw DB or over-100MiB originals.",
+  "planner_actions": "Limited source/evidence reads and SHA/JSON inspection only; no project imports, SQL, runtime, tests, product edits or Git writes."
+}

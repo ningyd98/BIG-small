@@ -1,0 +1,36 @@
+--- before-T2/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py
++++ current/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py
+@@ -74,7 +74,9 @@
+         raise ValueError("aware source clock required")
+ 
+ 
+-def _state_payload(state: VerificationBudgetState) -> dict[str, Any]:
++def _state_payload(state: VerificationBudgetState | LocalVerificationBudgetState) -> dict[str, Any]:
++    if type(state) is LocalVerificationBudgetState:
++        return state.to_payload()
+     state.__post_init__()
+     if any(
+         not isinstance(name, str) or status not in {"UNKNOWN", "FAIL", "PASS"}
+@@ -276,7 +278,7 @@
+     task_id: str
+     attempt_id: str
+     state: str
+-    budget_state: VerificationBudgetState
++    budget_state: VerificationBudgetState | LocalVerificationBudgetState
+     progress_signature: str
+     last_verified_at: datetime | None
+     resolution_observation_id: str
+@@ -372,7 +374,12 @@
+         values = dict(payload)
+         if values.pop("schema_version") != "recovery.record.v1":
+             raise ValueError("unknown recovery record schema")
+-        values["budget_state"] = _state_from_payload(values["budget_state"])
++        budget_payload = values["budget_state"]
++        values["budget_state"] = (
++            LocalVerificationBudgetState.from_payload(budget_payload)
++            if "original_budget_reference" in budget_payload
++            else _state_from_payload(budget_payload)
++        )
+         values["conditions"] = tuple(ConditionSpec(**item) for item in values["conditions"])
+         if values["execution_completion"] is not None:
+             values["execution_completion"] = SkillExecutionResult.model_validate_json(

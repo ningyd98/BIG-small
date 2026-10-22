@@ -1,0 +1,95 @@
+{
+  "round": "R317",
+  "command_id": "observer_red_memory",
+  "child_exit": 1,
+  "pid": 5,
+  "elapsed_seconds": 0.7224890779907582,
+  "timed_out": false,
+  "output_limited": false,
+  "cleanup": {
+    "leader_reaped": true,
+    "group_remaining": false,
+    "cleanup_errors": [],
+    "cleanup_seconds_bound": 15
+  },
+  "errors": [],
+  "unit_only": true,
+  "formal_accepted": false,
+  "whole_T2_accepted": false,
+  "environment_difference": "Explicit plugins only; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+  "raw_streams": {
+    "stdout.txt": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/stdout.txt",
+      "bytes": 12908,
+      "sha256": "dcda1bd01e5c25fe89c591e84b020e942c8b2c603ca2e581f9ce515bda62e906"
+    },
+    "stderr.txt": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "raw_threshold_bytes_each": 33554432,
+  "raw_overshoot_bytes": {
+    "stdout.txt": 0,
+    "stderr.txt": 0
+  },
+  "junit": {
+    "pin": {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/junit.xml",
+      "bytes": 12848,
+      "sha256": "f43b4aeb1ef46b0df9ec59ffbdfbb87670bffa149790490c701dcfa76d9e8e57"
+    },
+    "available": true,
+    "records": [
+      {
+        "nodeid": "tests/test_mixed_outbox_claim.py::test_mixed_local_legacy_claim[memory]",
+        "attributes": {
+          "classname": "tests.test_mixed_outbox_claim",
+          "name": "test_mixed_local_legacy_claim[memory]",
+          "time": "0.191"
+        },
+        "outcomes": [
+          {
+            "tag": "failure",
+            "attributes": {
+              "message": "AssertionError: mixed legacy candidate must be delivered\nassert (ValueError('operational task mutation requires the registered private publication scope') is None)"
+            },
+            "text": "tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-...utbox-candidate-claim-20261023/implementation/observer_red_memory/persistent-basetemp/test_mixed_local_legacy_claim_0')\nbackend = 'memory'\n\n    @pytest.mark.parametrize(\"backend\", [\"memory\", \"sqlite\"])\n    def test_mixed_local_legacy_claim(tmp_path, backend):\n        from cloud_edge_robot_arm.simulation_runtime import operational_lease as lease\n        from cloud_edge_robot_arm.vision import operational_windows as windows\n    \n        registries = [(name, getattr(module, name)) for module, names in (\n            (windows, (\"_OWNERS\", \"_PENDING\", \"_HANDOFFS\", \"_SCOPES\", \"_TRANSITIONS\")),\n            (lease, (\"_SESSIONS\", \"_VIEWS\", \"_PROPOSALS\", \"_ACKS\"))) for name in names]\n        registry_before = [dict(value) for _, value in registries]\n        packet = {\"round\": \"R317\", \"lock_clarification\": \"R318\", \"backend\": backend,\n                  \"fixture_kind\": \"descriptive persisted storage only, no private capability\",\n                  \"sources\": [_pin(ROOT / \"src/cloud_edge_robot_arm/repositories/event_autonomy\" / name)\n                              for name in (\"protocol.py\", \"memory.py\", \"sqlite.py\")],\n                  \"inputs\": [_pin(ROOT / \"artifacts/research/process/20261004-ced-development/astra-rounds\" / name / \"plan.json\")\n                             for name in (\"round317-p6-mixed-outbox-candidate-claim-20261023\",\n                                          \"round318-p6-memory-original-lock-clarification-20261023\")],\n                  \"test_source\": _pin(Path(__file__)),\n                  \"checks\": {}, \"operations\": [], \"fixture_preparations\": [],\n                  \"waited_binding\": {\"phases\": []}, \"cleanup_errors\": [],\n                  \"resources\": {\"repository_attempted\": False, \"repository_constructed\": False,\n                      \"repository_closed\": False, \"sqlite_connections_attempted\": 0,\n                      \"sqlite_connections_opened\": 0, \"sqlite_connections_closed\": 0,\n                      \"sqlite_connections_peak\": 0,\n                      \"claimant_threads_attempted\": 0, \"claimant_threads_started\": 0,\n                      \"claimant_threads_joined\": 0}, \"live_authority_created\": False}\n        repo = holder = claimant = original_lock = original_connection = None\n        holder_lock_held = False\n        proceed = threading.Event()\n        resources = packet[\"resources\"]\n    \n        def message(key, *, task=None, backoff=0, status=MessageStatus.PENDING):\n            return PendingMessage(message_id=key, task_id=task or (\"legacy-\" + key),\n                idempotency_key=key, message_type=\"R317_DESCRIPTION\", payload={\"label\": key},\n                backoff_base_ms=backoff, max_retries=5, status=status)\n    \n        def snapshot_unlocked(connection=None):\n            if backend == \"memory\":\n                local_rows = [{\"category\": category, \"record_key\": key, \"value_json\": raw,\n                               \"value_utf8_hex\": raw.encode().hex()}\n                              for (category, key), raw in sorted(repo._local_tasks.items())]\n                receipt_rows = [{\"operation_id\": key, \"raw_json\": raw, \"raw_utf8_hex\": raw.encode().hex()}\n                                for key, raw in sorted(repo._local_publications.items())]\n                legacy = {key: {\"payload_json\": value.model_dump_json(),\n                               \"payload_hash\": repo._outbox_hashes[key]}\n                          for key, value in repo._outbox.items()}\n            else:\n                conn = connection if connection is not None else repo._conn\n                local_rows = [dict(row) for row in conn.execute(\n                    \"SELECT category,record_key,task_id,value_json FROM visual_local_tasks_v1 ORDER BY category,record_key\")]\n                for row in local_rows:\n                    row[\"value_utf8_hex\"] = row[\"value_json\"].encode().hex()\n                receipt_rows = [dict(row) for row in conn.execute(\n                    \"SELECT * FROM visual_local_publications_v1 ORDER BY operation_id\")]\n                for row in receipt_rows:\n                    row[\"payload_utf8_hex\"] = row[\"payload_json\"].encode().hex()\n                legacy = {row[\"message_id\"]: dict(row) for row in conn.execute(\"SELECT * FROM event_outbox ORDER BY id\")}\n            return {\"local_tasks\": local_rows, \"publication_receipts\": receipt_rows, \"legacy\": legacy}\n    \n        def snapshot():\n            with (repo._lock if backend == \"memory\" else repo._write_lock):\n                return snapshot_unlocked()\n    \n        def same_local(before, after):\n            assert before[\"local_tasks\"] == after[\"local_tasks\"]\n            assert before[\"publication_receipts\"] == after[\"publication_receipts\"]\n    \n        def invoke(label, operation):\n            before = snapshot()\n            row = {\"label\": label, \"before\": before}\n            packet[\"operations\"].append(row)\n            result = None\n            error = None\n            try:\n                result = operation()\n            except ValueError as actual:\n                error = actual\n                row[\"exception\"] = {\"type\": type(actual).__name__, \"message\": str(actual)}\n            row[\"after\"] = snapshot()\n            same_local(before, row[\"after\"])\n            row[\"returned\"] = result.model_dump(mode=\"json\") if isinstance(result, PendingMessage) else result\n            return result, error, row\n    \n        def refused(label, operation):\n            result, error, row = invoke(label, operation)\n            assert result is None and type(error) is ValueError and str(error) == SCOPE_ERROR\n            assert row[\"before\"] == row[\"after\"]\n            return row\n    \n        def claimed(label, expected, *, primary=False):\n            result, error, row = invoke(label, repo.claim_outbox_message)\n            if error is not None:\n                assert type(error) is ValueError and str(error) == SCOPE_ERROR\n            # Only this first valid mixed delivery assertion is an expected RED.\n            if primary:\n                assert error is None and result is not None, \"mixed legacy candidate must be delivered\"\n            else:\n                assert error is None and result is not None\n            assert result.message_id == expected.message_id and result.task_id == expected.task_id\n            assert result.status is MessageStatus.SENDING\n            old = row[\"before\"][\"legacy\"]\n            new = row[\"after\"][\"legacy\"]\n            assert set(old) == set(new)\n            assert {key: value for key, value in old.items() if key != expected.message_id} == {\n                key: value for key, value in new.items() if key != expected.message_id}\n            stored = PendingMessage.model_validate_json(new[expected.message_id][\"payload_json\"])\n            assert stored == result\n            return result\n    \n        def binding_unlocked(task, connection=None):\n            raw = json.dumps({\"task_id\": task, \"fixture\": \"descriptive binding, no live authority\"}, indent=2)\n            if backend == \"memory\":\n                repo._local_tasks[(\"binding\", task)] = raw\n            else:\n                conn = connection if connection is not None else repo._conn\n                conn.execute(\"INSERT INTO visual_local_tasks_v1(category,record_key,task_id,value_json) VALUES('binding',?,?,?)\",\n                             (task, task, raw))\n    \n        def prepare_local(status):\n            with (repo._lock if backend == \"memory\" else repo._write_lock):\n                before = snapshot_unlocked()\n                local_message = message(\"local-message\", task=\"local-task\", status=status)\n                raw = local_message.model_dump_json(indent=2)\n                assert PendingMessage.model_validate_json(raw) == local_message\n                receipt = {\"operation_id\": \"fixture-local-publication\", \"operation_sha256\": \"1\" * 64,\n                    \"job_id\": \"fixture-job\", \"attempt\": 1, \"lease_id\": \"fixture-lease\", \"epoch\": \"fixture-epoch\",\n                    \"generation\": 1, \"row_revision\": 1, \"phase\": \"COMPLETE\", \"event_record_hash\": \"2\" * 64,\n                    \"event_receipt_hash\": \"3\" * 64, \"job_receipt_hash\": \"4\" * 64,\n                    \"payload_json\": json.dumps({\"descriptive_fixture\": True, \"task_id\": \"local-task\"}, indent=2)}\n                if backend == \"memory\":\n                    if (\"binding\", \"local-task\") not in repo._local_tasks:\n                        binding_unlocked(\"local-task\")\n                    repo._local_tasks[(\"outbox\", \"local-message\")] = raw\n                    repo._local_publications[receipt[\"operation_id\"]] = json.dumps(receipt, indent=2)\n                else:\n                    with repo._conn:\n                        repo._conn.execute(\"BEGIN IMMEDIATE\")\n                        if repo._conn.execute(\"SELECT 1 FROM visual_local_tasks_v1 WHERE category='binding' AND record_key='local-task'\").fetchone() is None:\n                            binding_unlocked(\"local-task\")\n                        repo._conn.execute(\"INSERT INTO visual_local_tasks_v1 VALUES('outbox',?,?,?) ON CONFLICT(category,record_key) DO UPDATE SET value_json=excluded.value_json\",\n                                           (\"local-message\", \"local-task\", raw))\n                        columns = tuple(receipt)\n                        repo._conn.execute(\"INSERT OR REPLACE INTO visual_local_publications_v1(\" + \",\".join(columns) + \") VALUES(\" + \",\".join(\"?\" for _ in columns) + \")\", tuple(receipt.values()))\n                after = snapshot_unlocked()\n            packet[\"fixture_preparations\"].append({\"local_status\": status.value, \"before\": before, \"after\": after,\n                                                 \"valid_local_message_json\": raw, \"no_live_authority\": True})\n    \n        try:\n            resources[\"repository_attempted\"] = True\n            if backend == \"sqlite\":\n                resources[\"sqlite_connections_attempted\"] += 1\n                repo = SQLiteEventAutonomyRepository(tmp_path / \"events.db\")\n                resources[\"sqlite_connections_opened\"] += 1\n                resources[\"sqlite_connections_peak\"] = 1\n            else:\n                repo = InMemoryEventAutonomyRepository()\n            resources[\"repository_constructed\"] = True\n            value, error, _ = invoke(\"pure_empty\", repo.claim_outbox_message)\n            assert value is None and error is None\n            baseline = message(\"pure-legacy\")\n            assert repo.enqueue_outbox(baseline) == baseline\n            claimed(\"pure_legacy_claim\", baseline)\n            value, error, _ = invoke(\"pure_no_double_claim\", repo.claim_outbox_message)\n            assert value is None and error is None\n            assert repo.mark_outbox_sent(baseline.message_id) is True\n            packet[\"checks\"][\"pure_legacy_baseline\"] = True\n    \n            prepare_local(MessageStatus.PENDING)\n            refused(\"local_only\", repo.claim_outbox_message)\n            packet[\"checks\"][\"local_only_scope_refusal\"] = True\n            mixed = message(\"mixed-pending\")\n            assert repo.enqueue_outbox(mixed) == mixed\n>           claimed(\"mixed_pending\", mixed, primary=True)\n\ntests/test_mixed_outbox_claim.py:197: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\nlabel = 'mixed_pending'\nexpected = PendingMessage(message_id='mixed-pending', task_id='legacy-mixed-pending', event_id=None, summary_id=None, request_id=...7, tzinfo=datetime.timezone.utc), retry_count=0, max_retries=5, last_error=None, next_retry_at=None, backoff_base_ms=0)\n\n    def claimed(label, expected, *, primary=False):\n        result, error, row = invoke(label, repo.claim_outbox_message)\n        if error is not None:\n            assert type(error) is ValueError and str(error) == SCOPE_ERROR\n        # Only this first valid mixed delivery assertion is an expected RED.\n        if primary:\n>           assert error is None and result is not None, \"mixed legacy candidate must be delivered\"\nE           AssertionError: mixed legacy candidate must be delivered\nE           assert (ValueError('operational task mutation requires the registered private publication scope') is None)\n\ntests/test_mixed_outbox_claim.py:120: AssertionError"
+          }
+        ]
+      }
+    ],
+    "tests": 1,
+    "failures": 1,
+    "errors": 0,
+    "skips": 0
+  },
+  "persistent_basetemp": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/persistent-basetemp",
+    "exists": true,
+    "is_symlink": false,
+    "observation": "existing_path_strictly_indexed"
+  },
+  "new_databases": [],
+  "persistent_index": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/persistent-file-database-index.json",
+    "bytes": 1827,
+    "sha256": "b18dab16ee9c8cef3eb481529dd359bcef6b817b01ae616fe753db069fca5d1c"
+  },
+  "micro_cases": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round317-p6-mixed-outbox-candidate-claim-20261023/implementation/observer_red_memory/micro-cases.json",
+    "bytes": 42486,
+    "sha256": "e333aeba2ef1997288b4adb69961624e09c3177b640510b4ed8f8e3ae7140bca"
+  },
+  "capture_integrity_complete": true,
+  "child_matched_expected_exit": true,
+  "behavior_candidate_pass": false,
+  "ROOT_acceptance_required": true,
+  "unobserved": {
+    "OS_handles": null,
+    "external_models": null,
+    "GPU_native": null,
+    "native_tool_exit": null
+  }
+}

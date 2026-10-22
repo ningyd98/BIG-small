@@ -1,0 +1,93 @@
+--- before-T2/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py
++++ current/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py
+@@ -807,6 +807,90 @@
+     return VisualBootstrapTransitionResult(_derive(record, request, now=now), "NEW_COMMIT")
+ 
+ 
++def derive_local_bootstrap(record, request, decision, transaction):
++    """Pure exact replay; the actual private coordinator supplies both verdicts."""
++    from cloud_edge_robot_arm.vision.local_temporal import (
++        LocalEnvelope, _copy, _hash, _history_state_hash, _initial_history_state,
++        _replay_bootstrap, semantic_projection,
++    )
++
++    raw = LocalEnvelope.from_payload(record.to_payload()).to_payload()
++    source = LocalEnvelope.from_payload(request.to_payload()).to_payload()
++    body, original = raw["payload"], raw["original_time"]
++    if source["original_time"] != original:
++        raise ValueError("bootstrap original source changed")
++    target = source["payload"]
++    if (target["definition_hash"] != _hash(body["definition"])
++            or target["expected_record_hash"] != _history_state_hash(raw["schema_version"], body, original)):
++        raise ValueError("bootstrap source/CAS changed")
++    operation = _hash({"schema_version": "visual.local-history-operation.v1",
++                       "request": semantic_projection(source)})
++    if decision["operation_sha256"] != operation or transaction["operation_sha256"] != operation:
++        raise ValueError("bootstrap decision operation source differs")
++    state = _initial_history_state(body["definition"], original, bootstrap=True)
++    phases = {}
++    for event in body["history"]:
++        _replay_bootstrap(state, event["request"], original, event["decision"], phases)
++        state["revision"] += 1
++        state["history"].append(_copy(event))
++    _replay_bootstrap(state, source, original, decision, phases)
++    state["revision"] += 1
++    result_hash = _history_state_hash(raw["schema_version"], state, original)
++    transaction["event_record_hash"] = result_hash
++    state["history"].append({"request": source, "decision": _copy(decision),
++                             "transaction": _copy(transaction), "resulting_record_hash": result_hash})
++    result = {**raw, "payload": state, "decision": decision, "transaction": transaction,
++              "diagnostics": {"utc": {}, "monotonic": None}}
++    return VisualBootstrapRecord.from_payload(result)
++
++
++def compile_local_bootstrap_original(record, *, plan_id, robot_id):
++    """Compile actual saved planner bytes; original D and UTC model bytes survive."""
++    from cloud_edge_robot_arm.vision.local_temporal import _hash, _copy, _proposal_projection
++    from cloud_edge_robot_arm.vision.owner_registration import LocalVisualOriginalPlan
++    from cloud_edge_robot_arm.vision.worker_owner import _local_worker_policy
++
++    record = VisualBootstrapRecord.from_payload(record.to_payload())
++    if type(record) is not LocalVisualBootstrapRecord or record.local_time.to_payload()["contract_provenance"]["kind"] != "LOCAL_BOOTSTRAP_SOURCE_V1":
++        raise ValueError("exact staged local bootstrap required")
++    if record.pending_claim_id is not None or record.terminal_reason is not None or not record.planning_source_usable:
++        raise ValueError("complete nonterminal planning source required")
++    pre = record.to_payload(); body = pre["payload"]; definition = body["definition"]["payload"]
++    if _proposal_projection(body["draft"], definition) is None:
++        raise ValueError("saved full planner proposal unusable")
++    payload = _copy(body["draft"]["parsed_json"])
++    payload.update(task_id=definition["episode_id"], plan_version=1, command_seq=1)
++    aliases = {"visual_target": "object", "visual_destination": "target_region"}
++    for key in ("object_id", "target_region_id"):
++        value = payload["task_target"].get(key)
++        if isinstance(value, str) and value in aliases:
++            payload["task_target"][key] = aliases[value]
++    for step in payload["steps"]:
++        for key in ("object_id", "region_id"):
++            value = step.get("parameters", {}).get(key)
++            if isinstance(value, str) and value in aliases:
++                step["parameters"][key] = aliases[value]
++    contract = TaskContract.model_validate(payload)
++    requirements, graph = _local_worker_policy(contract, record.observation, definition["source_hashes"])
++    lease = pre["original_time"]["lease_identity"]
++    identity = {key: lease[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")}
++    identity.update(owner_epoch=lease["epoch"], episode_id=definition["episode_id"],
++                    task_id=contract.task_id, plan_id=plan_id, robot_id=robot_id)
++    original = {
++        "binding_scope": "SOURCE_BINDING_ONLY", "identity": identity,
++        "contract": contract.model_dump(mode="json"),
++        "contract_provenance": {"kind": "LOCAL_BOOTSTRAP_ADOPTED_V1",
++                                "content_sha256": _hash(contract.model_dump(mode="json")), "bootstrap_record": pre},
++        "proposal_hash": body["proposal_hash"], "role_bundle_hash": definition["role_bundle_hash"],
++        "compiler_source_hashes": definition["source_hashes"], "source_hashes": definition["source_hashes"],
++        "requirements": {key: value.to_payload() for key, value in requirements.items()}, "dependencies": graph,
++    }
++    return LocalVisualOriginalPlan.from_payload({
++        "schema_version": "visual.owner.original.local.v1", "payload": original,
++        "original_time": pre["original_time"], "decision": None, "transaction": None,
++        "diagnostics": {"utc": {}, "monotonic": None}})
++
++
+ def bootstrap_proposal_hash(proposal: Mapping[str, Any]) -> str:
+     """Hash the complete adapter semantic proposal before identity filling."""
+     if not isinstance(proposal, Mapping):

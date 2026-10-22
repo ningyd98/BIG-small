@@ -1,0 +1,320 @@
+--- R311/implementation/run-evidence.py
++++ R313/implementation/run-evidence.py
+@@ -1,4 +1,4 @@
+-"""R311 finite selected-command evidence runner; stdlib parent only."""
++"""R313 finite selected-command evidence runner; stdlib parent only."""
+ from __future__ import annotations
+ import base64
+ import copy
+@@ -15,10 +15,10 @@
+ 
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+ D = Path(__file__).resolve().parent.parent
+-PLAN_SHA = "20e6092993170d7ec5112a79712410d385b1196294e373e8d9468c19bf4a40f8"
++PLAN_SHA = "b651e87fce6370fed2e501a188be34e76e4f2bf002da84d1f0d5062308c5bbc0"
+ HELPER = D.parent / "round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/run-evidence.py"
+ HELPER_SHA = "1371a63dc6faf3c784eea25a71a07b2a42320bdca0951f3bbb5ac7038fc19fe3"
+-KEYS = ("budget_memory", "budget_sqlite", "writer_memory", "writer_sqlite")
++KEYS = ("writer_memory_diagnostic",)
+ 
+ 
+ def require(ok, message):
+@@ -66,7 +66,7 @@
+     require(stat.S_IMODE(path.stat().st_mode) == before["mode"], "ledger mode changed")
+     require(path.read_bytes() == base64.b64decode(before["base64"]), "ledger CAS bytes changed")
+     write(receipt.with_name(receipt.stem + "-before.json"), before)
+-    temp = path.with_name(path.name + ".r311-next")
++    temp = path.with_name(path.name + ".r313-next")
+     write(temp, after)
+     os.chmod(temp, before["mode"])
+     check(before)
+@@ -105,12 +105,12 @@
+             else:
+                 sides.append({"path": str(side), "exists": False, "pin": None, "archive": None})
+         rows.append({"pin": pin(original), "archive": archive, "sidecars": sides,
+-                     "provenance": "Genuine new R311 run only; old missing bytes not recovered"})
++                     "provenance": "Genuine new R313 run only; old missing bytes not recovered"})
+     return rows
+ 
+ 
+ def main():
+-    require(len(sys.argv) == 2 and sys.argv[1] in KEYS, "one exact R311 command key")
++    require(len(sys.argv) == 2 and sys.argv[1] in KEYS, "one exact R313 command key")
+     key = sys.argv[1]
+     plan_pin = pin(D / "plan.json")
+     require(plan_pin["sha256"] == PLAN_SHA, "actual Astra plan changed")
+@@ -122,13 +122,14 @@
+     accepted = json.loads(accepted_path.read_bytes())
+     require(accepted["reviewed"] is True and accepted["source_gate"] == pin(gate_path),
+             "ROOT acceptance does not bind gate")
+-    require(gate["round"] == "R311" and gate["commands"] == plan["commands"], "literal command table differs")
++    require(gate["round"] == "R313" and gate["commands"] == plan["commands"], "literal command table differs")
+     require(gate["sources"]["runner"] == pin(__file__), "runner not bound")
++    require(gate["sources"]["sampler"] == pin(D / "implementation/r313_writer_stack.py"), "sampler not bound")
+     root = json.loads((D / "root-command-ledger.json").read_bytes())
+     author_path = D / "implementation/command-ledger.json"
+     before_author = full(author_path)
+     author = json.loads(base64.b64decode(before_author["base64"]))
+-    require(set(root["commands"]) == set(author["commands"]) == set(KEYS), "exact four-key ledgers")
++    require(set(root["commands"]) == set(author["commands"]) == set(KEYS), "exact one-key ledgers")
+     reserved = root["commands"][key]
+     require(reserved["state"] == "RESERVED" and reserved["used"] == 1 and reserved["remaining"] == 0,
+             "ROOT did not reserve selected command")
+@@ -143,7 +144,7 @@
+                                   "executor_binding": gate["executor_binding"]})
+     write(out / "source-before.json", snapshot(gate))
+     require(pin(HELPER)["sha256"] == HELPER_SHA, "reviewed helper changed")
+-    spec = importlib.util.spec_from_file_location("r311_frozen_helpers", HELPER)
++    spec = importlib.util.spec_from_file_location("r313_frozen_helpers", HELPER)
+     helper = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(helper)  # main guard remains false; stdlib definitions only.
+     write(out / "helper-provenance.json", {"source": pin(HELPER),
+@@ -161,10 +162,8 @@
+     deadline = start + command["limits"]["child_seconds"]
+     threshold = command["limits"]["raw_stream_threshold_bytes_each"]
+     try:
+-        if key == "dual_behavior":
+-            (out / "passive").mkdir()
+-        if key not in ("observer_red", "observer_green"):
+-            (out / "resources").mkdir()
++        (out / "resources").mkdir()
++        (out / "sampler").mkdir()
+         with (out / "stdout.txt").open("xb") as stdout, (out / "stderr.txt").open("xb") as stderr:
+             process = subprocess.Popen(command["child_argv"], cwd=ROOT, env=command["child_env"],
+                                        stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+@@ -189,81 +188,179 @@
+         spent["commands"][key]["state"] = "SPENT"
+         cas(author_path, current, spent, out / "author-spent.json")
+     elapsed = time.monotonic() - start
+-    result = {"round": "R311", "command_id": key, "child_exit": process.returncode if process else None,
++    result = {"round": "R313", "command_id": key, "child_exit": process.returncode if process else None,
+               "pid": process.pid if process else None, "elapsed_seconds": elapsed,
+               "timed_out": timed_out, "output_limited": output_limited, "cleanup": cleanup,
+               "errors": errors, "unit_only": key.startswith("observer_"),
+               "formal_accepted": False, "whole_T2_accepted": False,
+               "environment_difference": "Explicit plugins only; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"}
+-    try:
++    # Every capture block is independent of JUnit and of every other block.
++    def capture(stage, operation):
++        try:
++            operation()
++        except BaseException as error:
++            errors.append({"stage": stage, "type": type(error).__name__, "message": str(error),
++                           "traceback": traceback.format_exc()})
++
++    def capture_streams():
+         streams = {name: pin(out / name) for name in ("stdout.txt", "stderr.txt")}
+         result["raw_streams"] = streams
+         result["raw_threshold_bytes_each"] = threshold
+         result["raw_overshoot_bytes"] = {name: max(0, p["bytes"] - threshold) for name, p in streams.items()}
+         result["output_limited"] = output_limited or any(result["raw_overshoot_bytes"].values())
+-        write(out / "source-after.json", snapshot(gate))
+-        junit = helper.junit_observation(out / "junit.xml", command["node"])
+-        result["junit"] = junit
+-        require(junit["available"], "actual JUnit unavailable")
++        require(not result["output_limited"], "actual raw stream threshold exceeded")
++
++    def capture_source():
++        result["source_after"] = write(out / "source-after.json", snapshot(gate))
++
++    def capture_junit():
++        result["junit"] = helper.junit_observation(out / "junit.xml", command["node"])
++        # Missing JUnit is an explicit diagnostic observation, never a test pass.
++
++    index = []
++
++    def capture_index():
+         basetemp = out / "persistent-basetemp"
+         try:
+-            basetemp_state = basetemp.lstat()
++            state = basetemp.lstat()
+         except FileNotFoundError:
+-            if not result["unit_only"]:
+-                raise
+-            index = []
+             result["persistent_basetemp"] = {"path": str(basetemp), "exists": False,
+-                "is_symlink": False, "observation": "unit_basetemp_absent_after_child"}
++                "observation": "absent after actual child"}
+         else:
+-            index = helper.strict_index(basetemp)
+             result["persistent_basetemp"] = {"path": str(basetemp), "exists": True,
+-                "is_symlink": stat.S_ISLNK(basetemp_state.st_mode),
+-                "observation": "existing_path_strictly_indexed"}
+-        dbs = archives(helper, index, out)
+-        result["new_databases"] = dbs
++                "is_symlink": stat.S_ISLNK(state.st_mode)}
++            index.extend(helper.strict_index(basetemp))
+         result["persistent_index"] = write(out / "persistent-file-database-index.json",
+-                                           {"root": result["persistent_basetemp"], "files": index, "databases": dbs})
+-        if not result["unit_only"]:
+-            summary = helper.diagnostic_resources(out / "resources", key, command["child_argv"], process.pid)
+-            result["resource_summary"] = write(out / "resource-summary.json", summary)
+-            result["resource_counts"] = summary["counts"]
+-            require(summary["complete_sidecar_set"] and summary["all_records_valid"],
+-                    "resource capture invalid/incomplete")
+-            facts = {}
+-            result["behavior_resources_complete"] = helper.behavior_resources_complete(summary, facts=facts)
+-            result["completion_facts"] = facts
+-            cases = []
+-            for item in index:
+-                path = Path(item["path"])
+-                if stat.S_ISREG(item["mode"]) and path.name in helper.CASE_NAMES:
+-                    cases.append({"pin": pin(path), "data": json.loads(path.read_bytes())})
+-            result["cases"] = write(out / "cases.json", {"round": "R311", "node": command["node"], "files": cases})
+-            pre = helper.prerequisite(out / "prerequisite.json", {"module": helper.MODULE_PIN}, process.pid)
+-            result["prerequisite"] = pre
+-            require(pre["accepted"], "startup prerequisite did not pass")
+-            if key == "dual_behavior":
+-                passive = json.loads((out / "passive/summary.json").read_bytes())
+-                events = json.loads((out / "passive/events.json").read_bytes())
+-                result["passive"] = {"summary": pin(out / "passive/summary.json"),
+-                                     "events": pin(out / "passive/events.json"), "data": passive}
+-                require(passive["dropped_events"] == 0 and not passive["observer_errors"]
+-                        and passive["incomplete"] is False, "passive observer incomplete")
+-                require(isinstance(events["records"], list)
+-                        and len(events["records"]) == passive["events_count"]
+-                        and passive["hooks_equal"] is True and not passive["new_threads_still_live"]
+-                        and passive["accounting"]["verified"] is True
+-                        and not passive["cap_hit"], "passive lifecycle/accounting evidence differs")
++            {"root": result["persistent_basetemp"], "files": index})
++
++    def capture_databases():
++        require("persistent_index" in result, "database capture requires actual index")
++        result["new_databases"] = archives(helper, index, out)
++        result["database_archive_index"] = write(out / "database-archives.json", result["new_databases"])
++
++    def capture_resources():
++        directory = out / "resources"
++        paths = sorted(directory.iterdir())
++        summary = helper.diagnostic_resources(directory, key, command["child_argv"], process.pid if process else None)
++        result["resource_summary"] = write(out / "resource-summary.json", summary)
++        result["resource_observation"] = {"known_sidecar_count": len(paths),
++            "object_resource_completion": None, "complete_sidecar_set": summary["complete_sidecar_set"],
++            "all_records_valid": summary["all_records_valid"], "counts_are_complete_denominator": False}
++        result["resource_counts"] = summary["counts"] if paths else None
++        require(summary["all_records_valid"], "actual resource sidecar invalid")
++
++    def capture_cases():
++        cases = []
++        for item in index:
++            path = Path(item["path"])
++            if stat.S_ISREG(item["mode"]) and path.name in helper.CASE_NAMES:
++                cases.append({"pin": pin(path), "data": json.loads(path.read_bytes())})
++        result["cases"] = write(out / "cases.json", {"round": "R313", "node": command["node"], "files": cases})
++
++    def capture_prerequisite():
++        result["prerequisite"] = helper.prerequisite(out / "prerequisite.json",
++            {"module": helper.MODULE_PIN}, process.pid if process else None)
++        require(result["prerequisite"]["accepted"], "actual startup prerequisite did not pass")
++
++    def capture_sampler():
++        directory = out / "sampler"
++        paths = sorted(directory.iterdir())
++        require(all(p.name in {"start.json", "frames.jsonl", "end.json"} for p in paths),
++                "unexpected sampler file")
++        pins = [pin(p) for p in paths]
++        total = sum(p["bytes"] for p in pins)
++        metadata = sum(p["bytes"] for p in pins if not p["path"].endswith("/frames.jsonl"))
++        payload = pin(directory / "frames.jsonl")
++        require(total <= 524288 and metadata <= 131072 and payload["bytes"] <= 393216,
++                "sampler encoded limits exceeded")
++        start_record = json.loads(helper.stable_bytes(directory / "start.json"))
++        require(start_record["round"] == "R313" and start_record["pid"] == (process.pid if process else None)
++                and start_record["attempted"] is True
++                and start_record["interval_seconds"] == 2 and start_record["max_samples"] == 96
++                and start_record["record_cap"] == 4096 and start_record["total_cap"] == 524288
++                and start_record["payload_cap"] == 393216 and start_record["metadata_cap"] == 131072
++                and start_record["product_imports"] is False
++                and start_record["profile_or_trace_installed"] is False, "sampler start identity differs")
++        raw = helper.stable_bytes(directory / "frames.jsonl")
++        lines = raw.splitlines(keepends=True)
++        require(0 < len(lines) <= 96 and all(len(line) <= 4096 and line.endswith(b"\n") for line in lines),
++                "sampler actual record bound/framing differs")
++        records = [json.loads(line) for line in lines]
++        previous = None
++        coordinates = None
++        for ordinal, record in enumerate(records, 1):
++            require(record["seq"] == ordinal and record["pid"] == start_record["pid"]
++                    and record["main_ident"] == start_record["main_ident"], "sampler record ownership/sequence differs")
++            pair = (record["sampler_ident"], record["sampler_native_id"])
++            require(all(type(value) is int for value in pair), "actual sampler thread coordinates required")
++            coordinates = pair if coordinates is None else coordinates
++            require(pair == coordinates, "more than one observer thread identity")
++            require(type(record["threads"]) is list and len(record["threads"]) <= 16,
++                    "sampler thread cap differs")
++            for thread in record["threads"]:
++                require(thread["ident"] != pair[0] and type(thread["ident"]) is int,
++                        "sampler own stack or invalid ident")
++                limit = 128 if thread["main"] else 4
++                require(0 <= thread["walk_depth"] <= limit and type(thread["walk_truncated"]) is bool,
++                        "sampler walk bound differs")
++                require(len(thread["frames"]) <= (16 if thread["main"] else 4)
++                        and len(thread["closest_test_frames"]) <= (4 if thread["main"] else 0),
++                        "sampler retained frame bound differs")
++                for frame in thread["frames"] + thread["closest_test_frames"]:
++                    require(set(frame) == {"file", "function", "line", "name_truncated"}
++                            and type(frame["file"]) is str and type(frame["function"]) is str
++                            and type(frame["line"]) is int and type(frame["name_truncated"]) is bool,
++                            "sampler scalar-only frame schema differs")
++            if previous is not None:
++                require(record["monotonic_ns"] > previous["monotonic_ns"]
++                        and record["process_time_ns"] >= previous["process_time_ns"]
++                        and record["sampler_thread_time_ns"] >= previous["sampler_thread_time_ns"]
++                        and record["maxrss"] >= previous["maxrss"]
++                        and record["interval_ns"] == record["monotonic_ns"] - previous["monotonic_ns"]
++                        and record["lag_ns"] == max(0, record["interval_ns"] - 2000000000),
++                        "sampler actual timing/accounting differs")
++            else:
++                require(record["interval_ns"] is None and record["lag_ns"] is None,
++                        "first sample has fabricated interval")
++            previous = record
++        end_path = directory / "end.json"
++        end = json.loads(helper.stable_bytes(end_path)) if end_path.exists() else None
++        result["sampler_observation"] = {"files": pins, "sample_count": len(records),
++            "payload_bytes": len(raw), "metadata_bytes": metadata, "total_bytes": total,
++            "start": start_record, "end": end, "normal_stop_join": None if end is None else {
++                k: end[k] for k in ("join_attempted", "thread_alive", "thread_finished", "exception_type")},
++            "missing_end_means_unknown": end is None}
++        result["sampler_summary"] = write(out / "sampler-summary.json", result["sampler_observation"])
++        if end is not None:
++            require(end["pid"] == start_record["pid"] and end["samples"] == len(records)
++                    and end["payload_bytes"] == len(raw) and end["started"] is True
++                    and (end["ident"], end["native_id"]) == coordinates
++                    and end["stop_set"] is True and end["join_attempted"] is True
++                    and end["thread_alive"] is False and end["thread_finished"] is True
++                    and end["exception_type"] is None and end["hooks_equal"] is True,
++                    "sampler normal lifecycle/accounting incomplete")
++        else:
++            require(result["child_exit"] != 0, "normal successful child lacks sampler end")
++
++    def capture_cleanup():
+         require(cleanup["leader_reaped"] is True and cleanup["group_remaining"] is False
+                 and not cleanup["cleanup_errors"], "owned group cleanup incomplete")
+-    except BaseException as error:
+-        errors.append({"stage": "capture", "type": type(error).__name__, "message": str(error),
+-                       "traceback": traceback.format_exc()})
+-    result["capture_integrity_complete"] = not errors and not result["timed_out"] and not result["output_limited"]
+-    result["child_matched_expected_exit"] = result["child_exit"] == command["expected_exit"]
+-    result["behavior_candidate_pass"] = bool(result["capture_integrity_complete"] and result["child_exit"] == 0
+-        and not result["unit_only"] and result.get("behavior_resources_complete") is True
+-        and result.get("junit", {}).get("failures") == 0 and result["junit"].get("errors") == 0
+-        and result["junit"].get("skips") == 0)
++
++    for stage, operation in (("raw_streams", capture_streams), ("source_after", capture_source),
++            ("junit_availability", capture_junit), ("basetemp_index", capture_index),
++            ("database_archive", capture_databases), ("resources", capture_resources),
++            ("cases", capture_cases), ("prerequisite", capture_prerequisite),
++            ("sampler", capture_sampler), ("owned_group_cleanup", capture_cleanup)):
++        capture(stage, operation)
++    result["child_signal"] = -result["child_exit"] if type(result["child_exit"]) is int and result["child_exit"] < 0 else None
++    result["diagnostic_budget_stop"] = timed_out
++    result["unexpected_outer_timeout"] = False  # A killed parent cannot produce this completed result.
++    result["unexpected_outer_timeout_observation"] = "completed parent only; actual outer tool return also required"
++    result["capture_errors"] = errors
++    result["diagnostic_evidence_integrity"] = not errors
++    result["capture_integrity_complete"] = result["diagnostic_evidence_integrity"]
++    result["child_matched_expected_exit"] = None
++    result["behavior_candidate_pass"] = False
+     result["ROOT_acceptance_required"] = True
+     result["unobserved"] = {"OS_handles": None, "external_models": None, "GPU_native": None, "native_tool_exit": None}
+     write(out / "result.json", result)

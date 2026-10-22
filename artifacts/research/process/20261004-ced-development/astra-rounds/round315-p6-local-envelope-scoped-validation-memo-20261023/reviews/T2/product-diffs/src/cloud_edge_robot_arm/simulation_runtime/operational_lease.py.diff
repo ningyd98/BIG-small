@@ -1,0 +1,43 @@
+--- before-T2/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py
++++ current/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py
+@@ -421,6 +421,7 @@
+         if type(ttl) is not int or not math.isfinite(ttl) or ttl <= 0:
+             raise OperationalLeaseError("frozen TTL must be positive finite integer seconds")
+         self.worker = worker
++        self._mode = worker._frozen_operational_time_mode
+         self.repository = cast("SQLiteSimulationJobRepository", worker.repository)
+         self.worker_id = worker.worker_id
+         self._binding = worker.visual_role_binding
+@@ -493,7 +494,9 @@
+         ):
+             self.invalidate("worker original policy changed")
+             raise OperationalLeaseError("worker frozen source/TTL policy changed")
+-        if self.worker.operational_time_mode != self.worker._frozen_operational_time_mode:
++        if (self.worker._frozen_operational_time_mode != self._mode
++                or (self._mode != "LOCAL_TEMPORAL_PUBLICATION_V1"
++                    and self.worker.operational_time_mode != self._mode)):
+             self.invalidate("worker mode changed while active")
+             raise OperationalLeaseError("worker frozen mode changed")
+         return str(role)
+@@ -911,11 +914,18 @@
+     from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+         SQLiteSimulationJobRepository,
+     )
+-    from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+-
++    from cloud_edge_robot_arm.simulation_runtime.worker import (
++        SimulationWorker,
++        _GENUINE_WORKER_MODULE_GLOBALS,
++        _GENUINE_WORKER_POLL_CODE,
++    )
++
++    caller = sys._getframe(1)
+     if (
+         type(worker) is not SimulationWorker
+-        or sys._getframe(1).f_code is not SimulationWorker.poll_once.__code__
++        or caller.f_code is not _GENUINE_WORKER_POLL_CODE
++        or caller.f_globals is not _GENUINE_WORKER_MODULE_GLOBALS
++        or caller.f_locals.get("self") is not worker
+     ):
+         raise OperationalLeaseError("only genuine exact worker poll opens session")
+     if (

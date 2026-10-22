@@ -1,0 +1,124 @@
+--- before-T2/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py
++++ current/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py
+@@ -518,6 +518,23 @@
+             # Measure after lock acquisition: lock waits cannot revive expiry.
+             now = _now()
+             expires_at = now + timedelta(seconds=lease_ttl_seconds)
++            session = _current_session(self)
++            if session is not None and session._mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++                # The dispatcher already evaluated the genuine current broker
++                # segment in this transaction. UTC columns remain diagnostics.
++                cursor = conn.execute(
++                    "UPDATE simulation_job_leases SET heartbeat_at=?,expires_at=? WHERE lease_id=? "
++                    "AND released_at='' AND EXISTS (SELECT 1 FROM simulation_jobs j "
++                    "WHERE j.job_id=simulation_job_leases.job_id AND j.lease_id=simulation_job_leases.lease_id "
++                    "AND j.worker_id=simulation_job_leases.worker_id AND j.cancel_requested=0 "
++                    "AND j.status IN (?,?,?))",
++                    (_dt(now), _dt(expires_at), lease_id, RuntimeJobStatus.LEASED.value,
++                     RuntimeJobStatus.STARTING.value, RuntimeJobStatus.RUNNING.value))
++                if cursor.rowcount != 1:
++                    raise OperationalLeaseError("current local heartbeat ownership/CAS invalid")
++                conn.execute("UPDATE simulation_jobs SET lease_expires_at=?,updated_at=? WHERE lease_id=?",
++                             (_dt(expires_at), _dt(now), lease_id))
++                return
+             # Keep lease and job expiry in one transaction. Expiry, release,
+             # cancellation and ownership changes are irreversible to a heartbeat.
+             cursor = conn.execute(
+@@ -1288,6 +1305,84 @@
+                 raise OperationalLeaseError("exact unique actual open attempt required")
+         else:
+             raise OperationalLeaseError("terminal operational lifecycle")
++
++    @contextmanager
++    def _local_read_scope(self, session, *, job_id: str, purpose: str, operation_sha256: str):
++        """Issue or join a genuine private read view; descriptors cannot enter."""
++        from cloud_edge_robot_arm.vision.operational_windows import OperationalWindowOwner, _prepare_startup
++        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
++
++        caller = sys._getframe(2).f_code
++        allowed = {
++            _prepare_startup.__code__, OperationalWindowOwner._bind_inputs.__code__,
++            VisualWorkerRuntime._read_lease.__code__,
++            VisualWorkerRuntime._local_publication_scope.__wrapped__.__code__,
++            SimulationWorker._owns_artifact_publication.__code__,
++        }
++        if (type(session) is not OperationalLeaseSession or _current_session(self) is not session
++                or session.repository is not self or caller not in allowed
++                or session.worker._frozen_operational_time_mode != "LOCAL_TEMPORAL_PUBLICATION_V1"):
++            raise OperationalLeaseError("registered private local session/caller required")
++        session._check_ingress(purpose)
++        active = (getattr(self._transactions, "local_view", None)
++                  or getattr(self._transactions, "publication_view", None))
++        if active is not None:
++            session._view(active)
++            if active.snapshot["job_id"] != job_id:
++                raise OperationalLeaseError("foreign local read job")
++            yield active
++            return
++        with self._operational_transaction(session, job_id=job_id, purpose=purpose,
++                                           operation_sha256=operation_sha256) as view:
++            self._transactions.local_view = view
++            try:
++                yield view
++            finally:
++                self._transactions.local_view = None
++
++    def _local_publication_receipt(self, view, receipt: dict[str, Any]) -> None:
++        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++
++        if sys._getframe(1).f_code is not VisualWorkerRuntime._local_commit.__code__:
++            raise OperationalLeaseError("private publication receipt coordinator required")
++        session = _view_record(view).session
++        session._view(view)
++        if receipt["job_id"] != session.job_id or receipt["epoch"] != session.epoch:
++            raise OperationalLeaseError("publication receipt original job/fence differs")
++        conn = view._connection
++        old = conn.execute("SELECT * FROM simulation_local_publications_v1 WHERE operation_id=?",
++                           (receipt["operation_id"],)).fetchone()
++        if old is not None and (old["operation_sha256"] != receipt["operation_sha256"]
++                               or old["event_record_hash"] != receipt["event_record_hash"]):
++            raise OperationalLeaseError("publication operation changed hash/source")
++        keys = list(receipt)
++        conn.execute("INSERT INTO simulation_local_publications_v1 (" + ",".join(keys)
++                     + ") VALUES (" + ",".join("?" for _ in keys) + ") ON CONFLICT(operation_id) DO UPDATE SET "
++                     + ",".join(k + "=excluded." + k for k in keys if k != "operation_id"),
++                     tuple(receipt[k] for k in keys))
++        conn.execute("COMMIT")
++        # Deliberately access the real connection after COMMIT. A lost acknowledgement
++        # is not converted into success, nor rolled back into a refunded debit.
++        conn.execute("SELECT 1").fetchone()
++
++    def read_local_publication(self, run_id: str) -> list[dict[str, Any]]:
++        self._initialize()
++        with self.publication_guard(), self._connect() as conn:
++            rows = conn.execute("SELECT p.* FROM simulation_local_publications_v1 p "
++                                "JOIN simulation_jobs j ON p.job_id=j.job_id WHERE j.run_id=? "
++                                "ORDER BY p.operation_id", (run_id,)).fetchall()
++            return [{**dict(row), "live_authority": False, "accepted": False,
++                     "confirmation_state": "UNKNOWN", "write_disposition": "HISTORICAL_ONLY"}
++                    for row in rows]
++
++    def reconcile_local_publications(self) -> list[dict[str, Any]]:
++        """Detached orphan census. Never activate, complete, refund or dispatch."""
++        self._initialize()
++        with self.publication_guard(), self._connect() as conn:
++            return [{**dict(row), "confirmation_state": "UNKNOWN", "accepted": False,
++                     "live_authority": False, "reason": "fresh private owner and both receipts required"}
++                    for row in conn.execute("SELECT * FROM simulation_local_publications_v1 ORDER BY operation_id")]
+ 
+     def _commit_operational_proposal(
+         self, view: LockedLeaseView, proposal: LeaseProposal
+@@ -2145,6 +2240,12 @@
+         if getattr(self._transactions, "connection", None) is not None:
+             return
+         with self.publication_guard(), self._connect() as conn:
++            conn.execute("CREATE TABLE IF NOT EXISTS simulation_local_publications_v1 ("
++                         "operation_id TEXT PRIMARY KEY, operation_sha256 TEXT NOT NULL, job_id TEXT NOT NULL, "
++                         "attempt INTEGER NOT NULL, lease_id TEXT NOT NULL, epoch TEXT NOT NULL, "
++                         "generation INTEGER NOT NULL, row_revision INTEGER NOT NULL, phase TEXT NOT NULL, "
++                         "event_record_hash TEXT NOT NULL, event_receipt_hash TEXT NOT NULL, "
++                         "job_receipt_hash TEXT NOT NULL, payload_json TEXT NOT NULL)")
+             conn.executescript(
+                 "\n"
+                 "                CREATE TABLE IF NOT EXISTS schema_migrations (\n"

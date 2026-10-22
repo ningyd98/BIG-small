@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import datetime
 import hashlib
@@ -1826,46 +1827,100 @@ class LocalVerificationBudgetState(_StrictDetachedValue):
         return _reference(self.to_payload()["original_budget_reference"])
 
 
+_DECODE_MEMO_ENTRY_CAP = 128
+_DECODE_MEMO_BYTE_CAP = 8 * 1024 * 1024
+
+
+class _DecodeMemo:
+    __slots__ = ("entries", "content_bytes", "token")
+
+    def __init__(self) -> None:
+        self.entries: dict[tuple[type, str], str] = {}
+        self.content_bytes = 0
+        self.token: Token | None = None
+
+
+_DECODE_MEMO: ContextVar[_DecodeMemo | None] = ContextVar("local_envelope_decode_memo", default=None)
+
+
+def _decode_memo_owned_here(memo: _DecodeMemo) -> bool:
+    # Token reset checks actual Context ownership, including copied contexts.
+    # Refresh the token in its owner so the outer finally can always reset it.
+    if memo.token is None:
+        return False
+    try:
+        _DECODE_MEMO.reset(memo.token)
+    except (ValueError, RuntimeError):
+        return False
+    memo.token = _DECODE_MEMO.set(memo)
+    return True
+
+
 @dataclass(frozen=True, init=False)
 class LocalEnvelope:
     _json: str
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, JSONValue]) -> Self:
-        raw = _object(payload, OUTER_FIELDS)
-        tag = _text(raw["schema_version"])
-        if tag not in FIELDS:
-            raise ValueError("exact local semantic tag required")
-        body = _object(raw["payload"], FIELDS[tag])
-        original = _original(raw["original_time"])
-        diagnostics = _object(raw["diagnostics"], frozenset(("utc", "monotonic")))
-        for name, value in _object(diagnostics["utc"]).items():
-            _text(name)
-            if value is not None:
-                stamp = datetime.fromisoformat(_text(value))
-                if stamp.tzinfo is None or stamp.utcoffset() is None:
-                    raise ValueError("typed diagnostic UTC required")
-        if diagnostics["monotonic"] is not None:
-            _number(diagnostics["monotonic"])
-        original_or_request = tag.endswith((".definition.local.v1", ".original.local.v1", ".transition.local.v1", ".promotion.local.v1", ".route-input.local.v1"))
-        decision: dict[str, JSONValue] | None = None
-        transaction: dict[str, JSONValue] | None = None
-        if original_or_request:
-            if raw["decision"] is not None or raw["transaction"] is not None:
-                raise ValueError("original/request cannot self-install a current decision")
-        else:
-            decision = _decision(raw["decision"])
-            transaction = _transaction(raw["transaction"])
-            _join_decision(original, decision)
-            for current_name, decision_name in (("operation_id", "operation_id"), ("operation_sha256", "operation_sha256"), ("job_id", "job_id"), ("attempt", "attempt"), ("lease_id", "lease_id"), ("epoch", "lease_epoch"), ("generation", "lease_generation"), ("row_revision", "lease_row_revision")):
-                if transaction[current_name] != decision[decision_name]:
-                    raise ValueError("transaction and two-authority evidence disagree")
-        _semantic(tag, body, original, diagnostics,
-                  evidence_decision=decision, evidence_transaction=transaction)
-        _validate_nested_local(body)
-        result = object.__new__(cls)
-        object.__setattr__(result, "_json", _canonical(raw))
-        return result
+        memo = _DECODE_MEMO.get()
+        outermost = memo is None or not _decode_memo_owned_here(memo)
+        if outermost:
+            # A copied Context must not inherit an active parent's successes.
+            if memo is not None:
+                _DECODE_MEMO.set(None)
+            memo = _DecodeMemo()
+            memo.token = _DECODE_MEMO.set(memo)
+        try:
+            raw = _object(payload, OUTER_FIELDS)
+            text = _canonical(raw)
+            key = (cls, text)
+            cached = memo.entries.get(key)
+            if cached is not None:
+                result = object.__new__(cls)
+                object.__setattr__(result, "_json", cached)
+                return result
+            tag = _text(raw["schema_version"])
+            if tag not in FIELDS:
+                raise ValueError("exact local semantic tag required")
+            body = _object(raw["payload"], FIELDS[tag])
+            original = _original(raw["original_time"])
+            diagnostics = _object(raw["diagnostics"], frozenset(("utc", "monotonic")))
+            for name, value in _object(diagnostics["utc"]).items():
+                _text(name)
+                if value is not None:
+                    stamp = datetime.fromisoformat(_text(value))
+                    if stamp.tzinfo is None or stamp.utcoffset() is None:
+                        raise ValueError("typed diagnostic UTC required")
+            if diagnostics["monotonic"] is not None:
+                _number(diagnostics["monotonic"])
+            original_or_request = tag.endswith((".definition.local.v1", ".original.local.v1", ".transition.local.v1", ".promotion.local.v1", ".route-input.local.v1"))
+            decision: dict[str, JSONValue] | None = None
+            transaction: dict[str, JSONValue] | None = None
+            if original_or_request:
+                if raw["decision"] is not None or raw["transaction"] is not None:
+                    raise ValueError("original/request cannot self-install a current decision")
+            else:
+                decision = _decision(raw["decision"])
+                transaction = _transaction(raw["transaction"])
+                _join_decision(original, decision)
+                for current_name, decision_name in (("operation_id", "operation_id"), ("operation_sha256", "operation_sha256"), ("job_id", "job_id"), ("attempt", "attempt"), ("lease_id", "lease_id"), ("epoch", "lease_epoch"), ("generation", "lease_generation"), ("row_revision", "lease_row_revision")):
+                    if transaction[current_name] != decision[decision_name]:
+                        raise ValueError("transaction and two-authority evidence disagree")
+            _semantic(tag, body, original, diagnostics,
+                      evidence_decision=decision, evidence_transaction=transaction)
+            _validate_nested_local(body)
+            result = object.__new__(cls)
+            object.__setattr__(result, "_json", text)
+            # Conservatively charge both key and result text even when shared.
+            content_bytes = 2 * len(text.encode("utf-8"))
+            if (key not in memo.entries and len(memo.entries) < _DECODE_MEMO_ENTRY_CAP
+                    and memo.content_bytes + content_bytes <= _DECODE_MEMO_BYTE_CAP):
+                memo.entries[key] = text
+                memo.content_bytes += content_bytes
+            return result
+        finally:
+            if outermost:
+                _DECODE_MEMO.reset(memo.token)
 
     def to_payload(self) -> dict[str, JSONValue]:
         return _object(json.loads(self._json))

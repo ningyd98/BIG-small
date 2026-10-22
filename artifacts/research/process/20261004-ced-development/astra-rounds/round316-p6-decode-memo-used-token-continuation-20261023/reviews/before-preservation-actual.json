@@ -1,0 +1,18 @@
+{
+  "round": "R316",
+  "invocation": {
+    "cmd": "/usr/bin/python3 - <<'PY'\nfrom pathlib import Path\nimport json,hashlib,base64,stat,os\nroot=Path('/home/ningyd/文档/ChatGPT/BIGsmall');base=root/'artifacts/research/process/20261004-ced-development/astra-rounds';d=base/'round316-p6-decode-memo-used-token-continuation-20261023';plan=json.loads((d/'plan.json').read_bytes());assert hashlib.sha256((d/'plan.json').read_bytes()).hexdigest()=='b2590e34dabfdf39b7c8271ca84c02736b44068fa12fc0472328eb5e60a96bb2'\ndef pin(p):\n b=p.read_bytes();return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\ndef write(p,b,mode=None):\n p.parent.mkdir(parents=True,exist_ok=True)\n with p.open('xb') as f:f.write(b);f.flush();os.fsync(f.fileno())\n if mode is not None:os.chmod(p,mode)\n assert p.read_bytes()==b\n return pin(p)\nfor r in plan['input_manifest']['inputs']:\n p=root/r['path'];got=pin(p);assert got['bytes']==r['bytes'] and got['sha256']==r['sha256'],r['path']\nrows=[]\nfor name in ['src/cloud_edge_robot_arm/vision/local_temporal.py','tests/test_local_temporal_decode_memo.py','artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/product-source.diff','artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/implementation/product-generation-map.json']:\n p=root/name;b=p.read_bytes();mode=stat.S_IMODE(p.lstat().st_mode);archive=write(d/'before/files'/name,b,mode);rows.append({'source':pin(p),'mode':mode,'base64':base64.b64encode(b).decode(),'archive':archive,'archive_mode':stat.S_IMODE(Path(archive['path']).lstat().st_mode)})\ntest=(root/plan['scope']['test_file']).read_bytes();prefix=plan['scope']['protected_test_prefix'];assert len(test[:prefix['bytes']])==prefix['bytes'] and hashlib.sha256(test[:prefix['bytes']]).hexdigest()==prefix['sha256']\nmanifest=write(d/'before/manifest.json',(json.dumps({'round':'R316','inputs_checked':len(plan['input_manifest']['inputs']),'files':rows,'protected_test_prefix':prefix,'runtime_executed':False},ensure_ascii=False,indent=2)+'\\n').encode());print(json.dumps({'manifest':manifest,'archived':len(rows),'inputs_checked':9,'primary_prefix_match':True,'runtime_executed':False},ensure_ascii=False))\nPY",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "yield_time_ms": 1000,
+    "max_output_tokens": 1700
+  },
+  "actual_tool_return": {
+    "chunk_id": "a323f0",
+    "wall_time_seconds": 0.00000811,
+    "exit_code": 0,
+    "original_token_count": 99,
+    "output": "{\"manifest\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round316-p6-decode-memo-used-token-continuation-20261023/before/manifest.json\", \"bytes\": 218281, \"sha256\": \"e9fb0cc5d40e877f5042e11d6aafdb94753afc3ee2547c4fafeff7c092610ba9\"}, \"archived\": 4, \"inputs_checked\": 9, \"primary_prefix_match\": true, \"runtime_executed\": false}\n"
+  },
+  "independent_stdout": null,
+  "independent_stderr": null
+}

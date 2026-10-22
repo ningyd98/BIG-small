@@ -1,0 +1,14 @@
+{
+  "tool": "exec_command",
+  "arguments": {
+    "cmd": "/usr/bin/python3 - <<'PY'\nfrom pathlib import Path\nimport json,hashlib,subprocess,stat\nroot=Path.cwd();base=root/'artifacts/research/process/20261004-ced-development/astra-rounds';r=base/'round315-p6-local-envelope-scoped-validation-memo-20261023';r313=base/'round313-p6-t2-writer-crash-diagnosis-20261023'\npb=(r/'plan.json').read_bytes();assert hashlib.sha256(pb).hexdigest()=='c71222fa4d71b4c8a51ed5a9bffb9d197edfef7a83e11444b1f7e75166ff50a3';plan=json.loads(pb);ib=(r/'input-observation.json').read_bytes();assert hashlib.sha256(ib).hexdigest()==plan['input_manifest']['sha256'];obs=json.loads(ib)\nhead=subprocess.run(['git','rev-parse','HEAD'],check=True,capture_output=True,text=True).stdout.strip();assert head==plan['HEAD']\nseen={}\nfor x in obs['inputs']+json.loads((r313/'source-gate.json').read_bytes())['pins']:\n p=Path(x['path']).absolute();s=p.lstat();assert stat.S_ISREG(s.st_mode);b=p.read_bytes();ss=p.lstat();fields=('st_dev','st_ino','st_mode','st_size','st_mtime_ns','st_ctime_ns');assert all(getattr(s,k)==getattr(ss,k) for k in fields);assert len(b)==x['bytes'] and hashlib.sha256(b).hexdigest()==x['sha256'],str(p);seen[str(p)]={'path':str(p),'bytes':len(b),'sha256':x['sha256']}\nfor rel in ('root-command-ledger.json','implementation/command-ledger.json'):\n d=json.loads((r313/rel).read_bytes())['commands']['writer_memory_diagnostic'];assert d['state']=='SPENT' and d['used']==1 and d['remaining']==0\nfor x in plan['commands'].values():assert not Path(x['output']).exists()\nassert not (root/'tests/test_local_temporal_decode_memo.py').exists()\nreport={'round':'R315','reviewer':'ROOT','HEAD':head,'plan_sha256':hashlib.sha256(pb).hexdigest(),'input_sha256':hashlib.sha256(ib).hexdigest(),'applicable':True,'explicit_plan_inputs':len(obs['inputs']),'prior_current_source_gate_pins':432,'unique_pins':len(seen),'pins':list(seen.values()),'R313_both_roles_terminal_spent':True,'new_outputs_and_test_absent':True,'runtime_executed':False};(r/'reviews').mkdir(exist_ok=True);out=r/'reviews/plan-applicability.json'\nwith out.open('x',encoding='utf-8') as f:json.dump(report,f,ensure_ascii=False,indent=2);f.write('\\n')\nb=out.read_bytes();print(json.dumps({'path':str(out),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest(),'unique_pins':len(seen),'applicable':True},ensure_ascii=False))\nPY",
+    "max_output_tokens": 1200
+  },
+  "actual": {
+    "chunk_id": "7736e9",
+    "wall_time_seconds": 0.0000085,
+    "exit_code": 0,
+    "original_token_count": 85,
+    "output": "{\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round315-p6-local-envelope-scoped-validation-memo-20261023/reviews/plan-applicability.json\", \"bytes\": 130424, \"sha256\": \"bcde24d27d1ae970b42ee3495536800669d43f2255ce1dacc723063da01005f6\", \"unique_pins\": 443, \"applicable\": true}\n"
+  }
+}

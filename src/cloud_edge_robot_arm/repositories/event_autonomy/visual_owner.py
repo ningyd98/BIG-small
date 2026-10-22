@@ -457,6 +457,10 @@ class VisualOwnerPublicationRecord:
         return str(json.loads(self._payload_json)["original_plan_hash"])
 
     @property
+    def contract_hash(self) -> str:
+        return str(json.loads(self._payload_json)["contract_hash"])
+
+    @property
     def effective_deadline_at(self) -> datetime:
         return datetime.fromisoformat(json.loads(self._payload_json)["effective_deadline_at"])
 
@@ -526,6 +530,10 @@ class LocalVisualOwnerPublicationRecord(LocalDomainEnvelope, VisualOwnerPublicat
     @property
     def original_plan_hash(self) -> str:
         return self.string("original_plan_hash")
+
+    @property
+    def contract_hash(self) -> str:
+        return self.string("contract_hash")
 
     @property
     def effective_deadline_at(self) -> datetime:

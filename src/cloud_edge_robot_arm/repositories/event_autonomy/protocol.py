@@ -183,7 +183,7 @@ def _local_target(repository, name, args, kwargs):
             key = value if isinstance(value, str) else getattr(value, "request_id", None)
             if key and local_get_unlocked(repository, category, key) is not None:
                 return True
-    if name == "claim_outbox_message":
+    if name == "claim_outbox_message" and not args and not kwargs:
         if hasattr(repository, "_conn"):
             return repository._conn.execute("SELECT 1 FROM visual_local_tasks_v1 WHERE category='outbox' LIMIT 1").fetchone() is not None
         return any(category == "outbox" for category, _ in repository._local_tasks)
@@ -217,7 +217,7 @@ def local_event_repository(cls):
                     result = _local_read_record(self, name, args, kwargs)
                     if result is not _LOCAL_MISSING:
                         return result
-                elif _local_target(self, name, args, kwargs):
+                elif name != "claim_outbox_message" and _local_target(self, name, args, kwargs):
                     negative = (name == "save_state" and len(args) >= 2 and type(args[1]) is str
                                 and args[1] == "CANCELLED" and not kwargs)
                     if not negative:
