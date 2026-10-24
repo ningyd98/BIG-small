@@ -1,0 +1,105 @@
+{
+  "round": "R339",
+  "actual_model": "gpt-6-astra",
+  "status": "FROZEN_QA_ONLY_CONTINUATION",
+  "task": "Latest12-page student-wording deck; not the earlier13-page rewrite or P6 development.",
+  "problem": "Additional delivery QA falsely reports all_expected_texts_present=false because direct p:cSld/p:spTree/p:sp/p:txBody misses source slide2 grouped native text that export flattened.",
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/presentations/20261024-student-wording/source/开题报告-用户修订原件.pptx",
+      "bytes": 6593805,
+      "sha256": "326974f3c9926b4578b77e508f6893fcc290b6da0061423e98f66511382c7b98"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/output/pptx/20261024-student-wording/开题报告-宁业栋-学生口吻优化.pptx",
+      "bytes": 5718251,
+      "sha256": "fcad889886338e50efd3027a8b87c26fb4ab06faeca2b4d764c01a201e13e14f"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/presentations/20261024-student-wording/build/evidence/delivery-qa.json",
+      "bytes": 1203,
+      "sha256": "17cbb494d39c54e63af89903226adfbc1784faf690d7884a750be5544403141e"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/presentations/20261024-student-wording/build/evidence/text-qa-diagnostic.json",
+      "bytes": 908,
+      "sha256": "1d2416ee876bd2103231918a44e5eb00c2a08673698bee768891caee1d17a571"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/presentations/20261024-student-wording/build/edits.json",
+      "bytes": 7869,
+      "sha256": "b01fe0d6fb3ed8bf372869772f4e721a2687c9c2f4ecffdc6dcfe2ba205ad495"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/presentations/20261024-student-wording/build/evidence/final-validation.json",
+      "bytes": 7540,
+      "sha256": "582a7017565273509cba4773386a8fd00724d81f143cb4e496884108e5d4df2f"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round339-proposal-student-wording-text-qa-20261024/readonly-observation.json",
+      "bytes": 4751,
+      "sha256": "e61fcd9a5ee7be9f15a4596dac4e7b51f253283b2444e6b09e39c197829c75e5"
+    }
+  ],
+  "original_evidence": {
+    "failure": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/presentations/20261024-student-wording/build/evidence/delivery-qa.json",
+    "status": "needs_review",
+    "diagnostic": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/presentations/20261024-student-wording/build/evidence/text-qa-diagnostic.json",
+    "difference": "slide2 actual-only6 nonempty directory strings plus23 empty textboxes under incomplete source traversal",
+    "preserve_original_bytes": true
+  },
+  "root_cause_confirmed_readonly": {
+    "native": "ef8bc1 exit0",
+    "source_and_final_pages": 12,
+    "missing_grouped_nonempty_strings": [
+      "选题背景与意义",
+      "1",
+      "研究内容与结构",
+      "2",
+      "毕设进度安排",
+      "3"
+    ],
+    "grouped_empty_textboxes": 23,
+    "recursive_checks": "For all12 ordered slides, apply each authorized textbox edit exactly once to recursively extracted source text; expected and output nonempty multisets equal with multiplicity. Empty counts also equal on every page. Ordered table/cell matrices equal edit list or unchanged source. Per-slide image-relationship target byte-hash multisets equal. All slide a:t nodes accounted for by native shape text or table text; no unhandled text carriers.",
+    "real_content_difference_found": false
+  },
+  "allowed_change": {
+    "scope": "Only QA extraction coverage and new derived QA receipt; no deck, edits list, policy, finalizer or old report changes.",
+    "shape_selector_before": "p:cSld/p:spTree/p:sp/p:txBody",
+    "shape_selector_after": ".//p:sp/p:txBody (or recursive walk through every p:grpSp with equivalent native-shape coverage)",
+    "table_selector": ".//a:tbl including nested graphic frames, keeping row and cell order",
+    "notes": "Keep any existing notes check and authorized edits.notes semantics unchanged; notes are not a substitute for slide text. This readout independently checked slide text, not a fresh notes/render/nativePowerPoint assessment."
+  },
+  "qa_algorithm": [
+    "Read slide order from presentation.xml relationships rather than filesystem lexical order",
+    "For each recursively discovered text body preserve paragraph boundaries, a:br, field text and exact Unicode; do not strip whitespace or normalize away content differences",
+    "Require every authorized old textbox selector exactly once on its original page, then replace in expected texts using frozen edits.json; compare page-level Counter of all strings including empty strings and multiplicities",
+    "Preserve separate shape ancestry/object accounting for diagnosis; group flattening alone may change tree topology, not text content",
+    "Compare tables as complete ordered matrices against exact authorized values; unchanged tables against source; include nested table frames",
+    "Account for all native slide a:t nodes; any text outside handled shape/table carriers is a coverage gap, not ignored",
+    "Resolve each slide image relationship and compare raw-image byte SHA256 multisets including duplicates; preserve prior image/unchanged-page rendering checks",
+    "Maintain12-page count, source/final hashes, final-vs-reviewed-candidate equality and existing complete finalizer requirements",
+    "Save new report delivery-qa-recursive.json or equivalently distinct filename with original failure/diagnostic SHA and all check results; do not overwrite old delivery-qa.json or diagnostic"
+  ],
+  "prerequisites": [
+    "ROOT rechecks all frozen inputs and unchanged final/source hashes",
+    "Reuse completed visual QA and finalizer only with exact same output hash; no finalizer/render rerun required by this text coverage correction",
+    "Original failure remains needs_review historical result; new receipt must explain why extraction coverage was corrected"
+  ],
+  "limits": {
+    "new_QA_metadata_comparison_max": 1,
+    "PPT_edits": 0,
+    "product_tests": 0,
+    "research_runtime": 0,
+    "new_finalizer_dispatch": 0,
+    "Git_by_Astra": false
+  },
+  "acceptance": [
+    "Recursive expected/output all strings equal including empty counts and exact multiplicity on12 pages",
+    "All native text accounted for, all ordered table values and image bytes preserved",
+    "Original and final hashes unchanged; no content-policy relaxation",
+    "ROOT actual corrected QA receipt is separately saved; no claim that original failed check passed",
+    "Native font rendering and native PowerPoint execution remain unverified as in existing receipt; no research/physical acceptance promoted"
+  ],
+  "stop": "Any true missing/extra content, edit-selector ambiguity, image/table mismatch or newly unsupported text carrier: preserve evidence, do not change PPT or ignore mismatch, return for a new scoped decision."
+}
