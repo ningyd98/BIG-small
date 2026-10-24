@@ -1,0 +1,102 @@
+{
+  "schema": "bigsmall.r357.profile-coexistence-source-readout.v1",
+  "planner": "/root/astra_p6_t3_plan gpt-6-astra",
+  "method": "Only frozen source/JSON/AST/byte metadata; no candidate import or runtime",
+  "test": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py",
+    "bytes": 313285,
+    "sha256": "54b988c6257f51efcc796fd5a3f376c45fee84c31c6b3fa3f7593853da0d11ca"
+  },
+  "test_segments": [
+    {
+      "name": "profile",
+      "line": 3809,
+      "end_line": 3837,
+      "segment_sha256": "679388e7dd44a2f7ee28b4ae9e4d62226ebe45ad27716ea0d7aeaabd4f4414e3",
+      "source": "def profile(frame, event, arg):\n        code = frame.f_code\n        if code is poll_code and event in (\"call\", \"return\"):\n            call = getattr(poll_context, \"call\", None)\n            if call is not None and frame.f_locals.get(\"self\") is objects[call[\"worker_resource_id\"]][0]:\n                if event == \"call\":\n                    call[\"entered\"] = True\n                    call[\"entry_sequence\"] = tick()\n                    call[\"thread_id\"] = threading.get_ident()\n                    call[\"native_thread_id\"] = threading.get_native_id()\n                sample_runtime(frame.f_locals[\"self\"])\n        elif code is session_code and event in (\"call\", \"return\"):\n            session = frame.f_locals[\"self\"]\n            observe_session(session, frame.f_locals.get(\"worker\"))\n        elif code is thread_start_code and event in (\"call\", \"return\"):\n            thread = frame.f_locals.get(\"self\")\n            for session in tuple(session_refs):\n                if (thread is not None and\n                        (thread is getattr(session, \"_broker\", None)\n                         or thread is getattr(session, \"_heartbeat_thread\", None))):\n                    observe_session(session)\n                    break\n        elif code is heartbeat_install_code and event == \"return\":\n            observe_session(frame.f_locals.get(\"session\"))\n        elif code is session_close_code and event in (\"call\", \"return\"):\n            observe_session(frame.f_locals.get(\"session\"))\n        callback = state.wait_observer\n        if callback is not None:\n            callback(frame, event, arg)"
+    },
+    {
+      "name": "_b_t2_exercise",
+      "line": 4082,
+      "end_line": 4141,
+      "segment_sha256": "10753140d0e66ac6911466570d5e313d89921f063b581bba2974433226653cb8",
+      "source": "def _b_t2_exercise(monkeypatch, directory, backend, observed, callback):\n    from cloud_edge_robot_arm.repositories.event_autonomy import InMemoryEventAutonomyRepository\n    from cloud_edge_robot_arm.simulation_runtime import operational_lease\n    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository\n    from tests.test_visual_worker_factory import software_factory\n\n    directory.mkdir(parents=True, exist_ok=False)\n    outcomes, errors, reads = [], [], {}\n    received = None\n    events = None\n\n    def episode(worker, repo, job, source_root):\n        runtime = received[0][3].worker_runtime\n        session = worker._operational_lease_session\n        assert type(repo) is SQLiteSimulationJobRepository\n        assert runtime.source.event_repository is events\n        assert runtime._operational_owner is not None and session is not None\n        for thread, kind in ((session._broker, \"broker_thread\"),\n                             (getattr(worker, \"_heartbeat_thread\", None), \"heartbeat_thread\")):\n            if thread is not None:\n                record = observed.add(thread, kind)\n                record[\"initialized\"] = True\n        try:\n            outcomes.append(callback(runtime, session, worker, repo, job, events, reads, observed))\n        except BaseException as error:\n            errors.append(error)\n            raise\n\n    with monkeypatch.context() as scoped:\n        data = software_factory(scoped, directory, during_episode=episode)\n        repo, job, worker, calls, received, _, original_events = data\n        events = original_events\n        if backend == \"memory\":\n            original_events.close()\n            events = InMemoryEventAutonomyRepository()\n            worker.visual_event_repository = events\n        worker.operational_time_mode = \"LOCAL_TEMPORAL_PUBLICATION_V1\"\n        try:\n            # All independent connections exist BEFORE any tested job view/event lock.\n            reads[\"job\"] = sqlite3.connect(repo.database_path)\n            reads[\"job\"].row_factory = sqlite3.Row\n            if backend == \"sqlite\":\n                reads[\"event\"] = sqlite3.connect(events.path)\n                reads[\"event\"].row_factory = sqlite3.Row\n            assert worker.poll_once()\n            if errors:\n                raise errors[0]\n            assert len(outcomes) == 1, repo.get_job(job.job_id).error_message\n            assert calls.count(\"episode\") == 1\n            return outcomes[0]\n        finally:\n            observed.wait_observer = None\n            for event in observed.release_events:\n                event.set()\n            session = getattr(worker, \"_operational_lease_session\", None)\n            if session is not None and not session._closed:\n                operational_lease._close_worker_lease_session(session, reason=\"T2-exercise-finally\")\n            events.close()\n            for connection in reads.values():\n                connection.close()"
+    }
+  ],
+  "source_coordinates": {
+    "previous_hooks_saved": 3541,
+    "resource_profile": [
+      3809,
+      3837
+    ],
+    "seam_delegate": [
+      3835,
+      3837
+    ],
+    "state_None": 3841,
+    "resource_hook_install": [
+      3858,
+      3859
+    ],
+    "yield": 3860,
+    "outer_finally_clear": 3862,
+    "resource_hook_restore": [
+      3942,
+      3943
+    ],
+    "identity_restoration_assertion": [
+      3945,
+      3948
+    ],
+    "exercise_finally_seam_clear": 4133
+  },
+  "draft_snapshot": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round357-p6-t3-observer-coexistence-20261024/observer-profile-draft-before.py",
+    "bytes": 18939,
+    "sha256": "70b583f08f228c12e6ac1ccb4c119e6f47c7a7af51b9d323be1ee5090311fbb6"
+  },
+  "draft_affected_methods": [
+    {
+      "name": "_fault",
+      "line": 174,
+      "end_line": 180,
+      "segment_sha256": "fb99eef39637bf1f118e3dca51310ac0499c81f3aa22b624c9ae18029e5bc8ea",
+      "source": "def _fault(self, stage, error):\n        self.invalid = True\n        self.enabled = False\n        if len(self.faults) < 16:\n            self.faults.append({'stage': stage, 'error_type': type(error).__name__})\n        _stderr_fault(stage, type(error).__name__)\n        self._disable_current_and_future()"
+    },
+    {
+      "name": "_disable_current_and_future",
+      "line": 182,
+      "end_line": 192,
+      "segment_sha256": "8d6ab8ec5b0b62bf216114a290abc7c6d14fdf202c625c6387f46eec24f9030b",
+      "source": "def _disable_current_and_future(self):\n        # Other already-profiled threads detach themselves on their next event.\n        # Threads without a later callback have no observed restore receipt.\n        try:\n            if sys.getprofile() is self.callback:\n                sys.setprofile(self.previous_sys_profile)\n            if threading.getprofile() is self.callback:\n                threading.setprofile(self.previous_thread_profile)\n        except BaseException as error:\n            self.invalid = True\n            _stderr_fault('profile_disable', type(error).__name__)"
+    },
+    {
+      "name": "_stop",
+      "line": 194,
+      "end_line": 210,
+      "segment_sha256": "56e5e9f72e65fee5c11eff7b9596e8e3cf5cc1ee3d4805653c42ea5c430de271",
+      "source": "def _stop(self, reason):\n        if self.saturation is not None:\n            return\n        self.saturation = reason\n        self.enabled = False\n        try:\n            self._append('saturation', {\n                'reason': reason, 'monotonic_ns': time.monotonic_ns(),\n                'callbacks': self.callbacks, 'hotspot_events': self.hotspot_events,\n                'coarse_events': self.coarse_events,\n                'measured_observer_thread_cpu_ns': self.observer_cpu_ns,\n                'coverage_after_disable': 'UNKNOWN',\n                'native_stack_and_parent_OS_monitoring': 'NOT_DISABLED_BY_PROFILER',\n            }, emergency=True)\n        except BaseException as error:\n            self._fault('saturation_write', error)\n        self._disable_current_and_future()"
+    },
+    {
+      "name": "profile",
+      "line": 341,
+      "end_line": 378,
+      "segment_sha256": "a8f1fecef340789571baf761614f7eaef6aaa6fd5973b304f24fc2c12c0a5a18",
+      "source": "def profile(self, frame, event, returned):\n        \"\"\"Exception-neutral callback; never returns a replacement product value.\"\"\"\n        if not self.enabled:\n            self._disable_current_and_future()\n            return\n        entered_cpu = None\n        locked = False\n        try:\n            entered_cpu = time.thread_time_ns()\n            self.callbacks += 1\n            if self.callbacks >= MAX_CALLBACKS:\n                self._stop('profile_callback_saturation')\n                return\n            if event not in ('call', 'return'):\n                return\n            # No application function/getter runs while this lock is held.\n            # Serialization/wait and I/O are instrumented-run overhead, not\n            # baseline application timing; native/parent observations persist.\n            self.lock.acquire()\n            locked = True\n            self._observe(frame, event, returned)\n        except BaseException as error:\n            self._fault('profile_callback', error)\n        finally:\n            try:\n                if entered_cpu is not None:\n                    elapsed = max(0, time.thread_time_ns() - entered_cpu)\n                    self.observer_cpu_ns += elapsed\n                    self.observer_callback_max_cpu_ns = max(self.observer_callback_max_cpu_ns, elapsed)\n                if self.enabled and self.observer_cpu_ns >= MAX_CPU_NS:\n                    self._stop('observer_cpu_saturation')\n            except BaseException as error:\n                self._fault('profile_accounting', error)\n            if locked:\n                try:\n                    self.lock.release()\n                except BaseException as error:\n                    self._fault('profile_lock_release', error)"
+    },
+    {
+      "name": "finish",
+      "line": 380,
+      "end_line": 396,
+      "segment_sha256": "404aed9007aa7c1fb42b6a01fdf4bd354a5b1eaf5c368d44e08bf627abd57c0e",
+      "source": "def finish(self):\n        \"\"\"Idempotent profile-only finish; native ownership remains separate.\"\"\"\n        if self.closed:\n            return\n        self.enabled = False\n        self._disable_current_and_future()\n        try:\n            self._checkpoint(time.monotonic_ns(), final=True)\n            os.fsync(self.fd)\n        except BaseException as error:\n            self._fault('profile_finish', error)\n        finally:\n            try:\n                os.close(self.fd)\n            except BaseException as error:\n                self._fault('profile_close', error)\n            self.closed = True"
+    }
+  ],
+  "verified_findings": [
+    "Resource profiler does not delegate previous_profile; it runs genuine accounting first then directly invokes state.wait_observer if non-null.",
+    "UTC-memory node uses one outer _b_t2_observe and three sequential _b_t2_exercise calls. Each original exercise clears observed.wait_observer before its own final cleanup/return. A one-time seam attachment would lose later scenarios.",
+    "Historical draft disables sys/threading hooks when its callback is current. If a disabled diagnostic hook is restored by the real observer before its identity assertion, callback-time detachment could falsify the original restoration check.",
+    "Selected UTC-memory callback does not install another wait_observer. Other tests use this seam, so bridge must be exact item only and must reject a non-null foreign callback rather than replace/chain it.",
+    "Standalone global profiler is not sufficient for core region. No live profile coverage was measured."
+  ]
+}

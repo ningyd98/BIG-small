@@ -1,0 +1,22 @@
+{
+  "hash_convention": "SHA256 of ast.get_source_segment, no added trailing newline",
+  "slices": [
+    {
+      "path": "src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "definition": "OperationalWindowOwner._check_app_live",
+      "line_start": 410,
+      "line_end": 433,
+      "segment_sha256": "ee78af6ceb0c29dcd111ba9845d8fe57ce3ab6c4d78f178e00f94a0df227faed",
+      "source": "def _check_app_live(self, *, require_origin: bool = True) -> None:\n        \"\"\"Check the original issuer and D_app only; never compare broker numbers.\"\"\"\n        s = self._startup\n        worker = s.worker\n        if (self._closed or _OWNERS.get(worker) is not self\n                or threading.get_ident() != s.thread_id or worker.repository is not s.repository\n                or worker.active_job_id != s.job_id or worker.visual_role_binding is not s.binding\n                or worker._frozen_operational_time_mode != s.mode):\n            raise OperationalTimeError(\"current exact app owner/startup source unavailable\")\n        if _hash(s.binding.evidence()) != s.binding_hash or _job_source(s.repository.get_job(s.job_id)) != s.job_source:\n            raise OperationalTimeError(\"original app source/policy changed\")\n        if self._origin_tuple is not None and worker._active_task_origin != self._origin_tuple:\n            raise OperationalTimeError(\"original task origin changed\")\n        _ = self._clock.domain\n        if self._source_hashes is not None:\n            pin_worker_source_inventory(self._source_root, self._source_hashes,\n                                        required_paths=frozenset(self._source_hashes))\n        if require_origin:\n            if self.task_origin is None or self.task_origin_token is None or not self._hard:\n                raise OperationalTimeError(\"original app origin unavailable\")\n            for hard in self._hard:\n                current = self._clock.read_current(after=_event_token(self, hard.deadline.origin))\n                if not self._clock.before_deadline(hard.deadline, current):\n                    raise OperationalTimeError(\"original app deadline expired\")"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "definition": "OperationalWindowOwner._remaining_app_seconds",
+      "line_start": 435,
+      "line_end": 450,
+      "segment_sha256": "278da2ca8e6d25b1067a8cc0e7fde56ac1eb6c8b7f3ca5f16bbcf8e298e3e999",
+      "source": "def _remaining_app_seconds(self) -> float:\n        \"\"\"Read only original D_app deadlines, never a renewable lease segment.\"\"\"\n        self._check_app_live()\n        current = self._clock.read_current(after=self.task_origin_token)\n        remaining = min(hard.deadline.deadline_ns - current.upper_ns for hard in self._hard)\n        if remaining <= 0:\n            raise OperationalTimeError(\"original app deadline expired\")\n        # Round toward zero so binary conversion cannot enlarge the nanosecond cap.\n        from math import nextafter\n\n        seconds = remaining / 1_000_000_000\n        if seconds * 1_000_000_000 > remaining:\n            seconds = nextafter(seconds, 0.0)\n        if seconds <= 0:\n            raise OperationalTimeError(\"original app deadline has no positive cap\")\n        return seconds"
+    }
+  ],
+  "whole_file_hash_is_not_an_immutable_precondition": true
+}

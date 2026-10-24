@@ -50,6 +50,7 @@ from cloud_edge_robot_arm.simulation_workbench.models import (
     SimulationRunStatus,
     SimulationRunType,
     TimelineEvent,
+    PublicationStatusView,
 )
 
 
@@ -74,7 +75,7 @@ class SimulationRuntimeService:
         self.artifact_root = artifact_root
         self.runs_root = runtime_root or artifact_root / "phase11_1/runtime"
         self.batches_root = self.runs_root / "batches"
-        self.repository = SQLiteSimulationJobRepository(database_path)
+        self.repository = SQLiteSimulationJobRepository(database_path, artifact_root=artifact_root)
         self.resource_policy = resource_policy or SimulationResourcePolicy()
         self.dispatcher = SimulationJobDispatcher(
             repository=self.repository,
@@ -201,6 +202,7 @@ class SimulationRuntimeService:
 
     def attempts_for(self, run_id: str) -> AttemptListResponse:
         attempts = self.repository.list_attempts(run_id)
+        summaries = {attempt.attempt: self._publication(run_id, attempt.attempt) for attempt in attempts}
         return AttemptListResponse(
             attempts=[
                 AttemptView(
@@ -210,35 +212,51 @@ class SimulationRuntimeService:
                     ended_at=attempt.ended_at,
                     result=attempt.result,
                     error=attempt.error,
-                    artifact_paths=attempt.artifact_paths,
+                    artifact_paths=(attempt.artifact_paths if summaries[attempt.attempt].confirmation_state == "NOT_APPLICABLE"
+                                    else summaries[attempt.attempt].confirmed_artifact_paths),
+                    publication=summaries[attempt.attempt],
                 )
                 for attempt in attempts
             ]
         )
 
     def events_for(self, run_id: str) -> SimulationEventsResponse:
+        publication = self._publication(run_id)
+        operational = publication.confirmation_state != "NOT_APPLICABLE"
         events = [
             TimelineEvent(
                 sequence=event.sequence,
                 event_type=event.event_type,
                 source=event.source,
                 wall_time=event.timestamp,
-                payload=event.payload,
+                payload=(event.payload if not operational or event.event_type != "artifact_created"
+                         else {name: relative for name, relative in event.payload.items()
+                               if publication.accepted and publication.confirmed_artifact_paths.get(name) == relative}),
+                historical_payload=(event.payload if operational and event.event_type == "artifact_created" else None),
             )
             for event in self.repository.list_events(run_id)
         ]
-        return SimulationEventsResponse(events=events)
+        return SimulationEventsResponse(events=events, publication=publication)
 
     def metrics_for(self, run_id: str) -> SimulationMetricsResponse:
         return SimulationMetricsResponse(
             metrics=[
                 SimulationMetric.model_validate(metric)
                 for metric in self.repository.get_metrics(run_id)
-            ]
+            ],
+            publication=self._publication(run_id),
         )
 
     def artifacts_for(self, run_id: str) -> SimulationArtifactsResponse:
-        return SimulationArtifactsResponse(artifacts=self.repository.get_artifacts(run_id))
+        publication = self._publication(run_id)
+        paths = (self.repository.get_artifacts(run_id)
+                 if publication.confirmation_state == "NOT_APPLICABLE"
+                 else publication.confirmed_artifact_paths)
+        return SimulationArtifactsResponse(artifacts=paths, publication=publication)
+
+    def _publication(self, run_id: str, attempt: int | None = None) -> PublicationStatusView:
+        return PublicationStatusView.model_validate(
+            self.repository.get_publication_summary(run_id, attempt=attempt).to_payload())
 
     def clone_run(self, run_id: str) -> ReproductionResponse:
         job = self.repository.get_job_by_run_id(run_id)
@@ -314,6 +332,8 @@ class SimulationRuntimeService:
     def get_batch(self, batch_id: str) -> BatchRecord:
         batch = self.repository.get_batch(batch_id)
         runs = [self._run_record(job) for job in self.repository.list_batch_jobs(batch_id)]
+        operational = [run for run in runs if run.publication is not None
+                       and run.publication.confirmation_state != "NOT_APPLICABLE"]
         return BatchRecord(
             batch_id=batch.batch_id,
             manifest=ExperimentManifest.model_validate(batch.manifest),
@@ -322,6 +342,8 @@ class SimulationRuntimeService:
             status=_batch_status(_batch_progress(runs)),
             artifact_paths={},
             hardware_write_operations=[],
+            publication_state=("NOT_APPLICABLE" if not operational else "COMPLETE"
+                               if all(run.publication.accepted for run in operational) else "INCOMPLETE"),
         )
 
     def batch_runs(self, batch_id: str) -> SimulationRunListResponse:
@@ -393,6 +415,7 @@ class SimulationRuntimeService:
 
     def _run_record(self, job: Any) -> SimulationRunRecord:
         status = SimulationRunStatus(job.status.value)
+        publication = self._publication(job.run_id)
         queue_position = (
             max(1, self.repository.queued_count()) if status == SimulationRunStatus.QUEUED else 0
         )
@@ -420,7 +443,9 @@ class SimulationRuntimeService:
             lease_id=job.lease_id,
             runtime_reason=job.error_message,
             blockers=[job.error_message] if job.error_message else [],
-            artifact_paths=job.artifact_paths,
+            artifact_paths=(job.artifact_paths if publication.confirmation_state == "NOT_APPLICABLE"
+                            else publication.confirmed_artifact_paths),
+            publication=publication,
             hardware_claim="PLANNING_ONLY"
             if job.backend == SimulationBackend.MOVEIT_DRY_RUN.value
             else "SIMULATION_ONLY",
@@ -512,6 +537,12 @@ def _batch_progress(runs: list[SimulationRunRecord]) -> BatchProgress:
         queued=queued,
         running=running,
         succeeded=succeeded,
+        confirmed_succeeded=sum(1 for run in runs if run.status == SimulationRunStatus.SUCCEEDED
+                                and run.publication is not None and run.publication.accepted),
+        unconfirmed_terminal=sum(1 for run in runs if run.status.value in {
+            "SUCCEEDED", "FAILED", "BLOCKED_BY_ENV", "CANCELLED", "TIMED_OUT", "INTERRUPTED"}
+            and run.publication is not None and run.publication.confirmation_state != "NOT_APPLICABLE"
+            and not run.publication.accepted),
         failed=failed,
         blocked=blocked,
         cancelled=cancelled,

@@ -1,0 +1,32 @@
+# R353 — source-proof dictionary read disposition
+
+Actual Astra planner: `/root/astra_p6_t3_plan`, `gpt-6-astra`. Ready for ROOT review; metadata only.
+
+ROOT's original tool chunk `fd6f80` exited 1 after applying `p['definition_source_map'][:2]`, raising `KeyError: slice(None, 2, None)`. The original statement and traceback remain in `original-read-failure.json`, with their recorded transcription provenance; the failing command was not replayed. Earlier successful matrix output remains evidence. No write, candidate import, database engine open or diagnostic launch occurred.
+
+I verified all ten intake inputs, original failure and intake pin. The proof schema is `bigsmall.r351.source-proof.v1`. `definition_source_map` is a dictionary with 24 definition-name keys; each value has `line`, `end_line`, `segment_sha256`. This establishes a metadata container-assumption error. Inert AST inspection matched all 24 coordinates and hashes: SHA256 over UTF-8 `ast.get_source_segment(source, node)`, without a trailing line newline. Complete-line slicing is a different hash convention. The JSON plan records every member and the complete top-level container/key shape.
+
+After ROOT accepts R353 and confirms these pins and both R351 ledgers remain HELD 0/1, ROOT may resume the existing metadata source review. Iterate the 24 actual dictionary members with `.items()` and verify each definition's coordinates and exact segment hash. If a two-entry display is useful, use `dict(list(p['definition_source_map'].items())[:2])` after verifying dictionary type. Read remaining fields by the explicit keys and types recorded in `plan.json`; use list slicing only for actual lists. The plan contains the exact corrected read snippet. Do not repeat the failed statement.
+
+Each metadata command is limited to 30 seconds and 64 KiB display; larger presentations use named keys or finite member windows. There are 24 definitions and 35 top-level fields, with no added historical audit. Preserve earlier successful matrix evidence; no redundant reread is required. New ROOT disposition/review evidence may record the corrected observations without changing any input.
+
+ROOT remains metadata reviewer. `/root/p6_t3_sol` remains the only inspector author and future diagnostic operator. No inspector, proof, product, test, runner, helper, plugin, plan, old evidence or ledger edit is authorized. No candidate import/execution, DB engine open, new diagnostic/runtime command or attempt allowance is authorized. R351's source acceptance, frozen gate and individual reservation remain necessary before its existing offline allowance can run. The independent timeout-classification issue is untouched.
+
+Acceptance is corrected reading only, not complete inspector semantic approval or a diagnosed UTC failure. Any pin change, structural discrepancy, new source defect or scope expansion stops affected work for a new actual Astra plan.
+
+The ROOT/AUTHOR ledger pins and HELD observations below are preparation-time evidence only. Preserve those snapshots; after a duly authorized R351 reservation or consumption, do not recursively require the old HELD hashes. The existing R351 mutable-ledger lifecycle, inspector schema and gate schema remain unchanged.
+
+## Input pins
+
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round353-p6-t3-source-proof-container-read-20261024/root-intake.json` — 4234 bytes; SHA256 `a6d02d34540405e363559c31194256482e47b227a0ae897079854b54eea7c018`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round351-p6-t3-utc-noncompletion-diagnosis-20261024/plan.json` — 53567 bytes; SHA256 `53962dbec04478d1be52fd76732c1e06b674a2bf6400b8c7c86be9d47ba1a0c1`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round351-p6-t3-utc-noncompletion-diagnosis-20261024/plan.md` — 8083 bytes; SHA256 `0d0cbac9b693b60ddfc402e21d13b1584948a12260ddc65fd44a0f013a751bd3`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round351-p6-t3-utc-noncompletion-diagnosis-20261024/root-activation.json` — 25318 bytes; SHA256 `97d5c5025ca5c7b1e29d21e3deb87a9b4899cd2a2eac50747679452390b248c1`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round351-p6-t3-utc-noncompletion-diagnosis-20261024/root-source-precheck.json` — 4418 bytes; SHA256 `81e91f64c98093d6bfc56847357d419beeef5bf9068ad274280c9b8ff0b6ab9d`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round351-p6-t3-utc-noncompletion-diagnosis-20261024/root-diagnostic-ledger.json` — 1098 bytes; SHA256 `f701d7b2c6a7dfdf86a23f96a50334d1af2c12c495309c70624e76fb415d094d`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round351-p6-t3-utc-noncompletion-diagnosis-20261024/implementation/author-diagnostic-ledger.json` — 1443 bytes; SHA256 `caef4e77393f9edb69779029ba3f86a552876d9631a854841dd353e6eda16ca6`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round351-p6-t3-utc-noncompletion-diagnosis-20261024/implementation/author-binding.json` — 2325 bytes; SHA256 `7a9cdbb6b6aeee0e94501ca6fa21d0db54e482f619f21cb0715ec6d269665e75`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round351-p6-t3-utc-noncompletion-diagnosis-20261024/implementation/inspect-retained-db.py` — 46805 bytes; SHA256 `f1c69655afb6b54d6d5c785c55f4d9a836d37c22c182de93a35209e9939c303c`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round351-p6-t3-utc-noncompletion-diagnosis-20261024/implementation/source-proof.json` — 191541 bytes; SHA256 `b92eca10f61570c58fc8a8b771c986608fe52e7bad7f3654cbe57643147d3d72`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round352-p6-t3-offline-preparation-locator-20261024/root-locator-acceptance.json` — 2081 bytes; SHA256 `928ef4c13e780945a63881c6c4312a1bd846cfd24a989eb3f305d3a16fb56dcd`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round353-p6-t3-source-proof-container-read-20261024/original-read-failure.json` — 966 bytes; SHA256 `2d4c4b969da38c8e8ba82971fbb326417d919c5964ebef4f2953e8ac0bf6ff5c`.

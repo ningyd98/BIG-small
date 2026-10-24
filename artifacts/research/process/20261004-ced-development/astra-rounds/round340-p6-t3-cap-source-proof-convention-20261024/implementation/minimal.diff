@@ -1,0 +1,12 @@
+--- before/operational_windows.py
++++ after/operational_windows.py
+@@ -443,7 +443,8 @@
+         from math import nextafter
+ 
+         seconds = remaining / 1_000_000_000
+-        if seconds * 1_000_000_000 > remaining:
++        numerator, denominator = seconds.as_integer_ratio()
++        if numerator * 1_000_000_000 > remaining * denominator:
+             seconds = nextafter(seconds, 0.0)
+         if seconds <= 0:
+             raise OperationalTimeError("original app deadline has no positive cap")

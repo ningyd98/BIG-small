@@ -47,6 +47,7 @@ _HANDOFFS: dict[object, OperationalWindowOwner] = {}
 _SCOPES: dict[int, list[OperationalWindowOwner]] = {}
 _TRANSITIONS: dict[int, tuple[OperationalWindowOwner, str, tuple[str, ...]]] = {}
 _LOCAL_ORIGINALS: dict[OperationalWindowOwner, str] = {}
+_LOCAL_RUNTIMES: dict[OperationalWindowOwner, object] = {}
 _CONSTRUCTION = object()
 
 
@@ -431,6 +432,24 @@ class OperationalWindowOwner:
                 if not self._clock.before_deadline(hard.deadline, current):
                     raise OperationalTimeError("original app deadline expired")
 
+    def _remaining_app_seconds(self) -> float:
+        """Read only original D_app deadlines, never a renewable lease segment."""
+        self._check_app_live()
+        current = self._clock.read_current(after=self.task_origin_token)
+        remaining = min(hard.deadline.deadline_ns - current.upper_ns for hard in self._hard)
+        if remaining <= 0:
+            raise OperationalTimeError("original app deadline expired")
+        # Round toward zero so binary conversion cannot enlarge the nanosecond cap.
+        from math import nextafter
+
+        seconds = remaining / 1_000_000_000
+        numerator, denominator = seconds.as_integer_ratio()
+        if numerator * 1_000_000_000 > remaining * denominator:
+            seconds = nextafter(seconds, 0.0)
+        if seconds <= 0:
+            raise OperationalTimeError("original app deadline has no positive cap")
+        return seconds
+
     def _check_local_locked(self, view, *, purpose: str, operation_sha256: str):
         from cloud_edge_robot_arm.simulation_runtime.operational_lease import LockedLeaseView, _view_record
         from cloud_edge_robot_arm.vision.local_temporal import LocalAuthorityDecision
@@ -639,6 +658,10 @@ def _register_local_original(owner: OperationalWindowOwner, original: object) ->
     if _json(owner._local_original) != frozen:
         raise OperationalTimeError("bootstrap validated original differs from issuer source")
     _LOCAL_ORIGINALS[owner] = frozen
+    runtime = sys._getframe(1).f_locals["self"]
+    if type(runtime) is not VisualWorkerRuntime or runtime._operational_owner is not owner:
+        raise OperationalTimeError("original local runtime identity differs from issuer")
+    _LOCAL_RUNTIMES[owner] = runtime
 
 
 def _revoke_worker(worker: object) -> None:
@@ -647,6 +670,7 @@ def _revoke_worker(worker: object) -> None:
     if owner is None:
         return
     _LOCAL_ORIGINALS.pop(owner, None)
+    _LOCAL_RUNTIMES.pop(owner, None)
     owner._closed = True
     for token, candidate in list(_HANDOFFS.items()):
         if candidate is owner:
@@ -754,10 +778,18 @@ def _check_reference(reference: object) -> EvidenceVerdict:
 
     try:
         reference = _descriptor_plain(reference)
-        _validate_references([reference])
         owner = _current_owner()
         if owner is None:
             raise OperationalTimeError("descriptive reference has no live owner")
+        mode = owner._startup.mode
+        if mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
+            from cloud_edge_robot_arm.vision.local_temporal import _reference as _validate_local_reference
+
+            _validate_local_reference(reference)
+        elif mode == "OPERATIONAL_LEASE_FOUNDATION_V1":
+            _validate_references([reference])
+        else:
+            raise OperationalTimeError("unsupported live operational owner mode")
         identifier = reference["window_id"]
         if _json(reference) != _json(owner.export_record(identifier)):
             raise OperationalTimeError("descriptor differs from immutable registered window")
@@ -788,10 +820,18 @@ def _check_observation(
         if reference is None:
             return None
         reference = _descriptor_plain(reference)
-        _validate_references([reference])
         owner = _current_owner()
         if owner is None:
             return False
+        mode = owner._startup.mode
+        if mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
+            from cloud_edge_robot_arm.vision.local_temporal import _reference as _validate_local_reference
+
+            _validate_local_reference(reference)
+        elif mode == "OPERATIONAL_LEASE_FOUNDATION_V1":
+            _validate_references([reference])
+        else:
+            raise OperationalTimeError("unsupported live operational owner mode")
         key = _observation_key(observation)
         if key not in owner._observations or reference.get("kind") != kind:
             return False

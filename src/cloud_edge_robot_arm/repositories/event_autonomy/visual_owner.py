@@ -461,6 +461,11 @@ class VisualOwnerPublicationRecord:
         return str(json.loads(self._payload_json)["contract_hash"])
 
     @property
+    def grounding(self) -> StepGroundingBinding | None:
+        value = json.loads(self._payload_json)["grounding"]
+        return None if value is None else grounding_from_payload(value)
+
+    @property
     def effective_deadline_at(self) -> datetime:
         return datetime.fromisoformat(json.loads(self._payload_json)["effective_deadline_at"])
 
@@ -534,6 +539,11 @@ class LocalVisualOwnerPublicationRecord(LocalDomainEnvelope, VisualOwnerPublicat
     @property
     def contract_hash(self) -> str:
         return self.string("contract_hash")
+
+    @property
+    def grounding(self) -> StepGroundingBinding | None:
+        value = self.semantic["grounding"]
+        return None if value is None else grounding_from_payload(value)
 
     @property
     def effective_deadline_at(self) -> datetime:

@@ -161,6 +161,44 @@ class _ReplyBinding:
     segments: tuple[_Segment, ...]
 
 
+@dataclass(frozen=True, eq=False)
+class _ConsumedFinalConfirmation(_Opaque):
+    session: OperationalLeaseSession
+    ack: LeaseCommitAck
+    reply: _ReplyBinding
+    observation: OperationalLeaseObservation
+    pid: int
+    thread_id: int
+    native_thread_id: int
+
+
+_CONSUMED_FINAL_CONFIRMATIONS: dict[int, _ConsumedFinalConfirmation] = {}
+
+
+def _take_final_confirmation(session: OperationalLeaseSession, ack: LeaseCommitAck) -> _ConsumedFinalConfirmation:
+    """One-use proof only for the concrete repository's actual finalizer dispatch."""
+    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+
+    if (sys._getframe(1).f_code is not SQLiteSimulationJobRepository._dispatch_writer.__code__
+            or type(session.repository) is not SQLiteSimulationJobRepository
+            or _current_session(session.repository) is not session):
+        raise OperationalLeaseError("private finalizer alone consumes a confirmation proof")
+    session._check_ingress("finalize_operational_publication")
+    if session._mode != "LOCAL_TEMPORAL_PUBLICATION_V1":
+        raise OperationalLeaseError("local final confirmation proof requires local mode")
+    issued = _ack_record(ack)
+    with _REGISTRY_LOCK:
+        proof = _CONSUMED_FINAL_CONFIRMATIONS.pop(id(ack), None)
+    if (proof is None or proof.session is not session or proof.ack is not ack
+            or proof.pid != os.getpid() or proof.thread_id != threading.get_ident()
+            or proof.native_thread_id != threading.get_native_id()
+            or issued.proposal is not proof.reply.proposal.proposal
+            or proof.reply.view.view.purpose != "finalize_operational_publication"
+            or proof.observation.status != "VALID" or not _ACK_USES.get(id(ack))):
+        raise OperationalLeaseError("missing, copied or replayed consumed final confirmation")
+    return proof
+
+
 class LockedLeaseView(_Opaque):
     def __init__(
         self,
@@ -573,6 +611,13 @@ class OperationalLeaseSession(_Opaque):
             ):
                 self.invalidate("response crossed original operation segment bound")
                 raise OperationalLeaseError("response crossed original lease bound")
+            if (self._mode == "LOCAL_TEMPORAL_PUBLICATION_V1"
+                    and request.kind == "confirm" and request.ack is not None
+                    and request.view is not None and request.view.purpose == "finalize_operational_publication"):
+                with _REGISTRY_LOCK:
+                    _CONSUMED_FINAL_CONFIRMATIONS[id(request.ack)] = _ConsumedFinalConfirmation(
+                        self, request.ack, reply, request.result, os.getpid(),
+                        threading.get_ident(), threading.get_native_id())
             return request.result
         finally:
             with _REGISTRY_LOCK:
@@ -899,6 +944,7 @@ def _close_view(view: LockedLeaseView) -> None:
         _VIEWS.pop(id(view), None)
         _VIEW_LIVES.pop(id(view), None)
         if view._ack is not None:
+            _CONSUMED_FINAL_CONFIRMATIONS.pop(id(view._ack), None)
             _ACKS.pop(id(view._ack), None)
             _ACK_USES.pop(id(view._ack), None)
 

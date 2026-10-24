@@ -1,0 +1,34 @@
+--- before/tests/test_operational_runtime_closure.py
++++ after/tests/test_operational_runtime_closure.py
+@@ -5339,14 +5339,30 @@
+                               "interpretation": "source-reviewed helper operations; not OS instrumentation"},
+     }
+     claim = runtime.reserve_supervision_capture(1, data["robot"])
++    claim_publication = claim.publication
++    current_publication = runtime.supervision_source_publication
++    assert claim.cursor == 1
++    assert claim.publication_hash == claim_publication.digest() == current_publication.digest()
++    assert claim.step_id == claim_publication.checkpoint.current_step_id
++    assert claim.original.digest() == data["original"].digest() == claim_publication.original_plan_hash
++    assert claim.original.identity == claim_publication.identity == current_publication.identity
+     observation = _b_t3_frame(runtime, key + ":supervision")
+     context = SupervisionContext(
+         episode_id=runtime.episode_id, plan_version=data["contract"].plan_version,
+-        state_version=claim.cursor, next_step_id=claim.step_id,
++        state_version=claim_publication.state_generation, next_step_id=claim.step_id,
+         next_skill=data["original"].requirements[claim.step_id].original_step.skill.value,
+         task_instruction=runtime.bootstrap.definition.user_instruction,
+         observation_id=observation.observation_id, captured_at=observation.captured_at,
+         proprioception={"estop_engaged": False, "collision_detected": False})
++    assert context.state_version == claim_publication.state_generation == current_publication.state_generation
++    assert claim.cursor == 1
++    cadence["supervision_context_binding"] = {
++        "claim_id": claim.claim_id, "cursor": claim.cursor,
++        "claim_publication_hash": claim_publication.digest(),
++        "current_publication_hash": current_publication.digest(),
++        "publication_state_generation": claim_publication.state_generation,
++        "context_state_version": context.state_version,
++    }
+     runtime.complete_supervision_capture(claim, observation, context, data["robot"])
+     frame = runtime.reserve_supervision_plan(claim, data["robot"])
+     decision = SupervisionDecision(

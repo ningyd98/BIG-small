@@ -1,0 +1,1605 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round350-p6-t3-successor-lineage-execution-20261024/implementation/run-evidence.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round354-p6-t3-live-noncompletion-evidence-20261024/implementation/run-diagnostic.py
+@@ -1,6 +1,6 @@
+-"""R350 reserved single-node successor runner. Preparation never executes this module.
+-
+-Only the nine literal plan commands are executable. Capture reads inert new
++"""R354 diagnostic runner, source-only candidate; never imported during preparation.
++
++Only the single literal diagnostic command is prospective. Capture reads inert new
+ artifacts, never opens a database engine, and never imports application code.
+ """
+ from __future__ import annotations
+@@ -26,27 +26,26 @@
+ HELPER = IMPL / "resource-evidence-helpers.py"
+ AUTHOR = IMPL / "author-command-ledger.json"
+ BINDING = IMPL / "author-binding.json"
+-PLAN_SHA = "54ea2187395bfa17d157fc6c1732dbdc903999d1f686846e66ab069c62178333"
+-R348 = D.parent / "round348-p6-t3-runner-source-review-20261024"
+-R348_PLAN_SHA = "cef32e6d886b780b99bd253ab8baaf8c15b56a6980b5391119bc3b81d9ce404d"
+-OLD = D.parent / "round346-p6-t3-successor-execution-capture-20261024"
+-R349 = D.parent / "round349-p6-t3-grounding-binding-scope-20261024"
+-BUDGET = D / "budget-disposition.json"
+-BUDGET_PIN = {"path": str(BUDGET), "bytes": 9814,
+-              "sha256": "657b7f575555bfdd87d2ad27f2da2f22b8c621d492d1272763f6562e85c25659"}
+-HISTORICAL_RUNNER = {"path": str(OLD / "implementation/run-evidence.py"), "bytes": 57557,
+-                     "sha256": "264ba312e849a44a93fba942015c539ce2b78568787352685530707eb1b0b9ef"}
+-CHANGE_POLICY = "R350_OPERATIONAL_IDENTITIES_AND_FINITE_LINEAGE_BUDGET_ACCEPTANCE_ONLY"
++PLAN_SHA = "76e611bde7f12851a59bb8fafbb4b4a91b129ba36af32857b335c908b6fa6784"
++R355 = D.parent / "round355-p6-t3-diagnostic-baseline-reference-20261024"
++R355_PLAN_SHA = "ccb4fe9952de4343f2b7a72d19bb16be6f25a920907fa2584767c22082f6fc5f"
++OLD = D.parent / "round350-p6-t3-successor-lineage-execution-20261024"
++OBSERVER = IMPL / "r354_live_observer.py"
++HISTORICAL_RUNNER = {"path": str(OLD / "implementation/run-evidence.py"), "bytes": 65392,
++                     "sha256": "2ca5fea7e93c2d322bf6081a8b57f381701d27995a8f2e99c377536dffaa7904"}
++CHANGE_POLICY = "R354_SEPARATE_DIAGNOSTIC_OBSERVATIONS_ORIGIN_DEADLINES_R355_EXACT_BASELINE"
+ HELPER_SHA = "bc13daf2a87ff80606c62ed3628e63c1c700ac3000803efa5b20d3c3392cb98b"
+ HEAD = "729bce11bbd55a4a869e25e52174da3d0db1825b"
+ BRANCH = "research/20261004-continuation"
+-KEYS = tuple("t3_%02d" % number for number in range(1, 10))
++KEYS = ("live_utc_01",)
+ HELD = "HELD_PENDING_ROOT_SOURCE_GATE_AND_INDIVIDUAL_RESERVATION"
+ RAW_CAP = 33554432
+ TREE_CAP = 1073741824
+ ENTRY_CAP = 10000
+ FREE_MIN = 3221225472
+-ROUND_CAP = 21474836480
++ROUND_CAP = 4294967296
++JSONL_CAP = 16777216
++STACK_CAP = 33554432
+ DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+ STAGE_NAMES = ("raw-process-ledger", "source-after-observed", "persistent-inventory", "resources",
+                "junit", "cases", "prerequisite-observation")
+@@ -54,12 +53,350 @@
+                   "HEAD_target_seconds_after_completion": 0.25,
+                   "storage_HEAD_headroom_seconds": 0.1,
+                   "git_seconds_max": 2, "storage_seconds_max": 2}
+-COMPLETION_CONTRACT = {"terminal_record": "completion.json", "wrapper_exit0_required": True,
++COMPLETION_CONTRACT = {"terminal_record": "completion.json",
++                       "wrapper_exit0_required": "Required for normal completed test/capture only; bounded diagnostic evidence may be accepted separately with actual nonzero exit.",
+                        "result_is_precommit": True, "ROOT_independent_review_required": True}
+ 
++# Parent-only diagnostic state. No application clock/window/authority is read.
++_TIMER_FRAME = None
++_TIMER_SEQUENCE = 0
++_DEADLINE_EVENTS = []
++_TRIGGER_EVENTS = []
++_DIAGNOSTIC_FDS = {}
++_DIAGNOSTIC_IDENTITIES = {}
++
++
++class _SignalGuardError(ValueError):
++    def __init__(self, reason, observation):
++        super().__init__(reason)
++        self.observation = {**observation, "failure_monotonic": time.monotonic()}
++
++
++def _kernel_signal_snapshot(pid, *, deadline, require_single):
++    """R356 bounded kernel snapshot, never native handler-pointer attestation.
++
++    Per snapshot: <=one64KiB status read, one8KiB stat read, <=two task
++    entries. Caller caps startup/retirement at four status reads each.
++    All snapshots share the caller's original <=0.1s guard deadline.
++    """
++
++    observation = {'pid': pid, 'guard_deadline': deadline, 'native_handler_pointer_verified': False}
++    try:
++        began = time.monotonic()
++
++        def need(ok, message):
++            if not ok:
++                raise _SignalGuardError(message, observation)
++
++        def read(path, cap):
++            need(time.monotonic() < deadline, "signal guard elapsed before read")
++            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++            try:
++                raw = bytearray()
++                while True:
++                    need(time.monotonic() < deadline, "signal guard elapsed during read")
++                    need(len(raw) < cap, "signal proc file reached conservative byte boundary")
++                    chunk = os.read(descriptor, min(4096, cap - len(raw)))
++                    if not chunk:
++                        break
++                    raw.extend(chunk)
++                need(time.monotonic() < deadline, "signal guard read overrun")
++                return bytes(raw)
++            finally:
++                os.close(descriptor)
++
++        base = Path('/proc') / str(pid)
++        raw = read(base / 'status', 65536)
++        fields = {}
++        wanted = (b'Pid', b'Tgid', b'Threads', b'TracerPid', b'SigCgt', b'SigIgn',
++                  b'SigBlk', b'SigPnd', b'ShdPnd')
++        for line in raw.splitlines():
++            key, separator, value = line.partition(b':')
++            if separator and key in wanted:
++                need(key not in fields, "duplicate required signal status field")
++                fields[key] = value.strip()
++        observation['available_field_names'] = [key.decode('ascii') for key in fields]
++        observation['available_status_fields'] = {key.decode('ascii'): (value.decode('ascii', 'replace') if len(value) <= 256 else None) for key, value in fields.items()}
++        need(all(key in fields for key in wanted), "missing required signal status field")
++        numeric = {key.decode('ascii'): int(fields[key]) for key in wanted[:4]}
++        observation['available_status_fields'] = {key.decode('ascii'): (value.decode('ascii', 'replace') if len(value) <= 256 else None) for key, value in fields.items()}
++        observation['oversize_status_fields'] = {key.decode('ascii'): len(value) for key, value in fields.items() if len(value) > 256}
++        need(not observation['oversize_status_fields'], 'oversize required signal status field')
++        observation['numeric_status_fields'] = numeric
++        masks = {key.decode('ascii'): fields[key].decode('ascii') for key in wanted[4:]}
++        mask_values = {key: int(value, 16) for key, value in masks.items()}
++        observation['raw_mask_fields'] = masks
++        bit = 1 << (int(signal.SIGUSR2) - 1)
++        observation['target_bits'] = {key: bool(value & bit) for key, value in mask_values.items()}
++        need(numeric['Pid'] == numeric['Tgid'] == pid, "signal kernel leader identity mismatch")
++        stat_raw = read(base / 'stat', 8192)
++        first, last = stat_raw.find(b'('), stat_raw.rfind(b')')
++        need(first > 0 and last > first and int(stat_raw[:first].strip()) == pid,
++             "signal proc stat numeric PID boundary mismatch")
++        stat_fields = stat_raw[last + 1:].split()
++        need(len(stat_fields) >= 20, "signal process starttime unavailable")
++        starttime = int(stat_fields[19])
++        observation['process_starttime_ticks'] = starttime
++        tasks = None
++        if require_single:
++            tasks = []
++            observation['kernel_tasks'] = tasks
++            with os.scandir(base / 'task') as entries:
++                for entry in entries:
++                    need(time.monotonic() < deadline, "signal task guard elapsed")
++                    need(entry.name.isdecimal(), "signal task name nonnumeric")
++                    tasks.append(int(entry.name))
++                    if len(tasks) == 2:
++                        break
++            need(tasks == [pid] and numeric['Threads'] == 1, "signal guard requires one kernel task")
++        bit = 1 << (int(signal.SIGUSR2) - 1)
++        completed = time.monotonic()
++        need(completed < deadline, "signal guard completed beyond original deadline")
++        return {'pid': pid, 'process_starttime_ticks': starttime,
++                'status_fields': numeric, 'raw_mask_fields': masks,
++                'target_bits': {key: bool(value & bit) for key, value in mask_values.items()},
++                'kernel_tasks': tasks, 'observed_monotonic': began,
++                'completed_monotonic': completed, 'elapsed_seconds': completed - began,
++                'status_read_bytes': len(raw), 'stat_read_bytes': len(stat_raw),
++                'native_handler_pointer_verified': False, 'atomic_install_or_restore': False}
++    except DeadlineExpired:
++        # Parent timer origin must survive native eligibility observation.
++        raise
++    except _SignalGuardError:
++        raise
++    except BaseException as error:
++        raise _SignalGuardError(type(error).__name__ + ': ' + str(error)[:256], observation) from error
++
+ 
+ class DeadlineExpired(TimeoutError):
+-    pass
++    """Origin facts are an immutable tuple of primitive values, never relabeled."""
++
++    def __init__(self, owner, requested, armed, fired, signum, interrupted_stage, trigger):
++        super().__init__('deadline expired: ' + owner[1] + ' / ' + interrupted_stage)
++        self._origin_facts = (
++            owner[0], owner[1], owner[2], owner[3], owner[4], owner[5],
++            requested[0], requested[1], requested[2], requested[3], requested[4],
++            armed, fired, signum, interrupted_stage, trigger,
++        )
++
++    @property
++    def evidence(self):
++        names = ('origin_id', 'origin_kind', 'requested_deadline', 'effective_deadline',
++                 'requested_seconds', 'owner_armed_monotonic', 'interrupted_request_id',
++                 'interrupted_request_kind', 'interrupted_requested_deadline',
++                 'interrupted_effective_deadline', 'interrupted_requested_seconds',
++                 'current_timer_armed_monotonic', 'fired_monotonic', 'signal',
++                 'interrupted_stage', 'trigger')
++        return dict(zip(names, self._origin_facts))
++
++
++def append_diagnostic(name, record):
++    """Direct complete-line append; no retry/truncation of a torn prefix."""
++    raw = (json.dumps(record, ensure_ascii=True, allow_nan=False, separators=(',', ':')) + '\n').encode('ascii')
++    require(len(raw) <= 65536, 'individual parent diagnostic JSONL64KiB bound')
++    descriptor = _DIAGNOSTIC_FDS[name]
++    position = 0
++    while position < len(raw):
++        count = os.write(descriptor, raw[position:])
++        require(count > 0, 'parent diagnostic append made no progress')
++        position += count
++
++
++def open_diagnostic_logs(out):
++    """Only fresh fixed output; parent and plugin own distinct exclusive files."""
++    directory = out / 'diagnostic'
++    directory.mkdir(mode=0o700, exist_ok=False)
++    for name in ('head-monitor.jsonl', 'os-samples.jsonl', 'stack-requests.jsonl', 'deadline-events.jsonl'):
++        descriptor = os.open(directory / name, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
++        _DIAGNOSTIC_FDS[name] = descriptor
++        info = os.fstat(descriptor)
++        _DIAGNOSTIC_IDENTITIES[name] = (info.st_dev, info.st_ino)
++
++
++def close_diagnostic_logs(errors):
++    for name, descriptor in list(_DIAGNOSTIC_FDS.items()):
++        try:
++            os.fsync(descriptor)
++        except DeadlineExpired:
++            raise
++        except BaseException as error:
++            errors.append(error_record(name + ' fsync', error))
++        finally:
++            try:
++                os.close(descriptor)
++            except DeadlineExpired:
++                raise
++            except BaseException as error:
++                errors.append(error_record(name + ' close', error))
++            _DIAGNOSTIC_FDS.pop(name, None)
++
++
++def proc_sample(pid, expected_starttime, *, seconds, absolute, opportunity, scheduled, records):
++    """Owned /proc metadata, <=16 TIDs/64KiB/0.1s; no external sampler.
++
++    procfs values are not an atomic snapshot. Missing/denied data remain UNKNOWN.
++    No fd/memory contents, native instrumentation, application SQL or lock owner.
++    """
++    guard_deadline = min(time.monotonic() + min(0.1, seconds), absolute)
++    row = {'opportunity': opportunity, 'scheduled_monotonic': scheduled,
++           'observed_monotonic': time.monotonic(), 'pid': pid, 'status': 'UNKNOWN',
++           'SC_CLK_TCK': None, 'page_bytes': None, 'bytes_read': 0,
++           'process': None, 'threads': [], 'thread_listing_complete': False, 'errors': [],
++           'atomic_snapshot': False, 'lock_owner': 'UNKNOWN'}
++    row["receipt_persisted"] = False
++    row["record_is_prewrite_observation"] = True
++    records.append(row)
++    remaining = 65536
++
++    def read(path, limit=8192):
++        nonlocal remaining
++        require(remaining > 0, 'proc opportunity64KiB exhausted')
++        cap = min(remaining, limit)
++        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++        try:
++            raw = bytearray()
++            while True:
++                require(len(raw) < cap, 'proc file reached conservative byte boundary')
++                chunk = os.read(fd, min(4096, cap - len(raw)))
++                if not chunk:
++                    break
++                raw.extend(chunk)
++                row['bytes_read'] += len(chunk)
++                remaining -= len(chunk)
++                require(len(raw) <= cap and remaining >= 0, 'proc read exceeds fixed byte bound')
++            return bytes(raw)
++        finally:
++            os.close(fd)
++
++    def parse_stat(raw, wanted):
++        first = raw.find(b'(')
++        last = raw.rfind(b')')
++        require(first > 0 and last > first and int(raw[:first].strip()) == wanted,
++                'proc stat numeric PID/comm boundary differs')
++        fields = raw[last + 1:].split()
++        require(len(fields) >= 22, 'proc stat required fields unavailable')
++        return {'pid': wanted, 'state': fields[0].decode('ascii'),
++                'user_CPU_ticks': int(fields[11]), 'system_CPU_ticks': int(fields[12]),
++                'reported_thread_count': int(fields[17]), 'starttime_ticks': int(fields[19]),
++                'virtual_bytes': int(fields[20]), 'RSS_pages': int(fields[21])}
++
++    try:
++        with bounded(0.1, guard_deadline, origin='proc_observation', stage='whole owned proc opportunity'):
++            try:
++                # Reserve the last20ms within the same0.1s for the append receipt.
++                with bounded(0.08, guard_deadline - 0.02, origin='proc_observation', stage='fixed owned proc reads'):
++                    row['SC_CLK_TCK'] = os.sysconf('SC_CLK_TCK')
++                    row['page_bytes'] = os.sysconf('SC_PAGE_SIZE')
++                    base = Path('/proc') / str(pid)
++                    row['process'] = parse_stat(read(base / 'stat'), pid)
++                    require(expected_starttime is None or row['process']['starttime_ticks'] == expected_starttime,
++                            'owned process starttime identity changed')
++                    status_raw = read(base / 'status')
++                    selected = {}
++                    for line in status_raw.splitlines():
++                        key, separator, value = line.partition(b':')
++                        if separator and key in (b'Pid', b'Tgid', b'PPid', b'Threads', b'VmRSS', b'State'):
++                            selected[key.decode('ascii')] = value.strip().decode('ascii')
++                    row['status_fields'] = selected
++                    require(int(selected['Pid']) == pid and int(selected['Tgid']) == pid,
++                            'owned process status PID/Tgid differs')
++                    tids = []
++                    with os.scandir(base / 'task') as entries:
++                        for entry in entries:
++                            if len(tids) == 16:
++                                row['thread_listing_complete'] = False
++                                break
++                            require(entry.name.isdecimal(), 'non-numeric proc task directory')
++                            tids.append(int(entry.name))
++                        else:
++                            row['thread_listing_complete'] = True
++                    row['thread_selection'] = 'first16 actual directory-order TIDs, not invented population'
++                    for tid in tids:
++                        thread = {'tid': tid, 'stat': None, 'wchan': 'UNKNOWN', 'errors': []}
++                        row['threads'].append(thread)
++                        try:
++                            thread['stat'] = parse_stat(read(base / 'task' / str(tid) / 'stat'), tid)
++                        except DeadlineExpired:
++                            raise
++                        except Exception as error:
++                            thread['errors'].append(error_record('owned thread stat', error))
++                        try:
++                            wchan = read(base / 'task' / str(tid) / 'wchan', 256).strip()
++                            if wchan and wchan != b'0':
++                                thread['wchan'] = wchan.decode('ascii')
++                        except DeadlineExpired:
++                            raise
++                        except Exception as error:
++                            thread['errors'].append(error_record('optional thread wchan', error))
++                    row['status'] = 'OBSERVED_CONTEXT_ONLY'
++            except DeadlineExpired as error:
++                if error.evidence['origin_kind'] != 'proc_observation':
++                    raise
++                row['errors'].append({'type': type(error).__name__, 'deadline_origin': error.evidence})
++            except Exception as error:
++                row['errors'].append(error_record('owned proc read missingness', error))
++            row['completed_monotonic_before_receipt'] = time.monotonic()
++            append_diagnostic('os-samples.jsonl', row)
++            row['receipt_persisted'] = True
++    except DeadlineExpired as error:
++        row['status'] = 'UNKNOWN'
++        row['errors'].append({'type': type(error).__name__, 'deadline_origin': error.evidence,
++                              'stage': 'whole proc opportunity/receipt'})
++        if error.evidence['origin_kind'] != 'proc_observation':
++            raise
++    except Exception as error:
++        row['status'] = 'UNKNOWN'
++        row['errors'].append({'type': type(error).__name__, 'message': str(error),
++                              'stage': 'proc opportunity/receipt'})
++    row['completed_monotonic'] = time.monotonic()
++    row['guard_deadline'] = guard_deadline
++    row['guard_overrun'] = row['completed_monotonic'] > guard_deadline
++    if row['guard_overrun']:
++        row['status'] = 'UNKNOWN'
++    return row
++
++
++def deadline_event(owner, requested, armed, *, signum=None, stage, trigger):
++    error = DeadlineExpired(owner, requested, armed, time.monotonic(), signum, stage, trigger)
++    event = {'sequence': len(_DEADLINE_EVENTS) + 1, **error.evidence}
++    _DEADLINE_EVENTS.append(event)
++    record_trigger('deadline', {'deadline': error.evidence}, observed=error.evidence['fired_monotonic'])
++    try:
++        if 'deadline-events.jsonl' in _DIAGNOSTIC_FDS:
++            append_diagnostic('deadline-events.jsonl', event)
++            event['persistence_state'] = 'APPEND_RETURNED_NOT_FSYNC_ACK'
++        else:
++            event['persistence_state'] = 'NOT_OPEN_OR_ALREADY_CLOSED'
++    except BaseException as failure:
++        event['persistence_error'] = {'type': type(failure).__name__, 'message': str(failure)}
++    return error
++
++
++def record_trigger(kind, detail, *, observed=None):
++    record = {'sequence': len(_TRIGGER_EVENTS) + 1, 'kind': kind,
++              'observed_monotonic': time.monotonic() if observed is None else observed, **detail}
++    _TRIGGER_EVENTS.append(record)
++    return record
++
++
++def classify_exception(data, stage, error):
++    if isinstance(error, DeadlineExpired):
++        # An actual child-wall owner stays child-wall inside HEAD/storage/proc.
++        data['timed_out'] |= error.evidence['origin_kind'] == 'child_wall'
++    else:
++        record_trigger('guard_or_stage_error', {'stage': stage, 'type': type(error).__name__,
++                                              'message': str(error)})
++    data['primary_trigger'] = _TRIGGER_EVENTS[0] if _TRIGGER_EVENTS else None
++
++
++def explicit_boundary(origin, deadline, *, stage, owner=None, armed=None):
++    global _TIMER_SEQUENCE
++    _TIMER_SEQUENCE += 1
++    if owner is None:
++        owner = (origin + ':explicit:' + str(_TIMER_SEQUENCE), origin, deadline,
++                 deadline, None, armed)
++    return deadline_event(owner, owner, armed, stage=stage,
++                          trigger='explicit_monotonic_deadline_branch')
+ 
+ 
+ def require(ok, message):
+@@ -68,35 +405,81 @@
+ 
+ 
+ def error_record(stage, error):
+-    return {"stage": stage, "type": type(error).__name__, "message": str(error),
+-            "traceback": traceback.format_exc()}
++    record = {"stage": stage, "type": type(error).__name__, "message": str(error),
++              "traceback": traceback.format_exc()}
++    if isinstance(error, DeadlineExpired):
++        record['deadline_origin'] = error.evidence
++    if isinstance(error, _SignalGuardError):
++        record['observed_signal_partial'] = error.observation
++    return record
+ 
+ 
+ @contextmanager
+-def bounded(seconds, absolute=None):
+-    """Main-thread timer; nested budgets restore the earlier timer's elapsed time."""
++def bounded(seconds, absolute=None, *, origin='receipt_write', stage=None):
++    """Earlier absolute owner wins; equal deadlines retain the outer owner.
++
++    Named callsites are completed before final source freeze. An unrelated
++    active ITIMER_REAL rejects rather than being overwritten or guessed.
++    """
++    global _TIMER_FRAME, _TIMER_SEQUENCE
+     started = time.monotonic()
+-    limit = min(seconds, absolute - started) if absolute is not None else seconds
+-    if limit <= 0:
+-        raise DeadlineExpired("monotonic stage budget exhausted")
++    requested_deadline = started + seconds
++    effective_deadline = min(requested_deadline, absolute) if absolute is not None else requested_deadline
++    _TIMER_SEQUENCE += 1
++    requested = (origin + ':' + str(_TIMER_SEQUENCE), origin, requested_deadline,
++                 effective_deadline, seconds, started)
++    previous_frame = _TIMER_FRAME
+     previous_handler = signal.getsignal(signal.SIGALRM)
+     previous_timer = signal.getitimer(signal.ITIMER_REAL)
++    require(previous_timer[1] == 0, 'periodic pre-existing interval timer not allowed')
++    require(previous_frame is not None or previous_timer[0] == 0,
++            'unowned pre-existing real timer rejects launch')
++    require(previous_frame is None or previous_handler is previous_frame['handler'],
++            'known timer Python handler ownership changed')
++    owner = (previous_frame['owner'] if previous_frame is not None
++             and previous_frame['owner'][3] <= effective_deadline else requested)
++    interrupted_stage = stage or origin
++    if owner[3] <= started:
++        raise deadline_event(owner, requested, started, stage=interrupted_stage,
++                             trigger='explicit_deadline_before_arm')
++
++    armed = time.monotonic()
++    if owner is requested:
++        requested = (*requested[:5], armed)
++        owner = requested
++    frame_record = {'owner': owner, 'requested': requested, 'armed': armed,
++                    'stage': interrupted_stage, 'handler': None}
+ 
+     def expired(signum, frame):
+-        raise DeadlineExpired("bounded operation exceeded %.3fs" % limit)
+-
+-    signal.signal(signal.SIGALRM, expired)
+-    inherited = previous_timer[0] if previous_timer[0] > 0 else limit
+-    signal.setitimer(signal.ITIMER_REAL, min(limit, inherited))
++        raise deadline_event(owner, requested, armed, signum=signum,
++                             stage=interrupted_stage, trigger='SIGALRM_ITIMER_REAL')
++
++    frame_record['handler'] = expired
++    installed = False
+     try:
++        signal.signal(signal.SIGALRM, expired)
++        installed = True
++        _TIMER_FRAME = frame_record
++        remaining = owner[3] - time.monotonic()
++        if remaining <= 0:
++            raise deadline_event(owner, requested, armed, stage=interrupted_stage,
++                                 trigger='explicit_deadline_at_arm')
++        signal.setitimer(signal.ITIMER_REAL, remaining)
+         yield
+     finally:
+-        signal.setitimer(signal.ITIMER_REAL, 0)
+-        signal.signal(signal.SIGALRM, previous_handler)
+-        if previous_timer[0] > 0:
+-            signal.setitimer(signal.ITIMER_REAL,
+-                             max(0.000001, previous_timer[0] - (time.monotonic() - started)),
+-                             previous_timer[1])
++        if installed:
++            signal.setitimer(signal.ITIMER_REAL, 0)
++            signal.signal(signal.SIGALRM, previous_handler)
++            _TIMER_FRAME = previous_frame
++        if installed and previous_frame is not None:
++            remaining = previous_frame['owner'][3] - time.monotonic()
++            if remaining > 0:
++                signal.setitimer(signal.ITIMER_REAL, remaining)
++            elif sys.exc_info()[0] is None:
++                # Explicit expired-restore branch, never a renewed budget.
++                raise deadline_event(previous_frame['owner'], previous_frame['requested'],
++                    previous_frame['armed'], stage=previous_frame['stage'],
++                    trigger='explicit_previous_absolute_deadline_at_restore')
+ 
+ 
+ def coordinates(info):
+@@ -170,7 +553,7 @@
+ def cas(path, before, after, receipt):
+     """Compare exact bytes/mode under a nonblocking owned ledger lock; no retry."""
+     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+-    temporary = path.with_name(path.name + ".r350-next")
++    temporary = path.with_name(path.name + ".r354-next")
+     try:
+         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+         check(before)
+@@ -192,7 +575,7 @@
+ def git_value(*arguments, timeout=2, absolute=None):
+     budget = min(timeout, absolute - time.monotonic()) if absolute is not None else timeout
+     require(budget > 0, "nonpositive git observation budget")
+-    with bounded(budget, absolute):
++    with bounded(budget, absolute, origin="HEAD_freshness", stage="git " + " ".join(arguments)):
+         return subprocess.check_output(["/usr/bin/git", *arguments], cwd=ROOT,
+                                        text=True, timeout=budget, stderr=subprocess.PIPE).strip()
+ 
+@@ -355,7 +738,7 @@
+ 
+ 
+ def storage_observation(command, *, round_tree=False, live_sampling=False, seconds=2, absolute=None):
+-    with bounded(min(2, seconds), absolute):
++    with bounded(min(2, seconds), absolute, origin="live_storage", stage="round storage" if round_tree else "persistent live storage"):
+         root = D if round_tree else Path(command["output"]) / "persistent-basetemp"
+         if not root.exists() and not root.is_symlink():
+             census = {"root": str(root), "complete": True, "entries": 0, "regular_bytes": 0, "errors": []}
+@@ -367,6 +750,16 @@
+         require(census["free_bytes"] >= FREE_MIN, "minimum free storage crossed")
+         require(census["regular_bytes"] <= (ROUND_CAP if round_tree else TREE_CAP), "storage byte threshold crossed")
+         require(census["entries"] <= ENTRY_CAP, "storage entry threshold crossed")
++        if round_tree:
++            persistent = Path(command['output']) / 'persistent-basetemp'
++            selected = [row for row in census.get('files', [])
++                        if Path(row['path']).is_relative_to(persistent)]
++            subtree_bytes = sum(row.get('bytes', 0) for row in selected if row.get('type') == 'regular')
++            census['persistent_subtree'] = {'root': str(persistent), 'entries': len(selected),
++                                           'regular_bytes': subtree_bytes,
++                                           'derived_from_same_traversal': True}
++            require(subtree_bytes <= TREE_CAP and len(selected) <= ENTRY_CAP,
++                    'persistent subtree threshold crossed')
+         return {key: value for key, value in census.items() if key != "files"}
+ 
+ 
+@@ -421,11 +814,14 @@
+ 
+ 
+ def validate_completion(completion, key, command, gate_pin, runner_pin):
+-    require(completion["command_id"] == "R350:" + key and completion["nodes"] == command["nodes"]
++    require(completion["command_id"] == "R354:" + key and completion["nodes"] == command["nodes"]
+             and completion["source_gate"] == gate_pin and completion["runner"] == runner_pin,
+             "terminal completion generation/command differs")
+     require(completion["finalization_complete"] is True and completion["final_summary_state"] == "COMPLETE"
+-            and completion["wrapper_exit0_required"] is True and completion["ROOT_accepted"] is False,
++            and completion["wrapper_exit0_required"] == COMPLETION_CONTRACT["wrapper_exit0_required"]
++            and completion["ROOT_accepted"] is False and completion["diagnostic_only"] is True
++            and completion["behavior_acceptance_credit"] == 0
++            and completion["behavior_candidate_pass"] is False and completion["behavior_checks_passed"] is False,
+             "qualified terminal completion required")
+     expected_out = IMPL / key
+     for field, filename in (("result", "result.json"), ("missingness", "missingness.json"),
+@@ -439,17 +835,18 @@
+     check(completion["source_gate"])
+     check(completion["runner"])
+     prior = read_json(completion["result"]["path"])
+-    require(prior["command_id"] == "R350:" + key and prior["source_gate"] == gate_pin
++    require(prior["command_id"] == "R354:" + key and prior["source_gate"] == gate_pin
+             and prior["pid"] == completion["pid"] and prior["completion_required"] is True
+-            and type(prior["behavior_checks_passed"]) is bool
+-            and completion["behavior_candidate_pass"] is prior["behavior_checks_passed"],
++            and prior["behavior_checks_passed"] is False and prior["behavior_candidate_pass"] is False
++            and completion["test_observed_pass"] is prior["test_observed_pass"]
++            and completion["normal_completed_test_and_capture"] is prior["normal_completed_test_and_capture"],
+             "result/terminal completion facts differ")
+     return prior
+ 
+ 
+ def retain_prelaunch_rejection(error, key, reserved=None, *, normal_output_created=False):
+     """Original stderr first, then at most one fixed fallback file; no authority mutation."""
+-    record = {"schema": "bigsmall.r348.prelaunch-rejection.v1", "error": error_record("prelaunch", error),
++    record = {"schema": "bigsmall.r354.prelaunch-rejection.v1", "error": error_record("prelaunch", error),
+               "argv": list(sys.argv), "key": key if key in KEYS else "invalid-key", "wrapper_pid": os.getpid(),
+               "monotonic": time.monotonic(), "no_child_started": True, "normal_output_created": normal_output_created,
+               "reservation_status": "VERIFIED_RESERVED" if reserved is not None else "UNKNOWN_NOT_VERIFIED",
+@@ -457,9 +854,9 @@
+               "no_refund_or_retry": True, "AUTHOR_mutated_by_fallback": False, "retention_errors": []}
+     deadline = time.monotonic() + 5
+     try:
+-        with bounded(5, deadline):
++        with bounded(5, deadline, origin="preflight", stage="prelaunch rejection retention"):
+             try:
+-                with bounded(2, deadline):
++                with bounded(2, deadline, origin="receipt_write", stage="prelaunch stderr"):
+                     remaining = memoryview(encoded(record))
+                     while remaining:
+                         written = os.write(2, remaining)
+@@ -475,81 +872,381 @@
+     return record
+ 
+ 
++def small_json(path, cap=4096):
++    """Fixed readiness/state read, stable nofollow bytes, never a live tree read."""
++    before = path.lstat()
++    require(stat.S_ISREG(before.st_mode) and before.st_size <= cap, 'bounded regular signal artifact required')
++    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++    try:
++        opened = os.fstat(descriptor)
++        require(coordinates(before) == coordinates(opened), 'signal artifact changed before read')
++        raw = bytearray()
++        while len(raw) < opened.st_size:
++            chunk = os.read(descriptor, min(4096, opened.st_size - len(raw)))
++            require(bool(chunk), 'incomplete signal artifact read')
++            raw.extend(chunk)
++        require(coordinates(opened) == coordinates(os.fstat(descriptor)) == coordinates(path.lstat()),
++                'signal artifact changed during read')
++        raw = bytes(raw)
++        value = json.loads(raw)
++        require(type(value) is dict, 'signal artifact object required')
++        return value, bytes_pin(path, raw)
++    finally:
++        os.close(descriptor)
++
++
++def stack_request(process, data, out, *, opportunity, scheduled, absolute):
++    """One R356 nonblocking-lock request, no new timer, retry or cached READY.
++
++    Manual0.1s guard consumes current HEAD/child headroom. A blocked kernel
++    operation remains under the already owned parent timer/outer boundary.
++    """
++    began = time.monotonic()
++    guard_deadline = min(began + 0.1, absolute)
++    row = {'opportunity': opportunity, 'scheduled_monotonic': scheduled,
++           'actual_monotonic': began, 'actual_monotonic_ns': time.monotonic_ns(),
++           'pid': process.pid, 'expected_source': data['observer'],
++           'guard_deadline': guard_deadline, 'status': 'NO_SIGNAL',
++           'signal_submitted': False, 'stack_sample_completed': 'UNKNOWN',
++           'native_handler_pointer_verified': False, 'errors': []}
++    data['stack_sampling']['records'].append(row)
++    directory = out / 'diagnostic'
++    descriptor = None
++    locked = False
++
++    def within():
++        require(time.monotonic() < guard_deadline, 'native request original guard deadline exhausted')
++
++    try:
++        within()
++        lock_path = directory / 'signal-control.lock'
++        before = lock_path.lstat()
++        require(stat.S_ISREG(before.st_mode), 'native control lock must be nofollow regular')
++        descriptor = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++        opened = os.fstat(descriptor)
++        identity = {'path': str(lock_path), 'device': opened.st_dev, 'inode': opened.st_ino}
++        require((before.st_dev, before.st_ino) == (opened.st_dev, opened.st_ino), 'signal lock inode changed at open')
++        if data.get('signal_lock_identity') is None:
++            data['signal_lock_identity'] = identity
++        require(identity == data['signal_lock_identity'], 'signal lock inode replaced')
++        try:
++            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
++        except BlockingIOError:
++            row['status'] = 'SKIPPED_LOCK_CONTENTION_NO_RETRY'
++            return row
++        locked = True
++        within()
++        state, state_pin = small_json(directory / 'signal-state.json')
++        row.update(state=state.get('state'), state_epoch=state.get('epoch'), state_pin=state_pin)
++        if state.get('state') != 'READY':
++            row['status'] = 'SKIPPED_CURRENT_STATE_NOT_READY'
++            return row
++        require(state['command_id'] == 'R354:live_utc_01' and state['pid'] == process.pid
++                and state['plugin'] == data['observer'] and state['source_gate'] == data['source_gate']
++                and state['control_lock'] == identity and type(state['epoch']) is str,
++                'current READY identity/source mismatch')
++        ready, ready_pin = small_json(directory / 'stack-ready.json')
++        require(state['ready_pin'] == ready_pin and ready['command_id'] == 'R354:live_utc_01'
++                and ready['pid'] == process.pid and ready['plugin'] == data['observer']
++                and ready['source_gate'] == data['source_gate'] and ready['epoch'] == state['epoch']
++                and ready['control_lock'] == identity
++                and ready['process_starttime_ticks'] == state['process_starttime_ticks']
++                and ready['target_mask_unblocked_verified'] is True,
++                'current READY/immutable receipt mismatch')
++        within()
++        snapshot = _kernel_signal_snapshot(process.pid, deadline=guard_deadline, require_single=False)
++        row['kernel_snapshot'] = snapshot
++        require(snapshot['process_starttime_ticks'] == ready['process_starttime_ticks']
++                and snapshot['status_fields']['TracerPid'] == 0
++                and (data.get('owned_child_starttime') is None
++                     or snapshot['process_starttime_ticks'] == data['owned_child_starttime']),
++                'native request actual owned PID/start identity mismatch')
++        bits = snapshot['target_bits']
++        require(bits['SigCgt'] and not bits['SigIgn'] and not bits['SigBlk']
++                and not bits['SigPnd'] and not bits['ShdPnd'],
++                'native request disposition/leader mask/pending snapshot rejected')
++        data['owned_child_starttime'] = snapshot['process_starttime_ticks']
++        require(os.getpgid(process.pid) == process.pid, 'native request owned child process-group changed')
++        info = (directory / 'stacks.raw').lstat()
++        stack_identity = {'path': str(directory / 'stacks.raw'), 'device': info.st_dev, 'inode': info.st_ino}
++        require(stat.S_ISREG(info.st_mode) and ready['stack'] == state['stack'] == stack_identity,
++                'native stack descriptor/path identity differs')
++        row.update(ready_pin=ready_pin, pre_signal_stack_bytes=info.st_size,
++                   stack_identity=stack_identity, status='INTENT_PERSISTED_BEFORE_SEND')
++        within()
++        append_diagnostic('stack-requests.jsonl', dict(row))
++        within()
++        # The sole SIGUSR2 send site; no group broadcast or retry.
++        os.kill(process.pid, signal.SIGUSR2)
++        row.update(signal_submitted=True, status='SIGNAL_SYSCALL_RETURNED_NOT_STACK_ACK',
++                   submitted_monotonic=time.monotonic())
++        within()
++    except (FileNotFoundError, ProcessLookupError) as error:
++        row['status'] = 'MISSING_OR_EXITED_NO_RETRY'
++        row['errors'].append(error_record('native request missingness', error))
++    except BaseException as error:
++        row['status'] = 'REJECTED_NATIVE_GUARD'
++        row['errors'].append(error_record('native request eligibility', error))
++        data['native_sampling_invalid'] = True
++        if isinstance(error, DeadlineExpired):
++            raise
++    finally:
++        original_error = sys.exc_info()[1]
++        # Never let optional outcome persistence replace an inherited deadline.
++        # The partial row already lives in data and raw intent is retained.
++        for operation in ('unlock', 'close'):
++            try:
++                if operation == 'unlock' and locked:
++                    fcntl.flock(descriptor, fcntl.LOCK_UN)
++                elif operation == 'close' and descriptor is not None:
++                    os.close(descriptor)
++            except BaseException as failure:
++                row['errors'].append(error_record('native request ' + operation, failure))
++                data['native_sampling_invalid'] = True
++                if isinstance(failure, DeadlineExpired) and not isinstance(original_error, DeadlineExpired):
++                    raise
++        row['completed_monotonic_before_receipt'] = time.monotonic()
++        row['record_is_prewrite_observation'] = True
++        if isinstance(original_error, DeadlineExpired):
++            row['outcome_receipt'] = 'NOT_ATTEMPTED_DURING_DEADLINE_UNWIND'
++        else:
++            try:
++                append_diagnostic('stack-requests.jsonl', dict(row))
++                row['outcome_receipt'] = 'APPEND_RETURNED_NOT_STACK_ACK'
++            except BaseException as failure:
++                row['errors'].append(error_record('native outcome receipt', failure))
++                data['native_sampling_invalid'] = True
++                if isinstance(failure, DeadlineExpired):
++                    raise
++        row['completed_monotonic'] = time.monotonic()
++        row['guard_elapsed_seconds'] = row['completed_monotonic'] - began
++        row['guard_overrun'] = row['completed_monotonic'] >= guard_deadline
++        if row['guard_overrun']:
++            data['native_sampling_invalid'] = True
++    return row
++
++
++def diagnostic_sizes(out):
++    """Metadata only while child lives, no symlinks or live log content read."""
++    directory = out / 'diagnostic'
++    result = {'jsonl_bytes': 0, 'stacks_bytes': 0, 'files': {}}
++    with os.scandir(directory) as entries:
++        for index, entry in enumerate(entries):
++            require(index < ENTRY_CAP, 'finite diagnostic metadata entry cap')
++            info = entry.stat(follow_symlinks=False)
++            require(stat.S_ISREG(info.st_mode), 'diagnostic artifact must remain nofollow regular')
++            result['files'][entry.name] = info.st_size
++            if entry.name.endswith('.jsonl'):
++                result['jsonl_bytes'] += info.st_size
++            elif entry.name == 'stacks.raw':
++                result['stacks_bytes'] = info.st_size
++    return result
++
++
++def diagnostic_index(out, *, phase):
++    """Post-exit byte retention/index, no stack grouping or synthetic receipt."""
++    expected = ('head-monitor.jsonl', 'os-samples.jsonl', 'stack-requests.jsonl', 'deadline-events.jsonl',
++                'observer-profile.jsonl', 'signal-ownership.jsonl', 'stacks.raw', 'signal-control.lock',
++                'signal-state.json', 'stack-ready.json', 'observer-status.json')
++    result = {'phase': phase, 'parent_files_may_append_later': bool(_DIAGNOSTIC_FDS),
++              'expected_files': {name: 'MISSING_NOT_INFERRED' for name in expected},
++              'files': [], 'complete': True, 'stack_grouping': 'UNKNOWN_RAW_OFFSETS_ONLY',
++              'decoded_semantics': False, 'raw_torn_tails_repaired': False}
++    directory = out / 'diagnostic'
++    for index, path in enumerate(directory.iterdir()):
++        require(index < ENTRY_CAP, 'finite postrun diagnostic entry cap')
++        row = {'path': str(path), 'pin': None, 'error': None}
++        result['files'].append(row)
++        try:
++            raw = stable(path)
++            row['pin'] = bytes_pin(path, raw)
++            if path.name in result['expected_files']:
++                result['expected_files'][path.name] = 'PRESENT_BYTE_RETAINED'
++            if path.suffix == '.jsonl':
++                row.update(complete_newline_count=raw.count(b'\n'),
++                           ends_with_newline=not raw or raw.endswith(b'\n'),
++                           uncertain_tail_preserved=bool(raw and not raw.endswith(b'\n')))
++            if path.name == 'stacks.raw':
++                row['stack_requests_are_not_completion_acknowledgments'] = True
++        except DeadlineExpired:
++            raise
++        except Exception as error:
++            row['error'] = error_record('diagnostic raw retention index', error)
++            result['complete'] = False
++    result['all_expected_files_present'] = all(value == 'PRESENT_BYTE_RETAINED'
++                                               for value in result['expected_files'].values())
++    return result
++
++
+ def monitor_child(process, command, data, signals, out, start, deadline):
+     last_completion = start
+     next_target = start
+     head_deadline = start + 1.0
+     next_storage = start
++    os_opportunity = 0
++    stack_opportunity = 1
++    data['os_sampling'] = {'maximum_opportunities': 121, 'records': [], 'actual_complete_coverage': 'UNKNOWN'}
++    data['stack_sampling'] = {'maximum_opportunities': 19, 'records': [], 'stack_completion_coverage': 'UNKNOWN'}
++    data['native_sampling_invalid'] = False
++    data['owned_child_starttime'] = None
++
++    def child_elapsed(stage):
++        raise explicit_boundary('child_wall', deadline, stage=stage,
++                                owner=tuple(data['child_timer_owner']), armed=data['child_timer_owner'][5])
+ 
+     def observe_head():
+         nonlocal last_completion, next_target, head_deadline
+         began = time.monotonic()
+         budget = min(2.0, deadline - began, head_deadline - began)
+-        row = {"stage": "HEAD", "started_monotonic": began, "previous_completion_monotonic": last_completion,
+-               "completion_deadline": head_deadline, "granted_seconds": budget, "accepted": False}
+-        data["monitor"].append(row)
++        row = {'stage': 'HEAD', 'started_monotonic': began, 'previous_completion_monotonic': last_completion,
++               'completion_deadline': head_deadline, 'granted_seconds': budget, 'accepted': False}
++        data['monitor'].append(row)
+         try:
+-            require(budget > 0, "HEAD freshness/wall budget exhausted before observation")
+-            observed = git_value("rev-parse", "HEAD", timeout=budget, absolute=min(deadline, head_deadline))
+-            completed = time.monotonic()
+-            row.update(completed_monotonic=completed, gap_seconds=completed - last_completion, HEAD=observed)
+-            require(completed <= head_deadline and completed <= deadline, "HEAD completion exceeded deadline")
+-            require(observed == HEAD and not signals, "HEAD changed or wrapper interrupted")
+-            row["accepted"] = True
++            if began >= deadline:
++                child_elapsed('HEAD before observation')
++            if budget <= 0:
++                raise explicit_boundary('HEAD_freshness', head_deadline, stage='HEAD before observation')
++            with bounded(budget, min(deadline, head_deadline), origin='HEAD_freshness', stage='HEAD query and append'):
++                observed = git_value('rev-parse', 'HEAD', timeout=budget, absolute=min(deadline, head_deadline))
++                query_completed = time.monotonic()
++                row.update(query_completed_monotonic=query_completed, HEAD=observed)
++                if query_completed >= deadline:
++                    child_elapsed('HEAD query completed at child boundary')
++                if query_completed > head_deadline:
++                    raise explicit_boundary('HEAD_freshness', head_deadline, stage='HEAD query completion')
++                require(observed == HEAD and not signals, 'HEAD changed or wrapper interrupted')
++                append_diagnostic('head-monitor.jsonl', {
++                    **row, 'query_matches': True, 'guard_commit': 'PREWRITE_OBSERVATION_NOT_ACK',
++                    'query_gap_seconds': query_completed - last_completion})
++                completed = time.monotonic()
++                if completed >= deadline:
++                    child_elapsed('HEAD append completed at child boundary')
++                if completed > head_deadline:
++                    raise explicit_boundary('HEAD_freshness', head_deadline, stage='HEAD append completion')
++                row.update(completed_monotonic=completed, gap_seconds=completed - last_completion)
++            row['accepted'] = True
+             last_completion, next_target, head_deadline = completed, completed + 0.25, completed + 1.0
+         except BaseException as error:
+-            row.setdefault("completed_monotonic", time.monotonic())
+-            row.setdefault("gap_seconds", row["completed_monotonic"] - last_completion)
+-            row["error"] = error_record("HEAD subdeadline/observation", error)
+-            data["monitor_rejected"] = True
+-            data["timed_out"] |= time.monotonic() >= deadline
++            row['accepted'] = False
++            row.setdefault('completed_monotonic', time.monotonic())
++            row.setdefault('gap_seconds', row['completed_monotonic'] - last_completion)
++            row['error'] = error_record('HEAD subdeadline/observation', error)
++            data['monitor_rejected'] = True
++            classify_exception(data, 'HEAD', error)
+             raise
+ 
+     while True:
+         returncode = process.poll()
+         now = time.monotonic()
+         if returncode is not None:
+-            tail = {"stage": "observed child exit", "monotonic": now, "returncode": returncode,
+-                    "last_successful_HEAD_completion": last_completion, "tail_seconds": now - last_completion,
+-                    "HEAD_deadline": head_deadline, "accepted": now <= head_deadline and now <= deadline}
+-            data["monitor"].append(tail)
+-            data["timed_out"] |= now >= deadline
+-            require(tail["accepted"], "observed child exit tail exceeded HEAD/wall boundary")
++            tail = {'stage': 'observed child exit', 'monotonic': now, 'returncode': returncode,
++                    'last_successful_HEAD_completion': last_completion, 'tail_seconds': now - last_completion,
++                    'HEAD_deadline': head_deadline, 'accepted': False}
++            data['monitor'].append(tail)
++            if returncode != 0:
++                record_trigger('actual_child_nonzero_exit', {'returncode': returncode}, observed=now)
++            if now >= deadline:
++                child_elapsed('observed child exit boundary')
++            if now > head_deadline:
++                raise explicit_boundary('HEAD_freshness', head_deadline, stage='observed child exit tail')
++            with bounded(min(0.1, head_deadline - now), min(deadline, head_deadline),
++                         origin='HEAD_freshness', stage='child exit tail receipt'):
++                append_diagnostic('head-monitor.jsonl', {**tail, 'tail_within_boundary': True,
++                                                       'receipt_is_prewrite_observation': True})
++            tail_completed = time.monotonic()
++            if tail_completed >= deadline:
++                child_elapsed('exit tail receipt completed at child boundary')
++            if tail_completed > head_deadline:
++                raise explicit_boundary('HEAD_freshness', head_deadline, stage='exit tail receipt completion')
++            tail['accepted'] = True
++            tail['completed_monotonic'] = tail_completed
+             break
+         if now >= deadline:
+-            data["timed_out"] = True
+-            raise DeadlineExpired("original child600s wall deadline elapsed")
+-        require(not signals, "TERM/INT received; enter owned cleanup")
+-        require(now <= head_deadline, "HEAD completion gap exceeded before next read")
+-        sizes = {name: (out / name).lstat().st_size for name in ("stdout.txt", "stderr.txt")}
+-        if any(size > RAW_CAP for size in sizes.values()):
+-            data["output_limited"] = True
+-            data["monitor"].append({"stage": "raw threshold", "monotonic": now, "bytes": sizes})
+-            break
+-        if now >= next_storage:
++            child_elapsed('explicit original child600s wall branch')
++        require(not signals, 'TERM/INT received; enter owned cleanup')
++        if now > head_deadline:
++            raise explicit_boundary('HEAD_freshness', head_deadline, stage='HEAD gap before next read')
++        with bounded(min(0.1, deadline - now, head_deadline - now), min(deadline, head_deadline),
++                     origin='live_storage', stage='raw and diagnostic metadata thresholds'):
++            sizes = {name: (out / name).lstat().st_size for name in ('stdout.txt', 'stderr.txt')}
++            diagnostics = diagnostic_sizes(out)
++            if (any(size > RAW_CAP for size in sizes.values())
++                    or diagnostics['stacks_bytes'] > STACK_CAP or diagnostics['jsonl_bytes'] > JSONL_CAP):
++                data['output_limited'] = True
++                row = {'stage': 'raw/diagnostic threshold', 'monotonic': now,
++                       'stream_bytes': sizes, 'diagnostic_metadata': diagnostics}
++                data['monitor'].append(row)
++                record_trigger('sampled_output_threshold', row)
++                break
++        if os_opportunity <= 120 and time.monotonic() >= start + 5 * os_opportunity:
++            # Missed fixed slots are explicit missingness, never catch-up work.
++            latest = min(120, int((time.monotonic() - start) // 5))
++            while os_opportunity < latest:
++                data['os_sampling']['records'].append({'opportunity': os_opportunity,
++                    'scheduled_monotonic': start + 5 * os_opportunity,
++                    'status': 'SKIPPED_MISSED_FIXED_SLOT_NO_CATCHUP', 'no_retry': True})
++                os_opportunity += 1
++            observe_head()
++            began = time.monotonic()
++            absolute = min(deadline, head_deadline - 0.1)
++            budget = min(0.1, absolute - began)
++            if budget > 0:
++                sample = proc_sample(process.pid, data['owned_child_starttime'], seconds=budget,
++                    absolute=absolute, opportunity=os_opportunity, scheduled=start + 5 * os_opportunity,
++                    records=data['os_sampling']['records'])
++                if sample.get('process') is not None and sample['status'] == 'OBSERVED_CONTEXT_ONLY':
++                    data['owned_child_starttime'] = sample['process']['starttime_ticks']
++            else:
++                data['os_sampling']['records'].append({'opportunity': os_opportunity, 'status': 'UNKNOWN',
++                    'reason': 'no remaining HEAD/child headroom', 'no_retry': True})
++            os_opportunity += 1
++            observe_head()
++        if stack_opportunity <= 19 and time.monotonic() >= start + 30 * stack_opportunity:
++            latest = min(19, int((time.monotonic() - start) // 30))
++            while stack_opportunity < latest:
++                data['stack_sampling']['records'].append({'opportunity': stack_opportunity,
++                    'scheduled_monotonic': start + 30 * stack_opportunity,
++                    'status': 'SKIPPED_MISSED_FIXED_SLOT_NO_CATCHUP', 'signal_submitted': False,
++                    'stack_sample_completed': 'UNKNOWN', 'no_retry': True})
++                stack_opportunity += 1
++            observe_head()
++            row = stack_request(process, data, out, opportunity=stack_opportunity,
++                                scheduled=start + 30 * stack_opportunity,
++                                absolute=min(deadline, head_deadline - 0.1))
++            stack_opportunity += 1
++            require(not data['native_sampling_invalid'], 'native request applicability/guard rejected')
++            observe_head()
++        if time.monotonic() >= next_storage:
+             observe_head()
+             scan_start = time.monotonic()
+             budget = min(2.0, deadline - scan_start, head_deadline - scan_start - 0.1)
+-            row = {"stage": "persistent live storage", "started_monotonic": scan_start,
+-                   "granted_seconds": budget, "deadline": scan_start + budget, "HEAD_headroom_seconds": 0.1}
+-            data["monitor"].append(row)
++            row = {'stage': 'round and persistent live storage', 'started_monotonic': scan_start,
++                   'granted_seconds': budget, 'deadline': scan_start + budget, 'HEAD_headroom_seconds': 0.1}
++            data['monitor'].append(row)
+             try:
+-                require(budget > 0, "storage scan has no positive HEAD/wall budget")
+-                row["observation"] = storage_observation(command, live_sampling=True, seconds=budget,
+-                                                         absolute=min(deadline, head_deadline - 0.1))
+-                row["completed_monotonic"] = time.monotonic()
+-                require(row["completed_monotonic"] <= scan_start + budget, "storage scan completion overrun")
++                require(budget > 0, 'storage scan has no positive HEAD/wall budget')
++                # One traversal covers round and persistent subtree thresholds.
++                row['observation'] = storage_observation(command, round_tree=True, live_sampling=True,
++                    seconds=budget, absolute=min(deadline, head_deadline - 0.1))
++                row['completed_monotonic'] = time.monotonic()
++                if row['completed_monotonic'] >= deadline:
++                    child_elapsed('storage completion at child boundary')
++                if row['completed_monotonic'] > scan_start + budget:
++                    raise explicit_boundary('live_storage', scan_start + budget, stage='storage scan completion')
+             except BaseException as error:
+-                row["error"] = error_record("storage subdeadline/observation", error)
+-                data["storage_limited"] = True
+-                data["timed_out"] |= time.monotonic() >= deadline
++                row['error'] = error_record('storage subdeadline/observation', error)
++                data['storage_limited'] = True
++                classify_exception(data, 'live storage', error)
+                 raise
+             observe_head()
+             next_storage = scan_start + 5
+         elif time.monotonic() >= next_target:
+             observe_head()
+         now = time.monotonic()
+-        sleep_for = min(0.1, next_target - now, head_deadline - now, deadline - now)
++        next_os = start + 5 * os_opportunity if os_opportunity <= 120 else float('inf')
++        next_stack = start + 30 * stack_opportunity if stack_opportunity <= 19 else float('inf')
++        sleep_for = min(0.1, next_target - now, head_deadline - now, deadline - now,
++                        next_os - now, next_stack - now, next_storage - now)
+         if sleep_for > 0:
+             time.sleep(sleep_for)
+ 
+@@ -562,177 +1259,154 @@
+ 
+ 
+ def verify_origins(plan, ledger, actor):
+-    require(ledger["round"] == "R350" and ledger["actor"] == actor
+-            and ledger["plan_sha256"] == PLAN_SHA and ledger["budget_disposition"] == BUDGET_PIN
+-            and tuple(ledger["commands"]) == KEYS, "new ledger budget/actor/generation differs")
+-    for key in KEYS:
+-        command, slot = plan["commands"][key], ledger["commands"][key]
+-        for field in ("successor_identity", "fresh_allowance", "inherits_unused_allowance",
+-                      "resets_spent_allowance", "allowance_origin", "authorized", "predecessor"):
+-            require(slot[field] == command[field], "new allowance origin changed: " + key + ":" + field)
++    require(ledger["round"] == "R354" and ledger["actor"] == actor
++            and ledger["plan"] == pin(D / "plan.json")
++            and ledger["baseline_clarification"] == pin(R355 / "plan.json")
++            and ledger["activation"] == pin(D / "root-preparation-activation.json")
++            and tuple(ledger["commands"]) == KEYS, "single diagnostic ledger identity differs")
++    slot = ledger["commands"]["live_utc_01"]
++    require(slot["identity"] == "R354:live_utc_01" and slot["authorized"] == 1
++            and slot["kind"] == "NEW_SEPARATE_LIVE_DIAGNOSTIC"
++            and slot["retry"] is False and slot["diagnostic_only"] is True
++            and slot["behavior_acceptance_credit"] == 0,
++            "fresh diagnostic allowance is not a behavior transfer/reset")
+ 
+ 
+ def verify_budget(plan, root_ledger):
+-    check(BUDGET_PIN)
+-    budget = read_json(BUDGET)
+-    require(budget["round"] == "R350" and budget["actor"] == "/root" and budget["ROOT_accepted"] is True
+-            and budget["R350_plan"] == pin(D / "plan.json") and budget["same_author_binding"] == pin(BINDING),
+-            "ROOT exclusive budget adoption identity differs")
+-    require(budget["old_generation_launches_disabled"] is True and budget["runtime_release"] is False
+-            and budget["duplicate_origin_claims_permitted"] is False
+-            and budget["old_generation_fallback_permitted"] is False and budget["resets_spent_allowance"] is False,
+-            "old generation eligibility or duplicate claim is forbidden")
+-    require(budget["old_ledger_pins"] == plan["budget_disposition"]["original_ledger_pins"]
+-            and budget["origin_mapping"] == plan["budget_disposition"]["transfers"], "exclusive origin map differs")
+-    transfers = budget["origin_mapping"]
+-    sources = [row["source_identity"] for row in transfers if row["source_identity"] is not None]
+-    require(len(transfers) == 9 and len(sources) == len(set(sources)) == 8
+-            and [row["destination"] for row in transfers] == ["R350:" + key for key in KEYS]
+-            and sources == ["R346:" + key for key in KEYS[1:]]
+-            and transfers[0]["kind"] == "FRESH_EXPLICIT_REPLACEMENT"
+-            and transfers[0]["replaces_failed_identity"] == "R346:t3_01"
+-            and budget["fresh_attempts_added"] == 1 and budget["exclusive_transferred_attempts"] == 8,
+-            "one fresh/eight exclusive nonspent origins required")
+-    for old_pin in budget["old_ledger_pins"]:
+-        check(old_pin)
+-        historical = read_json(old_pin["path"])["commands"]
+-        require(tuple(historical) == KEYS and historical["t3_01"]["state"] == "SPENT"
+-                and historical["t3_01"]["used"] == 1 and historical["t3_01"]["remaining"] == 0,
+-                "historical failed first allowance changed")
+-        require(all(historical[key]["state"] == HELD and historical[key]["used"] == 0
+-                    and historical[key]["remaining"] == 1 for key in KEYS[1:]),
+-                "historical transferred ledger changed or claimed")
+     verify_origins(plan, root_ledger, "/root")
+-    return budget
++    require(tuple(plan["commands"]) == KEYS and plan["budgets"]["new_allowances"] == 1
++            and plan["commands"]["live_utc_01"]["allowance_origin"] == {
++                "kind": "NEW_SEPARATE_LIVE_DIAGNOSTIC", "old_attempt_reset": False,
++                "old_HELD_transfer": False, "counts_as_behavior_pass": False},
++            "one separate fresh diagnostic only")
++    # Old ledgers are immutable input facts, never launch authorities here.
++    for path in (OLD / "root-command-ledger.json", OLD / "implementation/author-command-ledger.json"):
++        planned_input(plan, path)
++        old = read_json(path)["commands"]
++        require(tuple(old) == tuple("t3_%02d" % number for number in range(1, 10)),
++                "historical nine-node identity changed")
++        require(all(old[key]["state"] == "SPENT" and old[key]["used"] == 1 and old[key]["remaining"] == 0
++                    for key in ("t3_01", "t3_02", "t3_03")), "old three SPENT changed")
++        require(all(old[key]["state"] == HELD and old[key]["used"] == 0 and old[key]["remaining"] == 1
++                    for key in tuple(old)[3:]), "old six HELD changed")
++    return {"new_allowances": 1, "old_allowances_mutated": False, "behavior_credit": 0}
+ 
+ 
+ def verify_lineage(plan, gate, acceptance):
+-    require(acceptance["round"] == "R350" and acceptance["actor"] == "/root"
+-            and acceptance["plan"] == pin(D / "plan.json"), "new ROOT acceptance plan/actor differs")
+-    for field, path in (("runner_lineage", IMPL / "runner-lineage-adoption.json"),
+-                        ("source_proof", IMPL / "source-proof.json"), ("budget_disposition", BUDGET),
+-                        ("source_repair", R349 / "root-source-acceptance.json")):
+-        require(acceptance[field] == gate[field] == pin(path), "new ROOT acceptance relation differs: " + field)
+-    require(gate["budget_disposition"] == BUDGET_PIN, "gate budget disposition differs")
+-    correction = gate["corrections"]
+-    historical_plan = planned_input(plan, R348 / "plan.json")
+-    historical_acceptance = planned_input(plan, R348 / "root-source-acceptance.json")
+-    require(correction["R348_plan"] == historical_plan and historical_plan["sha256"] == R348_PLAN_SHA
+-            and correction["R348_source_acceptance"] == historical_acceptance, "historical R348 binding differs")
+-    reviewed = read_json(historical_acceptance["path"])
+-    require(reviewed["reviewed"] is True and reviewed["plan"] == historical_plan
+-            and reviewed["runner"] == HISTORICAL_RUNNER
+-            == planned_input(plan, OLD / "implementation/run-evidence.py"),
+-            "R348 accepted only the actual historical runner")
+-    old_gate = planned_input(plan, OLD / "source-gate.json")
+-    old_acceptance = planned_input(plan, OLD / "root-source-acceptance.json")
+-    require(read_json(old_gate["path"])["sources"]["runner"] == HISTORICAL_RUNNER
+-            and read_json(old_acceptance["path"])["source_gate"] == old_gate,
+-            "historical R346 gate/acceptance differs")
+-    failed = planned_input(plan, OLD / "root-t3_01-disposition.json")
+-    failure = read_json(failed["path"])
+-    require(failure["command_id"] == "R346:t3_01" and failure["ROOT_accepted"] is False,
+-            "original failure must remain rejected history")
+-    repair_plan = planned_input(plan, R349 / "plan.json")
+-    repair_acceptance = planned_input(plan, R349 / "root-source-acceptance.json")
+-    repair = read_json(repair_acceptance["path"])
+-    owner = planned_input(plan, ROOT / "src/cloud_edge_robot_arm/vision/owner_registration.py")
+-    require(repair["reviewed"] is True and repair["plan"] == repair_plan and repair["source"] == owner
+-            and gate["source_repair"] == repair_acceptance, "accepted exact R349 source repair differs")
+-    lineage = read_json(gate["runner_lineage"]["path"])
+-    expected = {"round": "R350", "R350_plan": pin(D / "plan.json"), "historical_runner": HISTORICAL_RUNNER,
+-        "historical_R348_plan": historical_plan, "historical_R348_acceptance": historical_acceptance,
+-        "historical_R346_gate": old_gate, "historical_R346_acceptance": old_acceptance,
+-        "historical_failed_first_disposition": failed, "successor_runner": pin(__file__),
+-        "whole_helper_source": planned_input(plan, OLD / "implementation/resource-evidence-helpers.py"),
+-        "whole_helper_copy": pin(HELPER), "source_proof": gate["source_proof"],
+-        "R349_source_acceptance": repair_acceptance, "budget_disposition": BUDGET_PIN,
+-        "same_actual_actor": pin(BINDING), "historical_acceptance_applies_to_current_runner": False,
+-        "allowed_change_policy": CHANGE_POLICY}
+-    require(all(lineage[field] == value for field, value in expected.items()), "successor lineage relation differs")
++    require(pin(R355 / "plan.json")["sha256"] == R355_PLAN_SHA,
++            "exact actual Astra baseline clarification changed")
++    clarification = read_json(R355 / "plan.json")
++    baseline_acceptance = read_json(R355 / "root-baseline-acceptance.json")
++    activation = read_json(D / "root-preparation-activation.json")
++    effective = clarification["effective_references"]
++    require(effective["baseline_runner"] == HISTORICAL_RUNNER
++            and effective == activation["effective_references"] == gate["effective_references"]
++            and baseline_acceptance["accepted"] is True
++            and baseline_acceptance["plan"] == gate["baseline_clarification"] == pin(R355 / "plan.json")
++            and baseline_acceptance["effective_references"] == effective,
++            "only actual accepted R350 baseline is prospective")
++    check(effective["baseline_runner"])
++    check(effective["whole_helper"])
++    require(stable(HELPER) == stable(effective["whole_helper"]["path"]), "helper whole bytes differ")
++    lineage = read_json(gate["lineage_adoption"]["path"])
++    expected = {"round": "R354", "plan": pin(D / "plan.json"),
++                "baseline_clarification": pin(R355 / "plan.json"),
++                "activation": pin(D / "root-preparation-activation.json"),
++                "effective_references": effective, "historical_runner": HISTORICAL_RUNNER,
++                "historical_R354_capture_references": {
++                    "baseline_runner": plan["capture"]["baseline_runner"],
++                    "whole_helper": plan["capture"]["whole_helper"]},
++                "successor_runner": pin(__file__), "observer": pin(OBSERVER),
++                "whole_helper_copy": pin(HELPER), "source_proof": gate["source_proof"],
++                "same_actual_actor": pin(BINDING),
++                "historical_acceptance_applies_to_current_runner": False,
++                "allowed_change_policy": CHANGE_POLICY}
++    require(all(lineage[field] == value for field, value in expected.items()), "new diagnostic lineage differs")
+     proof = read_json(gate["source_proof"]["path"])
+     require(proof["before"] == HISTORICAL_RUNNER and proof["after"] == pin(__file__)
+-            and proof["allowed_change_policy"] == CHANGE_POLICY and proof["capture_algorithms_preserved"] is True,
+-            "actual successor proof differs from reviewed narrow adoption")
++            and proof["observer"] == pin(OBSERVER) and proof["allowed_change_policy"] == CHANGE_POLICY
++            and proof["capture_algorithms_preserved"] is True,
++            "actual new runner/observer source proof differs")
+     binding = read_json(BINDING)
+-    require(binding["R350_plan"] == pin(D / "plan.json") and binding["old_R346_execution_prohibited"] is True,
+-            "actual author did not acknowledge new-only lineage")
++    require(binding["plan"] == pin(D / "plan.json")
++            and binding["baseline_clarification"] == pin(R355 / "plan.json")
++            and binding["effective_references"] == effective
++            and binding["old_generations_execution_prohibited"] is True
++            and binding["historical_acceptance_applies_to_new_runner"] is False,
++            "actual same-seat source adoption acknowledgment differs")
+ 
+ 
+ def verify_gate(command, plan, gate, acceptance, root_ledger, key):
+-    require(gate["round"] == "R350" and gate["HEAD"] == HEAD and gate["branch"] == BRANCH,
+-            "gate generation differs")
+-    require(gate["commands"] == plan["commands"], "exact nine command table differs")
+-    require(gate["sources"]["runner"] == pin(__file__) and gate["sources"]["helper"] == pin(HELPER),
+-            "runner/helper not bound")
+-    require(gate["executor_binding"] == pin(BINDING) == acceptance["executor_binding"], "actor binding differs")
++    require(gate["round"] == "R354" and gate["HEAD"] == HEAD and gate["branch"] == BRANCH
++            and gate["plan"] == pin(D / "plan.json")
++            and gate["activation"] == pin(D / "root-preparation-activation.json"), "gate generation differs")
++    require(gate["commands"] == plan["commands"] and tuple(plan["commands"]) == KEYS,
++            "exact single diagnostic command table differs")
++    for field, path in (("runner", Path(__file__)), ("observer", OBSERVER), ("helper", HELPER)):
++        require(gate[field] == pin(path) == acceptance[field], "actual new implementation not accepted: " + field)
++    for field, path in (("executor_binding", BINDING), ("source_proof", IMPL / "source-proof.json"),
++                        ("lineage_adoption", IMPL / "runner-lineage-adoption.json")):
++        require(gate[field] == pin(path), "new source relation differs: " + field)
++    require(gate["executor_binding"] == acceptance["executor_binding"], "actual binding not accepted")
+     binding = read_json(BINDING)
+-    require(binding["actual_actor"] == "/root/p6_t3_sol" and binding["acknowledged_by_actual_live_seat"] is True,
+-            "actual same-seat author acknowledgment required")
+-    require(acceptance["reviewed"] is True and acceptance["source_gate"] == pin(D / "source-gate.json"),
+-            "ROOT source acceptance differs")
+-    require(acceptance["runtime_implementation"] == gate["sources"], "ROOT implementation identity differs")
++    require(binding["actual_actor"] == "/root/p6_t3_sol"
++            and binding["acknowledged_by_actual_live_seat"] is True
++            and binding["diagnostic_only"] is True and binding["behavior_acceptance_credit"] == 0,
++            "actual same-seat diagnostic author acknowledgment required")
++    require(acceptance["round"] == "R354" and acceptance["actor"] == "/root"
++            and acceptance["reviewed"] is True and acceptance["source_gate"] == pin(D / "source-gate.json")
++            and acceptance["plan"] == gate["plan"]
++            and acceptance["baseline_clarification"] == gate["baseline_clarification"],
++            "new ROOT review must accept actual new generation")
++    references = (
++        ('native_signal_clarification', 'round356-p6-t3-native-signal-ownership-20261024/plan.json',
++         '123d38d5440c42b9719611e4ce4ea28655e21eb61e4c6c28ac89de939a203f15'),
++        ('native_signal_acceptance', 'round356-p6-t3-native-signal-ownership-20261024/root-native-signal-acceptance.json',
++         'e2996d25dfd09a50b95c1e825bc917b3cd78f5a9e137b197b6466073c2e58afa'),
++        ('profiler_coexistence_clarification', 'round357-p6-t3-observer-coexistence-20261024/plan.json',
++         '502034b2291fb4c39602e94d31cb867e0cea1740ea592613b201c730a105c658'),
++        ('profiler_coexistence_acceptance', 'round357-p6-t3-observer-coexistence-20261024/root-coexistence-acceptance.json',
++         'd0485d6bd978dca004477c70b5368aa7a3be3f53420a059bfced83006a5b3409'),
++        ('observer_persistence_clarification', 'round358-p6-t3-observer-persistence-neutrality-20261024/plan.json',
++         'e22f3e8c33ce95f73a648f2363a22ec00ea578bd08080a681da6a60f04afc0db'),
++    )
++    for field, relative, expected_sha in references:
++        actual = pin(D.parent / relative)
++        require(actual['sha256'] == expected_sha and gate[field] == acceptance[field] == actual,
++                'actual clarification/acceptance reference differs: ' + field)
++    persistence_path = D.parent / 'round358-p6-t3-observer-persistence-neutrality-20261024/root-source-acceptance.json'
++    persistence_pin = pin(persistence_path)
++    persistence = read_json(persistence_path)
++    require(gate['observer_persistence_acceptance'] == acceptance['observer_persistence_acceptance'] == persistence_pin
++            and persistence['round'] == 'R358' and persistence['actor'] == '/root' and persistence['reviewed'] is True
++            and persistence['plan'] == gate['observer_persistence_clarification']
++            and persistence['observer'] == pin(OBSERVER), 'actual successor R358 source acceptance required')
+     verify_budget(plan, root_ledger)
+     verify_lineage(plan, gate, acceptance)
+-    require(gate["monitor_policy"] == MONITOR_POLICY and gate["completion_contract"] == COMPLETION_CONTRACT,
+-            "refined monitor/completion policy differs")
+-    require(len(command["nodes"]) == 1 and [arg for arg in command["child_argv"] if "::" in arg] == command["nodes"],
+-            "single exact selected node required")
++    require(plan["capture"]["monitor_policy"] == MONITOR_POLICY
++            and plan["capture"]["completion_contract"] == COMPLETION_CONTRACT,
++            "original diagnostic monitor/completion contract differs")
++    require(key == "live_utc_01" and len(command["nodes"]) == 1
++            and [arg for arg in command["child_argv"] if "::" in arg] == command["nodes"]
++            and command["nodes"][0] == "tests/test_operational_runtime_closure.py::test_local_new_schema_ignores_utc_jump_but_external_does_not[memory]"
++            and command["diagnostic_only"] is True and command["max_worker_poll_lifecycles"] == 3,
++            "unchanged single UTC-memory diagnostic required")
+     require(pin(HELPER)["sha256"] == HELPER_SHA, "whole helper changed")
+-    previous_polls = 0
+-    for other in KEYS:
+-        slot = root_ledger["commands"][other]
+-        if other < key:
+-            require(slot["state"] == "SPENT" and slot["used"] == 1 and slot["remaining"] == 0,
+-                    "predecessor is not spent")
+-            check(slot["disposition"])
+-            disposition = read_json(slot["disposition"]["path"])
+-            require(disposition["ROOT_accepted"] is True and disposition["command_id"] == "R350:" + other,
+-                    "predecessor not independently accepted")
+-            wrapper = disposition["wrapper_status"]
+-            require(wrapper["exit_code"] == 0 and wrapper["timed_out"] is False and wrapper["signal"] is None,
+-                    "predecessor actual wrapper did not terminate normally with exit0")
+-            check(wrapper["provenance"])
+-            actual_wrapper = read_json(wrapper["provenance"]["path"])
+-            require(actual_wrapper["command_id"] == "R350:" + other
+-                    and all(actual_wrapper[name] == wrapper[name] for name in ("exit_code", "timed_out", "signal")),
+-                    "predecessor wrapper status provenance differs")
+-            check(disposition["completion"])
+-            completion = read_json(disposition["completion"]["path"])
+-            require(disposition["completion"]["path"] == str(IMPL / other / "completion.json")
+-                    and disposition["result"] == completion["result"], "predecessor terminal/result mapping differs")
+-            prior = validate_completion(completion, other, plan["commands"][other], pin(D / "source-gate.json"), pin(__file__))
+-            require(completion["behavior_candidate_pass"] is True and prior["behavior_checks_passed"] is True
+-                    and type(prior["pid"]) is int and prior["pid"] > 0, "predecessor behavior/final completion failed")
+-            polls = prior["resource_counts"]["attempted_poll_lifecycles"]
+-            require(type(polls) is int and 0 <= polls <= plan["commands"][other]["max_worker_poll_lifecycles"],
+-                    "predecessor actual poll count invalid")
+-            previous_polls += polls
+-        elif other > key:
+-            require(slot["state"] == HELD and slot["used"] == 0 and slot["remaining"] == 1,
+-                    "later ROOT slot not HELD")
+-    require(previous_polls + command["max_worker_poll_lifecycles"] <= 15, "aggregate poll budget exceeded")
+-    return previous_polls
++    return 0  # No historical count is reconstructed or charged to this allowance.
+ 
+ 
+ def spend(author_before, key, reserved, out, command, plan, root_ledger):
+     author = json.loads(base64.b64decode(author_before["base64"]))
+     verify_budget(plan, root_ledger)
+     verify_origins(plan, author, "/root/p6_t3_sol")
+-    require(reserved["budget_disposition"] == author["budget_disposition"] == BUDGET_PIN
+-            and reserved["allowance_origin"] == author["commands"][key]["allowance_origin"]
+-            == command["allowance_origin"], "selected AUTHOR/ROOT origin or budget differs before CAS")
+-    require(tuple(author["commands"]) == KEYS and author["actor"] == "/root/p6_t3_sol"
+-            and author["plan_sha256"] == PLAN_SHA, "AUTHOR ledger identity differs")
+-    for other, slot in author["commands"].items():
+-        if other >= key:
+-            require(slot["state"] == HELD and slot["used"] == 0 and slot["remaining"] == 1,
+-                    "AUTHOR selected/later slot not HELD")
+-        else:
+-            require(slot["state"] == "SPENT" and slot["used"] == 1 and slot["remaining"] == 0,
+-                    "AUTHOR predecessor not spent")
+-    author["commands"][key].update(state="CONSUMED_BEFORE_START", used=1, remaining=0,
+-                                  reservation_id=reserved["reservation_id"])
++    require(key == "live_utc_01" and reserved["identity"] == "R354:live_utc_01"
++            and reserved["diagnostic_only"] is True and reserved["kind"] == "NEW_SEPARATE_LIVE_DIAGNOSTIC",
++            "selected diagnostic reservation origin differs")
++    slot = author["commands"][key]
++    require(slot["state"] == HELD and slot["used"] == 0 and slot["remaining"] == 1,
++            "AUTHOR diagnostic allowance not HELD")
++    slot.update(state="CONSUMED_BEFORE_START", used=1, remaining=0,
++                reservation_id=reserved["reservation_id"])
+     return cas(AUTHOR, author_before, author, out / "author-consumed.json")
+ 
+ 
+@@ -753,10 +1427,12 @@
+     errors, signals, monitor, stages = [], [], [], {}
+     source_before = {"pins": [], "complete": False, "accepted": False}
+     cleanup = {"leader_reaped": None, "group_remaining": None, "cleanup_errors": [], "no_child_started": True}
+-    data = {"round": "R350", "command_id": "R350:" + key, "source_gate": None,
++    data = {"round": "R354", "command_id": "R354:" + key, "source_gate": None,
+             "child_exit": None, "pid": None, "pgid": None, "timed_out": False,
+             "output_limited": False, "storage_limited": False, "previous_actual_polls": None,
+-            "behavior_checks_passed": False, "completion_required": True, "ROOT_accepted": False,
++            "behavior_checks_passed": False, "behavior_candidate_pass": False, "test_observed_pass": False,
++            "diagnostic_only": True, "behavior_acceptance_credit": 0,
++            "completion_required": True, "ROOT_accepted": False,
+             "formal_accepted": False, "whole_B_accepted": False, "errors": errors,
+             "signals": signals, "cleanup": cleanup, "monitor": monitor,
+             "unobserved": {"RSS": None, "OS_handles": None, "GPU_native": None,
+@@ -764,7 +1440,9 @@
+     previous_signals = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+ 
+     def interrupted(signum, frame):
+-        signals.append({"signal": signum, "monotonic": time.monotonic()})
++        observed = time.monotonic()
++        signals.append({"signal": signum, "monotonic": observed})
++        record_trigger("actual_TERM_INT", {"signal": signum}, observed=observed)
+ 
+     for sig in previous_signals:
+         signal.signal(sig, interrupted)
+@@ -773,24 +1451,23 @@
+     completion_valid = False
+     try:
+         try:
+-            with bounded(35):
++            with bounded(35, origin="preflight", stage="selected guards/CAS/source-before"):
+                 require(pin(D / "plan.json")["sha256"] == PLAN_SHA, "actual Astra plan changed")
+                 plan = read_json(D / "plan.json")
+                 command = plan["commands"][key]
+                 require(command["output"] == str(out) and command["cwd"] == str(ROOT), "literal output/cwd differs")
+                 root_ledger = read_json(D / "root-command-ledger.json")
+-                require(tuple(root_ledger["commands"]) == KEYS and root_ledger["plan_sha256"] == PLAN_SHA
+-                        and root_ledger["round"] == "R350" and root_ledger["actor"] == "/root",
+-                        "ROOT nine-slot ledger identity differs")
++                verify_origins(plan, root_ledger, "/root")
+                 proposed = root_ledger["commands"][key]
+                 require(proposed["state"] == "RESERVED" and proposed["used"] == 1 and proposed["remaining"] == 0
+-                        and proposed["successor_identity"] == "R350:" + key
++                        and proposed["identity"] == "R354:" + key
+                         and type(proposed["reservation_id"]) is str and proposed["reservation_id"],
+                         "ROOT individual reservation required")
+                 reserved = proposed
+                 out.mkdir(mode=0o700, exist_ok=False)
+                 output_created = True
+-                write(out / "invocation.json", {"command_id": "R350:" + key, "command": command,
++                open_diagnostic_logs(out)
++                write(out / "invocation.json", {"command_id": "R354:" + key, "command": command,
+                       "root_reservation": reserved, "root_ledger_observed": full(D / "root-command-ledger.json"),
+                       "monotonic": overall_start, "wrapper_pid": os.getpid(),
+                       "actual_sys_executable": sys.executable, "actual_sys_prefix": sys.prefix})
+@@ -802,6 +1479,7 @@
+                         and reserved["acceptance"] == pin(D / "root-source-acceptance.json")
+                         and reserved["executor_binding"] == pin(BINDING), "reservation source/actor identity differs")
+                 data["source_gate"] = pin(D / "source-gate.json")
++                data["observer"] = gate["observer"]
+                 validate_launch_capture(reserved, command, key)
+                 data["previous_actual_polls"] = verify_gate(command, plan, gate, acceptance, root_ledger, key)
+                 data["actual_interpreter"] = verify_interpreter(gate["interpreter_evidence"], command)
+@@ -810,14 +1488,15 @@
+                 require(source_before["accepted"], "before HEAD/source observation rejected")
+                 monitor.append({"stage": "prelaunch round storage", **storage_observation(command, round_tree=True)})
+                 require(not signals, "interrupted before child start")
+-                spec = importlib.util.spec_from_file_location("r350_frozen_helpers", HELPER)
++                spec = importlib.util.spec_from_file_location("r354_frozen_helpers", HELPER)
+                 helper = importlib.util.module_from_spec(spec)
+                 spec.loader.exec_module(helper)  # Only the new whole frozen stdlib helper; reserved attempt only.
+-                write(out / "helper-import-identity.json", {"helper": pin(HELPER), "module": "r350_frozen_helpers",
++                write(out / "helper-import-identity.json", {"helper": pin(HELPER), "module": "r354_frozen_helpers",
+                       "product_imported_in_parent": False, "interpreter_evidence": gate["interpreter_evidence"],
+                       "actual_interpreter": data["actual_interpreter"]})
+                 (out / "resources").mkdir()
+         except BaseException as error:
++            classify_exception(data, "prelaunch", error)
+             errors.append(error_record("prelaunch", error))
+             data["prelaunch_rejection"] = retain_prelaunch_rejection(error, key, reserved,
+                                                                     normal_output_created=output_created)
+@@ -830,7 +1509,8 @@
+                     start = time.monotonic()
+                     deadline = start + command["child_seconds"]
+                     data.update(child_start_monotonic=start, child_deadline_monotonic=deadline)
+-                    with bounded(command["child_seconds"]):
++                    with bounded(command["child_seconds"], deadline, origin="child_wall", stage="child launch and monitor"):
++                        data["child_timer_owner"] = _TIMER_FRAME["owner"]
+                         process = subprocess.Popen(command["child_argv"], cwd=ROOT, env=command["child_env"],
+                                                    stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                                                    shell=False, start_new_session=True)
+@@ -841,10 +1521,10 @@
+                               "monotonic_start": start, "deadline": deadline})
+                         monitor_child(process, command, data, signals, out, start, deadline)
+             except DeadlineExpired as error:
+-                data["timed_out"] |= time.monotonic() >= data.get("child_deadline_monotonic", float("inf"))
++                classify_exception(data, "child/monitor", error)
+                 errors.append(error_record("child/monitor bounded deadline", error))
+             except BaseException as error:
+-                data["timed_out"] |= time.monotonic() >= data.get("child_deadline_monotonic", float("inf"))
++                classify_exception(data, "child/monitor", error)
+                 errors.append(error_record("child/monitor", error))
+     finally:
+         # This finally surrounds source guards, ledger CAS, Popen, monitoring and signals.
+@@ -876,26 +1556,29 @@
+                 stages[name] = entry
+                 partial = {} if state is None else state
+                 try:
+-                    with bounded(seconds, capture_deadline):
++                    with bounded(seconds, capture_deadline, origin="capture:" + name, stage=name):
+                         action(partial)
+                     entry["state"] = "COMPLETE"
+                 except BaseException as error:
+                     entry["state"] = "TIMEOUT" if isinstance(error, DeadlineExpired) else "FAILED"
+                     entry["error"] = error_record(name, error)
++                    classify_exception(data, name, error)
+                     errors.append(entry["error"])
+                 finally:
+                     entry["elapsed_seconds"] = time.monotonic() - entry["started_monotonic"]
+                     data[name] = partial
+                     # Bookkeeping uses the shared 30s reserve, never an unbounded finally write.
+                     try:
+-                        with bounded(2, capture_deadline):
++                        with bounded(2, capture_deadline, origin="receipt_write", stage=name + " receipt"):
+                             write(out / (name + ".json"), {"stage": entry, "observations": partial})
+                     except BaseException as error:
+                         entry["persistence_error"] = error_record(name + " persistence", error)
++                        classify_exception(data, name + " receipt", error)
+                         errors.append(entry["persistence_error"])
+ 
+             def raw_process(partial):
+                 partial.update(cleanup=cleanup, signals=signals, streams={}, ledger=None)
++                partial["diagnostic_index"] = diagnostic_index(out, phase="RAW_STAGE_PARENT_LOGS_STILL_OPEN")
+                 for name in ("stdout.txt", "stderr.txt"):
+                     try:
+                         actual = pin(out / name)
+@@ -957,7 +1640,7 @@
+                     except Exception as error:
+                         row["error"] = error_record("sidecar byte retention", error)
+                 require(helper is not None, "new frozen helper unavailable")
+-                summary = helper.diagnostic_resources(directory, "R350:" + key, command["child_argv"], data["pid"])
++                summary = helper.diagnostic_resources(directory, "R354:" + key, command["child_argv"], data["pid"])
+                 partial["summary"] = summary
+                 partial["behavior_complete"] = helper.behavior_resources_complete(summary, facts=partial["facts"])
+                 data["resource_counts"] = summary["counts"]
+@@ -967,7 +1650,7 @@
+                 polls = counts.get("attempted_poll_lifecycles", 0)
+                 require(polls <= command["max_worker_poll_lifecycles"]
+                         and data["previous_actual_polls"] is not None
+-                        and data["previous_actual_polls"] + polls <= 15, "per-node/aggregate actual poll cap")
++                        and data["previous_actual_polls"] + polls <= 3, "fresh diagnostic actual poll cap")
+                 require(summary["peak_active_polls_per_node"] <= 2, "concurrent poll cap")
+                 require(partial["behavior_complete"] is True, "genuine nested assertions did not complete")
+                 require(all(not row["error"] for row in partial["original_sidecar_copies"]), "sidecar bytes incomplete")
+@@ -998,7 +1681,7 @@
+                         require(path.name == command["expected_case_filename"]
+                                 and value["schema_version"] == "bigsmall.r331.t3-case.v1"
+                                 and value["nodeid"] == command["nodes"][0]
+-                                and value["command_id"] == "R350:" + key
++                                and value["command_id"] == "R354:" + key
+                                 and value["pid"] == data["pid"] and data["pid"] is not None,
+                                 "case schema/family/node/command/actual PID differs")
+                         require(value["observers_restored"] is True and value["cleanup_errors"] == [],
+@@ -1033,7 +1716,7 @@
+ 
+             # Explicit terminal protocol: no generic stage finally may write after completion.
+             try:
+-                with bounded(15, capture_deadline):
++                with bounded(15, capture_deadline, origin="finalization", stage="explicit terminal protocol"):
+                     complete = tuple(stages) == STAGE_NAMES and all(
+                         stages[name]["state"] == "COMPLETE" and not stages[name]["persistence_error"]
+                         for name in STAGE_NAMES)
+@@ -1045,13 +1728,31 @@
+                     data["required_evidence_complete"] = bool(complete and source_before["accepted"]
+                         and data.get("source-after-observed", {}).get("accepted") is True and clean
+                         and data.get("resources", {}).get("behavior_complete") is True)
+-                    data["behavior_checks_passed"] = bool(data["artifact_retention_complete"]
+-                        and data["required_evidence_complete"] and data["child_exit"] == 0
+-                        and not data["timed_out"] and not data["output_limited"] and not data["storage_limited"]
+-                        and not signals and not errors)
++                    junit_data = data.get('junit', {})
++                    data['test_observed_pass'] = bool(data['child_exit'] == 0
++                        and junit_data.get('available') is True and junit_data.get('tests') == 1
++                        and junit_data.get('failures') == 0 and junit_data.get('errors') == 0
++                        and junit_data.get('skips') == 0)
++                    data['behavior_checks_passed'] = False
++                    data['behavior_candidate_pass'] = False
++                    data['whole_B_accepted'] = False
++                    data['formal_accepted'] = False
++                    close_diagnostic_logs(errors)
++                    data['diagnostic_index_final'] = diagnostic_index(out, phase='FINAL_PARENT_LOGS_CLOSED')
++                    data['artifact_retention_complete'] &= data['diagnostic_index_final']['complete'] and not errors
++                    data['deadline_events'] = list(_DEADLINE_EVENTS)
++                    data['trigger_events'] = list(_TRIGGER_EVENTS)
++                    data['primary_trigger'] = _TRIGGER_EVENTS[0] if _TRIGGER_EVENTS else None
++                    data['diagnostic_observation_acceptance'] = 'ROOT_INDEPENDENT_REVIEW_REQUIRED'
++                    data['normal_completed_test_and_capture'] = bool(data['artifact_retention_complete']
++                        and data['required_evidence_complete'] and data['test_observed_pass']
++                        and data['diagnostic_index_final']['complete']
++                        and data['diagnostic_index_final']['all_expected_files_present']
++                        and not data['timed_out'] and not data['output_limited'] and not data['storage_limited']
++                        and not data.get('native_sampling_invalid') and not signals and not errors)
+                     data["capture_elapsed_seconds_before_final_write"] = time.monotonic() - capture_start
+                     data["elapsed_seconds"] = time.monotonic() - overall_start
+-                    missing = {"command_id": "R350:" + key, "artifacts": {}, "errors": list(errors),
++                    missing = {"command_id": "R354:" + key, "artifacts": {}, "errors": list(errors),
+                                "chronology": "PRECOMMIT_OBSERVATION_NOT_REWRITTEN_AFTER_COMPLETION",
+                                "source_before_accepted": source_before["accepted"], "ROOT_accepted": False}
+                     names = ("invocation.json", "author-consumed.json", "author-spent.json", "source-before.json",
+@@ -1067,29 +1768,37 @@
+                                                          else "invalid", "error": error_record(name, error)}
+                     missing["artifacts"]["completion.json"] = {"status": "NOT_YET_PUBLISHED",
+                                                                "observation_phase": "PRECOMMIT"}
++                    missing["diagnostic_files"] = data["diagnostic_index_final"]["expected_files"]
+                     missing["stage_outcomes"] = {name: row["state"] for name, row in stages.items()}
+                     missing_pin = write(out / "missingness.json", missing)
+                     status_pin = write(out / "stage-status.json", {"stages": stages, "capture_seconds_bound": 240,
+                         "bookkeeping_reserve_seconds": 30, "terminal_record": "completion.json",
+                         "finalization_state": "PRECOMMIT_TERMINAL_RECORD_REQUIRED", "ROOT_acceptance_required": True})
+                     result_pin = write(out / "result.json", data)
+-                    completion = {"schema": "bigsmall.r348.terminal-completion.v1", "command_id": "R350:" + key,
++                    completion = {"schema": "bigsmall.r354.terminal-completion.v1", "command_id": "R354:" + key,
+                         "nodes": command["nodes"], "pid": data["pid"], "source_gate": data["source_gate"],
+                         "runner": pin(__file__), "result": result_pin, "missingness": missing_pin,
+                         "stage_status": status_pin, "stage_receipts": {name: pin(out / (name + ".json")) for name in STAGE_NAMES},
+                         "finalization_complete": True, "final_summary_state": "COMPLETE",
+-                        "behavior_candidate_pass": data["behavior_checks_passed"], "wrapper_exit0_required": True,
++                        "behavior_candidate_pass": False, "behavior_checks_passed": False,
++                        "test_observed_pass": data["test_observed_pass"],
++                        "normal_completed_test_and_capture": data["normal_completed_test_and_capture"],
++                        "diagnostic_only": True, "behavior_acceptance_credit": 0,
++                        "wrapper_exit0_required": COMPLETION_CONTRACT["wrapper_exit0_required"],
+                         "ROOT_accepted": False, "capture_elapsed_seconds_before_commit": time.monotonic() - capture_start}
+                     validate_completion(completion, key, command, data["source_gate"], pin(__file__))
+                     write(out / "completion.json", completion)  # Includes stable readback; last success-artifact write.
+                     completion_valid = True
+             except BaseException as error:
++                classify_exception(data, "explicit finalization", error)
+                 original = error_record("explicit finalization", error)
+                 errors.append(original)
+-                failure = {"command_id": "R350:" + key, "original_error": original,
+-                           "completion_valid": False, "ROOT_accepted": False, "no_retry": True}
++                failure = {"command_id": "R354:" + key, "original_error": original,
++                           "completion_valid": False, "ROOT_accepted": False, "no_retry": True,
++                           "deadline_events": list(_DEADLINE_EVENTS), "trigger_events": list(_TRIGGER_EVENTS),
++                           "timed_out": data["timed_out"], "behavior_candidate_pass": False}
+                 try:
+-                    with bounded(2, capture_deadline):
++                    with bounded(2, capture_deadline, origin="receipt_write", stage="finalization stderr"):
+                         remaining = memoryview(encoded(failure))
+                         while remaining:
+                             count = os.write(2, remaining)
+@@ -1098,19 +1807,19 @@
+                 except BaseException as persistence_error:
+                     failure["stderr_error"] = error_record("finalization stderr", persistence_error)
+                 try:
+-                    with bounded(2, capture_deadline):
++                    with bounded(2, capture_deadline, origin="receipt_write", stage="finalization error receipt"):
+                         write(out / "finalization-error.json", failure)
+                 except BaseException as persistence_error:
+                     errors.append(error_record("finalization error receipt", persistence_error))
+         for sig, previous in previous_signals.items():
+             signal.signal(sig, previous)
+-    return 0 if completion_valid and data["behavior_checks_passed"] and not errors and not signals else 1
++    return 0 if completion_valid and data.get("normal_completed_test_and_capture") and not errors and not signals else 1
+ 
+ 
+ def main():
+     key = sys.argv[1] if len(sys.argv) == 2 and sys.argv[1] in KEYS else "invalid-key"
+     try:
+-        require(len(sys.argv) == 2 and key in KEYS, "one literal R350 command key required")
++        require(len(sys.argv) == 2 and key in KEYS, "one literal R354 command key required")
+         return run_selected(key)
+     except BaseException as error:
+         retain_prelaunch_rejection(error, key)

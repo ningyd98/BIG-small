@@ -1,0 +1,51 @@
+[
+  {
+    "path": "SQLite success",
+    "ordering": [
+      "genuine consumed proof + exact private refs",
+      "registered writer and held job publication guard",
+      "owned job BEGIN IMMEDIATE",
+      "actual event lock",
+      "reject foreign event txn then owned actual event BEGIN IMMEDIATE",
+      "repeat selected-source checks",
+      "nonempty ordered actual job COMPLETE rows and exact stored digest/fences",
+      "each actual keyed event row equality",
+      "terminal target/job snapshot/actual file manifest/exact PENDING row",
+      "original D_app cap and immediately fresh app check",
+      "existing exact audit CAS/COMMIT while event exclusion held",
+      "owned event ROLLBACK; event lock release; TLS finally clear"
+    ]
+  },
+  {
+    "path": "Memory success",
+    "ordering": "same job transaction/real event lock sequence; current actual _local_publications JSON map queried; event_owned=false avoids SQLite attribute/transaction cleanup"
+  },
+  {
+    "path": "foreign event transaction",
+    "result": "reject with event_owned=false; never rollback/commit that foreign transaction; audit job rollback only; original terminal/PENDING unchanged"
+  },
+  {
+    "path": "job BEGIN fault",
+    "result": "connection was verified outside transaction; only the issued audit BEGIN may own a transaction; rollback if it started, preserve primary error"
+  },
+  {
+    "path": "event BEGIN/read/join/app/target/manifest/PENDING/CAS fault",
+    "result": "only owned event transaction rolled back in finally, real lock released, only audit-owned job transaction rolled back, primary error preserved; original terminal COMMIT untouched"
+  },
+  {
+    "path": "audit COMMIT fault",
+    "result": "no success/retry fabricated; rollback only if audit-owned job transaction remains; event read transaction cleanup still runs"
+  },
+  {
+    "path": "event cleanup fault after audit commit",
+    "result": "propagate cleanup failure after lock release; no terminal/job rewrite or success fabrication. Existing worker withdrawal handles the propagated failure."
+  },
+  {
+    "path": "cleanup fault during primary failure",
+    "result": "suppress only cleanup exception, preserve original failure; release actual event context; dispatcher clears private tuple on every exit"
+  },
+  {
+    "path": "FOUNDATION/legacy",
+    "result": "existing R338 gating excludes local audit; original mode/shared real COMMIT/confirm source unchanged"
+  }
+]

@@ -1,0 +1,114 @@
+--- R335/before-test.py
++++ tests/test_operational_runtime_closure.py
+@@ -5263,12 +5263,81 @@
+             "online": current_online, "route": raw, "execution_contract": execution_contract}
+ 
+ 
+-def _b_t3_supervision(runtime, data, key):
++def _b_t3_supervision(runtime, data, key, observed):
++    from decimal import Decimal
+     from cloud_edge_robot_arm.vision.supervision import SupervisionContext, SupervisionDecision
+ 
+     period, _ = runtime._runtime_option_sources()
++    configuration = _b_t2_plain(runtime._job_configuration())
++    persisted_ms = configuration["draft"]["parameter_overrides"]["supervision_period_ms"]
++    assert type(persisted_ms) in (int, float) and persisted_ms == 300
++    assert type(period) in (int, float) and period == persisted_ms / 1000 == 0.3
++    period_decimal = Decimal(str(persisted_ms)) * Decimal(1_000_000)
++    assert period_decimal.is_finite() and period_decimal > 0
++    assert period_decimal == period_decimal.to_integral_value()
++    period_ns = int(period_decimal)
++    assert period_ns == 300_000_000
+     registered = runtime.initialize_supervision(period, data["robot"])
+     assert registered.to_payload()["schema_version"] == "visual.supervision.record.local.v1"
++    assert registered.definition.to_payload()["payload"]["supervision_period_s"] == period
++    owner = runtime._operational_owner
++    assert owner is not None and owner.task_origin is not None and owner.task_origin_token is not None
++    matches = [(clock, counter) for clock, counter, domain_kind in observed.clocks
++               if clock is owner._clock and domain_kind == "D_app"]
++    assert len(matches) == 1
++    clock, counter = matches[0]
++    owner_thread, owner_native_thread = threading.get_ident(), threading.get_native_id()
++    assert owner_thread == clock.domain.owner_thread_id == owner._startup.thread_id
++    assert owner_native_thread == clock.domain.owner_native_thread_id
++    origin, origin_token, domain = owner.task_origin, owner.task_origin_token, clock.domain
++    origin_snapshot = _b_t2_plain(origin)
++    token_snapshot = _b_t2_plain(origin_token)
++    original_time = copy.deepcopy(runtime.bootstrap.to_payload()["original_time"])
++    hard_bounds = [{"source_id": hard.source_id, "deadline_ns": hard.deadline.deadline_ns,
++                    "budget_ns": hard.deadline.budget_ns, "origin": _b_t2_plain(hard.deadline.origin)}
++                   for hard in owner._hard]
++    assert hard_bounds and all(hard["origin"] == origin_snapshot for hard in hard_bounds)
++    budget_before = _b_t2_plain(runtime.verification_state)
++    before_counter_ns = counter.now
++    current_before = clock.read_current(after=origin_token)
++    cursor = 1
++    due_ns = origin.upper_ns + cursor * period_ns
++    target_ns = max(before_counter_ns, due_ns)
++    assert type(before_counter_ns) is int and type(target_ns) is int and 0 <= before_counter_ns <= target_ns
++    assert all(target_ns < hard["deadline_ns"] for hard in hard_bounds)
++    counter.now = target_ns
++    current_after = clock.read_current(after=origin_token)
++    after_counter_ns = counter.now
++    assert after_counter_ns == target_ns and before_counter_ns <= after_counter_ns
++    assert current_after.lower_ns >= due_ns
++    assert all(current_after.upper_ns < hard["deadline_ns"] for hard in hard_bounds)
++    assert clock.domain == domain and owner.task_origin is origin and owner.task_origin_token is origin_token
++    assert _b_t2_plain(owner.task_origin) == origin_snapshot
++    assert _b_t2_plain(owner.task_origin_token) == token_snapshot
++    assert runtime.bootstrap.to_payload()["original_time"] == original_time
++    assert [{"source_id": hard.source_id, "deadline_ns": hard.deadline.deadline_ns,
++             "budget_ns": hard.deadline.budget_ns, "origin": _b_t2_plain(hard.deadline.origin)}
++            for hard in owner._hard] == hard_bounds
++    assert _b_t2_plain(runtime._job_configuration()) == configuration
++    assert _b_t2_plain(runtime.verification_state) == budget_before
++    runtime.check_active(data["robot"])
++    cadence = {
++        "period_source": {"database_path": str(runtime.source.job_repository.database_path),
++                          "job_id": runtime.source.job_id,
++                          "key": "draft.parameter_overrides.supervision_period_ms",
++                          "persisted_ms": persisted_ms},
++        "job_configuration": configuration, "configuration_sha256": _b_t2_digest(configuration),
++        "frozen_configuration_hash": runtime._frozen_job_configuration_hash,
++        "period_s": period, "period_ns": period_ns, "cursor": cursor, "due_ns": due_ns,
++        "before_counter_ns": before_counter_ns, "after_counter_ns": after_counter_ns,
++        "current_before": _b_t2_plain(current_before), "current_after": _b_t2_plain(current_after),
++        "app_domain": _b_t2_plain(domain), "original_task_origin": origin_snapshot,
++        "original_task_token": token_snapshot, "original_time": original_time,
++        "hard_bounds": hard_bounds, "budget_before_reservation": budget_before,
++        "owner_thread_id": owner_thread, "owner_native_thread_id": owner_native_thread,
++        "source_operations": {"new_origins": 0, "renewals": 0, "extra_polls": 0,
++                              "interpretation": "source-reviewed helper operations; not OS instrumentation"},
++    }
+     claim = runtime.reserve_supervision_capture(1, data["robot"])
+     observation = _b_t3_frame(runtime, key + ":supervision")
+     context = SupervisionContext(
+@@ -5287,8 +5356,10 @@
+     completed = runtime.complete_supervision_plan(frame, decision, data["robot"])
+     raw = completed.to_payload()
+     assert raw["payload"]["supervisor_calls_reserved"] == 1
++    assert raw["payload"]["captures_reserved"] == raw["payload"]["last_capture_cursor"] == 1
+     assert raw["original_time"] == data["original"].local_time.to_payload()
+-    return {"record": raw, "context": context, "decision": decision, "frame": frame}
++    return {"record": raw, "context": context, "decision": decision, "frame": frame,
++            "cadence": cadence}
+ 
+ 
+ def _b_t3_service(scoped, worker, repo, recovery_records):
+@@ -5563,7 +5634,7 @@
+                         initial = runtime.bootstrap.to_payload()
+                         cap = runtime.remaining_app_seconds()
+                         data = _b_t3_ground_and_route(runtime, events, backend + str(days))
+-                        supervisor = _b_t3_supervision(runtime, data, backend + str(days))
++                        supervisor = _b_t3_supervision(runtime, data, backend + str(days), observed)
+                         reference = windows._reference_for_observation(data["observation"], "condition")
+                         assert windows._check_reference(reference).status == "VALID"
+                         assert windows._check_observation(data["observation"], "condition", reference=reference) is True
+@@ -5592,6 +5663,7 @@
+                         return {"utc_shift_days": days, "original_time": initial["original_time"],
+                                 "cap_before": cap, "cap_after": following,
+                                 "route": data["route"], "supervision": supervisor["record"],
++                                "supervision_cadence": supervisor["cadence"],
+                                 "adapter_reference": reference, "external": _b_t3_external_utc(
+                                     data["observation"], data["contract"], basis + timedelta(days=days)),
+                                 "execution_B_check_active_called": True,

@@ -885,6 +885,42 @@ def validate_initial_supervision(
     return True
 
 
+def derive_local_supervision(record, request, decision, transaction):
+    """Replay the original local ledger with actual coordinator-supplied authority."""
+    from cloud_edge_robot_arm.vision.local_temporal import (
+        LocalEnvelope, _copy, _hash, _history_state_hash, _initial_history_state,
+        _replay_supervision, semantic_projection,
+    )
+
+    raw = LocalEnvelope.from_payload(record.to_payload()).to_payload()
+    source = LocalEnvelope.from_payload(request.to_payload()).to_payload()
+    body, original = raw["payload"], raw["original_time"]
+    target = source["payload"]
+    if (source["original_time"] != original or target["expected_revision"] != record.revision
+            or target["definition_hash"] != _hash(body["definition"])
+            or target["expected_record_hash"] != _history_state_hash(raw["schema_version"], body, original)):
+        raise ValueError("supervision exact original/CAS source differs")
+    operation = _hash({"schema_version": "visual.local-history-operation.v1",
+                       "request": semantic_projection(source)})
+    if decision["operation_sha256"] != operation or transaction["operation_sha256"] != operation:
+        raise ValueError("supervision current decision operation differs")
+    state = _initial_history_state(body["definition"], original, bootstrap=False)
+    phases = {}
+    for event in body["history"]:
+        _replay_supervision(state, event["request"], original, event["decision"], phases)
+        state["revision"] += 1
+        state["history"].append(_copy(event))
+    _replay_supervision(state, source, original, decision, phases)
+    state["revision"] += 1
+    result_hash = _history_state_hash(raw["schema_version"], state, original)
+    transaction["event_record_hash"] = result_hash
+    state["history"].append({"request": source, "decision": _copy(decision),
+                             "transaction": _copy(transaction), "resulting_record_hash": result_hash})
+    result = VisualSupervisionRecord.from_payload({**raw, "payload": state,
+        "decision": decision, "transaction": transaction, "diagnostics": {"utc": {}, "monotonic": None}})
+    return VisualSupervisionTransitionResult(result, _claim_key(target), "NEW_COMMIT")
+
+
 def derive_supervision(
     record: VisualSupervisionRecord,
     request: VisualSupervisionTransitionInput,

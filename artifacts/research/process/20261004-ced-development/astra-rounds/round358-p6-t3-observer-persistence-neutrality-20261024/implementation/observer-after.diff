@@ -1,0 +1,302 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round358-p6-t3-observer-persistence-neutrality-20261024/observer-before.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round354-p6-t3-live-noncompletion-evidence-20261024/implementation/r354_live_observer.py
+@@ -192,10 +192,12 @@
+ class _SignalControl:
+     """R356 conditional controlled-child contract; never native-pointer proof."""
+ 
+-    def __init__(self, directory, plugin_pin, gate_pin):
++    def __init__(self, directory, plugin_pin, gate_pin, fault_callback):
+         self.directory = directory
+         self.plugin_pin = plugin_pin
+         self.gate_pin = gate_pin
++        self.fault_callback = fault_callback
++        self.telemetry_failed = False
+         self.pid = os.getpid()
+         self.epoch = str(self.pid) + ':' + str(time.monotonic_ns())
+         self.starttime = None
+@@ -227,13 +229,26 @@
+         self._need(time.monotonic() < deadline, 'R356 original0.1s guard deadline exceeded')
+ 
+     def _log(self, kind, data):
+-        raw = (json.dumps({'schema': 'bigsmall.r356.signal-ownership.v1', 'kind': kind,
+-                           'command_id': COMMAND, 'pid': self.pid, 'epoch': self.epoch,
+-                           'monotonic': time.monotonic(), **data},
+-                          ensure_ascii=True, allow_nan=False, separators=(',', ':')) + '\n').encode('ascii')
+-        self._need(len(raw) <= 8192 and os.fstat(self.log_fd).st_size + len(raw) <= 65536,
+-                   'R356 ownership log64KiB bound')
+-        _write_all(self.log_fd, raw)
++        # Optional telemetry only; critical _state/READY persistence still throws.
++        if self.telemetry_failed:
++            return False
++        try:
++            raw = (json.dumps({'schema': 'bigsmall.r356.signal-ownership.v1', 'kind': kind,
++                               'command_id': COMMAND, 'pid': self.pid, 'epoch': self.epoch,
++                               'monotonic': time.monotonic(), **data},
++                              ensure_ascii=True, allow_nan=False, separators=(',', ':')) + '\n').encode('ascii')
++            self._need(len(raw) <= 8192 and os.fstat(self.log_fd).st_size + len(raw) <= 65536,
++                       'R356 ownership log64KiB bound')
++            _write_all(self.log_fd, raw)
++            return True
++        except BaseException as error:
++            self.telemetry_failed = True
++            try:
++                self.fault_callback('native_optional_log', error, persistence=True)
++            except BaseException:
++                # No recursive logging or replacement of an actual native guard.
++                _stderr_fault('native_optional_log_fallback', 'UNKNOWN')
++            return False
+ 
+     def _snapshot(self, phase, deadline):
+         self.read_counts[phase] += 1
+@@ -499,6 +514,9 @@
+         self.enabled = False
+         self.closed = False
+         self.invalid = False
++        self.persistence_failed = False
++        self.fault_channels = set()
++        self.owner_receipt_unknown_after_persistence = False
+         self.saturation = None
+         self.faults = []
+         self.seq = 0
+@@ -556,28 +574,45 @@
+         return total
+ 
+     def _append(self, kind, data, *, emergency=False):
+-        self.seq += 1
+-        raw = (json.dumps({'schema': 'bigsmall.r354.profile.v1', 'sequence': self.seq,
+-                           'command_id': COMMAND, 'kind': kind, **data},
+-                          ensure_ascii=True, allow_nan=False, separators=(',', ':')) + '\n').encode('ascii')
+-        if len(raw) > 65536:
+-            raise ValueError('observer individual record bound')
+-        if not emergency and self._combined_jsonl_bytes() + len(raw) > MAX_JSONL_BYTES - MARKER_HEADROOM:
+-            self._stop('diagnostic_jsonl_saturation')
++        if self.persistence_failed:
+             return False
+-        self.write_lock.acquire()
+-        try:
+-            _write_all(self.fd, raw)
+-        finally:
+-            self.write_lock.release()
+-        return True
+-
+-    def _fault(self, stage, error):
+-        self.invalid = True
+-        self.enabled = False
+-        if len(self.faults) < 16:
+-            self.faults.append({'stage': stage, 'error_type': type(error).__name__})
+-        _stderr_fault(stage, type(error).__name__)
++        try:
++            self.seq += 1
++            raw = (json.dumps({'schema': 'bigsmall.r354.profile.v1', 'sequence': self.seq,
++                               'command_id': COMMAND, 'kind': kind, **data},
++                              ensure_ascii=True, allow_nan=False, separators=(',', ':')) + '\n').encode('ascii')
++            if len(raw) > 65536:
++                raise ValueError('observer individual record bound')
++            if not emergency and self._combined_jsonl_bytes() + len(raw) > MAX_JSONL_BYTES - MARKER_HEADROOM:
++                self._stop('diagnostic_jsonl_saturation')
++                return False
++            self.write_lock.acquire()
++            try:
++                _write_all(self.fd, raw)
++            finally:
++                self.write_lock.release()
++            return True
++        except BaseException as error:
++            self._fault('profile_optional_log', error, persistence=True)
++            return False
++
++    def _fault(self, stage, error, *, persistence=False):
++        # At most16 primitive receipts and one bounded stderr attempt per channel.
++        # Never detach stable hooks or recursively invoke optional persistence.
++        try:
++            self.invalid = True
++            self.enabled = False
++            if persistence:
++                self.persistence_failed = True
++            if stage not in self.fault_channels and len(self.fault_channels) < 16:
++                self.fault_channels.add(stage)
++                if len(self.faults) < 16:
++                    self.faults.append({'stage': stage, 'error_type': type(error).__name__,
++                                        'persistence_failure': persistence})
++                _stderr_fault(stage, type(error).__name__)
++        except BaseException:
++            # Even a failed stderr/memory report must not reach the application.
++            pass
+ 
+     def _disable_current_and_future(self):
+         # R357: called only by outer plugin finalization after item/resource
+@@ -858,21 +893,23 @@
+     def end_exercise_unobserved(self, epoch, unwinding):
+         """Original4133 clears delegation; do not invent its missing return."""
+         ended = 0
+-        with self.lock:
+-            for entries in self.active.values():
+-                for frame_id, entry in list(entries.items()):
+-                    if entry['target_id'] == 0 and entry['bridge_epoch'] == epoch:
+-                        entries.pop(frame_id)
+-                        self.aggregates[0]['ended_unobserved_calls'] += 1
+-                        ended += 1
+-            self._append('bridge_exit', {
+-                'bridge_epoch': epoch, 'monotonic_ns': time.monotonic_ns(),
+-                'process_time_ns': time.process_time_ns(), 'thread_time_ns': time.thread_time_ns(),
+-                'original_outcome': 'UNWIND' if unwinding else 'RETURNED_TO_ADAPTER',
+-                'original_return_event': 'UNOBSERVED', 'ended_unobserved_calls': ended,
+-                'cleanup_tail_coverage': 'UNKNOWN_AFTER_ORIGINAL_EARLY_SEAM_CLEAR',
+-                'measured_target': False, 'successful_assertions_inferred': False,
+-            })
++        try:
++            with self.lock:
++                for entries in self.active.values():
++                    for frame_id, entry in list(entries.items()):
++                        if entry['target_id'] == 0 and entry['bridge_epoch'] == epoch:
++                            entries.pop(frame_id)
++                            self.aggregates[0]['ended_unobserved_calls'] += 1
++                            ended += 1
++                self._append('bridge_exit', {
++                    'bridge_epoch': epoch, 'monotonic_ns': time.monotonic_ns(),
++                    'process_time_ns': time.process_time_ns(), 'thread_time_ns': time.thread_time_ns(),
++                    'original_outcome': 'UNWIND' if unwinding else 'RETURNED_TO_ADAPTER',
++                    'original_return_event': 'UNOBSERVED', 'ended_unobserved_calls': ended,
++                    'cleanup_tail_coverage': 'UNKNOWN_AFTER_ORIGINAL_EARLY_SEAM_CLEAR',
++                    'measured_target': False, 'successful_assertions_inferred': False,
++                })
++        finally:
+             self.active_bridge_epoch = None
+ 
+ 
+@@ -933,11 +970,20 @@
+              and accepted['source_gate'] == gate_pin,
+              'R354 actual observer/gate lacks exact new ROOT acceptance')
+     for field in ('baseline_clarification', 'native_signal_clarification', 'native_signal_acceptance',
+-                  'profiler_coexistence_clarification', 'profiler_coexistence_acceptance'):
++                  'profiler_coexistence_clarification', 'profiler_coexistence_acceptance',
++                  'observer_persistence_clarification', 'observer_persistence_acceptance'):
+         reference = gate[field]
+         _require(accepted[field] == reference
+                  and _pin_bytes(Path(reference['path']), _regular_bytes(Path(reference['path']), 2 * 1024 * 1024)) == reference,
+                  'R354 effective clarification/acceptance differs: ' + field)
++    persistence_plan = gate['observer_persistence_clarification']
++    persistence_acceptance, _ = _json_artifact(Path(gate['observer_persistence_acceptance']['path']))
++    _require(persistence_plan['sha256'] == 'e22f3e8c33ce95f73a648f2363a22ec00ea578bd08080a681da6a60f04afc0db'
++             and persistence_acceptance['round'] == 'R358'
++             and persistence_acceptance['actor'] == '/root' and persistence_acceptance['reviewed'] is True
++             and persistence_acceptance['plan'] == persistence_plan
++             and persistence_acceptance['observer'] == plugin_pin,
++             'R358 actual successor source acceptance required')
+     command = plan['commands']['live_utc_01']
+     _require(gate['commands'] == plan['commands'] and command['nodes'] == [NODE]
+              and command['output'] == str(DIRECTORY.parent)
+@@ -1000,6 +1046,7 @@
+     profiler.resource_profile_code = nested[0]
+ 
+     def adapter(monkeypatch, directory, backend, observed, callback):
++        # Pure ownership guards remain rejecting, independent of optional I/O.
+         try:
+             profiler.bridge_ordinal += 1
+             _require(profiler.bridge_ordinal <= 3, 'R357 at most three original scenario calls')
+@@ -1012,28 +1059,34 @@
+                      and type(observed) is types.SimpleNamespace,
+                      'R357 actual resource closure state must be passed observed identity')
+             owner = profiler.resource_owner_receipt
+-            _require(owner is not None and owner['both_previous_hooks_owned'] is True
+-                     and owner['state_id'] == id(observed),
+-                     'R357 actual previous outer diagnostic hook ownership UNKNOWN/foreign')
++            if owner is not None:
++                _require(owner['both_previous_hooks_owned'] is True and owner['state_id'] == id(observed),
++                         'R357 actual previous outer diagnostic hooks foreign/wrong state')
++            else:
++                _require(profiler.persistence_failed and not profiler.enabled,
++                         'R357 actual previous outer diagnostic hook ownership UNKNOWN')
++                profiler.owner_receipt_unknown_after_persistence = True
+             _require(observed.__dict__.get('wait_observer') is None,
+                      'R357 foreign wait_observer callback cannot be replaced')
+-            epoch = 'bridge:' + str(profiler.bridge_ordinal)
+-            profiler.active_bridge_epoch = epoch
+-            profiler._append('bridge_entry', {
+-                'bridge_epoch': epoch, 'scenario_ordinal': profiler.bridge_ordinal,
+-                'monotonic_ns': time.monotonic_ns(), 'process_time_ns': time.process_time_ns(),
+-                'thread_time_ns': time.thread_time_ns(), 'thread_id': threading.get_ident(),
+-                'native_thread_id': threading.get_native_id(), 'resource_profile_id': id(current),
+-                'state_id': id(observed), 'delegate_attached': profiler.enabled,
+-                'coverage_disabled': not profiler.enabled, 'measured_target': False,
+-            })
+-            if profiler.enabled:
+-                observed.wait_observer = profiler.delegate
+         except BaseException as error:
+             profiler._fault('bridge_setup', error)
+             raise
+-        try:
+-            # Exactly one original call with all five object identities intact.
++        epoch = 'bridge:' + str(profiler.bridge_ordinal)
++        entry_written = profiler._append('bridge_entry', {
++            'bridge_epoch': epoch, 'scenario_ordinal': profiler.bridge_ordinal,
++            'monotonic_ns': time.monotonic_ns(), 'process_time_ns': time.process_time_ns(),
++            'thread_time_ns': time.thread_time_ns(), 'thread_id': threading.get_ident(),
++            'native_thread_id': threading.get_native_id(), 'resource_profile_id': id(current),
++            'state_id': id(observed), 'delegate_attached': profiler.enabled and owner is not None,
++            'owner_receipt': 'AUTHENTICATED' if owner is not None else 'UNKNOWN_AFTER_PERSISTENCE_FAILURE',
++            'coverage_disabled': not profiler.enabled, 'measured_target': False,
++        })
++        bookkeeping_open = entry_written and profiler.enabled and owner is not None
++        if bookkeeping_open:
++            profiler.active_bridge_epoch = epoch
++            observed.wait_observer = profiler.delegate
++        try:
++            # Exactly one original call, outside observer-catching guards.
+             return original(monkeypatch, directory, backend, observed, callback)
+         finally:
+             unwinding = sys.exc_info()[0] is not None
+@@ -1043,10 +1096,13 @@
+                     observed.wait_observer = None
+                 elif seam is not None:
+                     profiler._fault('bridge_foreign_seam', RuntimeError('foreign callback preserved'))
+-                profiler.end_exercise_unobserved(epoch, unwinding)
++                if bookkeeping_open:
++                    profiler.end_exercise_unobserved(epoch, unwinding)
+             except BaseException as error:
+-                # Never mask the original result or original exception.
++                # Never mask the exact original result/exception.
+                 profiler._fault('bridge_finally', error)
++            finally:
++                profiler.active_bridge_epoch = None
+ 
+     return module, original, adapter
+ 
+@@ -1059,7 +1115,7 @@
+     _require(_STATE is None, 'R354 observer session starts once only')
+     gate, gate_pin, plugin_pin, directory_identity = _startup_contract()
+     profiler = _Profiler(DIRECTORY, directory_identity)
+-    native = _SignalControl(DIRECTORY, plugin_pin, gate_pin)
++    native = _SignalControl(DIRECTORY, plugin_pin, gate_pin, profiler._fault)
+     _STATE = {'profiler': profiler, 'native': native, 'status_attempted': False,
+               'gate': gate_pin, 'observer': plugin_pin, 'selection_verified': False}
+     native.start()  # Must precede profiles; no behavior before READY.
+@@ -1072,7 +1128,7 @@
+         'coverage': 'main and future Python threads only; native tasks are not Python-profile coverage',
+         'resource_delegate_mode': 'R357 authenticated fixture seam',
+         'observer_CPU_is_lower_bound': True, 'baseline_performance_comparison_valid': False})
+-    profiler.enabled = True
++    profiler.enabled = not profiler.persistence_failed and not profiler.invalid and profiler.saturation is None
+     threading.setprofile(profiler.callback)
+     sys.setprofile(profiler.callback)
+ 
+@@ -1126,6 +1182,10 @@
+                   'pid': os.getpid(), 'observer': _STATE['observer'], 'source_gate': _STATE['gate'],
+                   'selection_verified': _STATE['selection_verified'],
+                   'observation_invalid': profiler.invalid, 'saturation': profiler.saturation,
++                  'persistence_failed': profiler.persistence_failed,
++                  'native_telemetry_failed': native.telemetry_failed,
++                  'coverage_after_disable': 'UNKNOWN',
++                  'owner_receipt_unknown_after_persistence': profiler.owner_receipt_unknown_after_persistence,
+                   'faults': profiler.faults, 'profile_restoration': profiler.profile_restoration,
+                   'binding_restoration': profiler.binding_restoration,
+                   'bridge_calls': profiler.bridge_ordinal,
+@@ -1146,7 +1206,7 @@
+         finally:
+             os.close(descriptor)
+     except BaseException as error:
+-        _stderr_fault('observer_status', type(error).__name__)
++        profiler._fault('observer_status', error, persistence=True)
+ 
+ 
+ @pytest.hookimpl(trylast=True)

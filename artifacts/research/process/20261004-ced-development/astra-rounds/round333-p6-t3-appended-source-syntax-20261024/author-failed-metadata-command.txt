@@ -1,0 +1,75 @@
+python3 - <<'PY'
+import ast, builtins, difflib, hashlib, json, symtable
+from pathlib import Path
+root=Path('/home/ningyd/文档/ChatGPT/BIGsmall'); d=root/'artifacts/research/process/20261004-ced-development/astra-rounds/round331-p6-t3-continuation-20261024'; impl=d/'implementation'
+plan=json.loads((d/'plan.json').read_text()); test=root/'tests/test_operational_runtime_closure.py'; before=(impl/'before/tests/test_operational_runtime_closure.py').read_bytes(); current=test.read_bytes()
+assert current.startswith(before); text=current.decode(); parsed=ast.parse(text)
+oldtree=ast.parse(before); oldnames={n.name for n in oldtree.body if isinstance(n,(ast.FunctionDef,ast.ClassDef))}
+newdefs=[n for n in parsed.body if isinstance(n,ast.FunctionDef) and n.name not in oldnames]
+expected={row['name'] for row in plan['test_contracts']};actual={n.name for n in newdefs if n.name.startswith('test_')}; assert actual==expected
+nodeids=[];testrows=[]
+for n in newdefs:
+ if n.name.startswith('test_'):
+  assert len(n.decorator_list)==1
+  dec=n.decorator_list[0]; assert isinstance(dec,ast.Call) and isinstance(dec.func,ast.Attribute) and dec.func.attr=='parametrize'
+  variants=ast.literal_eval(dec.args[1]); assert len(variants)==(3 if n.name.endswith('_fault') else 2)
+  nodeids += ['tests/test_operational_runtime_closure.py::'+n.name+'['+v+']' for v in variants]
+  testrows.append({'function':n.name,'line':n.lineno,'end_line':n.end_lineno,'parameter':ast.literal_eval(dec.args[0]),'variants':variants,'guard':'_b_t3_api(public=True)' if 'publication' in n.name else '_b_t3_api()'})
+assert nodeids==plan['commands']['t3_red']['nodes']==plan['commands']['t3_green']['nodes']
+(impl/'appended-tests.diff').write_text(''.join(difflib.unified_diff(before.decode().splitlines(keepends=True),text.splitlines(keepends=True),fromfile='before/tests/test_operational_runtime_closure.py',tofile='tests/test_operational_runtime_closure.py')))
+def pin(p):
+ raw=p.read_bytes();return {'path':str(p),'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+def emit(name,data): (impl/name).write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n')
+helpers=[]
+for n in newdefs:
+ raw=ast.get_source_segment(text,n).encode();helpers.append({'name':n.name,'line':n.lineno,'end_line':n.end_lineno,'source_sha256':hashlib.sha256(raw).hexdigest()})
+emit('node-assertion-map.json',{'round':'R331','runtime_executed':False,'nodes':[{**row,'case_file':{'test_private_startup_to_transaction_grounding':'startup-grounding.json','test_local_new_schema_ignores_utc_jump_but_external_does_not':'utc-provenance.json','test_b_terminal_publication_confirmation_fault':'terminal-confirmation.json','test_b_public_confirmed_publication_control':'public-confirmed-control.json'}[row['name']]} for row in plan['test_contracts']],'test_definitions':testrows,'new_definitions':helpers,'actual_expected_nodes':nodeids,'max_lifecycles':15,'planned_lifecycles':13,'new_nodes':9})
+emit('fixture-resource-map.json',{'round':'R331','source_only':True,'protected_helpers_reused_unchanged':['_b_t2_attempt','_b_t2_observe','_b_t2_exercise','_b_t2_adopt_writer_task','_b_t2_plain','_b_t2_snapshot','_b_t2_retained_spend'],'factory':{'file':str(root/'tests/test_visual_worker_factory.py'),'function':'software_factory','return_values':['repo','job','worker','calls','received','backend','event_repository'],'genuine_runtime':'received[0][3].worker_runtime inside actual during_episode callback'},'constructor_map':[{'class':'SimulationRuntimeService','source':'simulation_runtime/service.py:64','required_kwargs':['artifact_root','database_path','event_stream'],'creates':['real SQLiteSimulationJobRepository on same actual job DB','real dispatcher','three real unpolled workers'],'suppression':'only same service instance dispatcher.start','recovery':'real ArtifactRecoveryService.recover_interrupted_jobs runs and is recorded only for its actual repository','cleanup':'dispatcher never starts; unpolled workers stay idle and are honestly observed by accepted observer; repository reads own closing connections'},{'class':'SimulationWorker','source':'simulation_runtime/worker.py:95','owned_by':'protected software_factory','actual_poll_lifecycles_per_node':{'startup':1,'utc':3,'terminal':1,'public':1}},{'class':'event_repository','backends':['Memory','SQLite'],'cleanup':'factory SQLite closes before Memory replacement, current repository closes finally'},{'class':'independent_SQL_readers','connections':'job plus event for sqlite variant','ordering':'constructed before poll and any tested locks','cleanup':'close finally'},{'class':'OperationalLeaseSession/OC1/broker/heartbeat','creation':'actual poll/startup only','cleanup':'real worker finally plus residual session closure; clocks close on owner thread; accepted observer records actual outcomes'}],'observer_namespace_fields':['value','fault','clocks','objects','release_events','workers','sessions','wait_observer','add'],'resource_schema':'bigsmall.r158-t2-resource.v1','environment_sink':'BIGSMALL_R158_T2_RESOURCE_DIR','CPU_success_seam':{'only_six_fields':['success','status','online_reported_complete','physical_success','failure_reason','terminal_reason'],'original_protected_episode_called':True,'quantities_actions_model_calls':'original zero values asserted unchanged','no_forced_sql_broker_outcome':True},'fault_seams':{'commit_close':'wrap actual observed SQLite subclass execute, execute genuine COMMIT first, inspect independent durable terminal row, close same connection and retain real ProgrammingError','confirm_timeout':'hold real broker final confirm request; release on real RPC wait-cap invalidation; call real _decide and retain denial','prior_bound':'on exact final confirm consume, broker owner thread advances actual D_lease raw counter to original previous segment hard-open deadline before real _decide'},'public_negative_controls':['immutable summary/detached paths','unregistered finalizer replay','changed/missing real result file','actual receipt attempt mismatch','missing operational receipt','legacy NOT_APPLICABLE','reopen archival confirmation without live authority'],'execution_scope':'Existing _VisualEpisode.check_active method only, isolated method harness with actual runtime; no episode constructor/backend/skills/model/physics; PRE_SAFETY/PRE_SKILL native mechanics remain source-review boundaries','unknown_measurements':['OS_handles','network_calls','GPU_native','external_models']})
+migration=[]
+coverage={row['name']:[x['nodeid'] for x in plan['test_contracts'] if x['name']==row['name']] for row in plan['test_contracts']}
+for row in plan['migration_targets']:
+ files=row['file'].split(',')
+ for relative in files:
+  source=root/'src/cloud_edge_robot_arm'/relative
+  if source.is_file():
+   source_text=source.read_text(); st=ast.parse(source_text)
+   definitions=[{'name':n.name,'line':n.lineno,'end_line':n.end_lineno} for n in ast.walk(st) if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))]
+   pinrow=pin(source)
+  else:definitions=[];pinrow=None
+  migration.append({**row,'current_source':pinrow,'current_definitions':definitions,'preparation_disposition':'UNCHANGED inherited T1/T2 target classified, no reimplementation' if row['task'] in {'T2','T1/T2','READONLY','C_ONLY_READONLY'} else 'T3 integration seam, product edits HELD pending legal RED','coverage_families':list(coverage) if row['task'] not in {'READONLY','C_ONLY_READONLY'} else [],'current_generation_behavior_claim':False})
+emit('migration-map.json',{'round':'R331','source_only':True,'rows':migration,'unchanged_protections':['original independent D_app/D_lease origins and hard bounds','private registration and lock order','immutable original references across heartbeat','budget CAS and retained costs','external UTC fallback/native validators','accepted T1/T2 algorithms and helper bytes'],'pending_integration':['remaining original app cap sampled on main owner thread before async dispatch','local route/grounding/supervision after-both-lock decisions','actual terminal commit/consumed confirmation/private one-use proof and manifest join','historical SQL separate from public confirmed paths/counters'],'C_native_qualified':False})
+inherit=json.loads((impl/'inherited-functions.json').read_text());oldpath=Path(inherit['source_file']);oldsrc=oldpath.read_text();newsrc=(impl/'resource-evidence-helpers.py').read_text();oldast=ast.parse(oldsrc);newast=ast.parse(newsrc)
+oldfunc={n.name:ast.get_source_segment(oldsrc,n)+'\n' for n in oldast.body if isinstance(n,ast.FunctionDef)};newfunc={n.name:ast.get_source_segment(newsrc,n)+'\n' for n in newast.body if isinstance(n,ast.FunctionDef)}
+diffs=[]
+for row in inherit['functions']:
+ assert hashlib.sha256(oldfunc[row['name']].encode()).hexdigest()==row['source_sha256']
+ assert hashlib.sha256(newfunc[row['name']].encode()).hexdigest()==row['local_sha256']
+ if not row['unchanged']:
+  diffs+=difflib.unified_diff(oldfunc[row['name']].splitlines(keepends=True),newfunc[row['name']].splitlines(keepends=True),fromfile='R319/'+row['name'],tofile='R331/'+row['name'])
+(impl/'inherited-helper-adaptations.diff').write_text(''.join(diffs))
+syntax=[]
+for p in (test,impl/'run-evidence.py',impl/'resource-evidence-helpers.py'):
+ src=p.read_text();ast.parse(src); table=symtable.symtable(src,str(p),'exec');bindings=set(table.get_identifiers());missing=[]
+ def walk(t):
+  for s in t.get_symbols():
+   if s.is_referenced() and s.is_global() and s.get_name() not in bindings and not hasattr(builtins,s.get_name()):missing.append({'scope':t.get_name(),'name':s.get_name()})
+  for c in t.get_children():walk(c)
+ for c in table.get_children():walk(c)
+ syntax.append({'pin':pin(p),'ast_parse':True,'unresolved_global_references':missing})
+assert all(not r['unresolved_global_references'] for r in syntax)
+changed=[]
+for rel in plan['scope']['owned_paths']:
+ path=root/rel; raw=path.read_bytes();orig=(impl/'before'/rel).read_bytes()
+ if raw!=orig:changed.append(rel)
+assert changed==['tests/test_operational_runtime_closure.py']
+emit('preparation-source-proof.json',{'kind':'STDLIB_SOURCE_ONLY_NO_PRODUCT_IMPORT','old_test_prefix':{'bytes':len(before),'sha256':hashlib.sha256(before).hexdigest(),'exact_match':True},'appended_bytes':len(current)-len(before),'exact_nodes':nodeids,'changed_owned_paths':changed,'product_unchanged':True,'syntax_and_finite_symbol_closure':syntax,'helper_provenance_verified':True,'inherited_helper_diff':pin(impl/'inherited-helper-adaptations.diff'),'runtime':False,'R332_proof':pin(base) if False else pin(d.parent/'round332-p6-t3-helper-dependency-20261024/implementation/source-proof.json')})
+# Gate binds current finite255 inputs, adjusted only for the authorized appended test bytes.
+pins=json.loads((d/'input-pins.json').read_text())['files'];gatepins=[pin(Path(r['path'])) for r in pins]
+for old,new in zip(pins,gatepins):
+ if old['path']!=str(test):assert old==new,old['path']
+for file in ('run-evidence.py','resource-evidence-helpers.py','inherited-functions.json','node-assertion-map.json','fixture-resource-map.json','migration-map.json','preparation-source-proof.json','appended-tests.diff','inherited-helper-adaptations.diff','author-binding.json'):
+ gatepins.append(pin(impl/file))
+gate={'round':'R331','HEAD':plan['HEAD'],'commands':plan['commands'],'plan':pin(d/'plan.json'),'sources':{'runner':pin(impl/'run-evidence.py'),'helper':pin(impl/'resource-evidence-helpers.py'),'test':pin(test),'prerequisite_plugin':next(row for row in pins if row['path'].endswith('/r235_startup_prerequisite.py'))},'executor_binding':pin(impl/'author-binding.json'),'pins':gatepins,'status':'PREPARED_PENDING_ROOT_FULL_SOURCE_REVIEW','runtime_released':False,'expected_red_messages':['R331 planned missing remaining_app_seconds','R331 planned missing get_publication_summary'],'expected_zero_allocations_before_missing_API':True,'source_only_proof':pin(impl/'preparation-source-proof.json'),'R332_helper_disposition':'actual plan applied, pending ROOT independent acceptance','review_package':{'new_tests':pin(impl/'appended-tests.diff'),'inherited_function_provenance':pin(impl/'inherited-functions.json'),'inherited_adaptations':pin(impl/'inherited-helper-adaptations.diff')}}
+(d/'red-source-gate.json').write_text(json.dumps(gate,ensure_ascii=False,indent=2)+'\n')
+print(json.dumps({'nodes':len(nodeids),'new_definitions':len(newdefs),'changed_owned_paths':changed,'gate':pin(d/'red-source-gate.json')},ensure_ascii=False))
+PY

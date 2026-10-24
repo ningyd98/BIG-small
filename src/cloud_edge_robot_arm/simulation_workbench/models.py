@@ -265,6 +265,41 @@ class ExperimentManifest(BaseModel):
     reproducibility_hash: str
 
 
+class PublicationStatusView(BaseModel):
+    """Strict detached publication audit, separate from recorded SQL outcomes."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    schema_version: Literal["simulation.publication-status.v1"] = "simulation.publication-status.v1"
+    recorded_sql_status: str
+    confirmation_state: Literal["NOT_APPLICABLE", "PENDING", "CONFIRMED", "UNCONFIRMED", "UNKNOWN"]
+    accepted: bool = False
+    operation_id: str | None = None
+    attempt: int | None = Field(default=None, ge=0)
+    epoch: str | None = None
+    generation: int | None = Field(default=None, ge=0)
+    job_receipt_hash: str | None = None
+    event_receipt_hash: str | None = None
+    artifact_manifest_sha256: str | None = None
+    confirmed_artifact_paths: dict[str, str] = Field(default_factory=dict)
+    historical_artifact_paths: dict[str, str] = Field(default_factory=dict)
+    reasons: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def confirmation_is_separate(self) -> PublicationStatusView:
+        if (self.confirmation_state == "CONFIRMED") is not self.accepted:
+            raise ValueError("confirmed archival status and accepted flag must agree")
+        if self.accepted:
+            if (self.confirmation_state != "CONFIRMED" or not self.confirmed_artifact_paths
+                    or not self.operation_id or not self.epoch or self.attempt is None
+                    or self.generation is None or any(
+                        value is None or len(value) != 64 or any(c not in "0123456789abcdef" for c in value)
+                        for value in (self.job_receipt_hash, self.event_receipt_hash, self.artifact_manifest_sha256))):
+                raise ValueError("accepted archival publication requires complete confirmation joins")
+        elif self.confirmed_artifact_paths:
+            raise ValueError("unaccepted publication cannot expose confirmed artifact paths")
+        return self
+
+
 class BatchProgress(BaseModel):
     """批量任务进度统计，记录各状态计数和整体进度比例。"""
 
@@ -272,6 +307,8 @@ class BatchProgress(BaseModel):
     queued: int = Field(ge=0)
     running: int = Field(ge=0)
     succeeded: int = Field(ge=0)
+    confirmed_succeeded: int = Field(default=0, ge=0)
+    unconfirmed_terminal: int = Field(default=0, ge=0)
     failed: int = Field(ge=0)
     blocked: int = Field(ge=0)
     cancelled: int = Field(ge=0)
@@ -305,6 +342,7 @@ class TimelineEvent(BaseModel):
     virtual_time_ms: int = 0
     wall_time: datetime = Field(default_factory=lambda: datetime.now(UTC))
     payload: dict[str, Any] = Field(default_factory=dict)
+    historical_payload: dict[str, Any] | None = None
 
 
 class ScenarioDefinitionView(BaseModel):
@@ -410,6 +448,7 @@ class SimulationRunRecord(BaseModel):
     hardware_motion_observed: bool = False
     hardware_write_operations: list[str] = Field(default_factory=list)
     provenance: dict[str, Any] = Field(default_factory=dict)
+    publication: PublicationStatusView | None = None
 
 
 class SimulationRunListResponse(BaseModel):
@@ -422,18 +461,21 @@ class SimulationEventsResponse(BaseModel):
     """仿真事件列表响应。"""
 
     events: list[TimelineEvent]
+    publication: PublicationStatusView | None = None
 
 
 class SimulationMetricsResponse(BaseModel):
     """仿真指标列表响应。"""
 
     metrics: list[SimulationMetric]
+    publication: PublicationStatusView | None = None
 
 
 class SimulationArtifactsResponse(BaseModel):
     """仿真 artifact 路径响应，只返回相对路径。"""
 
     artifacts: dict[str, str]
+    publication: PublicationStatusView | None = None
 
 
 class ReproductionResponse(BaseModel):
@@ -457,6 +499,7 @@ class BatchRecord(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     artifact_paths: dict[str, str] = Field(default_factory=dict)
     hardware_write_operations: list[str] = Field(default_factory=list)
+    publication_state: Literal["NOT_APPLICABLE", "COMPLETE", "INCOMPLETE"] = "NOT_APPLICABLE"
 
 
 class ComparisonRequest(BaseModel):

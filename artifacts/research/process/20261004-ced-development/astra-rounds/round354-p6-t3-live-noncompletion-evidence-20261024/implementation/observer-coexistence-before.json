@@ -1,0 +1,48 @@
+{
+  "schema": "bigsmall.r357.same-author-before-segments.v1",
+  "actor": "/root/p6_t3_sol",
+  "candidate_before": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round354-p6-t3-live-noncompletion-evidence-20261024/implementation/r354_live_observer.py",
+    "bytes": 37541,
+    "sha256": "86f50ab9a2571a7058178679ffe3e9e7f89292605bf32e689e9e439904a15a74"
+  },
+  "method": "AST/source/hash only; independent native additions retained",
+  "affected_methods": [
+    {
+      "name": "profile",
+      "source": "def profile(self, frame, event, returned):\n        \"\"\"Exception-neutral callback; never returns a replacement product value.\"\"\"\n        if not self.enabled:\n            self._disable_current_and_future()\n            return\n        entered_cpu = None\n        locked = False\n        try:\n            entered_cpu = time.thread_time_ns()\n            self.callbacks += 1\n            if self.callbacks >= MAX_CALLBACKS:\n                self._stop('profile_callback_saturation')\n                return\n            if event not in ('call', 'return'):\n                return\n            # No application function/getter runs while this lock is held.\n            # Serialization/wait and I/O are instrumented-run overhead, not\n            # baseline application timing; native/parent observations persist.\n            self.lock.acquire()\n            locked = True\n            self._observe(frame, event, returned)\n        except BaseException as error:\n            self._fault('profile_callback', error)\n        finally:\n            try:\n                if entered_cpu is not None:\n                    elapsed = max(0, time.thread_time_ns() - entered_cpu)\n                    self.observer_cpu_ns += elapsed\n                    self.observer_callback_max_cpu_ns = max(self.observer_callback_max_cpu_ns, elapsed)\n                if self.enabled and self.observer_cpu_ns >= MAX_CPU_NS:\n                    self._stop('observer_cpu_saturation')\n            except BaseException as error:\n                self._fault('profile_accounting', error)\n            if locked:\n                try:\n                    self.lock.release()\n                except BaseException as error:\n                    self._fault('profile_lock_release', error)",
+      "current_sha256": "a8f1fecef340789571baf761614f7eaef6aaa6fd5973b304f24fc2c12c0a5a18",
+      "historical_sha256": "a8f1fecef340789571baf761614f7eaef6aaa6fd5973b304f24fc2c12c0a5a18",
+      "exact_match": true
+    },
+    {
+      "name": "_fault",
+      "source": "def _fault(self, stage, error):\n        self.invalid = True\n        self.enabled = False\n        if len(self.faults) < 16:\n            self.faults.append({'stage': stage, 'error_type': type(error).__name__})\n        _stderr_fault(stage, type(error).__name__)\n        self._disable_current_and_future()",
+      "current_sha256": "fb99eef39637bf1f118e3dca51310ac0499c81f3aa22b624c9ae18029e5bc8ea",
+      "historical_sha256": "fb99eef39637bf1f118e3dca51310ac0499c81f3aa22b624c9ae18029e5bc8ea",
+      "exact_match": true
+    },
+    {
+      "name": "_stop",
+      "source": "def _stop(self, reason):\n        if self.saturation is not None:\n            return\n        self.saturation = reason\n        self.enabled = False\n        try:\n            self._append('saturation', {\n                'reason': reason, 'monotonic_ns': time.monotonic_ns(),\n                'callbacks': self.callbacks, 'hotspot_events': self.hotspot_events,\n                'coarse_events': self.coarse_events,\n                'measured_observer_thread_cpu_ns': self.observer_cpu_ns,\n                'coverage_after_disable': 'UNKNOWN',\n                'native_stack_and_parent_OS_monitoring': 'NOT_DISABLED_BY_PROFILER',\n            }, emergency=True)\n        except BaseException as error:\n            self._fault('saturation_write', error)\n        self._disable_current_and_future()",
+      "current_sha256": "56e5e9f72e65fee5c11eff7b9596e8e3cf5cc1ee3d4805653c42ea5c430de271",
+      "historical_sha256": "56e5e9f72e65fee5c11eff7b9596e8e3cf5cc1ee3d4805653c42ea5c430de271",
+      "exact_match": true
+    },
+    {
+      "name": "_disable_current_and_future",
+      "source": "def _disable_current_and_future(self):\n        # Other already-profiled threads detach themselves on their next event.\n        # Threads without a later callback have no observed restore receipt.\n        try:\n            if sys.getprofile() is self.callback:\n                sys.setprofile(self.previous_sys_profile)\n            if threading.getprofile() is self.callback:\n                threading.setprofile(self.previous_thread_profile)\n        except BaseException as error:\n            self.invalid = True\n            _stderr_fault('profile_disable', type(error).__name__)",
+      "current_sha256": "8d6ab8ec5b0b62bf216114a290abc7c6d14fdf202c625c6387f46eec24f9030b",
+      "historical_sha256": "8d6ab8ec5b0b62bf216114a290abc7c6d14fdf202c625c6387f46eec24f9030b",
+      "exact_match": true
+    },
+    {
+      "name": "finish",
+      "source": "def finish(self):\n        \"\"\"Idempotent profile-only finish; native ownership remains separate.\"\"\"\n        if self.closed:\n            return\n        self.enabled = False\n        self._disable_current_and_future()\n        try:\n            self._checkpoint(time.monotonic_ns(), final=True)\n            os.fsync(self.fd)\n        except BaseException as error:\n            self._fault('profile_finish', error)\n        finally:\n            try:\n                os.close(self.fd)\n            except BaseException as error:\n                self._fault('profile_close', error)\n            self.closed = True",
+      "current_sha256": "404aed9007aa7c1fb42b6a01fdf4bd354a5b1eaf5c368d44e08bf627abd57c0e",
+      "historical_sha256": "404aed9007aa7c1fb42b6a01fdf4bd354a5b1eaf5c368d44e08bf627abd57c0e",
+      "exact_match": true
+    }
+  ],
+  "unexplained_overlap": false
+}

@@ -1,0 +1,42 @@
+--- R319/diagnostic_resources
++++ R331/diagnostic_resources
+@@ -10,6 +10,10 @@
+         "test_original_budget_debit_not_refilled_by_retry": 2,
+         "test_b_local_writer_requires_private_scope": 2,
+         "test_real_session_constructor_completion": 1,
++        "test_private_startup_to_transaction_grounding": 2,
++        "test_local_new_schema_ignores_utc_jump_but_external_does_not": 3,
++        "test_b_terminal_publication_confirmation_fault": 1,
++        "test_b_public_confirmed_publication_control": 1,
+     }
+     peak_active_polls = 0
+     paths = sorted(directory.iterdir()) if directory.is_dir() else []
+@@ -194,9 +198,9 @@
+     if any(node not in expected or count != 1 for node, count in nodes.items()):
+         errors.append({"stage": "helper map", "type": "WrongOrDuplicateNode",
+                        "message": "actual sidecar must belong uniquely to selected diagnostic node"})
+-    if counts["attempted_poll_lifecycles"] > 18 or counts["attempted_poll_lifecycles"] > 64:
++    if counts["attempted_poll_lifecycles"] > 15 or counts["attempted_poll_lifecycles"] > 64:
+         errors.append({"stage": "cap", "type": "WorkerLifecycleCap",
+-                       "message": "T2 attempted poll18/parent64 cap exceeded"})
++                       "message": "T2 attempted poll15/parent64 cap exceeded"})
+     valid = not errors
+     return {"schema_version": "bigsmall.r268.resource-observations.v1",
+             "command_id": command_id, "actual_node_attempts": len(records),
+--- R319/junit_observation
++++ R331/junit_observation
+@@ -1,4 +1,4 @@
+-def junit_observation(path, node):
++def junit_observation(path, nodes):
+     if not path.exists():
+         return {"pin": None, "available": False, "reason": "No JUnit file actually produced",
+                 "tests": None, "failures": None, "errors": None, "skips": None}
+@@ -10,7 +10,7 @@
+                      "attributes": dict(element.attrib),
+                      "outcomes": [{"tag": v.tag, "attributes": dict(v.attrib), "text": v.text}
+                                   for v in element if v.tag in {"failure", "error", "skipped"}]})
+-    require([row["nodeid"] for row in rows] == [node], "JUnit selected-node identity differs")
++    require([row["nodeid"] for row in rows] == nodes, "JUnit selected-node identity differs")
+     return {"pin": bytes_pin(path, raw), "available": True, "records": rows, "tests": len(rows),
+             "failures": sum(any(v["tag"] == "failure" for v in r["outcomes"]) for r in rows),
+             "errors": sum(any(v["tag"] == "error" for v in r["outcomes"]) for r in rows),

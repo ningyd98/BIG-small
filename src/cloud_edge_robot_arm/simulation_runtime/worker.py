@@ -462,7 +462,10 @@ class SimulationWorker:
                 RuntimeJobStatus.CANCELLED,
             }:
                 raise CancelledByOperator("cancelled during publication")
-            if (time.monotonic() - start_monotonic) >= job.timeout_seconds:
+            if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
+                from cloud_edge_robot_arm.vision.operational_windows import _owner_for_worker
+                _owner_for_worker(self)._remaining_app_seconds()
+            elif (time.monotonic() - start_monotonic) >= job.timeout_seconds:
                 raise TimedOut("original task timeout during publication")
             expected = (
                 RuntimeJobStatus.RUNNING
@@ -1033,13 +1036,12 @@ class SimulationWorker:
                 binding.root, inventory, required_paths=required_sources
             )
             # This first concrete re-read precedes all backend initialization.
-            read_visual_worker_lease(
-                job_repository,
-                job_id=job.job_id,
-                run_id=job.run_id,
-                worker_id=self.worker_id,
-                lease_id=job.lease_id,
-            )
+            if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
+                if not self._owns_artifact_publication(job_repository.get_job(job.job_id), job.lease_id):
+                    raise RuntimeError("original local startup authority unavailable")
+            else:
+                read_visual_worker_lease(job_repository, job_id=job.job_id, run_id=job.run_id,
+                                         worker_id=self.worker_id, lease_id=job.lease_id)
             binding.validate(planner)
             runtime_source = WorkerRuntimeSource(
                 job_repository=job_repository,
@@ -1063,13 +1065,12 @@ class SimulationWorker:
             self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
             if binding is not None:
                 assert source_hashes is not None
-                read_visual_worker_lease(
-                    job_repository,
-                    job_id=job.job_id,
-                    run_id=job.run_id,
-                    worker_id=self.worker_id,
-                    lease_id=job.lease_id,
-                )
+                if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
+                    if not self._owns_artifact_publication(job_repository.get_job(job.job_id), job.lease_id):
+                        raise RuntimeError("original local setup authority unavailable")
+                else:
+                    read_visual_worker_lease(job_repository, job_id=job.job_id, run_id=job.run_id,
+                                             worker_id=self.worker_id, lease_id=job.lease_id)
                 pin_worker_source_inventory(
                     binding.root, source_hashes, required_paths=required_sources
                 )
@@ -1156,9 +1157,9 @@ class SimulationWorker:
                     ExecutionPolicy(
                         instruction=draft.user_instruction,
                         model_snapshot_hash=snapshot.digest(),
-                        timeout_s=max(
-                            0.001, job.timeout_seconds - (time.monotonic() - start_monotonic)
-                        ),
+                        timeout_s=(worker_runtime.remaining_app_seconds()
+                                   if worker_runtime is not None and worker_runtime._local_mode
+                                   else max(0.001, job.timeout_seconds - (time.monotonic() - start_monotonic))),
                         cancelled=lambda: self._active_job_cancelled(job),
                         output_dir=run_dir / "visual_episode",
                         **policy_arguments,

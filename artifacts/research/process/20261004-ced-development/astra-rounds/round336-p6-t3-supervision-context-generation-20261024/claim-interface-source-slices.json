@@ -1,0 +1,46 @@
+{
+  "method": "Single source-text snapshot and AST segments; no product import. Only listed interface segments are relevant to this fixture binding.",
+  "whole_worker_file_not_a_freeze_requirement": true,
+  "segments": [
+    {
+      "qualified_name": "VisualWorkerSupervisionClaim",
+      "source_path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "line_range": [
+        253,
+        288
+      ],
+      "source_segment_sha256": "ef3bfcbe3c85973d1dff229ba2a9f4b452b075f8be1401bcaf7fb76a179280ab",
+      "source": "class VisualWorkerSupervisionClaim:\n    \"\"\"Immutable local source handle, never a native or physical action permit.\"\"\"\n\n    _json: str\n\n    def to_payload(self) -> dict[str, object]:\n        return cast(dict[str, object], json.loads(self._json))\n\n    def digest(self) -> str:\n        return digest(self.to_payload())\n\n    @property\n    def claim_id(self) -> str:\n        return cast(str, self.to_payload()[\"claim_id\"])\n\n    @property\n    def cursor(self) -> int:\n        return cast(int, self.to_payload()[\"cursor\"])\n\n    @property\n    def step_id(self) -> str:\n        return cast(str, self.to_payload()[\"step_id\"])\n\n    @property\n    def publication_hash(self) -> str:\n        return self.publication.digest()\n\n    @property\n    def publication(self) -> VisualOwnerPublicationRecord:\n        return VisualOwnerPublicationRecord.from_payload(\n            cast(dict, self.to_payload()[\"publication\"])\n        )\n\n    @property\n    def original(self) -> VisualOriginalPlan:\n        return original_from_payload(cast(dict, self.to_payload()[\"original\"]))"
+    },
+    {
+      "qualified_name": "VisualWorkerRuntime.supervision_source_publication",
+      "source_path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "line_range": [
+        1295,
+        1302
+      ],
+      "source_segment_sha256": "757114795c6e53be1670c6583dd19bc7b3c52dafce09d2bf6dbd595f5f528994",
+      "source": "def supervision_source_publication(self) -> VisualOwnerPublicationRecord:\n        \"\"\"Coherent observer/budget source, never current grounding action validity.\"\"\"\n        source = self.source.event_repository.get_visual_supervision_source_publication(\n            self.episode_id\n        )\n        if source is None:\n            raise RuntimeError(\"coherent current observer source publication unavailable\")\n        return source"
+    },
+    {
+      "qualified_name": "VisualWorkerRuntime._supervision_transition",
+      "source_path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "line_range": [
+        1476,
+        1529
+      ],
+      "source_segment_sha256": "949ea6b669bbe74cd7b958cef40fa23ff535522a9b062b586b826c0e3a22743a",
+      "source": "def _supervision_transition(\n        self,\n        kind: str,\n        robot_state: RobotState,\n        *,\n        cursor: int,\n        claim: VisualWorkerSupervisionClaim | None = None,\n        observation: RGBDObservation | None = None,\n        context: SupervisionContext | None = None,\n        decision: SupervisionDecision | None = None,\n        wait_duration_s: float | None = None,\n        wait_elapsed_s: float | None = None,\n    ) -> VisualSupervisionTransitionResult:\n        lease = self.check_active(robot_state)\n        self._check_optional_sources()\n        record = self.source.event_repository.get_visual_supervision(self.episode_id)\n        if record is None:\n            raise RuntimeError(\"original supervision source ledger unavailable\")\n        publication = self.supervision_source_publication\n        if claim is not None and publication.digest() != claim.publication_hash:\n            raise RuntimeError(\"supervision/wait claim publication source invalidated\")\n        request = VisualSupervisionTransitionInput(\n            record=record,\n            original=self.original,\n            publication=publication,\n            lease=lease,\n            robot_state=robot_state,\n            step_id=publication.checkpoint.current_step_id,\n            cursor=cursor,\n            kind=kind,\n            event_key=digest([\"worker-supervision\", record.definition.digest(), kind, cursor]),\n            model_snapshot_hash=self.bootstrap.definition.model_snapshot_hash,\n            role_bundle=self.role_binding.bundle,\n            claim_id=claim.claim_id if claim is not None else None,\n            observation=observation,\n            context=context,\n            decision=decision,\n            wait_duration_s=wait_duration_s,\n            wait_elapsed_s=wait_elapsed_s,\n            operational_windows=self._operational_references(\n                claim.claim_id if claim is not None else None\n            ),\n        )\n        with _transition_scope(self._operational_owner, request.to_payload()):\n            result = self.source.event_repository.transition_visual_supervision_if_current(\n                request=request\n            )\n        if result is None or result.write_disposition != \"NEW_COMMIT\":\n            raise _VisualSupervisionCommitRejected(\n                \"supervision source is stale or historical; no effect replay\"\n            )\n        self.check_active(robot_state)\n        self._check_optional_sources()\n        return result"
+    },
+    {
+      "qualified_name": "VisualWorkerRuntime._new_supervision_handle",
+      "source_path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "line_range": [
+        1531,
+        1556
+      ],
+      "source_segment_sha256": "2c07d9ffee7d5440cfb23445403c94fa1b7ee49aa40701147d4a79227dee6548",
+      "source": "def _new_supervision_handle(\n        self, result: VisualSupervisionTransitionResult, *, kind: str\n    ) -> VisualWorkerSupervisionClaim:\n        state = result.record.to_payload()[\"claims\"][result.claim_id]\n        publication, original = self.supervision_source_publication, self.original\n        if (\n            publication.digest() != state[\"publication_hash\"]\n            or original.digest() != result.record.definition.original.digest()\n        ):\n            raise RuntimeError(\"supervision/wait claim source changed after local commit\")\n        claim = VisualWorkerSupervisionClaim(\n            json.dumps(\n                {\n                    \"scope\": \"SUPERVISION_SOURCE_ONLY\",\n                    \"claim_id\": result.claim_id,\n                    \"cursor\": state[\"cursor\"],\n                    \"step_id\": state[\"step_id\"],\n                    \"kind\": kind,\n                    \"publication\": publication.to_payload(),\n                    \"original\": original.to_payload(),\n                },\n                sort_keys=True,\n            )\n        )\n        self._supervision_handles[claim.claim_id] = (kind, claim.digest())\n        return claim"
+    }
+  ]
+}

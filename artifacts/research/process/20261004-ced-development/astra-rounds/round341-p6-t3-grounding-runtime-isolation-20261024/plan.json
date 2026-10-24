@@ -1,0 +1,146 @@
+{
+  "round": "R341",
+  "planner": {
+    "model": "gpt-6-astra",
+    "agent": "/root/astra_p6_t3_plan",
+    "actual": "PLAN_ONLY"
+  },
+  "implementer": "/root/p6_t3_sol",
+  "problem": [
+    "VisualWorkerRuntime._initialize_local stores _local_original and calls _register_local_original before initialize_visual_bootstrap_if_absent.",
+    "Registration checks genuine initialization caller, owner live app and exact original description, then stores owner->runtime. Registration does not require adoption.",
+    "bind_step_grounding scans tuple(_LOCAL_RUNTIMES.values()) and eagerly calls runtime.original.digest on every entry.",
+    "VisualWorkerRuntime.original first calls supervision_source_publication, whose absence raises RuntimeError.",
+    "A distinct registered unadopted runtime is therefore reachable in the scan and can abort otherwise valid target grounding. The scan can also read another owner/thread source before selecting the intended owner."
+  ],
+  "evidence_class": "Static reachable candidate defect only; no runtime failure or executed reproduction asserted.",
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round341-p6-t3-grounding-runtime-isolation-20261024/root-finding.json",
+      "bytes": 4545,
+      "sha256": "f616a40db80b32b1e84aea118a742dddd2f7608f1ec671ccc9497deb90c8234d"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round331-p6-t3-continuation-20261024/plan.json",
+      "bytes": 52234,
+      "sha256": "0c9b1abad450d8dd164f2b070d281f238bc008f31a301d531df000981cc7d5fd"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round341-p6-t3-grounding-runtime-isolation-20261024/source-evidence/src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "bytes": 46487,
+      "sha256": "64b39c5e393f103ed68b09c46e944a79720034a00e8bac5c08cd403e77a758cd"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round341-p6-t3-grounding-runtime-isolation-20261024/source-evidence/src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "bytes": 50208,
+      "sha256": "a9725cf1aa61bad2a8506353be455e2268df07d85cc7547a79ddf7d91fae58a9"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round341-p6-t3-grounding-runtime-isolation-20261024/source-evidence/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "bytes": 155168,
+      "sha256": "7c1ad5a70c65b5b20be6552dc04fbfbb4ce4aa5ecb39bf965ceb23dab98ccb3c"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round341-p6-t3-grounding-runtime-isolation-20261024/source-slices.json",
+      "bytes": 37625,
+      "sha256": "df591e3a3195c469c1b4e0479d797f1ba147b3aa8e828df30eeaee68c1679243"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round341-p6-t3-grounding-runtime-isolation-20261024/planner-readout.json",
+      "bytes": 1726,
+      "sha256": "690ebfc43a14b94b223052be275e0addec774c62f773f38b1c04521654c1017a"
+    }
+  ],
+  "root_cause": "Selection invokes live getters on all registered runtimes despite registration preceding adoption, conflating sealed identity lookup with adopted publication availability.",
+  "target": {
+    "path": "src/cloud_edge_robot_arm/vision/owner_registration.py",
+    "definition": "bind_step_grounding",
+    "original_segment_sha256": "34531e20fa2a7a91e1462d962f5fad27638884cd15ee8c8911fb432fabe2a5bb",
+    "allowed": "Local branch runtime selection/validation and associated local imports only.",
+    "hash_convention": "UTF-8 ast.get_source_segment; no added newline"
+  },
+  "design": "Two-stage lookup using existing sealed descriptor registry, then exact genuine selected-owner/runtime checks and app liveness, then selected durable original equality and unchanged private binding. Description matching is never authority.",
+  "sequence": [
+    {
+      "step": 1,
+      "owner": "ROOT",
+      "action": "Review original finding and input hashes, selected bind_step_grounding pin and read-only dependency applicability, then activate same Sol. Existing R340 exact successor/evidence and other R331 work are preserved. No whole-file rollback."
+    },
+    {
+      "step": 2,
+      "owner": "Sol",
+      "action": "In the existing local branch only, compute desired canonical descriptor using operational_windows._json(original.local_time.to_payload()) (alias it to avoid owner_registration._json confusion). Iterate a snapshot of _LOCAL_RUNTIMES.items(); shortlist owner/runtime pairs solely by _LOCAL_ORIGINALS.get(owner)==desired. No runtime.original/publication/bootstrap/episode_id/is_adopted or repository/clock getter may run while scanning. Require exactly one pair before any live candidate validation; empty or duplicate matches reject."
+    },
+    {
+      "step": 3,
+      "owner": "Sol",
+      "action": "For that unique pair, validate exact OperationalWindowOwner and VisualWorkerRuntime types, runtime._operational_owner is owner, both registry mappings still match the pair/descriptor, _OWNERS.get(startup.worker) is owner, not owner._closed, captured startup mode LOCAL and thread_id equals threading.get_ident(). Compare captured startup job/run/attempt/lease/worker-id tuple to current_identity; runtime source job repository and id tuple, role_binding and _local_session must match actual startup worker/repository/binding/session. Compare both owner._local_original and runtime._local_original canonical descriptions to the sealed descriptor; original.source_hashes must match runtime.source.source_hashes. These are selected-object checks only; reject any mismatch without seeking another candidate."
+    },
+    {
+      "step": 4,
+      "owner": "Sol",
+      "action": "Call selected owner._check_app_live() before first selected original/publication getter, retaining genuine original source/issuer/thread/clock/hard-bound expiry checks. Only then fetch selected runtime.original, require its exact LocalVisualOriginalPlan type, full identity equality with current_identity and original.identity, digest equality with requested original, local_time canonical equality to sealed descriptor and source-hash equality. Do not catch its missing/incoherent/stale publication exceptions or use a serialized value as fallback authority."
+    },
+    {
+      "step": 5,
+      "owner": "Sol",
+      "action": "Call that same selected runtime._local_bind_grounding with the unchanged payload and observation, from bind_step_grounding itself so the existing caller-code guard remains valid. Preserve all earlier deterministic policy/checkpoint/cursor/duration checks and all downstream publication/frame/window/job-event-lock/receipt/transaction/replay validation. No new public selector parameter, capability or runtime registration."
+    },
+    {
+      "step": 6,
+      "owner": "Sol then ROOT",
+      "action": "Save minimal source diff and before/after canonical target segments; use stdlib AST/symtable/source/hash only. Independently inspect order/data flow and the case matrix, unchanged call frame/payload, unchanged nonlocal branch, unchanged _local_bind_grounding/registration/getter/owner-check bodies and all non-target bytes versus immediate baseline. Save static step/acceptance reports; no tests/probe/import/collection. Carry accepted target hash into later original GREEN gate preparation, not execution release."
+    }
+  ],
+  "verification_case_matrix": [
+    {
+      "case": "Unrelated registered bootstrap runtime, same or different thread, any registry order",
+      "proof": "Its sealed descriptor differs; no runtime getter, repository or clock source is read for it."
+    },
+    {
+      "case": "Genuine unique adopted matching owner on original thread",
+      "proof": "All exact registry/startup/source/app checks precede selected live original digest and existing private binding."
+    },
+    {
+      "case": "Zero matching registrations or copied/forged serialized original",
+      "proof": "No match rejects; descriptor match alone still cannot bypass registry/type/startup/thread/app/durable original checks."
+    },
+    {
+      "case": "Two matching entries",
+      "proof": "Count check rejects before either live getter; no first-match or exception-based fallback."
+    },
+    {
+      "case": "Matching target is closed, expired, revoked, foreign-thread, source/session drifted or pre-adoption",
+      "proof": "Strict selected checks and owner._check_app_live reject, or selected original getter reports unavailable; no fallback/swallowing."
+    },
+    {
+      "case": "Current publication/checkpoint/revision/generation/frame changes after selection",
+      "proof": "Existing _local_bind_grounding and two-authority locked checks remain unchanged; no snapshot promoted to authority."
+    },
+    {
+      "case": "Nonlocal legacy/Foundation path",
+      "proof": "Original nonlocal branch/payload behavior unchanged."
+    }
+  ],
+  "limits": [
+    "No whole-source replacement from historical snapshots; preserve R340 exact cap successor and unrelated definitions.",
+    "Do not move/register extra runtimes, change adopt/publication semantics, loosen original or receipt checks, add tests or blanket exception handlers.",
+    "No product imports/calls, numerical probe, pytest/collection, clock/runtime execution or new commands/attempt budgets.",
+    "Read-only snapshot inputs are historical evidence; mutable full files are not rollback preconditions. Review relevant dependency/source applicability before activation.",
+    "A new cause, unexpected metadata failure or widened scope pauses affected repair for new Astra; do not implement a broader fix under this plan."
+  ],
+  "runtime_prerequisites": "None for source-only repair. ROOT activation and applicable selected source pins required for implementation. All existing original R331 actor/source/HEAD/resource and applicable correction gates remain required before GREEN; this plan does not authorize arbitrary HEAD drift or runtime.",
+  "budgets": {
+    "RED": "SPENT and original evidence preserved",
+    "GREEN": "UNUSED_HELD",
+    "new_runtime_allowance": 0,
+    "nodes": 9,
+    "max_worker_polls": 15
+  },
+  "acceptance": "Source-only isolation of lookup, preservation of live authority and all existing binding checks. No runtime pass, T3/B-final completion or C/native/model/physics claim."
+}

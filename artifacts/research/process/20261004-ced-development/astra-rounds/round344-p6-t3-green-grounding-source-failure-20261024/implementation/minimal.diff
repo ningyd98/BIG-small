@@ -1,0 +1,42 @@
+--- before/operational_windows.py
++++ after/operational_windows.py
+@@ -778,10 +778,18 @@
+ 
+     try:
+         reference = _descriptor_plain(reference)
+-        _validate_references([reference])
+         owner = _current_owner()
+         if owner is None:
+             raise OperationalTimeError("descriptive reference has no live owner")
++        mode = owner._startup.mode
++        if mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            from cloud_edge_robot_arm.vision.local_temporal import _reference as _validate_local_reference
++
++            _validate_local_reference(reference)
++        elif mode == "OPERATIONAL_LEASE_FOUNDATION_V1":
++            _validate_references([reference])
++        else:
++            raise OperationalTimeError("unsupported live operational owner mode")
+         identifier = reference["window_id"]
+         if _json(reference) != _json(owner.export_record(identifier)):
+             raise OperationalTimeError("descriptor differs from immutable registered window")
+@@ -812,10 +820,18 @@
+         if reference is None:
+             return None
+         reference = _descriptor_plain(reference)
+-        _validate_references([reference])
+         owner = _current_owner()
+         if owner is None:
+             return False
++        mode = owner._startup.mode
++        if mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            from cloud_edge_robot_arm.vision.local_temporal import _reference as _validate_local_reference
++
++            _validate_local_reference(reference)
++        elif mode == "OPERATIONAL_LEASE_FOUNDATION_V1":
++            _validate_references([reference])
++        else:
++            raise OperationalTimeError("unsupported live operational owner mode")
+         key = _observation_key(observation)
+         if key not in owner._observations or reference.get("kind") != kind:
+             return False

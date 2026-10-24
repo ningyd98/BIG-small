@@ -1,0 +1,17 @@
+def _remaining_app_seconds(self) -> float:
+        """Read only original D_app deadlines, never a renewable lease segment."""
+        self._check_app_live()
+        current = self._clock.read_current(after=self.task_origin_token)
+        remaining = min(hard.deadline.deadline_ns - current.upper_ns for hard in self._hard)
+        if remaining <= 0:
+            raise OperationalTimeError("original app deadline expired")
+        # Round toward zero so binary conversion cannot enlarge the nanosecond cap.
+        from math import nextafter
+
+        seconds = remaining / 1_000_000_000
+        numerator, denominator = seconds.as_integer_ratio()
+        if numerator * 1_000_000_000 > remaining * denominator:
+            seconds = nextafter(seconds, 0.0)
+        if seconds <= 0:
+            raise OperationalTimeError("original app deadline has no positive cap")
+        return seconds

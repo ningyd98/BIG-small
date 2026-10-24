@@ -1,0 +1,57 @@
+--- before/owner_registration.py
++++ after/owner_registration.py
+@@ -1130,13 +1130,49 @@
+     if calculation is not None:
+         bound_sources.update(calculation.source_hashes)
+     if local:
+-        from cloud_edge_robot_arm.vision.operational_windows import _LOCAL_RUNTIMES
+-
+-        candidates = [runtime for runtime in tuple(_LOCAL_RUNTIMES.values())
+-                      if runtime.original.digest() == original.digest()]
++        import threading
++        from cloud_edge_robot_arm.vision.operational_windows import (
++            OperationalWindowOwner, _LOCAL_RUNTIMES, _LOCAL_ORIGINALS, _OWNERS,
++            _json as _window_json,
++        )
++        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++
++        desired = _window_json(original.local_time.to_payload())
++        candidates = [(owner, runtime) for owner, runtime in tuple(_LOCAL_RUNTIMES.items())
++                      if _LOCAL_ORIGINALS.get(owner) == desired]
+         if len(candidates) != 1:
+             raise ValueError("grounding requires the unique original private runtime")
+-        return candidates[0]._local_bind_grounding({
++        owner, runtime = candidates[0]
++        if (type(owner) is not OperationalWindowOwner or type(runtime) is not VisualWorkerRuntime
++                or runtime._operational_owner is not owner or owner._closed
++                or _LOCAL_RUNTIMES.get(owner) is not runtime or _LOCAL_ORIGINALS.get(owner) != desired):
++            raise ValueError("grounding selected original owner/runtime registry changed")
++        startup = owner._startup
++        worker = startup.worker
++        if (_OWNERS.get(worker) is not owner or startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1"
++                or startup.thread_id != threading.get_ident()
++                or (startup.job_id, startup.run_id, startup.attempt, startup.lease_id, worker.worker_id)
++                != (current_identity.job_id, current_identity.run_id, current_identity.attempt,
++                    current_identity.lease_id, current_identity.worker_id)
++                or worker.repository is not startup.repository
++                or runtime.source.job_repository is not startup.repository
++                or (runtime.source.job_id, runtime.source.run_id, runtime.source.worker_id, runtime.source.lease_id)
++                != (startup.job_id, startup.run_id, worker.worker_id, startup.lease_id)
++                or runtime.role_binding is not startup.binding or worker.visual_role_binding is not startup.binding
++                or runtime._local_session is not worker._operational_lease_session
++                or _window_json(owner._local_original) != desired
++                or _window_json(runtime._local_original) != desired
++                or dict(original.source_hashes) != dict(runtime.source.source_hashes)):
++            raise ValueError("grounding selected original startup/source/thread differs")
++        owner._check_app_live()
++        selected_original = runtime.original
++        if (type(selected_original) is not LocalVisualOriginalPlan
++                or selected_original.identity != current_identity or selected_original.identity != original.identity
++                or selected_original.digest() != original.digest()
++                or _window_json(selected_original.local_time.to_payload()) != desired
++                or dict(selected_original.source_hashes) != dict(original.source_hashes)):
++            raise ValueError("grounding selected durable original source differs")
++        return runtime._local_bind_grounding({
+             "binding_scope": "DURABLE_BINDING_ONLY", "original_plan_hash": original.digest(),
+             "current_identity": current_identity.to_payload(), "original_requirements": requirement.to_payload(),
+             "owner_revision": owner_revision, "state_generation": state_generation,

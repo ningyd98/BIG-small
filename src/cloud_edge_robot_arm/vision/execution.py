@@ -579,9 +579,11 @@ class _VisualEpisode:
         self.planner, self.robot, self.capture, self.policy = planner, robot, capture, policy
         self.worker_runtime = policy.worker_runtime
         self.backend = robot._backend
-        self.started_at = time.monotonic()
-        self.deadline = self.started_at + policy.timeout_s
-        if self.worker_runtime is not None:
+        local = self.worker_runtime is not None and self.worker_runtime._local_mode
+        self.started_at = (self.worker_runtime._operational_owner._origin_tuple[1]
+                           if local else time.monotonic())
+        self.deadline = float("inf") if local else self.started_at + policy.timeout_s
+        if self.worker_runtime is not None and not self.worker_runtime._local_mode:
             original_start = self.worker_runtime.source.task_started_at
             elapsed = (datetime.now(UTC) - original_start).total_seconds()
             if elapsed < 0:
@@ -625,6 +627,7 @@ class _VisualEpisode:
         self._active_step_id = "planning"
         self._active_skill = "PLANNING"
         self._worker_supervision_frames: dict[str, Any] = {}
+        self._worker_supervision_timeouts: dict[str, float] = {}
         self._worker_plan_wait_claim: str | None = None
         self._worker_supervision_reobserve_pending: tuple[Any, datetime] | None = None
         config = self.backend._config
@@ -691,6 +694,11 @@ class _VisualEpisode:
         except (ValueError, OSError, RuntimeError) as error:
             raise _EpisodeStopped("WORKER_RUNTIME_SOURCE_INVALID") from error
 
+    def budget_payload(self) -> dict[str, Any]:
+        if self.worker_runtime is not None and self.worker_runtime._local_mode:
+            return self.budget.to_payload()
+        return asdict(self.budget)
+
     def check_active(self) -> None:
         if self.policy.cancelled is not None and self.policy.cancelled():
             raise _EpisodeStopped("CANCELLED")
@@ -702,6 +710,9 @@ class _VisualEpisode:
             self.budget = runtime.verification_state
         if self.budget.exhausted_reason is not None:
             raise _EpisodeStopped("VERIFICATION_BUDGET_EXHAUSTED")
+        if runtime is not None and runtime._local_mode:
+            self.worker_call(runtime.remaining_app_seconds)
+            return
         if datetime.now(UTC) >= self.budget.deadline_at:
             raise _EpisodeStopped("VERIFICATION_TIMEOUT")
         if time.monotonic() >= self.deadline:
@@ -1043,7 +1054,7 @@ class _VisualEpisode:
             False,
             status,
         )
-        before = asdict(self.budget)
+        before = self.budget_payload()
         action = route_verification(
             verdicts,
             self.budget,
@@ -1056,7 +1067,7 @@ class _VisualEpisode:
                 "conditions": [asdict(v) for v in verdicts],
                 "route": action.value,
                 "budget_before": before,
-                "budget_after": asdict(self.budget),
+                "budget_after": self.budget_payload(),
                 **(extra or {}),
             }
         )
@@ -1067,7 +1078,7 @@ class _VisualEpisode:
                     "episode_id": self.observation.episode_id,
                     "observation_id": self.observation.observation_id,
                     "event_id": event.event_id,
-                    "budget": asdict(self.budget),
+                    "budget": self.budget_payload(),
                     "latest_verification": self.records[-1],
                 },
             )
@@ -1093,18 +1104,16 @@ class _VisualEpisode:
                 self._worker_plan_wait_claim = claim_id
             self.calls += 1
             started = time.monotonic()
+            timeout = (self.worker_call(runtime.remaining_app_seconds)
+                       if runtime is not None and runtime._local_mode
+                       else max(0.001, min(self.deadline - started,
+                                (self.budget.deadline_at - datetime.now(UTC)).total_seconds())))
             if self.wait_clock is not None:
                 self.wait_clock.begin_wait()
             try:
                 draft = bounded_model_call(
                     partial(self.planner.plan, request),
-                    timeout_s=max(
-                        0.001,
-                        min(
-                            self.deadline - started,
-                            (self.budget.deadline_at - datetime.now(UTC)).total_seconds(),
-                        ),
-                    ),
+                    timeout_s=timeout,
                     cancelled=self.policy.cancelled,
                     resource_key=self.planner.base_url,
                     on_wait=self.wait_clock.advance_wait if self.wait_clock is not None else None,
@@ -1146,7 +1155,7 @@ class _VisualEpisode:
                         "layer": "WORKER_BOOTSTRAP_PLAN",
                         "bootstrap_hash": runtime.bootstrap.digest(),
                         "planning_source_usable": runtime.bootstrap.planning_source_usable,
-                        "budget": asdict(self.budget),
+                        "budget": self.budget_payload(),
                         "execution_admitted": False,
                     }
                 )
@@ -1258,6 +1267,8 @@ class _VisualEpisode:
         self.validate_role_boundary()
         start_step = self.backend.total_physics_steps
         action_started_at = datetime.now(UTC)
+        effect_source = (self.worker_runtime.begin_effect_source(contract, step, self.robot.get_state())
+                         if self.worker_runtime is not None and self.worker_runtime._local_mode else None)
         self.records.append(
             {
                 "layer": "ACTION_STARTED",
@@ -1353,6 +1364,9 @@ class _VisualEpisode:
                 ),
                 source_hashes=original.source_hashes,
             )
+            if self.worker_runtime._local_mode:
+                completion = self.worker_runtime.complete_effect_source(
+                    effect_source, completion, self.robot.get_state())
             self._worker_completion = completion
             self.apply_supervision()
         self.recapture(completion=completion)
@@ -1466,7 +1480,8 @@ class _VisualEpisode:
         self.check_active()
         self.validate_role_boundary()
         current = self.worker_runtime.publication
-        grounding = current.to_payload()["grounding"]
+        grounding = (current.semantic["grounding"] if self.worker_runtime._local_mode
+                     else current.to_payload()["grounding"])
         cached = getattr(self, "_worker_grounding", None)
         if grounding is None or cached is None or grounding != cached.to_payload():
             raise _EpisodeStopped("WORKER_DISPATCH_GROUNDING_INVALIDATED")
@@ -1717,9 +1732,8 @@ class _VisualEpisode:
             period = self.policy.supervision_period_s
             if period is None:
                 raise _EpisodeStopped("WORKER_SUPERVISION_PERIOD_MISSING")
-            cursor = math.floor(
-                (datetime.now(UTC) - runtime.source.task_started_at).total_seconds() / period
-            )
+            cursor = (runtime.supervision_cursor(period) if runtime._local_mode else math.floor(
+                (datetime.now(UTC) - runtime.source.task_started_at).total_seconds() / period))
             claim = self.worker_call(
                 lambda: runtime.reserve_supervision_capture(cursor, self.robot.get_state())
             )
@@ -1740,6 +1754,9 @@ class _VisualEpisode:
                 lambda: runtime.reserve_supervision_plan(claim, self.robot.get_state())
             )
             self._worker_supervision_frames[frame.claim_id] = frame
+            if runtime._local_mode:
+                # Sample only on the original owning thread, before asynchronous dispatch.
+                self._worker_supervision_timeouts[frame.claim_id] = runtime.remaining_app_seconds()
         self.records.append(
             {
                 "layer": "SUPERVISION_TICK",
@@ -1785,7 +1802,9 @@ class _VisualEpisode:
         observation = frame.observation
         decision = bounded_model_call(
             partial(planner.supervise, observation, frame.context),
-            timeout_s=max(0.001, self.deadline - time.monotonic()),
+            timeout_s=(self._worker_supervision_timeouts[frame.claim_id]
+                       if runtime is not None and runtime._local_mode
+                       else max(0.001, self.deadline - time.monotonic())),
             resource_key=planner.base_url,
             cancelled=lambda: bool(self.supervision and self.supervision.snapshot()["closed"]),
         )

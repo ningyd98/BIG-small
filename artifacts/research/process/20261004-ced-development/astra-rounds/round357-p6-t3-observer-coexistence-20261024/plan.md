@@ -1,0 +1,49 @@
+# R357 — coexist with the authentic resource profiler
+
+Actual planner: `/root/astra_p6_t3_plan`, `gpt-6-astra`. Same `/root/p6_t3_sol` authors the new observer; ROOT reviews metadata/gates. No run or new allowance is released.
+
+The original static concern is confirmed against test SHA `54b988c6257f51efcc796fd5a3f376c45fee84c31c6b3fa3f7593853da0d11ca`. `_b_t2_observe` saves previous hooks, installs its own profile, and never chains previous_profile. It performs genuine resource accounting then invokes `state.wait_observer` at3835–37. It clears that seam at3862 and restores hooks at3942–43 before checking original identity. The original finding is retained; its approximate line numbers are not rewritten. No live diagnostic was run.
+
+A second relevant source fact is `_b_t2_exercise` clearing the seam at4133 before cleanup/return. The UTC-memory node invokes this helper three times within one outer resource observer. A one-time seam attachment would miss later scenarios. Historical draft callback-time detach on saturation could also interfere when the authentic observer restores the inactive previous hook immediately before its identity assertion. These are the same ownership/coexistence issue.
+
+## Exact temporary adapter
+
+R357 explicitly permits one narrow exception to R354's no-test-monkeypatch wording: during only the exact selected UTC-memory item's pytest_runtest_call hookwrapper, temporarily replace the in-memory test module binding `_b_t2_exercise` with a transparent adapter. No test file/code/assertion is modified. The adapter invokes the saved original exactly once with the same five argument identities and propagates its exact result/exception. It never invokes a worker/factory/callback independently. No other module or product binding changes.
+
+At each entry, verify actual sys/threading hooks are the same genuine nested `_b_t2_observe.profile`, whose exact code identity matches the frozen helper and whose closure `state` is the actual passed `observed` object. Require wait_observer is None; do not replace/chain a foreign callback. Attach the profiler's stable delegate there before invoking the original. Resource accounting remains first and unchanged, followed by diagnostic observation. Never replace the resource profile or call it recursively from the delegate.
+
+The original's finally clears the seam. Adapter finally accepts None or clears only its own surviving callback. A foreign value is preserved and recorded invalid, without masking an original exception. Reattach separately for each of the at mostthree original scenarios. After diagnostic saturation, leave the seam None and keep coverage-disabled; never reset counters between scenarios. In hookwrapper finally restore the module binding only if still owned, record actual restoration, and preserve pytest's outcome.
+
+This exposes the real ground/route/supervision/hotspot events without changing product/test source. The original exercise's own return event and some finally work remain unobserved after its early clear. Record that gap; never synthesize a profile return. Separate bridge entry/exit/unwind timestamps may describe the actual enclosing adapter interval, but are not successful function returns, a24th target or baseline cost. Retain unmatched original calls as ended-unobserved. Actual delegated event receipts, not source intent, establish coverage.
+
+## Saturation and restoration
+
+During the selected item/resource context, saturation or observer fault disables observation, not hook ownership. Callbacks become exception-neutral no-ops. Remove callback-time sys/threading detach from the relevant draft disabled/_fault/_stop paths. The genuine observer must be allowed to restore the exact stable previous diagnostic callback and pass its original identity assertion even if that callback is inactive.
+
+Only plugin-owned finalization after the original item/resource context and module-binding restoration may restore its own main/future-thread hooks to saved originals. It must check identity and never alter a foreign resource hook. Unknown already-running thread restoration remains UNKNOWN. No-op dispatch overhead after saturation is disclosed and consumes original time; it does not permit new sampling or an allowance reset. R356's native-signal lifecycle is separate and unchanged.
+
+## Scope, proof and release
+
+Only new R354 observer profile/coexistence lifecycle sections may change. Runner metadata may read the new coverage/invalid/restoration facts through existing capture. Preserve R357 historical snapshot `observer-profile-draft-before.py`, original finding and interim proof. Do not require entire current WIP observer to match that snapshot: independently authorized native additions may exist. Record/reconcile affected method segments before editing and preserve those additions; unexplained overlapping changes stop affected work.
+
+The source readout pins actual resource/exercise functions and five affected draft methods. Same Sol proves the one-item/one-binding/one-original-call contract with AST/source/hash checks, actual closure identity preconditions, None-only attach, ownership-only restoration and saturation/unwind paths. Keep all23 target identities/limits unchanged; saved original code remains the target and wrapper code never masquerades as it. No import/help/collect/test/probe is authorized for verification.
+
+ROOT reviews complete changed sources/proof and binds R354/R355/R356/R357 plus actual new hashes in the future gate. Runtime preconditions remain exact source/HEAD/interpreter and one separately reserved R354 diagnostic, with actual adapter ownership checks only inside that run. This plan releases no run, retry, new SQL, behavior credit or R350 HELD slot. All19/121 observations and600/15/240/900 bounds remain unchanged. Genuine resource sidecars/restoration are never replaced by bridge receipts. New failures or expanded scope return to actual Astra.
+
+## Input pins
+
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round357-p6-t3-observer-coexistence-20261024/root-intake.json` — 5885 bytes; SHA256 `3e722bdf2ea06beb1e9a2c413ef0c26121acaca3b0fbb87908a44e71bf86854b`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round357-p6-t3-observer-coexistence-20261024/original-profile-coexistence-finding.json` — 2646 bytes; SHA256 `734be522858f5beab25f1252abe838313b3a9ce2ffdf5c31188b318376211b7d`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round354-p6-t3-live-noncompletion-evidence-20261024/plan.json` — 63924 bytes; SHA256 `76e611bde7f12851a59bb8fafbb4b4a91b129ba36af32857b335c908b6fa6784`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round354-p6-t3-live-noncompletion-evidence-20261024/plan.md` — 11199 bytes; SHA256 `be86415d34fdb58a54dcbc6293cc359bf6d34cc2713e971142ba5a3a1ba9bad2`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round354-p6-t3-live-noncompletion-evidence-20261024/source-readout.json` — 144736 bytes; SHA256 `1a8aa9806e20cd9a2bc0518ee6b0fade3db4e5ba88ce784634c04d0556ef1e73`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round354-p6-t3-live-noncompletion-evidence-20261024/root-preparation-activation.json` — 7019 bytes; SHA256 `d3d9350c83aa09dc6cc9803687b29fa0e8b87beed677cede283717a886497372`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round354-p6-t3-live-noncompletion-evidence-20261024/implementation/observer-interim-proof.json` — 75060 bytes; SHA256 `94ae76ef4ed0dab4633a7bce37f0228459a9a07e0057662c58728541a7eb0d12`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round357-p6-t3-observer-coexistence-20261024/observer-profile-draft-before.py` — 18939 bytes; SHA256 `70b583f08f228c12e6ac1ccb4c119e6f47c7a7af51b9d323be1ee5090311fbb6`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py` — 313285 bytes; SHA256 `54b988c6257f51efcc796fd5a3f376c45fee84c31c6b3fa3f7593853da0d11ca`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round355-p6-t3-diagnostic-baseline-reference-20261024/plan.json` — 11479 bytes; SHA256 `ccb4fe9952de4343f2b7a72d19bb16be6f25a920907fa2584767c22082f6fc5f`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round355-p6-t3-diagnostic-baseline-reference-20261024/root-baseline-acceptance.json` — 2342 bytes; SHA256 `2ac7706bc81b902bc2700d3a52e1a3578a9e8896f43fe959efb9df91204285c3`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round356-p6-t3-native-signal-ownership-20261024/plan.json` — 19772 bytes; SHA256 `123d38d5440c42b9719611e4ce4ea28655e21eb61e4c6c28ac89de939a203f15`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round356-p6-t3-native-signal-ownership-20261024/plan.md` — 8706 bytes; SHA256 `aaca2332a7333204f7e77cdf388df39d42e8cf73b7a4fd9fd3f432855c446e7a`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round356-p6-t3-native-signal-ownership-20261024/api-source-readout.json` — 7435 bytes; SHA256 `f421ac41094fc45442f30974fcd4e8c18a14814570e655e6c764f8074b493de6`.
+- `/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round357-p6-t3-observer-coexistence-20261024/source-readout.json` — 12419 bytes; SHA256 `dcb3ae5fb3b81c2c5b18db43dcb625de09badb27cf67d1eb70afc5439f201b02`.

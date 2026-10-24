@@ -1,0 +1,193 @@
+--- before/sqlite_repository.py
++++ after/sqlite_repository.py
+@@ -204,6 +204,9 @@
+                 or runtime.source.job_repository is not self
+                 or type(events) not in {SQLiteEventAutonomyRepository, InMemoryEventAutonomyRepository}):
+             raise OperationalLeaseError("final publication requires the original concrete event repository")
++        if getattr(self._transactions, "final_publication_live_sources", None) is not None:
++            raise OperationalLeaseError("final publication private source slot already occupied")
++        self._transactions.final_publication_live_sources = (owner, runtime, events)
+         lock = events._write_lock if type(events) is SQLiteEventAutonomyRepository else events._lock
+         with lock:
+             owner._check_local_locked(view, purpose=view.purpose, operation_sha256=view.operation_sha256)
+@@ -263,7 +266,12 @@
+     def _record_final_confirmation(self, view: LockedLeaseView, proof: _ConsumedFinalConfirmation,
+                                    pending: dict[str, Any]) -> None:
+         """Audit only; this path cannot renew a lease or modify historical outcomes."""
+-        from cloud_edge_robot_arm.vision.operational_windows import _OWNERS
++        from cloud_edge_robot_arm.vision.operational_windows import (
++            OperationalWindowOwner, _OWNERS, _LOCAL_RUNTIMES, _LOCAL_ORIGINALS,
++            _json as _window_json,
++        )
++        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++        from cloud_edge_robot_arm.repositories.event_autonomy import SQLiteEventAutonomyRepository, InMemoryEventAutonomyRepository
+ 
+         if (sys._getframe(1).f_code is not self._dispatch_writer.__code__
+                 or type(proof) is not _ConsumedFinalConfirmation or proof.session.repository is not self
+@@ -272,39 +280,128 @@
+             raise OperationalLeaseError("private consumed one-use final confirmation proof required")
+         if self._final_publication_mode(view) != "LOCAL_TEMPORAL_PUBLICATION_V1":
+             raise OperationalLeaseError("local consumed audit requires local mode")
+-        owner = _OWNERS.get(proof.session.worker)
+-        if owner is None:
+-            raise OperationalLeaseError("final confirmation lost original app owner")
+-        owner._check_app_live()
++        sources = getattr(self._transactions, "final_publication_live_sources", None)
++        if type(sources) is not tuple or len(sources) != 3:
++            raise OperationalLeaseError("final confirmation lost private original source references")
++        owner, runtime, events = sources
+         payload = json.loads(pending["payload_json"])
+         target = dict(proof.reply.proposal.proposal.target)
+-        if (payload["target"] != target or pending["job_receipt_hash"] != _canonical(target)
+-                or self._operational_row(view._connection, pending["job_id"]) != target
+-                or self._job_snapshot(view._connection, pending["job_id"]) != target["job_snapshot_json"]
+-                or self._publication_manifest(self._artifact_root, self.get_artifacts(pending["run_id"])) != payload["manifest"]):
+-            raise OperationalLeaseError("final proof/real commit/manifest join changed")
+-        payload["proof"] = {"commit_identity": proof.ack._commit_identity,
+-                            "committed_row_digest": proof.ack._row_digest,
+-                            "response_consumed": True, "generation": proof.observation.generation,
+-                            "epoch": proof.session.epoch, "pid": proof.pid,
+-                            "thread_id": proof.thread_id, "native_thread_id": proof.native_thread_id,
+-                            "app_current": {"domain": owner._local_original["app_domain"],
+-                                            "remaining_seconds": owner._remaining_app_seconds()},
+-                            "scope": "ARCHIVAL_CONFIRMATION_ONLY_NO_LIVE_AUTHORITY"}
+-        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
++        session, worker = proof.session, proof.session.worker
++
++        def check_sources() -> None:
++            if (type(owner) is not OperationalWindowOwner or type(runtime) is not VisualWorkerRuntime
++                    or _OWNERS.get(worker) is not owner or _LOCAL_RUNTIMES.get(owner) is not runtime
++                    or runtime._operational_owner is not owner or owner._closed
++                    or worker.visual_event_repository is not events
++                    or runtime.source.event_repository is not events
++                    or runtime.source.job_repository is not self or worker.repository is not self
++                    or runtime._local_session is not session or worker._operational_lease_session is not session
++                    or type(events) not in {SQLiteEventAutonomyRepository, InMemoryEventAutonomyRepository}):
++                raise OperationalLeaseError("final confirmation actual private source identities changed")
++            startup = owner._startup
++            sealed = _LOCAL_ORIGINALS.get(owner)
++            if (startup.worker is not worker or startup.repository is not self
++                    or startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1"
++                    or startup.thread_id != threading.get_ident()
++                    or startup.binding is not runtime.role_binding or startup.binding is not worker.visual_role_binding
++                    or (startup.job_id, startup.run_id, startup.attempt, startup.lease_id)
++                    != (session.job_id, pending["run_id"], pending["attempt"], session.lease_id)
++                    or (runtime.source.job_id, runtime.source.run_id, runtime.source.worker_id, runtime.source.lease_id)
++                    != (session.job_id, startup.run_id, session.worker_id, session.lease_id)
++                    or sealed is None or _window_json(owner._local_original) != sealed
++                    or _window_json(runtime._local_original) != sealed
++                    or _window_json(payload["original_time"]) != sealed
++                    or dict(runtime.source.source_hashes) != dict(owner._source_hashes)
++                    or dict(runtime.source.source_hashes) != payload["original_time"]["source_hashes"]
++                    or payload["original_time"]["lease_identity"]["source_identity"] != owner._source_identity):
++                raise OperationalLeaseError("final confirmation original startup/description/source changed")
++            owner._check_app_live()
++            if _window_json(owner.export_record(owner.task_window)) != _window_json(payload["original_app_reference"]):
++                raise OperationalLeaseError("final confirmation original app reference changed")
++            expected_kind = "sqlite" if type(events) is SQLiteEventAutonomyRepository else "memory"
++            expected_database = str(events.path.resolve()) if expected_kind == "sqlite" else None
++            if payload["event_kind"] != expected_kind or payload["event_database"] != expected_database:
++                raise OperationalLeaseError("archived event description differs from actual private source")
++
++        check_sources()
+         conn = view._connection
+-        conn.execute("BEGIN IMMEDIATE")
+-        row = conn.execute("SELECT * FROM simulation_publication_confirmations_v1 WHERE operation_id=?",
+-                           (pending["operation_id"],)).fetchone()
+-        if row is None or dict(row) != pending:
+-            raise OperationalLeaseError("final confirmation pending receipt changed")
+-        owner._check_app_live()
+-        cursor = conn.execute("UPDATE simulation_publication_confirmations_v1 SET state='CONFIRMED',payload_json=?,confirmation_hash=? "
+-            "WHERE operation_id=? AND state='PENDING' AND payload_json=?",
+-            (raw, _digest(payload), pending["operation_id"], pending["payload_json"]))
+-        if cursor.rowcount != 1:
+-            raise OperationalLeaseError("one-use final confirmation audit CAS0")
+-        conn.execute("COMMIT")
++        if (self._writer_binding().connection is not conn or not self._view_is_current(view)
++                or conn.in_transaction):
++            raise OperationalLeaseError("separate audit requires the genuine completed writer transaction")
++        event_lock = events._write_lock if type(events) is SQLiteEventAutonomyRepository else events._lock
++        audit_owned = False
++        try:
++            audit_owned = True  # The connection had no transaction before our BEGIN.
++            conn.execute("BEGIN IMMEDIATE")
++            with event_lock:
++                event_owned = False
++                try:
++                    if type(events) is SQLiteEventAutonomyRepository:
++                        if events._conn.in_transaction:
++                            raise OperationalLeaseError("audit cannot use a foreign event transaction")
++                        event_owned = True
++                        events._conn.execute("BEGIN IMMEDIATE")
++                    check_sources()
++                    receipts = [dict(row) for row in conn.execute(
++                        "SELECT * FROM simulation_local_publications_v1 WHERE job_id=? ORDER BY operation_id",
++                        (session.job_id,)).fetchall()]
++                    if (not receipts or receipts != payload["event_receipts"]
++                            or _digest(receipts) != pending["event_receipt_hash"]
++                            or any(row["phase"] != "COMPLETE"
++                                   or (row["job_id"], row["attempt"], row["lease_id"], row["epoch"])
++                                   != (session.job_id, pending["attempt"], session.lease_id, session.epoch)
++                                   for row in receipts)):
++                        raise OperationalLeaseError("current job COMPLETE receipt join changed after consumption")
++                    for receipt in receipts:
++                        if type(events) is SQLiteEventAutonomyRepository:
++                            row = events._conn.execute("SELECT * FROM visual_local_publications_v1 WHERE operation_id=?",
++                                                       (receipt["operation_id"],)).fetchone()
++                            actual = None if row is None else dict(row)
++                        else:
++                            value = events._local_publications.get(receipt["operation_id"])
++                            actual = None if value is None else json.loads(value)
++                        if actual != receipt:
++                            raise OperationalLeaseError("current event COMPLETE receipt join changed after consumption")
++                    if (payload["target"] != target or pending["job_receipt_hash"] != _canonical(target)
++                            or self._operational_row(conn, pending["job_id"]) != target
++                            or self._job_snapshot(conn, pending["job_id"]) != target["job_snapshot_json"]
++                            or self._publication_manifest(self._artifact_root, self.get_artifacts(pending["run_id"])) != payload["manifest"]):
++                        raise OperationalLeaseError("final proof/real commit/manifest join changed")
++                    row = conn.execute("SELECT * FROM simulation_publication_confirmations_v1 WHERE operation_id=?",
++                                       (pending["operation_id"],)).fetchone()
++                    if row is None or dict(row) != pending:
++                        raise OperationalLeaseError("final confirmation pending receipt changed")
++                    payload["proof"] = {"commit_identity": proof.ack._commit_identity,
++                        "committed_row_digest": proof.ack._row_digest, "response_consumed": True,
++                        "generation": proof.observation.generation, "epoch": session.epoch, "pid": proof.pid,
++                        "thread_id": proof.thread_id, "native_thread_id": proof.native_thread_id,
++                        "app_current": {"domain": owner._local_original["app_domain"],
++                                        "remaining_seconds": owner._remaining_app_seconds()},
++                        "scope": "ARCHIVAL_CONFIRMATION_ONLY_NO_LIVE_AUTHORITY"}
++                    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
++                    owner._check_app_live()
++                    cursor = conn.execute("UPDATE simulation_publication_confirmations_v1 SET state='CONFIRMED',payload_json=?,confirmation_hash=? "
++                        "WHERE operation_id=? AND state='PENDING' AND payload_json=?",
++                        (raw, _digest(payload), pending["operation_id"], pending["payload_json"]))
++                    if cursor.rowcount != 1:
++                        raise OperationalLeaseError("one-use final confirmation audit CAS0")
++                    conn.execute("COMMIT")
++                    audit_owned = False
++                finally:
++                    primary = sys.exception()
++                    try:
++                        if event_owned and events._conn.in_transaction:
++                            events._conn.execute("ROLLBACK")
++                    except BaseException:
++                        if primary is None:
++                            raise
++        except BaseException:
++            try:
++                if audit_owned and conn.in_transaction:
++                    conn.execute("ROLLBACK")
++            except BaseException:
++                pass  # Preserve the original failure; terminal COMMIT already happened.
++            raise
+ 
+     def get_publication_summary(self, run_id: str, *, attempt: int | None = None) -> PublicationSummary:
+         """Rejoin archival SQL, actual receipts and actual files; never resume authority."""
+@@ -2141,6 +2238,7 @@
+                 return value
+         finally:
+             self._transactions.final_publication = None
++            self._transactions.final_publication_live_sources = None
+             with _WRITER_REGISTRY_LOCK:
+                 _DISPATCH_OWNERS.pop(id(bound_dispatch), None)
+             if getattr(self._transactions, "dispatch", None) is bound_dispatch:

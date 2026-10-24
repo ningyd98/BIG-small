@@ -13,6 +13,47 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from cloud_edge_robot_arm.simulation_workbench.models import PublicationStatusView
+
+
+@dataclass(frozen=True)
+class PublicationSummary:
+    """Detached archival status; immutable values never carry execution authority."""
+
+    recorded_sql_status: str
+    confirmation_state: str
+    accepted: bool = False
+    operation_id: str | None = None
+    attempt: int | None = None
+    epoch: str | None = None
+    generation: int | None = None
+    job_receipt_hash: str | None = None
+    event_receipt_hash: str | None = None
+    artifact_manifest_sha256: str | None = None
+    confirmed_artifact_paths: tuple[tuple[str, str], ...] = ()
+    historical_artifact_paths: tuple[tuple[str, str], ...] = ()
+    reasons: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for name in ("confirmed_artifact_paths", "historical_artifact_paths"):
+            object.__setattr__(self, name, tuple(tuple(pair) for pair in getattr(self, name)))
+        object.__setattr__(self, "reasons", tuple(self.reasons))
+        PublicationStatusView.model_validate(self.to_payload())
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": "simulation.publication-status.v1",
+            "recorded_sql_status": self.recorded_sql_status,
+            "confirmation_state": self.confirmation_state, "accepted": self.accepted,
+            "operation_id": self.operation_id, "attempt": self.attempt, "epoch": self.epoch,
+            "generation": self.generation, "job_receipt_hash": self.job_receipt_hash,
+            "event_receipt_hash": self.event_receipt_hash,
+            "artifact_manifest_sha256": self.artifact_manifest_sha256,
+            "confirmed_artifact_paths": dict(self.confirmed_artifact_paths),
+            "historical_artifact_paths": dict(self.historical_artifact_paths),
+            "reasons": list(self.reasons),
+        }
+
 
 class RuntimeJobStatus(StrEnum):
     """Phase 11.1 统一 job 状态枚举。"""
@@ -176,6 +217,7 @@ class AttemptView(BaseModel):
     result: str
     error: str = ""
     artifact_paths: dict[str, str] = Field(default_factory=dict)
+    publication: PublicationStatusView | None = None
 
 
 class AttemptListResponse(BaseModel):

@@ -1,0 +1,15 @@
+{
+  "kind": "STATIC_POST_CONSUMPTION_PREDICATE_GAP_NO_RUNTIME_EXECUTION",
+  "verified": [
+    "Finalizer sources checks actual job/event COMPLETE rows before terminal commit, then releases event lock.",
+    "Dispatcher performs terminal COMMIT, real confirm_committed and one-use _take_final_confirmation before calling recorder.",
+    "Recorder presently checks target/snapshot/manifest, writes new audit transaction, but never rereads actual completion receipts after consume.",
+    "Outer _operational_transaction keeps publication_guard and writer/connection registration through recorder; the terminal SQL COMMIT has ended the first SQLite transaction.",
+    "Existing local runtime lock order is job guard/job BEGIN IMMEDIATE then event lock/event BEGIN IMMEDIATE.",
+    "_check_local_locked calls session.evaluate_locked and therefore must NOT be reused for terminal audit rejoin. Use consumed proof plus independent original _check_app_live, not a new terminal lease decision.",
+    "SQLite event receipts are actual visual_local_publications_v1 rows under _write_lock/_conn; memory receipts are JSON values keyed by operation_id in _local_publications under _lock.",
+    "get_publication_summary later rechecks SQLite event rows; memory later-read treatment is archival. Neither is the missing write-time predicate."
+  ],
+  "narrow_extension": "Preserve genuine precommit owner/runtime/event object references in a dedicated private TLS slot, compare them to current actual registries at audit, and clear slot on every dispatcher exit. No refs enter serialized pending payload.",
+  "all_three_live_target_segments_match_snapshots": true
+}

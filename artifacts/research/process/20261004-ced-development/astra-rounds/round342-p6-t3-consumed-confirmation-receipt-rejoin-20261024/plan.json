@@ -1,0 +1,202 @@
+{
+  "round": "R342",
+  "planner": {
+    "model": "gpt-6-astra",
+    "agent": "/root/astra_p6_t3_plan",
+    "status": "ACTUAL_PLAN_ONLY"
+  },
+  "implementer": "/root/p6_t3_sol",
+  "problem": {
+    "kind": "STATIC_POST_CONSUMPTION_PREDICATE_GAP_NO_RUNTIME_EXECUTION",
+    "verified": [
+      "Finalizer sources checks actual job/event COMPLETE rows before terminal commit, then releases event lock.",
+      "Dispatcher performs terminal COMMIT, real confirm_committed and one-use _take_final_confirmation before calling recorder.",
+      "Recorder presently checks target/snapshot/manifest, writes new audit transaction, but never rereads actual completion receipts after consume.",
+      "Outer _operational_transaction keeps publication_guard and writer/connection registration through recorder; the terminal SQL COMMIT has ended the first SQLite transaction.",
+      "Existing local runtime lock order is job guard/job BEGIN IMMEDIATE then event lock/event BEGIN IMMEDIATE.",
+      "_check_local_locked calls session.evaluate_locked and therefore must NOT be reused for terminal audit rejoin. Use consumed proof plus independent original _check_app_live, not a new terminal lease decision.",
+      "SQLite event receipts are actual visual_local_publications_v1 rows under _write_lock/_conn; memory receipts are JSON values keyed by operation_id in _local_publications under _lock.",
+      "get_publication_summary later rechecks SQLite event rows; memory later-read treatment is archival. Neither is the missing write-time predicate."
+    ],
+    "narrow_extension": "Preserve genuine precommit owner/runtime/event object references in a dedicated private TLS slot, compare them to current actual registries at audit, and clear slot on every dispatcher exit. No refs enter serialized pending payload.",
+    "all_three_live_target_segments_match_snapshots": true
+  },
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round342-p6-t3-consumed-confirmation-receipt-rejoin-20261024/root-finding.json",
+      "bytes": 3811,
+      "sha256": "e192a6ef31b74a3b41a7c35bb71cc30fc594de07a760848f412ad4a2d18fe6e7"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round331-p6-t3-continuation-20261024/plan.json",
+      "bytes": 52234,
+      "sha256": "0c9b1abad450d8dd164f2b070d281f238bc008f31a301d531df000981cc7d5fd"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round338-p6-t3-final-audit-mode-boundary-20261024/root-acceptance.json",
+      "bytes": 4255,
+      "sha256": "40edc893b0b79bf31f0bba63cb7a3a9d4c2dab10367d46114c6da21894c995bf"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round342-p6-t3-consumed-confirmation-receipt-rejoin-20261024/source-evidence/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "bytes": 131185,
+      "sha256": "8bce91c7f030b896e794f39b2f1e4f66cebbe473e41ebae92fbef13e7dd458ac"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round342-p6-t3-consumed-confirmation-receipt-rejoin-20261024/source-evidence/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "bytes": 43368,
+      "sha256": "caece25a750292a58a4bc6ebc585cd294d19bf8138692d0c3c792cfa0df87f54"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round342-p6-t3-consumed-confirmation-receipt-rejoin-20261024/source-evidence/src/cloud_edge_robot_arm/vision/operational_windows.py",
+      "bytes": 50208,
+      "sha256": "a9725cf1aa61bad2a8506353be455e2268df07d85cc7547a79ddf7d91fae58a9"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round342-p6-t3-consumed-confirmation-receipt-rejoin-20261024/source-evidence/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "bytes": 155168,
+      "sha256": "7c1ad5a70c65b5b20be6552dc04fbfbb4ce4aa5ecb39bf965ceb23dab98ccb3c"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "bytes": 148111,
+      "sha256": "5088a846d6994f8678820054f3143e615a77e9379193e91e29f2b690aebefa84",
+      "role": "read-only context for concrete lock/connection/receipt storage; no changes allowed"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
+      "bytes": 90987,
+      "sha256": "149950ca17b9e1bac21a05a8f45e9d6f8f8f501ff714ca2ac7c996bb333de927",
+      "role": "read-only context for concrete lock/connection/receipt storage; no changes allowed"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
+      "bytes": 28443,
+      "sha256": "3e4291d300398dbae41034ae728838eaf38769e65b4f6124c2423041fd3ae306",
+      "role": "read-only context for concrete lock/connection/receipt storage; no changes allowed"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round342-p6-t3-consumed-confirmation-receipt-rejoin-20261024/source-slices.json",
+      "bytes": 51990,
+      "sha256": "2ad39854945ca877612fb254407887c9f03f87fe94afb711e8e50143890c01eb"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round342-p6-t3-consumed-confirmation-receipt-rejoin-20261024/planner-readout.json",
+      "bytes": 1648,
+      "sha256": "35e6f4715662f9715f91099e23a0ebd23e77f62fd651f0fa3a4f1515d2e177f4"
+    }
+  ],
+  "root_cause": "Precommit receipt check does not cover the interval through terminal COMMIT and consumed confirmation; recorder promotes archived context without a protected current receipt rejoin.",
+  "scope": {
+    "file": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+    "allowed_definitions": {
+      "SQLiteSimulationJobRepository._final_publication_sources": "1d4d3f7e70bd00c9b1517463cf144b8c411f03a20452d65501d2f2accd110147",
+      "SQLiteSimulationJobRepository._record_final_confirmation": "cd1d205eea68072773297b27748fdc104db4e4becf885eb10d67ee534e809f29",
+      "SQLiteSimulationJobRepository._dispatch_writer": "f4134275b31d2abaf28b6f47c244daf8a0c7c38ed0f4cc6ecc81b472a4e54b7d"
+    },
+    "allowed_changes": "Record exact private precommit source object tuple; add recorder live-source/receipt rejoin within existing audit transaction and required job-before-event exclusion; clear only new private tuple in dispatcher finally.",
+    "forbidden": [
+      "Mode guard or broker/confirmation protocol changes; reopening/evaluating/renewing terminal lease.",
+      "Original terminal job/attempt/lease SQL mutation, file rewrite, event receipt/data rewrite or source repair.",
+      "Public summary/model/schema/payload field changes, registry minting, arbitrary serialized path opens.",
+      "R341 selector/other source changes, tests, imports, probes, runtime runs or new allowances."
+    ]
+  },
+  "steps": [
+    {
+      "step": 1,
+      "owner": "ROOT",
+      "action": "Verify immutable inputs and affected selected definitions; review plan and activate same Sol. Preserve R338 mode dispatch, R340 cap successor and independent R341 selector scope."
+    },
+    {
+      "step": 2,
+      "owner": "Sol",
+      "action": "In _final_publication_sources, after genuine existing LOCAL owner/runtime/concrete-event validation, retain exact (owner,runtime,events) object references in a dedicated private _transactions.final_publication_live_sources slot. It must not be included in context/payload JSON or public summary. Capture only once for that actual finalizer; reject unexpected preexisting non-None slot. Clear the slot in _dispatch_writer finally on all exits beside existing final_publication cleanup. Do not change existing precommit checks or mode guards."
+    },
+    {
+      "step": 3,
+      "owner": "Sol",
+      "action": "In _record_final_confirmation keep current caller, proof type/process/thread, genuine view and R338 LOCAL guards. Require captured tuple and exact current owner/runtime mappings, exact owner/runtime types, runtime._operational_owner is owner, actual worker events is captured events, runtime source job/events repositories are exact, actual session/worker/repository/binding identities agree, original frozen LOCAL mode/thread agree. _LOCAL_ORIGINALS[owner], owner/runtime local originals and payload original_time must canonical-match; compare source identities/hashes and original app reference to captured current owner descriptor without issuing authority. Payload event_kind/database must agree with actual concrete repository kind/path, but must never choose a connection or owner."
+    },
+    {
+      "step": 4,
+      "owner": "Sol",
+      "action": "Use the existing current view connection/registered writer and already held job publication_guard. After initial genuine/app checks, start the separate audit job BEGIN IMMEDIATE BEFORE acquiring actual event lock. Move/repeat existing target/job-snapshot/manifest/pending-row validations inside this audit exclusion. SQLite: under actual events._write_lock, reject preexisting event transaction, start BEGIN IMMEDIATE on actual events._conn and track ownership; memory: hold actual events._lock. Keep event exclusion through the job audit COMMIT. Do not open a path from serialized payload or acquire event before job."
+    },
+    {
+      "step": 5,
+      "owner": "Sol",
+      "action": "Under both exclusions, repeat selected actual source/identity binding checks, read nonempty current job rows SELECT * FROM simulation_local_publications_v1 WHERE job_id=? ORDER BY operation_id using session.job_id. Require exact list equality to payload event_receipts and digest equality to pending event_receipt_hash; each row must be COMPLETE and have original job/attempt/lease/epoch. Earlier receipt generations/revisions must retain exact stored values, not be forced to terminal generation. For each expected operation_id read counterpart from actual SQLite events._conn (visual_local_publications_v1) or actual memory events._local_publications[key] JSON and require complete dictionary equality. No archived-memory substitute, unrelated-runtime scan, hash-only comparison or repair/overwrite of either side."
+    },
+    {
+      "step": 6,
+      "owner": "Sol",
+      "action": "Retain existing actual target/committed snapshot/manifest/PENDING CAS joins, payload proof fields and original _remaining_app_seconds. Perform current owner._check_app_live after receipt reads and immediately before CONFIRMED UPDATE; compute current original app proof cap in this protected phase. Preserve actual consumed ack proof and do not call evaluate_locked/_check_local_locked, _local_publication_scope, lease proposal/renewal or new confirm. Write only the existing audit row via its exact PENDING CAS then COMMIT while event exclusion remains held."
+    },
+    {
+      "step": 7,
+      "owner": "Sol",
+      "action": "Release only audit-owned SQLite event read transaction via ROLLBACK in finally after successful job audit COMMIT or failure; no event data writes. Roll back only the new audit job transaction on failure while preserving prior terminal commit and PENDING evidence. Never commit/rollback a foreign preexisting event transaction. Track successful acquisition/start ownership; preserve primary failure on cleanup fault and release locks through existing context-manager patterns. Clear private TLS slot on dispatcher exit. Missing/drifted/expired/partial state rejects positive audit; no terminal SQL status/lease/file rewrite and no retry."
+    },
+    {
+      "step": 8,
+      "owner": "Sol then ROOT",
+      "action": "Save minimal source diff, exact affected canonical segments and static AST/symtable/source/hash proof. Review ordering, all exceptional exits and matrix. Require unchanged broker/mode/SQL terminal history, precommit joins, public readout semantics, test bytes, budgets and all unrelated definitions. Record R342 source-only acceptance before future original GREEN source-gate preparation; this is not runtime activation."
+    }
+  ],
+  "case_matrix": [
+    {
+      "case": "Unchanged actual SQLite or memory sources and COMPLETE receipts",
+      "expected": "Rejoin real current rows after consumed proof under both exclusions, current D_app and original CAS; positive audit eligible."
+    },
+    {
+      "case": "Job receipt removed/added/modified, hash drift, or partial phase",
+      "expected": "Exact nonempty ordered list/fence/hash checks reject before UPDATE."
+    },
+    {
+      "case": "Event receipt missing/modified/partial or wrong operation",
+      "expected": "Actual keyed row dictionary equality rejects, even when archived pending list is unchanged."
+    },
+    {
+      "case": "Owner/runtime/repository/session swaps or copied serialized paths/descriptions",
+      "expected": "Exact captured private refs plus registry/startup/source/app checks reject; no arbitrary file connection."
+    },
+    {
+      "case": "Original app expires during receipt reads",
+      "expected": "Fresh original app check before UPDATE rejects; no renewed terminal authority."
+    },
+    {
+      "case": "Terminal lease lifecycle with valid consumed confirmation",
+      "expected": "No new lease evaluate/renew/propose; original consumed proof remains the only acknowledgement source."
+    },
+    {
+      "case": "Read/lock/transaction/CAS/commit fault",
+      "expected": "No synthetic success/retry; preserve original terminal outcome and historical artifacts; audit transaction cleanup only."
+    },
+    {
+      "case": "FOUNDATION/legacy or later archival memory summary",
+      "expected": "Existing mode gating and public readout classification unchanged; memory claim explicitly archival at read, actual live receipts required at write."
+    }
+  ],
+  "static_verification": {
+    "tools": "stdlib AST/symtable/text/SHA only; no executing/importing candidate",
+    "source_order": "consumed proof -> exact source refs -> job audit BEGIN -> event lock (+owned SQLite event BEGIN) -> actual job/event receipt equality -> current original D_app + target/file/PENDING joins -> audit UPDATE/COMMIT -> event read rollback/release -> TLS cleanup",
+    "evidence": "Preserve full original snapshots; capture immediate implementation before/after slices and minimal diff. Whole-file snapshots are historical references, not rollback prerequisites.",
+    "locks": "Existing outer publication_guard and genuine writer stay held; job-before-event acquisition order; both event lock and SQLite DB write exclusion stay until audit commit. No event semantics written.",
+    "memory_limit": "At confirmation write, actual memory receipt map is mandatory. Later memory summary remains archival under original contract and does not claim restored live authority."
+  },
+  "runtime_prerequisites": "ROOT source/plan applicability review and activation required for repair. No runtime precondition is exercised by R342. Original R331 actor/source/HEAD/resource and other applicable correction gates are still required for future GREEN; no runtime is released here.",
+  "budget": {
+    "RED": "SPENT, original evidence untouched",
+    "GREEN": "UNUSED_HELD",
+    "new_allowance": 0,
+    "nodes": 9,
+    "max_worker_polls": 15
+  },
+  "acceptance": "Only post-consumption confirmation-write predicate and source identity/lock scope are source-verified. No runtime GREEN, T3/B-final completion, real research or C/native/model/physics claim. New cause/unexpected failure pauses affected work for Astra."
+}

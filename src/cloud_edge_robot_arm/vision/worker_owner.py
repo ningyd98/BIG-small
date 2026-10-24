@@ -531,10 +531,13 @@ def grounded_worker_effect_conditions(
     does not replace the original requirement/template and has no clock oracle.
     A live caller must separately recheck current lease/frame/expiry and safety.
     """
-    if type(original) is not VisualOriginalPlan or type(grounding) is not StepGroundingBinding:
+    from cloud_edge_robot_arm.vision.owner_registration import LocalVisualOriginalPlan, LocalStepGroundingBinding
+    local = type(original) is LocalVisualOriginalPlan and type(grounding) is LocalStepGroundingBinding
+    if not local and (type(original) is not VisualOriginalPlan or type(grounding) is not StepGroundingBinding):
         raise ValueError("concrete original plan and grounding binding required")
-    original = freeze_original_visual_plan(**original.freeze_inputs())
-    grounding = replace(grounding)
+    original = (LocalVisualOriginalPlan.from_payload(original.to_payload()) if local
+                else freeze_original_visual_plan(**original.freeze_inputs()))
+    grounding = (LocalStepGroundingBinding.from_payload(grounding.to_payload()) if local else replace(grounding))
     step = grounding.grounded_step
     requirement = original.requirements.get(step.step_id)
     if (
@@ -547,8 +550,9 @@ def grounded_worker_effect_conditions(
         or any(
             original.source_hashes.get(k) != v for k, v in grounding.grounding_source_hashes.items()
         )
-        or not original.registered_at <= grounding.created_at < grounding.valid_until
-        or grounding.valid_until > original.effective_deadline_at
+        or (not local and (not original.registered_at <= grounding.created_at < grounding.valid_until
+                           or grounding.valid_until > original.effective_deadline_at))
+        or (local and grounding.local_time.to_payload() != original.local_time.to_payload())
     ):
         raise ValueError("grounded effect original/source/version/policy binding mismatch")
     result = []
@@ -614,6 +618,9 @@ def grounded_worker_execution_effect_conditions(
     if contract.model_dump(mode="json") != expected:
         raise ValueError("full effect execution payload differs from exact original binding")
     step = next(s for s in contract.steps if s.step_id == step_id)
+    from cloud_edge_robot_arm.vision.owner_registration import LocalStepGroundingBinding
+    if type(grounding) is LocalStepGroundingBinding:
+        return grounded_worker_effect_conditions(original, grounding)
     return grounded_worker_effect_conditions(
         original, replace(grounding, _grounded_step_json=step.model_dump_json())
     )

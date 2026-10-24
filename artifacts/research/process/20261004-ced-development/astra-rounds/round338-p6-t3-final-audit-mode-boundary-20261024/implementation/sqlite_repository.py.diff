@@ -1,0 +1,74 @@
+--- before/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py
++++ after/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py
+@@ -165,12 +165,29 @@
+             raise ValueError("publication requires a nonempty artifact manifest")
+         return manifest
+ 
++    def _final_publication_mode(self, view: LockedLeaseView) -> str:
++        """Classify only the genuine private finalizer session after ingress checks."""
++        issued = _view_record(view)
++        session = issued.session
++        if (_current_session(self) is not session or session.repository is not self
++                or session.worker.repository is not self
++                or session.worker._operational_lease_session is not session
++                or view.purpose != "finalize_operational_publication"):
++            raise OperationalLeaseError("final publication requires the exact current private session")
++        session._check_ingress(view.purpose)
++        mode = session._mode
++        if mode not in {"LOCAL_TEMPORAL_PUBLICATION_V1", "OPERATIONAL_LEASE_FOUNDATION_V1"}:
++            raise OperationalLeaseError("unknown final publication authority mode")
++        return mode
++
+     def _final_publication_sources(self, view: LockedLeaseView, paths: dict[str, str], frozen) -> dict[str, Any]:
+         from cloud_edge_robot_arm.vision.operational_windows import _OWNERS, _LOCAL_RUNTIMES
+         from cloud_edge_robot_arm.repositories.event_autonomy import SQLiteEventAutonomyRepository, InMemoryEventAutonomyRepository
+ 
+         if sys._getframe(1).f_code is not _WRITER_FUNCTIONS["finalize_operational_publication"].__code__:
+             raise OperationalLeaseError("actual finalizer alone binds publication sources")
++        if self._final_publication_mode(view) != "LOCAL_TEMPORAL_PUBLICATION_V1":
++            raise OperationalLeaseError("local final source audit requires local mode")
+         session = _view_record(view).session
+         worker = session.worker
+         owner = _OWNERS.get(worker)
+@@ -220,6 +237,8 @@
+     def _stage_final_confirmation(self, view: LockedLeaseView, proposal: LeaseProposal) -> dict[str, Any]:
+         if sys._getframe(1).f_code is not self._dispatch_writer.__code__:
+             raise OperationalLeaseError("actual finalizer dispatch stages terminal confirmation")
++        if self._final_publication_mode(view) != "LOCAL_TEMPORAL_PUBLICATION_V1":
++            raise OperationalLeaseError("local pending audit requires local mode")
+         context = getattr(self._transactions, "final_publication", None)
+         target = dict(proposal.target)
+         if context is None or view.purpose != "finalize_operational_publication" or target["lifecycle"] != "TERMINAL":
+@@ -251,6 +270,8 @@
+                 or proof.reply.view.view is not view or proof.pid != os.getpid()
+                 or proof.thread_id != threading.get_ident() or proof.native_thread_id != threading.get_native_id()):
+             raise OperationalLeaseError("private consumed one-use final confirmation proof required")
++        if self._final_publication_mode(view) != "LOCAL_TEMPORAL_PUBLICATION_V1":
++            raise OperationalLeaseError("local consumed audit requires local mode")
+         owner = _OWNERS.get(proof.session.worker)
+         if owner is None:
+             raise OperationalLeaseError("final confirmation lost original app owner")
+@@ -2107,8 +2128,9 @@
+                     )
+                 _seal_repository_target(view, target)
+                 proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+-                pending = (self._stage_final_confirmation(view, proposal)
+-                           if name == "finalize_operational_publication" else None)
++                local_audit = (name == "finalize_operational_publication"
++                               and self._final_publication_mode(view) == "LOCAL_TEMPORAL_PUBLICATION_V1")
++                pending = self._stage_final_confirmation(view, proposal) if local_audit else None
+                 ack = self._commit_operational_proposal(view, proposal)
+                 session.confirm_committed(ack)
+                 if pending is not None:
+@@ -2233,9 +2255,8 @@
+         validate()
+         self._validate_operational_row(conn, session, dict(view.snapshot))
+         session.evaluate_locked(view)  # Fresh original D_lease bound after the filesystem work.
+-        self._transactions.final_publication = self._final_publication_sources(
+-            view, published, frozen
+-        )
++        if self._final_publication_mode(view) == "LOCAL_TEMPORAL_PUBLICATION_V1":
++            self._transactions.final_publication = self._final_publication_sources(view, published, frozen)
+         # Positive index/metrics rows precede real attempt close, lease release and terminal job.
+         for table in tables:
+             if table == "simulation_jobs":

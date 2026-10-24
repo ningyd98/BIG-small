@@ -1,0 +1,132 @@
+python3 - <<'PY'
+from pathlib import Path
+import collections, contextlib, hashlib, json, math, re, signal, sys, time, traceback
+R = Path('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round361-p6-t3-diagnostic-sigsegv-evidence-20261024')
+I = R / 'implementation'
+plan = json.loads((R / 'plan.json').read_text())
+allowed_reads = {x['path'] for x in plan['inputs']}
+allowed_writes = {Path(x) for x in plan['scope']['allowed_new_files']}
+started = time.monotonic()
+def need(value, text):
+    if not value:
+        raise ValueError(text)
+def pin(path):
+    raw = Path(path).read_bytes()
+    return {'path': str(path), 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
+def read(path):
+    need(str(path) in allowed_reads, 'read outside exact32-input whitelist')
+    return Path(path).read_bytes()
+def obj(path):
+    value = json.loads(read(path))
+    need(type(value) is dict, 'expected JSON object')
+    return value
+def number(value):
+    return type(value) in (int, float) and math.isfinite(value)
+def span(row, end, start):
+    a, b = row.get(end), row.get(start)
+    return {'status': 'OBSERVED_DERIVED', 'operands': {end: a, start: b}, 'seconds': a - b} if number(a) and number(b) else {'status': 'UNKNOWN', 'missing_or_invalid': [k for k in (end, start) if not number(row.get(k))]}
+def write(name, value, text=False):
+    path = I / name
+    need(path in allowed_writes, 'write outside exact output whitelist')
+    raw = value.encode() if text else (json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n').encode()
+    total = sum(p.stat().st_size for p in allowed_writes if p.exists())
+    need(total + len(raw) <= 2097152, 'new output2MiB bound')
+    with path.open('xb') as f:
+        f.write(raw)
+    return pin(path)
+def jsonl(path, expected):
+    raw = read(path)
+    rows, offset = [], 0
+    for line, part in enumerate(raw.splitlines(keepends=True), 1):
+        value = json.loads(part)
+        need(type(value) is dict, 'expected JSONL object')
+        rows.append({'source_line': line, 'source_byte': offset, 'value': value})
+        offset += len(part)
+    need(len(rows) == expected and raw.endswith(b'\n'), 'fixed JSONL row count/tail differs')
+    return rows
+def denominators(rows, fields):
+    return {k: {'rows': len(rows), 'numeric': sum(number(x.get(k)) for x in rows), 'absent': sum(k not in x for x in rows), 'null': sum(k in x and x[k] is None for x in rows), 'boolean_not_numeric': sum(type(x.get(k)) is bool for x in rows)} for k in fields}
+def timeout(signum, frame):
+    raise TimeoutError('R36160s inert metadata bound')
+status = {'round': 'R361', 'actual_actor': '/root/p6_t3_sol', 'candidate_executed': False, 'DB_opened': False, 'retry': False}
+code = 1
+with (I / 'metadata.stdout.txt').open('x') as stdout, (I / 'metadata.stderr.txt').open('x') as stderr:
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        signal.signal(signal.SIGALRM, timeout)
+        signal.alarm(60)
+        try:
+            pre = [{'expected': x, 'actual': pin(x['path'])} for x in plan['inputs']]
+            need(len(pre) == 32 and all(x['expected'] == x['actual'] for x in pre), 'input precheck mismatch')
+            find = lambda suffix: Path(next(x['path'] for x in plan['inputs'] if x['path'].endswith(suffix)))
+            result = obj(find('/live_utc_01/result.json'))
+            transport = obj(find('/root-launch/transport-status.json'))
+            completion = obj(find('/live_utc_01/completion.json'))
+            profile = jsonl(find('/diagnostic/observer-profile.jsonl'), 148)
+            OS = jsonl(find('/diagnostic/os-samples.jsonl'), 55)
+            requests = jsonl(find('/diagnostic/stack-requests.jsonl'), 18)
+            native = jsonl(find('/diagnostic/signal-ownership.jsonl'), 7)
+            os_values = [x['value'] for x in OS]
+            os_result = result.get('os_sampling', {}).get('records')
+            need(type(os_result) is list and len(os_result) == 55 and all(type(x) is dict for x in os_result), 'OS result shape differs')
+            joined = []
+            for rawrow in OS:
+                x = rawrow['value']
+                matches = [z for z in os_result if z.get('opportunity') == x.get('opportunity') and z.get('pid') == x.get('pid')]
+                need(len(matches) == 1, 'OS opportunity/PID join is not unique')
+                z = matches[0]
+                joined.append({'source_line': rawrow['source_line'], 'source_byte': rawrow['source_byte'], 'opportunity': x.get('opportunity'), 'pid': x.get('pid'), 'JSONL_observed_monotonic': x.get('observed_monotonic'), 'JSONL_pre_receipt_span': span(x, 'completed_monotonic_before_receipt', 'observed_monotonic'), 'result_completed_minus_observed_excludes_setup': span(z, 'completed_monotonic', 'observed_monotonic'), 'result_completion_minus_deadline': span(z, 'completed_monotonic', 'guard_deadline'), 'recorded_result_guard_overrun': z.get('guard_overrun', 'UNKNOWN')})
+            first, last = os_values[0], os_values[-1]
+            f, l = first.get('process'), last.get('process')
+            cpu = {'status': 'UNKNOWN', 'first_source_line': 1, 'last_source_line': 55}
+            if type(f) is dict and type(l) is dict:
+                keys = ('pid', 'starttime_ticks', 'user_CPU_ticks', 'system_CPU_ticks')
+                valid = all(number(z.get(k)) for z in (f, l) for k in keys) and number(first.get('SC_CLK_TCK')) and first['SC_CLK_TCK'] > 0 and first['SC_CLK_TCK'] == last.get('SC_CLK_TCK') and f['pid'] == l['pid'] == first.get('pid') == last.get('pid') and f['starttime_ticks'] == l['starttime_ticks']
+                if valid:
+                    cpu = {'status': 'OBSERVED_ENDPOINT_DELTA', 'PID': f['pid'], 'starttime_ticks': f['starttime_ticks'], 'SC_CLK_TCK': first['SC_CLK_TCK'], 'first_ticks': [f['user_CPU_ticks'], f['system_CPU_ticks']], 'last_ticks': [l['user_CPU_ticks'], l['system_CPU_ticks']], 'user_seconds': (l['user_CPU_ticks'] - f['user_CPU_ticks']) / first['SC_CLK_TCK'], 'system_seconds': (l['system_CPU_ticks'] - f['system_CPU_ticks']) / first['SC_CLK_TCK'], 'sample_wall_span': span({'a': last.get('observed_monotonic'), 'b': first.get('observed_monotonic')}, 'a', 'b'), 'instrumented_process_only': True}
+            checkpoints = [x for x in profile if x['value'].get('kind') == 'checkpoint']
+            saturation = [x for x in profile if x['value'].get('kind') == 'saturation']
+            need(len(saturation) == 1 and len(checkpoints) > 0, 'profile finite shape differs')
+            sat = saturation[0]['value']
+            sat_seconds = sat['monotonic_ns'] / 1e9 - result['child_start_monotonic'] if number(sat.get('monotonic_ns')) and number(result.get('child_start_monotonic')) else 'UNKNOWN'
+            raw = read(find('/diagnostic/stacks.raw'))
+            outcomes = [x for x in requests if x['value'].get('signal_submitted') is True]
+            need(len(raw) == 77146 and len(outcomes) == 9, 'stack fixed bound differs')
+            intervals = []
+            for n, source in enumerate(outcomes):
+                x = source['value']
+                group = [z for z in requests if all(z['value'].get(k) == x.get(k) for k in ('opportunity', 'pid', 'state_epoch'))]
+                need(len(group) == 2 and sum(z['value'].get('signal_submitted') is True for z in group) == 1, 'intent/outcome identity join differs')
+                a = x.get('pre_signal_stack_bytes')
+                b = outcomes[n + 1]['value'].get('pre_signal_stack_bytes') if n + 1 < len(outcomes) else len(raw)
+                need(type(a) is int and type(b) is int and 0 <= a <= b <= len(raw), 'invalid raw byte offsets')
+                piece = raw[a:b]
+                text = piece.decode('ascii', errors='replace')
+                current = text.split('Current thread ', 1)[1] if 'Current thread ' in text else ''
+                intervals.append({'opportunity': x.get('opportunity'), 'pid': x.get('pid'), 'epoch': x.get('state_epoch'), 'source_rows': [{'line': z['source_line'], 'byte': z['source_byte'], 'kind': z['value'].get('status')} for z in group], 'actual_monotonic': x.get('actual_monotonic'), 'submitted_monotonic': x.get('submitted_monotonic'), 'start_byte': a, 'end_byte_exclusive': b, 'bytes': b-a, 'sha256': hashlib.sha256(piece).hexdigest(), 'raw_start_line': raw[:a].count(b'\n') + 1, 'current_thread_headers': text.count('Current thread '), 'first_current_frames': [line for line in current.splitlines() if line.startswith('  File ')][:8], 'ends_newline': piece.endswith(b'\n'), 'unknown_source_line_present': 'line ???' in text, 'association': 'UNCERTAIN_BYTE_GROWTH_NOT_ACK_NOT_EXCLUSIVE_DUMP_NOT_CAUSAL', 'native_thread_address_to_OS_TID': 'UNKNOWN_NO_SUPPORTED_MAPPING'})
+            final = outcomes[-1]['value']
+            separation = span({'exit_observed': result.get('primary_trigger', {}).get('observed_monotonic'), 'submitted': final.get('submitted_monotonic')}, 'exit_observed', 'submitted')
+            offset_map = {'round': 'R361', 'raw': pin(find('/diagnostic/stacks.raw')), 'interval_count': 9, 'intervals': intervals, 'last_raw_fragment_ascii': raw[intervals[-1]['start_byte']:].decode('ascii', errors='replace'), 'last_submission_to_first_exit_observation': separation, 'crash_instruction': 'UNKNOWN', 'signal_causality': 'UNKNOWN'}
+            summary = {'round': 'R361', 'actor': '/root/p6_t3_sol', 'input_precheck': pre, 'original_admin_failure': {'chunk': '2268ac', 'key': 'actual_monotonic', 'fake_maximum_guard_elapsed0': 'WITHDRAWN_NOT_A_MEASUREMENT'}, 'transport': {k: transport.get(k, 'UNKNOWN') for k in ('exit_code', 'timed_out', 'signal', 'elapsed_seconds')}, 'child': {k: result.get(k, 'UNKNOWN') for k in ('child_exit', 'timed_out', 'deadline_events', 'cleanup', 'resource_counts', 'primary_trigger', 'child_elapsed_seconds_through_cleanup', 'behavior_checks_passed', 'test_observed_pass')}, 'completion_is_not_behavior': {k: completion.get(k, 'UNKNOWN') for k in ('finalization_complete', 'behavior_candidate_pass', 'test_observed_pass', 'normal_completed_test_and_capture')}, 'row_counts': {'profile': 148, 'OS': 55, 'requests': 18, 'native_ownership': 7}, 'OS_raw_key_denominators': denominators(os_values, ('observed_monotonic', 'actual_monotonic', 'completed_monotonic_before_receipt', 'completed_monotonic', 'guard_elapsed_seconds')), 'OS_result_key_denominators': denominators(os_result, ('observed_monotonic', 'completed_monotonic', 'guard_deadline', 'guard_elapsed_seconds')), 'OS_joined_timings': joined, 'OS_endpoint_CPU': cpu, 'OS_last_population': {'reported_threads': l.get('reported_thread_count') if type(l) is dict else 'UNKNOWN', 'selected_actual_TIDs': len(last.get('threads', [])), 'thread_listing_complete': last.get('thread_listing_complete', 'UNKNOWN'), 'thread_delta_or_native_address_mapping': 'NOT_PERFORMED_NO_INVENTED_MAPPING', 'wchan_lock_owner': 'UNKNOWN'}, 'profile': {'kinds': dict(collections.Counter(x['value'].get('kind') for x in profile)), 'last_checkpoint_source_line': checkpoints[-1]['source_line'], 'last_checkpoint': checkpoints[-1]['value'], 'saturation_source_line': saturation[0]['source_line'], 'saturation': sat, 'saturation_seconds_after_child_start': sat_seconds, 'later_coverage': 'UNKNOWN', 'inclusive_times_may_be_summed': False}, 'stack_JSONL_key_denominators': denominators([x['value'] for x in requests], ('actual_monotonic', 'submitted_monotonic', 'completed_monotonic_before_receipt', 'completed_monotonic', 'guard_elapsed_seconds')), 'native_state_events': [{'source_line': x['source_line'], 'kind': x['value'].get('kind'), 'state': x['value'].get('state'), 'phase': x['value'].get('phase')} for x in native], 'observed_restoration': 'UNKNOWN_MISSING_OBSERVER_STATUS_NO_RETIREMENT_RECORD', 'crash_root_cause': 'UNKNOWN', 'original600s_root_cause': 'UNKNOWN', 'new_runtime_allowances': 0}
+            write('schema-summary.json', summary)
+            write('stack-offset-map.json', offset_map)
+            report = """# R361 有界静态诊断\n\nR354 子进程实际以 SIGSEGV（−11）结束，外层 runner/timeout 返回1且外层未超时。deadline_events为空；270.1065520400007秒是子进程开始至cleanup的耗时，不能定位fault instruction。cleanup已reap且group为空，无cleanup错误。资源sidecar、JUnit和case未完成；真实完成计数UNKNOWN。ROOT验收的是79文件/20,243,954字节及539源码pins的保留完整性，已拒绝此诊断；capture终态不能算作测试通过或观察器中立证明。\n\nprofile148行，只记录一次bridge:1入口及exercise call，没有bridge exit。12个checkpoint后，在子开始约61.527409秒达到30.000000374秒测得观察器CPU预算并停止profile，随后覆盖UNKNOWN。最后完整checkpoint记录17,806,866 callbacks、633,623hotspot events，_copy311,810calls；from_payload49calls/48returns。inclusive时间嵌套重叠，不能相加；这些仅是带大量仪器成本的前缀数据，不能推断原R350基线性能或场景完成。\n\n55条OS记录使用observed_monotonic，不是stack请求的actual_monotonic。schema-summary逐行给出JSONL行号/byte offset、opportunity/PID唯一join、原始操作数及结果。JSONL的completed_monotonic_before_receipt排除append和后续簿记；result的completed_monotonic减observed_monotonic也排除更早setup，绝不是总guard elapsed。缺失值列为UNKNOWN，bool不当数字；原命令默认得到的maximum_guard_elapsed=0在此撤销。result guard deadline比较另列。CPU仅同PID8、同starttick25240577、CLK_TCK100端点可比较：user0→10909、system0→16115 ticks（109.09s+161.15s）；它包含仪器成本，与持续CPU工作相容，不证明某段代码或锁的根因。末次报告18threads而只选16实际TIDs，不能宣称全线程覆盖。未计算无身份依据的thread delta或hex地址→TID映射；wchan不证明锁owner。\n\n18条请求是9个intent/outcome对。stack-offset-map保留九个pre-request文件size至下一size/最终长度的增长区间、行/byte来源和SHA。区间1–8各有Current thread header，较早excerpt反复出现copy/decode/semantic验证，前两个还含观察器/资源profile；这与profile前缀及进程CPU增长方向一致，支持“本次instrumented运行存在大量验证/复制工作”的有限假设。它不能证明原600秒非完成根因，更不能证明SIGSEGV根因。请求返回仅代表kill syscall返回，不是dump ACK，也不证明区间独占属于某次信号。\n\n第9次submitted_monotonic=252675.775778051，首次观察到非零exit=252675.876453007，两者差0.10067495598923415秒仅为时序关联。末区间[76832,77146)只有314bytes，无Current thread header，含operational_lease._rpc line???并截于File。无法从中定位故障指令、主线程栈、两处wait之一或锁owner。没有最终observer-status、retirement或restoration确认。native handler所有权/信号与unwinding相互作用、解释器/native extension状态、无关产品缺陷都仍可能；已加载extension名单不能指认责任模块。R311历史SIGSEGV也不能凭症状合并同因。\n\n冻结R351离线证据只能描述当时持久化RUNNING/历史publication；memory events RAM不可恢复，不能补出R354崩溃现场或UTC因果排序。本轮不再读DB。事实、仪器限制和假设必须分开：崩溃根因及原600秒非完成根因均UNKNOWN，不提出已证明的源修复。\n\n后续若需区分上述假设，应先由actual Astra制定新计划：精确假设、最小scope、独立新命令身份、有限时间/资源/输出/cleanup及双ledger单次reservation。当前证据并未自动授权禁用信号、改变profile、增长timeout、重跑测试或native/DB探针。本轮只有既有证据的静态schema修正与报告，无行为credit或任何新runtime额度。原raw、原失败输出、source/gate/ledger不改。\n"""
+            write('diagnosis-report.md', report, text=True)
+            post = [{'expected': x, 'actual': pin(x['path'])} for x in plan['inputs']]
+            need(all(x['expected'] == x['actual'] for x in post), 'input postcheck mismatch')
+            write('step-report.md', '# R361 metadata-only step\n\nActual author /root/p6_t3_sol. Exact32 inputs were byte-hash checked before and after this one fixed inline operation. All148/55/18/7 JSONL rows and77146 stackbytes were parsed, preserving source line/offset and nine uncertain growth intervals. Schema-specific keys/types and missing denominators are explicit; fakeguard0 withdrawn. Only exclusive R361 artifacts were created. No original failed command replay, candidate import/run, source edit, DB/liveproc/network/test/probe or new runtime allowance. Root causes remainUNKNOWN; ROOT independent evidence review is still required.\n', text=True)
+            status.update(actual_exit_code=0, input_postcheck=post, input_postcheck_all_match=True, output_pins=[pin(p) for p in sorted(allowed_writes) if p.exists() and p.name not in ('metadata-result.json', 'metadata.stdout.txt', 'metadata.stderr.txt')])
+            print(json.dumps({'status': 'METADATA_ONLY_COMPLETE', '32_inputs_postcheck': True, 'row_counts': summary['row_counts'], 'intervals': len(intervals)}, ensure_ascii=False))
+            code = 0
+        except BaseException as error:
+            traceback.print_exc()
+            status.update(actual_exit_code=1, error_type=type(error).__name__, error=str(error), no_retry=True)
+        finally:
+            signal.alarm(0)
+            status['elapsed_seconds_before_result_write'] = time.monotonic() - started
+            stdout.flush()
+            stderr.flush()
+            status['raw_stdout'] = pin(I / 'metadata.stdout.txt')
+            status['raw_stderr'] = pin(I / 'metadata.stderr.txt')
+            write('metadata-result.json', status)
+sys.exit(code)
+PY

@@ -743,7 +743,7 @@ class LocalVisualVerificationRouteInput(LocalDomainEnvelope, VisualVerificationR
 
     def online(self) -> OnlineEvidenceSnapshot:
         body = self.object("online")
-        return OnlineEvidenceSnapshot(
+        online = OnlineEvidenceSnapshot(
             local_model(body["observation"], RGBDObservation),
             local_model(body["robot_state"], RobotState),
             local_object(body["visual_facts"]),
@@ -751,6 +751,14 @@ class LocalVisualVerificationRouteInput(LocalDomainEnvelope, VisualVerificationR
             local_integer(body["command_seq"]),
             local_sha(body["context_hash"]),
         )
+        from cloud_edge_robot_arm.vision.operational_windows import _reference_for_observation
+        original = original_from_payload(self.object("original"))
+        requirement = original.requirements[self.string("step_id")]
+        ttl = min(requirement.ordinary_ttl_s,
+                  *(condition.tolerances.get("max_age_s", 5.0)
+                    for condition in (*requirement.preconditions, *requirement.postconditions)))
+        return replace(online, operational_reference=_reference_for_observation(
+            online.observation, "condition", max_age_s=ttl))
 
 
 class LocalVisualVerificationRouteRecord(LocalDomainEnvelope, VisualVerificationRouteRecord):
@@ -773,7 +781,7 @@ class VisualVerificationRouteWriteResult:
         record: VisualVerificationRouteRecord,
         write_disposition: Literal["NEW_COMMIT", "HISTORICAL_DUPLICATE"],
     ) -> None:
-        if type(record) is not VisualVerificationRouteRecord or write_disposition not in {
+        if type(record) not in {VisualVerificationRouteRecord, LocalVisualVerificationRouteRecord} or write_disposition not in {
             "NEW_COMMIT",
             "HISTORICAL_DUPLICATE",
         }:
@@ -810,7 +818,7 @@ def _authorized_execution(
     original: VisualOriginalPlan,
     prior: VisualOwnerPublicationRecord,
 ) -> bool:
-    p = request.to_payload()
+    p = request.semantic if type(request) is LocalVisualVerificationRouteInput else request.to_payload()
     contract = serialized_model(p["execution_contract"], TaskContract)
     expected = original.contract.model_dump(mode="json")
     try:
@@ -831,8 +839,9 @@ def _execution_grounding(
     prior: VisualOwnerPublicationRecord,
 ) -> StepGroundingBinding | None:
     """Join exact current receipt; historical receipts can only inspect effects."""
-    p = request.to_payload()
-    current = prior.to_payload()["grounding"]
+    local = type(request) is LocalVisualVerificationRouteInput
+    p = request.semantic if local else request.to_payload()
+    current = prior.semantic["grounding"] if local else prior.to_payload()["grounding"]
     supplied = p.get("grounding_receipt")
     if current is None and supplied is None:
         return None
@@ -858,13 +867,16 @@ def _execution_grounding(
         or checkpoint.safety_state.get("grounding_binding_hash") != binding.binding_hash
         or checkpoint.safety_state.get("original_requirements_hash") != requirement.digest()
         or binding.calibration_version != request.online().observation.calibration_version
-        or not original.registered_at <= binding.created_at <= checkpoint.updated_at
-        or binding.valid_until > original.effective_deadline_at
+        or (not local and (not original.registered_at <= binding.created_at <= checkpoint.updated_at
+                           or binding.valid_until > original.effective_deadline_at))
+        or (local and binding.local_time.to_payload() != original.local_time.to_payload())
         or any(
             original.source_hashes.get(k) != v for k, v in binding.grounding_source_hashes.items()
         )
     ):
         raise ValueError("effect grounding receipt/current original boundary changed")
+    if local:
+        return binding  # Current private route checks the genuine D acquisition and effect handles.
     if p["phase"] in EFFECT_PHASES:
         completion = p["completion"]
         if completion is None:
@@ -882,10 +894,13 @@ def _execution_grounding(
 def _effect_completion_result(
     request: VisualVerificationRouteInput, original: VisualOriginalPlan, now: datetime
 ) -> tuple[SkillExecutionResult | None, str | None]:
-    p, online = request.to_payload(), request.online()
+    local = type(request) is LocalVisualVerificationRouteInput
+    p, online = (request.semantic if local else request.to_payload()), request.online()
     completion = p["completion"]
     if completion is None:
         return None, "effect_completion_source_unavailable"
+    if local:
+        completion = LocalVisualEffectCompletion.from_payload(completion).semantic
     requirement = original.requirements[p["step_id"]]
     result = serialized_model(completion["result"], SkillExecutionResult)
     if (
@@ -902,16 +917,16 @@ def _effect_completion_result(
         or completion["plan_id"] != original.identity.plan_id
         or completion["robot_id"] != original.identity.robot_id
         or result.scene_version != original.contract.scene_version
-        or not original.registered_at
+        or (not local and (not original.registered_at
         <= aware(datetime.fromisoformat(completion["started_at"]))
         <= result.timestamp
-        <= aware(datetime.fromisoformat(completion["returned_at"]))
+        <= aware(datetime.fromisoformat(completion["returned_at"]))))
         or result.plan_version != online.plan_version
         or result.command_seq != online.command_seq
         or completion["before_observation_id"] == online.observation.observation_id
-        or not aware(datetime.fromisoformat(completion["returned_at"]))
+        or (not local and (not aware(datetime.fromisoformat(completion["returned_at"]))
         < online.observation.captured_at
-        <= now
+        <= now))
         or any(original.source_hashes.get(k) != v for k, v in completion["source_hashes"].items())
     ):
         return None, "effect_completion_source_binding_changed"
@@ -926,7 +941,7 @@ def _completed_grounding_source_time(
     prior: VisualOwnerPublicationRecord,
     now: datetime,
 ) -> datetime | None:
-    p = request.to_payload()
+    p = request.semantic if type(request) is LocalVisualVerificationRouteInput else request.to_payload()
     if p["phase"] not in EFFECT_PHASES or prior.to_payload()["grounding"] is None:
         return None
     if not _authorized_execution(request, original, prior):
@@ -942,7 +957,7 @@ def _completed_grounding_source_time(
 def _phase_verdicts(
     request: VisualVerificationRouteInput, original: VisualOriginalPlan, now: datetime
 ) -> tuple[list[ConditionVerdict], list[str]]:
-    p = request.to_payload()
+    p = request.semantic if type(request) is LocalVisualVerificationRouteInput else request.to_payload()
     phase = p["phase"]
     online = request.online()
     requirement = original.requirements[p["step_id"]]
@@ -1133,6 +1148,99 @@ def _computed_route(
             if state.exhausted_reason:
                 reasons.append(state.exhausted_reason)
     return route, state, verdicts, list(dict.fromkeys(reasons))
+
+
+def derive_local_route(request, original, prior, decision, transaction):
+    """Compute a local source route from the actual locked publication and D evidence."""
+    from types import SimpleNamespace
+    from cloud_edge_robot_arm.vision.local_temporal import _copy, _hash, _local_publication_hash, semantic_projection
+    from cloud_edge_robot_arm.vision.operational_windows import _check_observation
+
+    p, online = request.semantic, request.online()
+    checkpoint, pool = prior.checkpoint, prior.verification_budget_history
+    requirement = original.requirements[p["step_id"]]
+    if (p["original"] != original.to_payload() or p["publication"] != prior.to_payload()
+            or p["step_id"] != checkpoint.current_step_id or p["step_id"] in checkpoint.completed_step_ids
+            or p["attempt"] > requirement.original_step.retry_limit + 1
+            or (online.plan_version, online.command_seq) != (checkpoint.plan_version, checkpoint.command_seq)
+            or online.context_hash != checkpoint.checkpoint_hash
+            or online.observation.episode_id != original.identity.episode_id
+            or not online.observation.calibration_version or not _authorized_execution(request, original, prior)):
+        raise ValueError("local route exact original/current execution source differs")
+    descriptor = camera_source_descriptor_sha256(online.observation)
+    for condition in (*requirement.preconditions, *requirement.postconditions):
+        if (condition.tolerances.get("camera_source_descriptor_sha256", descriptor) != descriptor
+                or condition.tolerances.get("calibration_version", online.observation.calibration_version)
+                != online.observation.calibration_version):
+            raise ValueError("local route original camera/calibration source differs")
+    before = pool.state.to_payload()
+    state = SimpleNamespace(**{name: getattr(pool.state, name) for name in (
+        "limits", "remaining_reobservations", "remaining_retries", "consecutive_no_progress",
+        "verification_rounds", "previous_conditions", "exhausted_reason")})
+    verdicts, reasons = [], []
+    if online.robot_state.estop_engaged or online.robot_state.collision_detected or not online.robot_state.connected:
+        route, state.exhausted_reason, reasons = "STOP", "hard_safety_fault", ["hard_safety_fault"]
+    elif _check_observation(online.observation, "condition", max_age_s=requirement.ordinary_ttl_s) is not True:
+        route, state.exhausted_reason, reasons = "STOP", "frame_ttl_expired", ["frame_ttl_expired"]
+    elif state.exhausted_reason:
+        route, reasons = "STOP", [state.exhausted_reason]
+    else:
+        # The native phases still use their unchanged native evidence validator.
+        verdicts, reasons = _phase_verdicts(request, original, datetime.now(UTC))
+        if reasons and p["phase"] in EFFECT_PHASES:
+            route, state.exhausted_reason = "STOP", reasons[0]
+        else:
+            namespace = digest(dict(schema_version="visual.verification.progress-context.v1",
+                original_plan_hash=original.digest(), step_id=p["step_id"], attempt=p["attempt"],
+                phase=p["phase"], requirements=requirement.to_payload()))
+            route = _route_state(verdicts, state, namespace, p["phase"])
+            if state.exhausted_reason:
+                reasons.append(state.exhausted_reason)
+    after = _copy(before)
+    for name in ("remaining_reobservations", "remaining_retries", "consecutive_no_progress",
+                 "verification_rounds", "previous_conditions", "exhausted_reason"):
+        after[name] = _plain(getattr(state, name))
+    local_time = original.local_time.to_payload()
+
+    def envelope(tag, body):
+        return {"schema_version": tag, "payload": body, "original_time": _copy(local_time),
+                "decision": _copy(decision), "transaction": _copy(transaction),
+                "diagnostics": {"utc": {}, "monotonic": None}}
+
+    pool_body = {"task_id": request.task_id, "state": after, "revision": pool.revision + 1}
+    pool_body["content_hash"] = _hash({"schema_version": "recovery.verification-budget.local.v1", **pool_body})
+    next_pool = envelope("recovery.verification-budget.local.v1", pool_body)
+    publication_body = prior.semantic
+    publication_body.update(verification_budget=next_pool, owner_revision=prior.owner_revision + 1,
+        state_generation=prior.state_generation + 1, source_owner_revision=prior.owner_revision,
+        operation_hash=transaction["operation_sha256"], grounding=None)
+    publication_body["publication_hash"] = _local_publication_hash(publication_body, local_time)
+    produced = envelope("visual.owner.publication.local.v1", publication_body)
+    body = {"scope": "SOURCE_ROUTE_ONLY", "input": request.to_payload(), "input_hash": request.digest(),
+        "semantic_hash": request.semantic_hash(), "source_key": request.source_key(), "route": route,
+        "reasons": list(dict.fromkeys(reasons)), "verdicts": [_plain(asdict(value)) for value in verdicts],
+        "before_verification_budget": pool.to_payload(), "after_verification_budget": next_pool,
+        "produced_publication": produced, "produced_publication_hash": publication_body["publication_hash"],
+        "source_context_hash": online.context_hash,
+        "native_context_hash": native_action_context_hash(original.role_bundle_hash,
+            serialized_model(p["execution_contract"], TaskContract), p["step_id"]),
+        "evidence_content_hash": evidence_content_hash(online),
+        "context_domains": {"source": "visual.checkpoint-context.v1", "native": "visual.native-action-context.v1",
+                            "evidence": "visual.verification.evidence-content.v1"},
+        "capture_claim_id": digest(dict(schema_version="visual.verification.capture-claim.v1",
+                                       source_key=request.source_key())) if route == "REOBSERVE" else None,
+        "camera_source_descriptor_sha256": descriptor}
+    transaction["event_record_hash"] = _hash(semantic_projection(body))
+    def bind_receipt(value):
+        if isinstance(value, list):
+            return [bind_receipt(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {key: bind_receipt(item) for key, item in value.items()}
+        if result.get("schema_version") == "visual.local-publication-transaction.v1" and result["operation_id"] == transaction["operation_id"]:
+            result["event_record_hash"] = transaction["event_record_hash"]
+        return result
+    return LocalVisualVerificationRouteRecord.from_payload(bind_receipt(envelope("visual.verification.route.local.v1", body)))
 
 
 def derive_route(

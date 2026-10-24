@@ -1,0 +1,209 @@
+def bind_step_grounding(
+    original: VisualOriginalPlan,
+    *,
+    original_step_id: str,
+    grounded_step: TaskStep,
+    online: OnlineEvidenceSnapshot,
+    source_checkpoint: ExecutionCheckpoint,
+    current_identity: VisualOwnerIdentity,
+    owner_revision: int,
+    state_generation: int,
+    grounding_inputs: GroundingFrameInputs,
+    grounding_policy: DeterministicGroundingPolicy,
+    now: datetime,
+    required_duration_s: float | None = None,
+    duration_check: GroundingDurationCheck | None = None,
+) -> StepGroundingBinding:
+    local = type(original) is LocalVisualOriginalPlan
+    original = (LocalVisualOriginalPlan.from_payload(original.to_payload()) if local
+                else freeze_original_visual_plan(**original.freeze_inputs()))
+    now = _aware(now)
+    if current_identity != original.identity:
+        raise ValueError("foreign job/epoch/robot owner identity")
+    _counter(owner_revision)
+    _counter(state_generation)
+    _counter(online.plan_version)
+    _counter(online.command_seq)
+    cp = ExecutionCheckpoint.model_validate_json(
+        _model_json(source_checkpoint, ExecutionCheckpoint)
+    )
+    cp_hash = checkpoint_digest(cp)
+    if not _aware(cp.created_at) <= _aware(cp.updated_at) or (not local and _aware(cp.updated_at) > now):
+        raise ValueError("current checkpoint timestamp is future or reversed")
+    contract = original.contract
+    observation = RGBDObservation.model_validate_json(
+        _model_json(online.observation, RGBDObservation)
+    )
+    _model_json(online.robot_state, type(online.robot_state))
+    if (
+        cp.checkpoint_hash != cp_hash
+        or online.context_hash != cp_hash
+        or cp.task_id != contract.task_id
+        or cp.plan_id != current_identity.plan_id
+        or cp.robot_id != current_identity.robot_id
+        or (cp.plan_version, cp.command_seq) != (contract.plan_version, contract.command_seq)
+        or (online.plan_version, online.command_seq)
+        != (contract.plan_version, contract.command_seq)
+        or observation.episode_id != current_identity.episode_id
+    ):
+        raise ValueError("current checkpoint/version/episode/context mismatch")
+    ids = [s.step_id for s in contract.steps]
+    completed = cp.completed_step_ids
+    if (
+        ids[: len(completed)] != completed
+        or cp.pending_step_ids != ids[len(completed) :]
+        or cp.current_step_index != len(completed)
+        or not cp.pending_step_ids
+        or cp.current_step_id != cp.pending_step_ids[0]
+        or original_step_id != cp.current_step_id
+        or cp.execution_state in {"COMPLETED", "SAFETY_STOPPED"}
+    ):
+        raise ValueError("current pending cursor or completed effects mismatch")
+    requirement = original.requirements[original_step_id]
+    inputs, policy = grounding_inputs, grounding_policy
+    if (
+        inputs.observation_id != observation.observation_id
+        or inputs.observation_checksum_sha256 != observation.checksum_sha256
+        or inputs.episode_id != observation.episode_id
+        or inputs.calibration_version != observation.calibration_version
+    ):
+        raise ValueError("grounding frame/checksum/calibration binding mismatch")
+    if any(
+        c.tolerances.get("calibration_version", observation.calibration_version)
+        != observation.calibration_version
+        for c in (*requirement.preconditions, *requirement.postconditions)
+    ):
+        raise ValueError("registered canonical calibration differs from current frame")
+    for sources in (inputs.source_hashes, policy.source_hashes):
+        if any(original.source_hashes.get(k) != v for k, v in sources.items()):
+            raise ValueError("deterministic grounding source identity mismatch")
+    if (
+        policy.tcp_velocity > contract.safety_constraints.max_tcp_velocity
+        or policy.minimum_height_m < contract.safety_constraints.minimum_safe_height
+    ):
+        raise ValueError("grounding cannot relax original safety policy")
+    stored = _model_json(grounded_step, TaskStep)
+    step, expected = TaskStep.model_validate_json(stored), requirement.original_step
+    if (
+        step.step_id != expected.step_id
+        or step.skill != expected.skill
+        or step.expected_duration_ms != expected.expected_duration_ms
+        or step.timeout_ms != expected.timeout_ms
+        or step.retry_limit != expected.retry_limit
+        or step.preconditions
+        or step.success_conditions
+        or step.parameters != _resolved_parameters(expected, original, online, inputs, policy)
+    ):
+        raise ValueError("grounded view changed original policy or deterministic parameters")
+    max_ages = [
+        _positive(c.tolerances.get("max_age_s", requirement.ordinary_ttl_s))
+        for c in (*requirement.preconditions, *requirement.postconditions)
+    ]
+    if not local:
+        expires = min(original.effective_deadline_at,
+            observation.captured_at + timedelta(seconds=min(requirement.ordinary_ttl_s, *max_ages)))
+        if not original.registered_at <= observation.captured_at <= now < expires:
+            raise ValueError("original absolute/frame deadline expired or future")
+    duration = (
+        requirement.expected_duration_s
+        if required_duration_s is None
+        else _positive(required_duration_s)
+    )
+    if duration < max(
+        requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000
+    ):
+        raise ValueError("duration cannot understate checked original horizon")
+    if duration > requirement.expected_duration_s:
+        check = duration_check
+        if (
+            not isinstance(check, GroundingDurationCheck)
+            or check._grounded_step_json != stored
+            or check.observation_id != observation.observation_id
+            or check.observation_checksum_sha256 != observation.checksum_sha256
+            or check.original_plan_hash != original.digest()
+            or check.grounding_policy_hash != policy.digest()
+            or check.expected_duration_s != duration
+            or not observation.captured_at <= check.checked_at <= now
+            or any(original.source_hashes.get(k) != v for k, v in check.source_hashes.items())
+        ):
+            raise ValueError("longer duration requires fresh exact source calculation binding")
+    calculation = duration_check if duration > requirement.expected_duration_s else None
+    bound_sources = {**policy.source_hashes, **grounding_inputs.source_hashes}
+    if calculation is not None:
+        bound_sources.update(calculation.source_hashes)
+    if local:
+        import threading
+        from cloud_edge_robot_arm.vision.operational_windows import (
+            OperationalWindowOwner, _LOCAL_RUNTIMES, _LOCAL_ORIGINALS, _OWNERS,
+            _json as _window_json,
+        )
+        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+
+        desired = _window_json(original.local_time.to_payload())
+        candidates = [(owner, runtime) for owner, runtime in tuple(_LOCAL_RUNTIMES.items())
+                      if _LOCAL_ORIGINALS.get(owner) == desired]
+        if len(candidates) != 1:
+            raise ValueError("grounding requires the unique original private runtime")
+        owner, runtime = candidates[0]
+        if (type(owner) is not OperationalWindowOwner or type(runtime) is not VisualWorkerRuntime
+                or runtime._operational_owner is not owner or owner._closed
+                or _LOCAL_RUNTIMES.get(owner) is not runtime or _LOCAL_ORIGINALS.get(owner) != desired):
+            raise ValueError("grounding selected original owner/runtime registry changed")
+        startup = owner._startup
+        worker = startup.worker
+        if (_OWNERS.get(worker) is not owner or startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1"
+                or startup.thread_id != threading.get_ident()
+                or (startup.job_id, startup.run_id, startup.attempt, startup.lease_id, worker.worker_id)
+                != (current_identity.job_id, current_identity.run_id, current_identity.attempt,
+                    current_identity.lease_id, current_identity.worker_id)
+                or worker.repository is not startup.repository
+                or runtime.source.job_repository is not startup.repository
+                or (runtime.source.job_id, runtime.source.run_id, runtime.source.worker_id, runtime.source.lease_id)
+                != (startup.job_id, startup.run_id, worker.worker_id, startup.lease_id)
+                or runtime.role_binding is not startup.binding or worker.visual_role_binding is not startup.binding
+                or runtime._local_session is not worker._operational_lease_session
+                or _window_json(owner._local_original) != desired
+                or _window_json(runtime._local_original) != desired
+                or dict(original.source_hashes) != dict(runtime.source.source_hashes)):
+            raise ValueError("grounding selected original startup/source/thread differs")
+        owner._check_app_live()
+        selected_original = runtime.original
+        if (type(selected_original) is not LocalVisualOriginalPlan
+                or selected_original.identity != current_identity or selected_original.identity != original.identity
+                or selected_original.digest() != original.digest()
+                or _window_json(selected_original.local_time.to_payload()) != desired
+                or dict(selected_original.source_hashes) != dict(original.source_hashes)):
+            raise ValueError("grounding selected durable original source differs")
+        return runtime._local_bind_grounding({
+            "binding_scope": "DURABLE_BINDING_ONLY", "original_plan_hash": original.digest(),
+            "current_identity": current_identity.to_payload(), "original_requirements": requirement.to_payload(),
+            "owner_revision": owner_revision, "state_generation": state_generation,
+            "source_checkpoint_hash": cp_hash, "observation_id": observation.observation_id,
+            "observation_checksum_sha256": observation.checksum_sha256,
+            "calibration_version": observation.calibration_version or "", "plan_version": contract.plan_version,
+            "command_seq": contract.command_seq, "grounding_policy_hash": policy.digest(),
+            "grounding_inputs_hash": grounding_inputs.digest(),
+            "duration_check_hash": calculation.digest() if calculation is not None else None,
+            "grounding_source_hashes": bound_sources, "grounded_step": json.loads(stored),
+            "expected_duration_s": duration}, observation)
+    return StepGroundingBinding(
+        original.digest(),
+        current_identity,
+        requirement,
+        owner_revision,
+        state_generation,
+        cp_hash,
+        observation.observation_id,
+        observation.checksum_sha256,
+        observation.calibration_version or "",
+        contract.plan_version,
+        contract.command_seq,
+        policy.digest(),
+        grounding_inputs.digest(),
+        calculation.digest() if calculation is not None else None,
+        MappingProxyType(bound_sources),
+        stored,
+        duration,
+        now,
+        expires,
+    )

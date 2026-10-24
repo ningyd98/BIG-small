@@ -18,6 +18,7 @@ from cloud_edge_robot_arm.simulation_runtime.models import (
     SimulationJobEvent,
     SimulationJobLease,
     SimulationJobRecord,
+    PublicationSummary,
 )
 
 if TYPE_CHECKING:
@@ -135,6 +136,8 @@ class SimulationJobRepository(Protocol):
     def save_artifacts(self, job_id: str, artifact_paths: dict[str, str]) -> None: ...
 
     def get_artifacts(self, run_id: str) -> dict[str, str]: ...
+
+    def get_publication_summary(self, run_id: str, *, attempt: int | None = None) -> PublicationSummary: ...
 
     def create_batch(
         self, *, batch_id: str, manifest: dict[str, object], run_ids: list[str]

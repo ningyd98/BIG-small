@@ -1,0 +1,7 @@
+# R360 single metadata generation result
+
+Actual author/operator `/root/p6_t3_sol` read the actual plan/activation and matched12 input pins and all absent-output preconditions. The new recipe is exactly the frozen snapshot minus one ASCII brace:27590bytes SHA83ef01eefcd67751762253839837df90ceb0ca289ac6fb4f842d1669ea6610d6. Static AST/symtable and intended reservation/terminal/proof dictionary nesting passed before execution. Original recipe and binding snapshot were retained unchanged.
+
+The corrected pure metadata recipe ran once from the repository root, initial tool2c8f98/session78875, completion3542b2, actual tool/recipe exit0. Raw stdout/stderr and actual monotonic/UTC/exit are retained; stderr is empty. Its18 existing assertions were not changed and all reported true. The four R354 exclusive outputs now exist, and only the already authorized draft-binding fields changed. `post-generation-check.json` records exact artifact hashes/delta and unchanged protected input/ledger checks.
+
+This result establishes the specified recipe repair and generated metadata only. ROOT must independently verify all source claims and freeze a new R354 gate/acceptance. Frozen runnercec15bad… and observer397b36c3… were never imported or executed; no product/helper/test/DB/probe/collection operation occurred. R354 remains HELD0/1; no old slot changes, refunds or runtime releases. All author candidate and metadata writes are frozen after this report.

@@ -1,0 +1,86 @@
+{
+  "round": "R348",
+  "actor": "/root",
+  "at": "2026-10-24T08:30:22.182394+00:00",
+  "status": "ACTUAL_ASTRA_PLAN_REQUEST_BEFORE_RUNNER_REPAIR",
+  "problem": "Pre-execution source review ofnewR346runner foundcapturepath,monitorcontract,finalcompletionandprelaunchretention gaps. No candidate/helper/product/test execution occurred; no runtimefailure fabricated.",
+  "draft_freeze": {
+    "sha256": "a5b37e1f22acacf429e19456701a92ffd0be26e4fb86c46474e14b6a9f2c77ce",
+    "bytes": 41012,
+    "author_ack_tool": "c6eb16 exit0 sha256sum only"
+  },
+  "inputs": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round346-p6-t3-successor-execution-capture-20261024/plan.json",
+      "bytes": 57911,
+      "sha256": "637ad6e58d1659724add1fd99f6e79726577aced809c2bd836673bf69f3a4ce7"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round346-p6-t3-successor-execution-capture-20261024/root-preparation-activation.json",
+      "bytes": 7987,
+      "sha256": "a3c301dc1daac47f0b20f4daa26730437409ae094512fb38b8d69bd938d0d693"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round346-p6-t3-successor-execution-capture-20261024/implementation/run-evidence.py",
+      "bytes": 41012,
+      "sha256": "a5b37e1f22acacf429e19456701a92ffd0be26e4fb86c46474e14b6a9f2c77ce"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round346-p6-t3-successor-execution-capture-20261024/implementation/resource-evidence-helpers.py",
+      "bytes": 27181,
+      "sha256": "bc13daf2a87ff80606c62ed3628e63c1c700ac3000803efa5b20d3c3392cb98b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round346-p6-t3-successor-execution-capture-20261024/implementation/author-binding.json",
+      "bytes": 589,
+      "sha256": "b4d95ebbf2a1fa1cd5c3af84cbc601b8a58fb272b4a62f0bf035f32562613a7e"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round346-p6-t3-successor-execution-capture-20261024/root-command-ledger.json",
+      "bytes": 2981,
+      "sha256": "57498e7855752e8245c32075846780fd0dcc35075e9b8206597502229452f43f"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round346-p6-t3-successor-execution-capture-20261024/implementation/author-command-ledger.json",
+      "bytes": 2993,
+      "sha256": "ab442a8db92543baf810e5442ab7896c918e7ab3b9a3da5e69c33f5f1c69ddb3"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation/r235_startup_prerequisite.py",
+      "bytes": 5022,
+      "sha256": "e46122f6ce00f9c5d0e13be33301b8861b567cb3f25c33d41447f1ea68880e0d"
+    }
+  ],
+  "findings": [
+    {
+      "id": "capture_path_collision",
+      "kind": "STATIC_DETERMINISTIC_PRE_EXECUTION_DEFECT_NOT_ACTUAL_RUNTIME_EXCEPTION",
+      "evidence": "R346 t3 child_env sets BIGSMALL_R235_PREREQUISITE_RECORD to out/prerequisite.json. Runner stage(prerequisite,10,prerequisite) invokes helper on that file, then generic stage finally exclusive-write targets same out/prerequisite.json. Original startup record must not be overwritten; current output path will collide. Missingness list also duplicates prerequisite.json.",
+      "runner_lines": [
+        562,
+        694,
+        731
+      ],
+      "required_outcome": "Distinct frozen raw prerequisite path and capture-observation path, coherent missingness andsourcegate contract."
+    },
+    {
+      "id": "HEAD_sampling_semantics",
+      "kind": "PLAN_TIMING_AMBIGUITY_IDENTIFIED_BY_IMPLEMENTER",
+      "evidence": "R346 says actual HEAD checks atmost1s apart but synchronous git timeout2 andstorage scan timeout2 can blocksinglethread >1s. Currentdraft next_head=now+1 plus2sguards cannot enforce statedactualgap. No timings measured and no proposed numeric probe authorized.",
+      "required_outcome": "ActualAstra decide concrete finite scheduling/deadline/gap rejection policy consistentwithplan, no silent relaxed claim orunplanned guard."
+    },
+    {
+      "id": "final_summary_completion",
+      "kind": "STATIC_FAILURE_PATH_INCONSISTENCY_IDENTIFIED_BY_ROOT_AND_SOL",
+      "evidence": "final_summary action writes result.json withcandidatepass before stage finally writes final-summary.json. If finalpersistencefails, errors updatedonlyinmemory and wrapperreturns1 whilewrittenresultmaystilltrue; stage-status finalsummary staysWRITING_FINAL_RESULT. Completionmustnotbeassertedfrompartialsummary.",
+      "required_outcome": "Concrete finalwrite/receipt/ROOTacceptance ordering andtruthfulpartialfailure, preserveexistingbytes/no silentoverwrite orsuccessfulcompletionclaim."
+    },
+    {
+      "id": "prelaunch_rejection_without_retained_error",
+      "kind": "STATIC_CONTROL_FLOW_GAP_ROOT_REVIEW",
+      "evidence": "main catchesprelaunch BaseException intoerrors, but checks plan hash beforeoutmkdir. Ifreservedinvocation rejects beforeoutput_created, finalcapture is skipped andmain returns1 withoutprinting/persistingactualerror. Currentdraft hasnofallbackerrorrecord. R346requires prelaunchfailureafterROOTreservation retainsactualerror/nochild/spend disposition.",
+      "required_outcome": "Bounded exclusivefallback rejection receipt/raw error andledgerdisposition evenifnormaloutnotcreated; no overwrite/retry/newchild."
+    }
+  ],
+  "scope_request": "SameactualSol may repair onlynewR346runner andnewpreparationmetadata afteractualAstra plan/rootactivation. Preservebefore snapshot andalloriginalR331/R344/R345/R346plan artifacts; helperbyteidenticalandproduct/test/pluginunchanged. Do not addruntime/probes/dryrun/attempts. AllR346slotsremainHELD9unspent. Newplan mustspecify boundedmetadata/sourceverification andfinalgatecontract."
+}

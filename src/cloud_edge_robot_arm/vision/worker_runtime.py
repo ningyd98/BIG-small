@@ -87,7 +87,9 @@ from cloud_edge_robot_arm.vision.operational_windows import (
     _seconds_ns,
     _transition_scope,
 )
-from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding, VisualOriginalPlan
+from cloud_edge_robot_arm.vision.owner_registration import (
+    StepGroundingBinding, VisualOriginalPlan, LocalStepGroundingBinding, bind_step_grounding,
+)
 from cloud_edge_robot_arm.vision.role_models import configuration_hash
 from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
 from cloud_edge_robot_arm.vision.supervision import SupervisionContext, SupervisionDecision
@@ -149,6 +151,11 @@ def _local_read_record(repository, name, args, kwargs):
     from cloud_edge_robot_arm.edge.recovery.lifecycle import LocalRetryBudgetRecord, LocalVerificationBudgetRecord, RecoveryRecord
     from cloud_edge_robot_arm.contracts.models import EdgeEvent, LocalReplanningRequest, ReplanApplyRecord
 
+    if name == "get_visual_verification_route":
+        task = args[0] if args else kwargs["task_id"]
+        event = args[1] if len(args) > 1 else kwargs["event_key"]
+        raw = local_get_unlocked(repository, "route", digest([task, event]))
+        return _LOCAL_MISSING if raw is None else VisualVerificationRouteRecord.from_json(json.dumps(raw))
     mapping = {
         "get_visual_bootstrap": ("bootstrap", VisualBootstrapRecord.from_payload),
         "get_visual_original_plan": ("original", original_from_payload),
@@ -879,6 +886,105 @@ class VisualWorkerRuntime:
         from cloud_edge_robot_arm.vision.local_temporal import _hash, _initial_history_state, _history_state_hash
 
         task, events = self._local_task_id, self.source.event_repository
+        if name == "route_visual_verification_if_current":
+            from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
+                derive_local_route, VisualVerificationRouteWriteResult, LocalVisualEffectCompletion,
+            )
+            request = kwargs["request"]
+            prior = VisualOwnerPublicationRecord.from_payload(local_get_unlocked(events, "publication", task))
+            if local_get_unlocked(events, "route-source", request.source_key()) is not None:
+                raise RuntimeError("historical route source cannot repeat a debit or issue a fresh capture handle")
+            if (request.event_key != scope.operation_id or _local_digest(request) != scope.operation_sha256
+                    or prior.transaction.to_payload()["phase"] != "COMPLETE"
+                    or request.semantic["publication"] != prior.to_payload()):
+                raise RuntimeError("route current locked source/operation differs")
+            if request.semantic["phase"] in {"AFTER_EFFECT", "POST_HOLD", "TERMINAL"}:
+                completion = LocalVisualEffectCompletion.from_payload(request.semantic["completion"])
+                if self._returned_effects.get(completion.digest()) != completion.to_json():
+                    raise RuntimeError("route requires this live owner's actual returned effect source")
+            decision, transaction = self._local_transaction(scope, "visual.verification.route.local.v1",
+                                                            prior.owner_revision, scope.operation_sha256)
+            record = derive_local_route(request, self.original, prior, decision, transaction)
+            updates = {"route": {"key": digest([task, request.event_key]), "value": record.to_payload()},
+                       "route-source": {"key": request.source_key(), "value": record.to_payload()},
+                       "pool": {"key": task, "value": record.semantic["after_verification_budget"]},
+                       "publication": {"key": task, "value": record.semantic["produced_publication"]}}
+            final = self._local_commit(scope, updates, transaction)
+            return VisualVerificationRouteWriteResult(
+                VisualVerificationRouteRecord.from_json(json.dumps(final["route"]["value"])), "NEW_COMMIT")
+        if name == "publish_visual_boundary_if_current":
+            from cloud_edge_robot_arm.vision.local_temporal import _local_publication_hash
+            from cloud_edge_robot_arm.repositories.event_autonomy.protocol import local_value
+
+            source = {"method": name, "args": local_value(args), "kwargs": local_value(kwargs)}
+            current = VisualOwnerPublicationRecord.from_payload(local_get_unlocked(events, "publication", task))
+            binding, checkpoint = kwargs["grounding"], kwargs["checkpoint"]
+            if binding is None:
+                return self._local_complete_boundary(scope, kwargs, current, source)
+            if (scope.operation_sha256 != _local_digest(source) or type(binding) is not LocalStepGroundingBinding
+                    or binding.transaction.to_payload()["phase"] != "COMPLETE"
+                    or current.transaction.to_payload()["phase"] != "COMPLETE"
+                    or kwargs["task_id"] != task or kwargs["owner_epoch"] != current.identity.owner_epoch
+                    or kwargs["expected_owner_revision"] != current.owner_revision
+                    or kwargs["expected_contract_hash"] != current.contract_hash
+                    or kwargs["expected_checkpoint_hash"] != current.checkpoint.checkpoint_hash
+                    or binding.owner_revision != current.owner_revision
+                    or binding.state_generation != current.state_generation + 1
+                    or kwargs["state_generation"] != binding.state_generation
+                    or binding.source_checkpoint_hash != current.checkpoint.checkpoint_hash
+                    or binding.original_plan_hash != self.original.digest()
+                    or binding.current_identity != current.identity
+                    or binding.original_requirements.digest() != self.original.requirements[checkpoint.current_step_id].digest()
+                    or checkpoint.checkpoint_hash != checkpoint_digest(checkpoint)):
+                raise ValueError("grounding publication exact original/current CAS differs")
+            expected = current.checkpoint.model_dump(mode="json")
+            actual = checkpoint.model_dump(mode="json")
+            for key in ("checkpoint_id", "updated_at", "robot_state", "safety_state", "checkpoint_hash"):
+                expected.pop(key); actual.pop(key)
+            if actual != expected or _check_observation(self._last_observation, "grounding",
+                    max_age_s=binding.original_requirements.ordinary_ttl_s) is not True:
+                raise ValueError("grounding cannot replace current checkpoint/policy/window")
+            decision, transaction = self._local_transaction(scope, "visual.owner.publication.local.v1",
+                                                            current.owner_revision, scope.operation_sha256)
+            body = current.semantic
+            body.update(owner_revision=current.owner_revision + 1, state_generation=binding.state_generation,
+                        source_owner_revision=current.owner_revision, checkpoint=checkpoint.model_dump(mode="json"),
+                        grounding=binding.to_payload(), operation_hash=scope.operation_sha256)
+            body["publication_hash"] = _local_publication_hash(body, self._local_original)
+            transaction["event_record_hash"] = body["publication_hash"]
+            value = self._local_envelope("visual.owner.publication.local.v1", body, decision, transaction)
+            updates = {"publication": {"key": task, "value": value},
+                       "checkpoint": {"key": checkpoint.checkpoint_id, "value": checkpoint.model_dump(mode="json")}}
+            final = self._local_commit(scope, updates, transaction)
+            return VisualOwnerPublicationRecord.from_payload(final["publication"]["value"])
+        if name == "transition_visual_supervision_if_current":
+            from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import derive_local_supervision
+            from cloud_edge_robot_arm.vision.local_temporal import semantic_projection
+
+            request = kwargs["request"]
+            body = request.semantic
+            current = VisualSupervisionRecord.from_payload(local_get_unlocked(events, "supervision", task))
+            if (body["event_key"] != scope.operation_id or _local_digest(request) != scope.operation_sha256
+                    or current.transaction.to_payload()["phase"] != "COMPLETE"
+                    or body["publication"] != local_get_unlocked(events, "publication", task)
+                    or body["original"] != local_get_unlocked(events, "original", task)):
+                raise RuntimeError("private supervision current publication/operation source differs")
+            if body["kind"] in {"COMPLETE_CAPTURE", "COMPLETE_PLAN"}:
+                from cloud_edge_robot_arm.vision.operational_windows import _event_token
+                identifier = self._operational_completed.get(body["claim_id"])
+                window = self._operational_owner._windows.get(identifier)
+                expected = "capture" if body["kind"] == "COMPLETE_CAPTURE" else "supervision"
+                if (window is None or window.kind != expected or self._operational_owner.check(
+                        identifier, after=_event_token(self._operational_owner, window.event)).status != "VALID"):
+                    raise RuntimeError("supervision completion lacks actual original owned effect receipt")
+            operation = _hash({"schema_version": "visual.local-history-operation.v1",
+                               "request": semantic_projection(request.to_payload())})
+            decision, transaction = self._local_transaction(scope, request._tag, current.revision, operation)
+            result = derive_local_supervision(current, request, decision, transaction)
+            updates = {"supervision": {"key": task, "value": result.record.to_payload()}}
+            final = self._local_commit(scope, updates, transaction)
+            return VisualSupervisionTransitionResult(
+                VisualSupervisionRecord.from_payload(final["supervision"]["value"]), result.claim_id, "NEW_COMMIT")
         if name == "initialize_visual_supervision_if_absent":
             definition = args[0]
             if (_local_digest(definition) != scope.operation_sha256
@@ -983,6 +1089,213 @@ class VisualWorkerRuntime:
                                            operation_sha256=_local_digest(definition)):
             return self.source.event_repository.initialize_visual_supervision_if_absent(definition)
 
+    def _local_complete_boundary(self, scope, arguments, current, source):
+        from cloud_edge_robot_arm.repositories.event_autonomy.protocol import local_get_unlocked
+        from cloud_edge_robot_arm.vision.local_temporal import _local_publication_hash
+
+        checkpoint, original = arguments["checkpoint"], self.original
+        step_id = current.checkpoint.current_step_id
+        if (scope.operation_sha256 != _local_digest(source) or arguments["task_id"] != self._local_task_id
+                or arguments["owner_epoch"] != current.identity.owner_epoch
+                or arguments["expected_owner_revision"] != current.owner_revision
+                or arguments["expected_contract_hash"] != current.contract_hash
+                or arguments["expected_checkpoint_hash"] != current.checkpoint.checkpoint_hash
+                or arguments["state_generation"] != current.state_generation + 1
+                or current.transaction.to_payload()["phase"] != "COMPLETE"
+                or checkpoint.checkpoint_hash != checkpoint_digest(checkpoint)):
+            raise RuntimeError("local completion current source/CAS differs")
+        required = {"AFTER_EFFECT"}
+        if original.requirements[step_id].original_step.skill == SkillName.LIFT:
+            required.add("POST_HOLD")
+        if step_id == original.contract.steps[-1].step_id:
+            required.add("TERMINAL")
+        completions, attempts = set(), set()
+        for phase in required:
+            event_key = self._phase_receipts.get((step_id, phase))
+            raw = local_get_unlocked(self.source.event_repository, "route", digest([self._local_task_id, event_key]))
+            if raw is None:
+                raise RuntimeError("local completion requires every stored canonical phase")
+            record = VisualVerificationRouteRecord.from_json(json.dumps(raw))
+            incoming = record.semantic["input"]["payload"]
+            completion = incoming["completion"]
+            if (record.route != "CONTINUE" or incoming["phase"] != phase or incoming["step_id"] != step_id
+                    or incoming["original"] != original.to_payload() or completion is None
+                    or incoming["online"]["context_hash"] != current.checkpoint.checkpoint_hash
+                    or record.transaction.to_payload()["phase"] != "COMPLETE"):
+                raise RuntimeError("local completion canonical phase current source differs")
+            effect = VisualEffectCompletion.from_payload(completion)
+            if self._returned_effects.get(effect.digest()) != effect.to_json():
+                raise RuntimeError("local completion lost the actual returned effect source")
+            completions.add(effect.digest()); attempts.add(effect.attempt)
+        if len(completions) != 1 or len(attempts) != 1:
+            raise RuntimeError("local canonical phases bind different effect attempts")
+        done = [*current.checkpoint.completed_step_ids, step_id]
+        pending = [step.step_id for step in original.contract.steps[len(done):]]
+        expected = current.checkpoint.model_dump(mode="json")
+        expected.update(completed_step_ids=done, pending_step_ids=pending, current_step_index=len(done),
+            current_step_id=pending[0] if pending else "", last_successful_step_id=step_id,
+            step_attempts={**current.checkpoint.step_attempts, step_id: next(iter(attempts))},
+            execution_state="STEP_SUCCEEDED" if pending else "COMPLETED")
+        actual = checkpoint.model_dump(mode="json")
+        for name in ("checkpoint_id", "updated_at", "robot_state", "checkpoint_hash"):
+            expected.pop(name); actual.pop(name)
+        if actual != expected:
+            raise RuntimeError("local completion cannot skip/change original checkpoint prefix")
+        decision, transaction = self._local_transaction(scope, "visual.owner.publication.local.v1",
+                                                        current.owner_revision, scope.operation_sha256)
+        body = current.semantic
+        body.update(owner_revision=current.owner_revision + 1, state_generation=current.state_generation + 1,
+                    source_owner_revision=current.owner_revision, checkpoint=checkpoint.model_dump(mode="json"),
+                    grounding=None, operation_hash=scope.operation_sha256)
+        body["publication_hash"] = _local_publication_hash(body, self._local_original)
+        transaction["event_record_hash"] = body["publication_hash"]
+        value = self._local_envelope("visual.owner.publication.local.v1", body, decision, transaction)
+        final = self._local_commit(scope, {"publication": {"key": self._local_task_id, "value": value},
+            "checkpoint": {"key": checkpoint.checkpoint_id, "value": checkpoint.model_dump(mode="json")}}, transaction)
+        return VisualOwnerPublicationRecord.from_payload(final["publication"]["value"])
+
+    def _local_bind_grounding(self, body, observation):
+        from cloud_edge_robot_arm.vision.owner_registration import LocalStepGroundingBinding
+        from cloud_edge_robot_arm.vision.local_temporal import _hash
+        from cloud_edge_robot_arm.repositories.event_autonomy.protocol import local_get_unlocked
+
+        if sys._getframe(1).f_code is not bind_step_grounding.__code__:
+            raise RuntimeError("grounding must retain the complete deterministic producer checks")
+        publication = self.publication
+        if (body["original_plan_hash"] != self.original.digest()
+                or body["owner_revision"] != publication.owner_revision
+                or body["state_generation"] != publication.state_generation + 1
+                or body["source_checkpoint_hash"] != publication.checkpoint.checkpoint_hash
+                or self._last_observation is None
+                or observation.model_dump(mode="json") != self._last_observation.model_dump(mode="json")):
+            raise RuntimeError("grounding actual current publication/frame source differs")
+        requirement = self.original.requirements[publication.checkpoint.current_step_id]
+        ttl = min(requirement.ordinary_ttl_s,
+                  *(condition.tolerances.get("max_age_s", 5.0)
+                    for condition in (*requirement.preconditions, *requirement.postconditions)))
+        _bind_observation_policy(self._operational_owner, observation, "grounding", ttl,
+                                 {"requirement": requirement.to_payload()})
+        if _check_observation(observation, "grounding", max_age_s=ttl) is not True:
+            raise RuntimeError("grounding original acquisition window unavailable")
+        operation = digest(["worker-grounding-binding", body])
+        with self._local_publication_scope(operation_id="grounding-bind:" + operation,
+                                           operation_sha256=operation) as scope:
+            if self.publication.digest() != publication.digest():
+                raise RuntimeError("grounding publication changed after both locks")
+            existing = local_get_unlocked(self.source.event_repository, "grounding", operation)
+            if existing is not None:
+                prior = LocalStepGroundingBinding.from_payload(existing)
+                if prior.semantic != body or prior.transaction.to_payload()["phase"] != "COMPLETE":
+                    raise RuntimeError("grounding historical source is changed or incomplete")
+                return prior
+            decision, transaction = self._local_transaction(scope, "visual.owner.grounding.local.v1",
+                                                            publication.owner_revision, operation)
+            transaction["event_record_hash"] = _hash(body)
+            binding = LocalStepGroundingBinding.from_payload(self._local_envelope(
+                "visual.owner.grounding.local.v1", body, decision, transaction))
+            final = self._local_commit(scope, {"grounding": {"key": operation, "value": binding.to_payload()}}, transaction)
+            return LocalStepGroundingBinding.from_payload(final["grounding"]["value"])
+
+    def begin_effect_source(self, contract, step, robot_state):
+        """Record local causality around the existing native executor, never admit it."""
+        from cloud_edge_robot_arm.vision.execution import _VisualEpisode
+        if not self._local_mode or sys._getframe(1).f_code is not _VisualEpisode.execute.__code__:
+            raise RuntimeError("only the existing local episode can record an effect source")
+        self.check_active(robot_state)
+        current, original = self.publication, self.original
+        binding = current.grounding
+        if binding is None or binding.grounded_step.model_dump(mode="json") != step.model_dump(mode="json"):
+            raise RuntimeError("effect source lacks the actual current deterministic grounding")
+        expected = original.contract.model_dump(mode="json")
+        expected["steps"] = [step.model_dump(mode="json") if row["step_id"] == step.step_id else row
+                             for row in expected["steps"]]
+        if contract.model_dump(mode="json") != expected:
+            raise RuntimeError("effect source complete native payload differs from original")
+        if _check_observation(self._last_observation, "grounding",
+                max_age_s=binding.original_requirements.ordinary_ttl_s) is not True:
+            raise RuntimeError("effect source original grounding acquisition expired")
+        handle = object()
+        operation = digest(["effect-source", current.digest(), step.step_id])
+        with self._local_publication_scope(operation_id="effect-source-start:" + operation,
+                                           operation_sha256=operation):
+            if self.publication.digest() != current.digest():
+                raise RuntimeError("effect source publication changed after both locks")
+            token = self._operational_owner._clock.begin_event("ACTUAL_EXECUTOR_SOURCE")
+            self._operational_owner._clock.mark_event(token)
+            if not hasattr(self, "_local_effect_sources"):
+                self._local_effect_sources = {}
+            self._local_effect_sources[handle] = (token, current.digest(), digest(expected))
+        return handle
+
+    def complete_effect_source(self, handle, completion, robot_state):
+        from cloud_edge_robot_arm.vision.execution import _VisualEpisode
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import LocalVisualEffectCompletion
+        from cloud_edge_robot_arm.vision.local_temporal import _hash
+        if not self._local_mode or sys._getframe(1).f_code is not _VisualEpisode.execute.__code__:
+            raise RuntimeError("only the existing local episode can complete an effect source")
+        token, publication_hash, payload_hash = self._local_effect_sources.pop(handle)
+        self._operational_owner._clock.end_event(token)
+        self.check_active(robot_state)
+        source = completion.to_payload()
+        current = self.publication
+        if (current.digest() != publication_hash or source["execution_payload_hash"] != payload_hash
+                or source["source_checkpoint_hash"] != current.checkpoint.checkpoint_hash
+                or source["task_id"] != current.identity.task_id
+                or source["step_id"] != current.checkpoint.current_step_id
+                or source["before_observation_id"] != self._last_observation.observation_id):
+            raise RuntimeError("actual returned effect differs from original recorded source")
+        body = {name: value for name, value in source.items()
+                if name not in {"schema_version", "started_at", "returned_at"}}
+        operation = digest(["effect-source-return", body])
+        with self._local_publication_scope(operation_id="effect-source-return:" + operation,
+                                           operation_sha256=operation) as scope:
+            if self.publication.digest() != publication_hash:
+                raise RuntimeError("actual effect publication changed after both locks")
+            decision, transaction = self._local_transaction(scope, "visual.verification.effect-completion.local.v1",
+                                                            current.owner_revision, operation)
+            transaction["event_record_hash"] = _hash(body)
+            value = self._local_envelope("visual.verification.effect-completion.local.v1", body, decision, transaction)
+            final = self._local_commit(scope, {"effect": {"key": operation, "value": value}}, transaction)
+            result = LocalVisualEffectCompletion.from_payload(final["effect"]["value"])
+            self._returned_effects[result.digest()] = result.to_json()
+            return result
+
+    def _local_supervision_transition(self, kind, robot_state, *, cursor, claim=None,
+            observation=None, context=None, decision=None, wait_duration_s=None, wait_elapsed_s=None):
+        from cloud_edge_robot_arm.vision.local_temporal import _history_state_hash
+
+        self.check_active(robot_state)
+        self._check_optional_sources()
+        record = self.source.event_repository.get_visual_supervision(self.episode_id)
+        if record is None:
+            raise RuntimeError("original supervision ledger unavailable")
+        publication = self.supervision_source_publication
+        if claim is not None and publication.digest() != claim.publication_hash:
+            raise RuntimeError("supervision claim current publication changed")
+        body = {"scope": "SUPERVISION_SOURCE_ONLY", "task_id": self.episode_id,
+                "definition_hash": digest(record.semantic["definition"]), "expected_revision": record.revision,
+                "expected_record_hash": _history_state_hash(record._tag, record.semantic, self._local_original),
+                "original": self.original.to_payload(), "publication": publication.to_payload(),
+                "robot_state": robot_state.model_dump(mode="json"),
+                "step_id": publication.checkpoint.current_step_id, "cursor": cursor, "kind": kind,
+                "event_key": digest(["worker-supervision", record.definition.digest(), kind, cursor]),
+                "model_snapshot_hash": self.bootstrap.definition.model_snapshot_hash,
+                "role_bundle": self.role_binding.bundle.evidence(),
+                "claim_id": None if claim is None else claim.claim_id,
+                "observation": None if observation is None else observation.model_dump(mode="json"),
+                "context": None if context is None else context.model_dump(mode="json"),
+                "decision": None if decision is None else decision.model_dump(mode="json"),
+                "wait_duration_s": wait_duration_s, "wait_elapsed_s": wait_elapsed_s}
+        request = VisualSupervisionTransitionInput.from_payload(self._local_envelope(
+            "visual.supervision.transition.local.v1", body))
+        with self._local_publication_scope(operation_id=body["event_key"], operation_sha256=_local_digest(request)):
+            result = self.source.event_repository.transition_visual_supervision_if_current(request=request)
+        if result is None or result.write_disposition != "NEW_COMMIT":
+            raise _VisualSupervisionCommitRejected("supervision historical/stale claim cannot repeat effect")
+        self.check_active(robot_state)
+        self._check_optional_sources()
+        return result
+
     def _operational_begin(self, claim: str, kind: str, observation=None) -> None:
         owner = self._operational_owner
         if owner is None:
@@ -1025,6 +1338,17 @@ class VisualWorkerRuntime:
     def _read_lease(self) -> WorkerLeaseObservation:
         if getattr(self, "_local_mode", False):
             owner = self._operational_owner
+            if hasattr(self, "_local_original"):
+                current = _local_scope_for(self.source.event_repository)
+                if current is not None:
+                    owner._check_local_locked(current.view, purpose=current.operation_id,
+                                              operation_sha256=current.operation_sha256)
+                    return self._local_session.evaluate_locked(current.view)
+                with self._local_publication_scope(
+                    operation_id="runtime-read:" + self.source.job_id,
+                    operation_sha256=digest(["runtime-read", self.source.job_id]),
+                ) as scope:
+                    return self._local_session.evaluate_locked(scope.view)
             owner._check_app_live()
             session = owner._startup.worker._operational_lease_session
             with self.source.job_repository._local_read_scope(
@@ -1048,6 +1372,26 @@ class VisualWorkerRuntime:
             return lease
         except (ValueError, TypeError, KeyError) as error:
             raise RuntimeError("live worker lease source unavailable") from error
+
+    def remaining_app_seconds(self) -> float:
+        """Conservative cap from the already issued original app obligations.
+
+        Sample on the original issuer thread before asynchronous provider dispatch.
+        A cap describes only this read; publication still checks both live domains.
+        """
+        if not self._local_mode or self._operational_owner is None:
+            raise RuntimeError("remaining app cap requires the original local owner")
+        return self._operational_owner._remaining_app_seconds()
+
+    def supervision_cursor(self, period_s: float) -> int:
+        """Original D cadence on its owning thread; never reconstruct an origin."""
+        if not self._local_mode or period_s != self._runtime_option_sources()[0]:
+            raise RuntimeError("original local supervision period required")
+        owner = self._operational_owner
+        owner._check_app_live()
+        current = owner._clock.read_current(after=owner.task_origin_token)
+        period_ns = _seconds_ns(period_s)
+        return max(0, (current.lower_ns - owner.task_origin.upper_ns) // period_ns)
 
     @staticmethod
     def _local_definition_limits(
@@ -1392,7 +1736,7 @@ class VisualWorkerRuntime:
         with self._lock:
             self.validates_wait_policy(robot_state)
             bootstrap = self.bootstrap
-            pending = bootstrap.to_payload()["pending"]
+            pending = (bootstrap.semantic if self._local_mode else bootstrap.to_payload())["pending"]
             if (
                 self._claims.get(claim_id) != "PLAN"
                 or self.is_adopted
@@ -1465,6 +1809,11 @@ class VisualWorkerRuntime:
         wait_duration_s: float | None = None,
         wait_elapsed_s: float | None = None,
     ) -> VisualSupervisionTransitionResult:
+        if self._local_mode:
+            return self._local_supervision_transition(
+                kind, robot_state, cursor=cursor, claim=claim, observation=observation,
+                context=context, decision=decision, wait_duration_s=wait_duration_s,
+                wait_elapsed_s=wait_elapsed_s)
         lease = self.check_active(robot_state)
         self._check_optional_sources()
         record = self.source.event_repository.get_visual_supervision(self.episode_id)
@@ -1510,10 +1859,11 @@ class VisualWorkerRuntime:
     def _new_supervision_handle(
         self, result: VisualSupervisionTransitionResult, *, kind: str
     ) -> VisualWorkerSupervisionClaim:
-        state = result.record.to_payload()["claims"][result.claim_id]
+        payload = result.record.to_payload()
+        state = (payload["payload"] if self._local_mode else payload)["claims"][result.claim_id]
         publication, original = self.supervision_source_publication, self.original
         if (
-            publication.digest() != state["publication_hash"]
+            (publication.semantic["publication_hash"] if self._local_mode else publication.digest()) != state["publication_hash"]
             or original.digest() != result.record.definition.original.digest()
         ):
             raise RuntimeError("supervision/wait claim source changed after local commit")
@@ -1622,22 +1972,26 @@ class VisualWorkerRuntime:
                 self._supervision_handles.get(frame.claim_id) != ("PLAN", frame.digest())
             ):
                 raise RuntimeError("supervisor source frame is not owned by this live coordinator")
-            self._check_optional_sources()
+            if not self._local_mode or threading.get_ident() == self._operational_owner._startup.thread_id:
+                self._check_optional_sources()
             record = self.source.event_repository.get_visual_supervision(self.episode_id)
             claim = (
-                record.to_payload()["claims"].get(frame.claim_id) if record is not None else None
+                (record.semantic if self._local_mode else record.to_payload())["claims"].get(frame.claim_id)
+                if record is not None else None
             )
             if (
                 record is None
                 or claim is None
                 or claim["status"] != "PLAN_PENDING"
-                or claim["publication_hash"] != frame.publication_hash
+                or claim["publication_hash"] != (frame.claim.publication.semantic["publication_hash"]
+                                                 if self._local_mode else frame.publication_hash)
                 or claim["observation"] != frame.observation.model_dump(mode="json")
                 or claim["context"] != frame.context.model_dump(mode="json")
             ):
                 raise RuntimeError("supervisor source claim is not exact durable PLAN_PENDING")
             self._assert_supervision_frame_current_source(frame, record)
-            self._check_optional_sources()
+            if not self._local_mode or threading.get_ident() == self._operational_owner._startup.thread_id:
+                self._check_optional_sources()
             self._assert_supervision_frame_current_source(frame, record)
 
     def _assert_supervision_frame_current_source(
@@ -1651,13 +2005,16 @@ class VisualWorkerRuntime:
         receipt_original = frame.claim.original
         source = frame.to_payload()
         definition = record.definition.to_payload()
+        if self._local_mode:
+            definition = definition["payload"]
         if (
             publication.digest() != frame.publication_hash
             or original is None
             or original.digest() != receipt_original.digest()
             or publication.original_plan_hash != receipt_original.digest()
             or record.definition.original.digest() != receipt_original.digest()
-            or publication.verification_budget.state.exhausted_reason is not None
+            or (publication.verification_budget_history.state if self._local_mode
+                else publication.verification_budget.state).exhausted_reason is not None
             or source["model_snapshot_hash"] != self.bootstrap.definition.model_snapshot_hash
             or definition["model_snapshot_hash"] != source["model_snapshot_hash"]
             or definition["role_bundle"] != self.role_binding.bundle.evidence()
@@ -1710,13 +2067,15 @@ class VisualWorkerRuntime:
             original = frame.claim.original
             record = self.source.event_repository.get_visual_supervision(self.episode_id)
             claim = (
-                record.to_payload()["claims"].get(frame.claim_id) if record is not None else None
+                (record.semantic if self._local_mode else record.to_payload())["claims"].get(frame.claim_id)
+                if record is not None else None
             )
             if (
                 record is None
                 or publication.digest() != frame.publication_hash
                 or publication.original_plan_hash != original.digest()
-                or publication.verification_budget.state.exhausted_reason is not None
+                or (publication.verification_budget_history.state if self._local_mode
+                    else publication.verification_budget.state).exhausted_reason is not None
                 or claim is None
                 or claim["status"] != "PLAN_PENDING"
                 or claim["observation"] != frame.observation.model_dump(mode="json")
@@ -1726,11 +2085,15 @@ class VisualWorkerRuntime:
             self._assert_supervision_frame_current_source(frame, record)
             self._check_optional_sources()
             self._assert_supervision_frame_current_source(frame, record)
+            ttl = original.requirements[frame.step_id].ordinary_ttl_s
+            local = _check_observation(frame.observation, "supervision", max_age_s=ttl)
+            if self._local_mode:
+                if local is None:
+                    raise RuntimeError("supervisor frame lacks original acquisition window")
+                return "CURRENT" if local else "EXPIRED"
             age = (datetime.now(UTC) - frame.observation.captured_at).total_seconds()
             if age < 0:
                 raise RuntimeError("supervisor frame clock is ahead of current source clock")
-            ttl = original.requirements[frame.step_id].ordinary_ttl_s
-            local = _check_observation(frame.observation, "supervision", max_age_s=ttl)
             return "EXPIRED" if local is False or age > ttl else "CURRENT"
 
     def reserve_wait(
@@ -1742,7 +2105,7 @@ class VisualWorkerRuntime:
             if record is None:
                 period, _ = self._runtime_option_sources()
                 record = self.initialize_supervision(period, robot_state)
-            cursor = int(record.to_payload()["last_wait_cursor"]) + 1
+            cursor = int((record.semantic if self._local_mode else record.to_payload())["last_wait_cursor"]) + 1
             result = self._supervision_transition(
                 "RESERVE_WAIT", robot_state, cursor=cursor, wait_duration_s=duration_s
             )
@@ -1851,8 +2214,8 @@ class VisualWorkerRuntime:
                 now = datetime.now(UTC)
                 if type(observation) is not RGBDObservation or (
                     observation.episode_id != self.episode_id
-                    or not claimed_at <= observation.captured_at <= now
-                    or observation.captured_at <= before.captured_at
+                    or (not self._local_mode and (not claimed_at <= observation.captured_at <= now
+                                                  or observation.captured_at <= before.captured_at))
                     or observation.frame_id == before.frame_id
                     or camera_source_descriptor_sha256(observation)
                     != camera_source_descriptor_sha256(before)
@@ -1860,7 +2223,7 @@ class VisualWorkerRuntime:
                         self._last_observation is not None
                         and (
                             observation.frame_id == self._last_observation.frame_id
-                            or observation.captured_at <= self._last_observation.captured_at
+                            or (not self._local_mode and observation.captured_at <= self._last_observation.captured_at)
                         )
                     )
                 ):
@@ -2002,7 +2365,7 @@ class VisualWorkerRuntime:
                     replace(online, operational_reference=reference), ttl
                 ) is not True:
                     raise RuntimeError("original condition acquisition window unavailable")
-            request = VisualVerificationRouteInput(
+            arguments = dict(
                 original=self.original,
                 publication=publication,
                 online=online,
@@ -2023,9 +2386,25 @@ class VisualWorkerRuntime:
                 completion=completion,
                 grounding_receipt=grounding_receipt,
             )
-            result = self.source.event_repository.route_visual_verification_if_current(
-                request=request
-            )
+            if self._local_mode:
+                from cloud_edge_robot_arm.vision.local_temporal import _copy
+                body = {"scope": "SOURCE_ROUTE_ONLY", "original": self.original.to_payload(),
+                    "publication": publication.to_payload(), "online": {
+                        "observation": online.observation.model_dump(mode="json"),
+                        "robot_state": online.robot_state.model_dump(mode="json"),
+                        "visual_facts": _copy(online.visual_facts), "plan_version": online.plan_version,
+                        "command_seq": online.command_seq, "context_hash": online.context_hash},
+                    "step_id": step_id, "attempt": attempt, "phase": phase, "event_key": arguments["event_key"],
+                    "execution_contract": execution_contract.model_dump(mode="json"),
+                    "completion": None if completion is None else completion.to_payload(),
+                    "grounding_receipt": None if grounding_receipt is None else grounding_receipt.to_payload()}
+                request = VisualVerificationRouteInput.from_payload(self._local_envelope(
+                    "visual.verification.route-input.local.v1", body))
+                with self._local_publication_scope(operation_id=request.event_key, operation_sha256=_local_digest(request)):
+                    result = self.source.event_repository.route_visual_verification_if_current(request=request)
+            else:
+                request = VisualVerificationRouteInput(**arguments)
+                result = self.source.event_repository.route_visual_verification_if_current(request=request)
             if result is None:
                 raise RuntimeError("ordinary worker source route is stale")
             typed_result = cast(VisualWorkerRouteResult, result)
@@ -2052,7 +2431,7 @@ class VisualWorkerRuntime:
                 typed_result.write_disposition == "NEW_COMMIT"
                 and typed_result.record.route == "CONTINUE"
             ):
-                self._phase_receipts[(step_id, phase)] = request.to_payload()["event_key"]
+                self._phase_receipts[(step_id, phase)] = request.event_key
             return typed_result
 
     def publish_grounding(
@@ -2061,7 +2440,7 @@ class VisualWorkerRuntime:
         """Persist a current source binding; native and safety checks remain required."""
         with self._lock:
             self.check_active(robot_state)
-            if type(binding) is not StepGroundingBinding:
+            if type(binding) is not (LocalStepGroundingBinding if self._local_mode else StepGroundingBinding):
                 raise TypeError("complete concrete grounding binding required")
             current = self.publication
             if self._operational_owner is not None:
@@ -2099,16 +2478,25 @@ class VisualWorkerRuntime:
             checkpoint = checkpoint.model_copy(
                 update={"checkpoint_hash": checkpoint_digest(checkpoint)}
             )
-            published = self.source.event_repository.publish_visual_boundary_if_current(
+            arguments = dict(
                 task_id=current.identity.task_id,
                 owner_epoch=current.identity.owner_epoch,
                 expected_owner_revision=current.owner_revision,
-                expected_contract_hash=current.to_payload()["contract_hash"],
+                expected_contract_hash=current.contract_hash if self._local_mode else current.to_payload()["contract_hash"],
                 expected_checkpoint_hash=current.checkpoint.checkpoint_hash,
                 checkpoint=checkpoint,
                 grounding=binding,
                 state_generation=binding.state_generation,
             )
+            if self._local_mode:
+                from cloud_edge_robot_arm.repositories.event_autonomy.protocol import local_value
+                operation = _local_digest({"method": "publish_visual_boundary_if_current", "args": [],
+                                           "kwargs": local_value(arguments)})
+                with self._local_publication_scope(operation_id="grounding-publication:" + operation,
+                                                   operation_sha256=operation):
+                    published = self.source.event_repository.publish_visual_boundary_if_current(**arguments)
+            else:
+                published = self.source.event_repository.publish_visual_boundary_if_current(**arguments)
             if published is None:
                 raise RuntimeError("grounding source is stale or differs from original policy")
             self.check_active(robot_state)
@@ -2129,27 +2517,30 @@ class VisualWorkerRuntime:
         """
         with self._lock:
             self.check_active(robot_state)
-            if type(completion) is not VisualEffectCompletion or not self._can_capture_effects:
+            from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import LocalVisualEffectCompletion
+            if type(completion) is not (LocalVisualEffectCompletion if self._local_mode else VisualEffectCompletion) or not self._can_capture_effects:
                 raise RuntimeError("result capture requires this live owner and typed completion")
             if purpose not in {"AFTER_EFFECT", "POST_HOLD", "TERMINAL"}:
                 raise RuntimeError("registered effect capture purpose required")
-            source = completion.to_payload()
+            source = completion.semantic if self._local_mode else completion.to_payload()
             receipt = completion.digest()
             known_effect = self._returned_effects.get(receipt)
-            if purpose != "AFTER_EFFECT" and known_effect != completion.to_json():
+            if (self._local_mode or purpose != "AFTER_EFFECT") and known_effect != completion.to_json():
                 raise RuntimeError("later phase requires the owned returned effect source")
             current, original = self.supervision_source_publication, self.original
             result = SkillExecutionResult.model_validate_json(json.dumps(source["result"]))
             step_id = current.checkpoint.current_step_id
             requirement = original.requirements[step_id]
             execution = original.contract.model_dump(mode="json")
-            grounding = current.to_payload()["grounding"]
+            grounding = current.semantic["grounding"] if self._local_mode else current.to_payload()["grounding"]
+            if grounding is not None and self._local_mode:
+                grounding = grounding["payload"]
             if grounding is not None:
                 execution["steps"] = [
                     grounding["grounded_step"] if step["step_id"] == step_id else step
                     for step in execution["steps"]
                 ]
-                if purpose == "AFTER_EFFECT" and not (
+                if not self._local_mode and purpose == "AFTER_EFFECT" and not (
                     aware(datetime.fromisoformat(grounding["created_at"]))
                     <= aware(datetime.fromisoformat(source["started_at"]))
                     < aware(datetime.fromisoformat(grounding["valid_until"]))
@@ -2190,11 +2581,11 @@ class VisualWorkerRuntime:
                     current.checkpoint.command_seq,
                 )
                 or not result.success
-                or not original.registered_at
+                or (not self._local_mode and (not original.registered_at
                 <= aware(datetime.fromisoformat(source["started_at"]))
                 <= result.timestamp
                 <= aware(datetime.fromisoformat(source["returned_at"]))
-                <= now
+                <= now))
                 or self._last_observation is None
                 or (
                     purpose == "AFTER_EFFECT"
@@ -2254,8 +2645,8 @@ class VisualWorkerRuntime:
                 )
                 if record is None:
                     raise RuntimeError("full canonical effect phase not stored")
-                body = record.to_payload()
-                incoming = body["input"]
+                body = record.semantic if self._local_mode else record.to_payload()
+                incoming = body["input"]["payload"] if self._local_mode else body["input"]
                 completion = incoming["completion"]
                 if (
                     record.route != "CONTINUE"
@@ -2267,7 +2658,7 @@ class VisualWorkerRuntime:
                 ):
                     raise RuntimeError("stored canonical phase differs from current original")
                 completion_hashes.add(digest(completion))
-                effect_attempt = completion["attempt"]
+                effect_attempt = completion["payload"]["attempt"] if self._local_mode else completion["attempt"]
             if len(completion_hashes) != 1:
                 raise RuntimeError("canonical phases bind different actual effect receipts")
             checkpoint = current.checkpoint
@@ -2295,16 +2686,25 @@ class VisualWorkerRuntime:
             checkpoint = checkpoint.model_copy(
                 update={"checkpoint_hash": checkpoint_digest(checkpoint)}
             )
-            result = self.source.event_repository.publish_visual_boundary_if_current(
+            arguments = dict(
                 task_id=current.identity.task_id,
                 owner_epoch=current.identity.owner_epoch,
                 expected_owner_revision=current.owner_revision,
-                expected_contract_hash=current.to_payload()["contract_hash"],
+                expected_contract_hash=current.contract_hash if self._local_mode else current.to_payload()["contract_hash"],
                 expected_checkpoint_hash=current.checkpoint.checkpoint_hash,
                 checkpoint=checkpoint,
                 grounding=None,
                 state_generation=current.state_generation + 1,
             )
+            if self._local_mode:
+                from cloud_edge_robot_arm.repositories.event_autonomy.protocol import local_value
+                operation = _local_digest({"method": "publish_visual_boundary_if_current", "args": [],
+                                           "kwargs": local_value(arguments)})
+                with self._local_publication_scope(operation_id="step-completion:" + operation,
+                                                   operation_sha256=operation):
+                    result = self.source.event_repository.publish_visual_boundary_if_current(**arguments)
+            else:
+                result = self.source.event_repository.publish_visual_boundary_if_current(**arguments)
             if result is None:
                 raise RuntimeError("canonical completion cursor publication is stale")
             self.check_active(robot_state)

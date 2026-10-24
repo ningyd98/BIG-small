@@ -1,0 +1,12 @@
+{
+  "round": "R339",
+  "kind": "STATIC_NUMERIC_CONSERVATISM_FINDING_NO_PRODUCT_EXECUTION",
+  "path": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py",
+  "definition": "OperationalWindowOwner._remaining_app_seconds",
+  "source_segment_sha256": "278da2ca8e6d25b1067a8cc0e7fde56ac1eb6c8b7f3ca5f16bbcf8e298e3e999",
+  "original_source_evidence_sha256": "a12d5d57ea38de6beef0ede931daf5767983d5f287bfdd13a3101ead89fdef56",
+  "problem": "The code checks seconds * 1_000_000_000 > remaining after float division. The second floating-point multiplication may round an upward seconds representation back to the exact integer boundary, so this is not an exact test of whether the seconds float enlarges the original rational cap.",
+  "source_counterexample": "For remaining=1, the binary64 representation of 1/1_000_000_000 is slightly larger than the exact rational value, while multiplication back by 1_000_000_000 rounds to 1.0, leaving nextafter uncalled. This is a static numeric argument, not an executed product test.",
+  "scope": "Review exact conservative float conversion only; preserve genuine original owner/clock/hard-bound reads and positive rejection. No new source origin, budgets, tests, runtime allowance or broad rounding policy.",
+  "request": "Actual Astra assess and plan a minimal exact rational comparison or strictly downward representable cap. Same Sol implementation only after ROOT review. Independent R331 callsite work continues; freeze only this definition pending disposition."
+}

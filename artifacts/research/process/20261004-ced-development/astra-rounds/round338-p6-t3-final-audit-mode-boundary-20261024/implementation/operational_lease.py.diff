@@ -1,0 +1,21 @@
+--- before/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py
++++ after/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py
+@@ -184,6 +184,8 @@
+             or _current_session(session.repository) is not session):
+         raise OperationalLeaseError("private finalizer alone consumes a confirmation proof")
+     session._check_ingress("finalize_operational_publication")
++    if session._mode != "LOCAL_TEMPORAL_PUBLICATION_V1":
++        raise OperationalLeaseError("local final confirmation proof requires local mode")
+     issued = _ack_record(ack)
+     with _REGISTRY_LOCK:
+         proof = _CONSUMED_FINAL_CONFIRMATIONS.pop(id(ack), None)
+@@ -609,7 +611,8 @@
+             ):
+                 self.invalidate("response crossed original operation segment bound")
+                 raise OperationalLeaseError("response crossed original lease bound")
+-            if (request.kind == "confirm" and request.ack is not None
++            if (self._mode == "LOCAL_TEMPORAL_PUBLICATION_V1"
++                    and request.kind == "confirm" and request.ack is not None
+                     and request.view is not None and request.view.purpose == "finalize_operational_publication"):
+                 with _REGISTRY_LOCK:
+                     _CONSUMED_FINAL_CONFIRMATIONS[id(request.ack)] = _ConsumedFinalConfirmation(

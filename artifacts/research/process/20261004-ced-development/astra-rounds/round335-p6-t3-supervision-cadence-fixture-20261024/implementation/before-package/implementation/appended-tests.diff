@@ -1,0 +1,744 @@
+--- before/tests/test_operational_runtime_closure.py
++++ tests/test_operational_runtime_closure.py
+@@ -5054,3 +5054,741 @@
+                 return True
+ 
+             assert _b_t2_exercise(monkeypatch, directory, backend, observed, exercise)
++
++
++# R331 T3: append-only producer/consumer and confirmed-publication contract.
++def _b_t3_api(*, public=False):
++    from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
++    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
++
++    if not public:
++        assert callable(getattr(VisualWorkerRuntime, "remaining_app_seconds", None)), (
++            "R331 planned missing remaining_app_seconds"
++        )
++        return
++    assert callable(getattr(SQLiteSimulationJobRepository, "get_publication_summary", None)), (
++        "R331 planned missing get_publication_summary"
++    )
++    from cloud_edge_robot_arm.simulation_runtime import models as runtime_models
++    from cloud_edge_robot_arm.simulation_workbench import models as public_models
++
++    summary = getattr(runtime_models, "PublicationSummary", None)
++    assert summary is not None, "R331 planned missing immutable PublicationSummary"
++    view = getattr(public_models, "PublicationStatusView", None)
++    assert view is not None, "R331 planned missing PublicationStatusView"
++    assert set(view.model_fields) == set(_b_t3_public_fields()), "R331 planned publication fields"
++    assert view.model_config.get("extra") == "forbid" and view.model_config.get("frozen") is True
++    for cls in (public_models.SimulationRunRecord, public_models.SimulationArtifactsResponse,
++                public_models.SimulationMetricsResponse, public_models.SimulationEventsResponse,
++                runtime_models.AttemptView):
++        assert "publication" in cls.model_fields, f"R331 planned missing {cls.__name__}.publication"
++    assert {"confirmed_succeeded", "unconfirmed_terminal"} <= set(public_models.BatchProgress.model_fields)
++    assert "publication_state" in public_models.BatchRecord.model_fields
++    assert "historical_payload" in public_models.TimelineEvent.model_fields
++
++
++def _b_t3_public_fields():
++    return ("schema_version", "recorded_sql_status", "confirmation_state", "accepted",
++            "operation_id", "attempt", "epoch", "generation", "job_receipt_hash",
++            "event_receipt_hash", "artifact_manifest_sha256", "confirmed_artifact_paths",
++            "historical_artifact_paths", "reasons")
++
++
++def _b_t3_case(tmp_path, request, name, observations, attempt):
++    value = {"schema_version": "bigsmall.r331.t3-case.v1", "nodeid": request.node.nodeid,
++             "scenario": request.node.name, "command_id": os.environ["BIGSMALL_R158_COMMAND"],
++             "pid": os.getpid(), "observations": observations,
++             "resources": attempt["resources"], "worker_lifecycles": attempt["worker_lifecycles"],
++             "cleanup_errors": attempt["cleanup_errors"],
++             "observers_restored": attempt["observations"]["observers_restored"],
++             "scope": "CPU_SOFTWARE_ONLY_NO_NATIVE_OR_PHYSICAL_QUALIFICATION"}
++    with (tmp_path / name).open("x", encoding="utf-8") as output:
++        json.dump(_b_t2_plain(value), output, ensure_ascii=False, allow_nan=False, indent=2)
++        output.write("\n")
++
++
++def _b_t3_exercise(monkeypatch, directory, backend, observed, callback, *,
++                   after=None, success=False, configure=None, initialize=None):
++    """Real protected factory and poll; only disclosed CPU outcome/physical seams."""
++    from dataclasses import replace
++    from cloud_edge_robot_arm.repositories.event_autonomy import InMemoryEventAutonomyRepository
++    from cloud_edge_robot_arm.simulation_runtime import operational_lease
++    from cloud_edge_robot_arm.vision import execution
++    from tests.test_visual_worker_factory import software_factory
++
++    directory.mkdir(parents=True, exist_ok=False)
++    outcomes, errors, reads, cpu_outcomes = [], [], {}, []
++    received = None
++    events = None
++
++    def during_episode(worker, repo, job, source_root):
++        runtime = received[0][3].worker_runtime
++        session = worker._operational_lease_session
++        assert runtime.source.event_repository is events and session is not None
++        try:
++            outcomes.append(callback(runtime, session, worker, repo, job, events, reads, observed))
++        except BaseException as error:
++            errors.append(error)  # Preserve the actual failure swallowed by worker settlement.
++            raise
++
++    with monkeypatch.context() as scoped:
++        data = software_factory(scoped, directory, during_episode=during_episode,
++                                during_initialize=initialize)
++        repo, job, worker, calls, received, backend_object, original_events = data
++        events = original_events
++        if backend == "memory":
++            original_events.close()
++            events = InMemoryEventAutonomyRepository()
++            worker.visual_event_repository = events
++        worker.operational_time_mode = "LOCAL_TEMPORAL_PUBLICATION_V1"
++        if success:
++            original_episode = execution.run_visual_episode
++            injected = {"success": True, "status": "SUCCESS", "online_reported_complete": True,
++                        "physical_success": True, "failure_reason": None, "terminal_reason": None}
++
++            def cpu_success(*args, **kwargs):
++                original = original_episode(*args, **kwargs)
++                before = asdict(original)
++                assert before["success"] is False and before["status"] == "FAILED"
++                assert before["failure_reason"] == before["terminal_reason"] == "SOFTWARE_FACTORY_ONLY"
++                controlled = replace(original, **injected)
++                following = asdict(controlled)
++                assert {k: v for k, v in before.items() if k not in injected} == {
++                    k: v for k, v in following.items() if k not in injected}
++                for key in ("measured_lift_m", "hold_s", "placed_stable_s", "elapsed_s",
++                            "executed_actions", "model_calls", "observation_count"):
++                    assert before[key] == following[key] == 0
++                assert before["verification_records"] == following["verification_records"] == ()
++                cpu_outcomes.append({"before": before, "injected_fields": injected, "after": following})
++                return controlled
++
++            scoped.setattr(execution, "run_visual_episode", cpu_success)
++        try:
++            # Independent readers are created before every tested authority/SQL lock.
++            reads["job"] = sqlite3.connect(repo.database_path)
++            reads["job"].row_factory = sqlite3.Row
++            if backend == "sqlite":
++                reads["event"] = sqlite3.connect(events.path)
++                reads["event"].row_factory = sqlite3.Row
++            if configure is not None:
++                configure(scoped, worker, repo, job, events, reads)
++            assert worker.poll_once()
++            if errors:
++                raise errors[0]
++            assert len(outcomes) == 1, repo.get_job(job.job_id).error_message
++            assert calls.count("episode") == calls.count("shutdown") == calls.count("raw_exit") == 1
++            if success:
++                assert len(cpu_outcomes) == 1
++            result = {"during_episode": outcomes[0], "cpu_outcomes": cpu_outcomes,
++                      "job": _b_t2_plain(repo.get_job(job.job_id)),
++                      "attempts": _b_t2_plain(repo.list_attempts(job.run_id)),
++                      "leases": _b_t2_plain(repo.list_leases(job.run_id)),
++                      "events": _b_t2_plain(repo.list_events(job.run_id)),
++                      "sql": _b_t2_snapshot(events, reads), "calls": list(calls)}
++            if after is not None:
++                result["after_poll"] = after(scoped, worker, repo, job, events, reads, observed)
++            return result
++        finally:
++            observed.wait_observer = None
++            for released in observed.release_events:
++                released.set()
++            session = worker._operational_lease_session
++            if session is not None and not session._closed:
++                operational_lease._close_worker_lease_session(session, reason="R331-fixture-finally")
++            events.close()
++            for connection in reads.values():
++                connection.close()
++
++
++def _b_t3_frame(runtime, key):
++    from datetime import UTC, datetime
++    from tests.test_visual_bootstrap import frame
++
++    at = datetime.now(UTC)
++    observation = frame((None, None, at), frame_id=key, at=at)
++    payload = observation.model_dump(mode="json")
++    payload.update(episode_id=runtime.episode_id, checksum_sha256="")
++    return type(observation).model_validate(payload)
++
++
++def _b_t3_ground_and_route(runtime, events, key):
++    from dataclasses import replace
++    from datetime import UTC, datetime
++    from cloud_edge_robot_arm.edge.evidence.conditions import OnlineEvidenceSnapshot
++    from cloud_edge_robot_arm.vision import owner_registration as owner_module
++    from cloud_edge_robot_arm.vision.worker_owner import grounded_worker_effect_conditions
++
++    contract, publication, observation, robot = _b_t2_adopt_writer_task(runtime, events, key)
++    original = runtime.original
++    checkpoint = publication.checkpoint
++    step = contract.steps[checkpoint.current_step_index]
++    online = OnlineEvidenceSnapshot(observation, robot, {}, contract.plan_version,
++                                    contract.command_seq, checkpoint.checkpoint_hash)
++    policy = owner_module.DeterministicGroundingPolicy(
++        "rgbd-top-grasp-v1", "r331-cpu-source-v1", original.source_hashes,
++        min(0.1, contract.safety_constraints.max_tcp_velocity), 0.1, 0.10,
++        max(0.16, contract.safety_constraints.minimum_safe_height))
++    inputs = owner_module.GroundingFrameInputs(
++        observation.observation_id, observation.checksum_sha256, observation.episode_id,
++        observation.calibration_version, {"x": 0.2, "y": 0.1, "z": 0.06},
++        {"x": 0.3, "y": 0.2, "z": 0.0}, 0.035, original.source_hashes)
++    grounded = step.model_copy(update={
++        "parameters": owner_module._resolved_parameters(step, original, online, inputs, policy),
++        "preconditions": [], "success_conditions": []}, deep=True)
++    binding = owner_module.bind_step_grounding(
++        original, original_step_id=step.step_id, grounded_step=grounded, online=online,
++        source_checkpoint=checkpoint, current_identity=original.identity,
++        owner_revision=publication.owner_revision, state_generation=publication.state_generation + 1,
++        grounding_inputs=inputs, grounding_policy=policy, now=datetime.now(UTC))
++    assert binding.to_payload()["schema_version"] == "visual.owner.grounding.local.v1"
++    assert binding.to_payload()["original_time"] == original.local_time.to_payload()
++    published = runtime.publish_grounding(binding, robot)
++    assert published.grounding.to_payload() == binding.to_payload()
++    assert published.identity == original.identity and published.original_plan_hash == original.digest()
++    execution_contract = contract.model_copy(update={"steps": [grounded, *contract.steps[1:]]}, deep=True)
++    current_online = replace(online, context_hash=published.checkpoint.checkpoint_hash)
++    conditions = grounded_worker_effect_conditions(original, binding)
++    assert conditions and all(item.name for item in conditions)
++    routed = runtime.route(current_online, step_id=step.step_id, phase="PRECONDITION",
++                           execution_contract=execution_contract, grounding_receipt=binding)
++    raw = routed.record.to_payload()
++    assert raw["schema_version"] == "visual.verification.route.local.v1"
++    assert raw["original_time"] == original.local_time.to_payload()
++    assert raw["payload"]["input"]["schema_version"] == "visual.verification.route-input.local.v1"
++    assert raw["decision"]["disposition"] == "VALID"
++    assert raw["transaction"]["phase"] == "COMPLETE"
++    assert routed.write_disposition == "NEW_COMMIT"
++    return {"contract": contract, "original": original, "publication": published,
++            "observation": observation, "robot": robot, "binding": binding,
++            "online": current_online, "route": raw, "execution_contract": execution_contract}
++
++
++def _b_t3_supervision(runtime, data, key):
++    from cloud_edge_robot_arm.vision.supervision import SupervisionContext, SupervisionDecision
++
++    period, _ = runtime._runtime_option_sources()
++    registered = runtime.initialize_supervision(period, data["robot"])
++    assert registered.to_payload()["schema_version"] == "visual.supervision.record.local.v1"
++    claim = runtime.reserve_supervision_capture(1, data["robot"])
++    observation = _b_t3_frame(runtime, key + ":supervision")
++    context = SupervisionContext(
++        episode_id=runtime.episode_id, plan_version=data["contract"].plan_version,
++        state_version=claim.cursor, next_step_id=claim.step_id,
++        next_skill=data["original"].requirements[claim.step_id].original_step.skill.value,
++        task_instruction=runtime.bootstrap.definition.user_instruction,
++        observation_id=observation.observation_id, captured_at=observation.captured_at,
++        proprioception={"estop_engaged": False, "collision_detected": False})
++    runtime.complete_supervision_capture(claim, observation, context, data["robot"])
++    frame = runtime.reserve_supervision_plan(claim, data["robot"])
++    decision = SupervisionDecision(
++        **{name: getattr(context, name) for name in (
++            "episode_id", "plan_version", "state_version", "observation_id", "next_step_id")},
++        recommendation="CONTINUE", reason="CPU recorded reply; no model invocation")
++    completed = runtime.complete_supervision_plan(frame, decision, data["robot"])
++    raw = completed.to_payload()
++    assert raw["payload"]["supervisor_calls_reserved"] == 1
++    assert raw["original_time"] == data["original"].local_time.to_payload()
++    return {"record": raw, "context": context, "decision": decision, "frame": frame}
++
++
++def _b_t3_service(scoped, worker, repo, recovery_records):
++    from cloud_edge_robot_arm.dashboard.event_stream import DashboardEventStream
++    from cloud_edge_robot_arm.simulation_runtime.recovery import ArtifactRecoveryService
++    from cloud_edge_robot_arm.simulation_runtime.service import SimulationRuntimeService
++
++    service = SimulationRuntimeService(artifact_root=worker.artifact_root,
++                                       database_path=repo.database_path,
++                                       event_stream=DashboardEventStream())
++    original_recover = ArtifactRecoveryService.recover_interrupted_jobs
++
++    def recover(instance):
++        result = original_recover(instance)
++        if instance.repository is service.repository:
++            recovery_records.append({"result": _b_t2_plain(result),
++                                     "local_publication_history": _b_t2_plain(instance.local_publication_history)})
++        return result
++
++    scoped.setattr(ArtifactRecoveryService, "recover_interrupted_jobs", recover)
++    suppressed_starts = []
++    scoped.setattr(service.dispatcher, "start", lambda: suppressed_starts.append("instance-start-suppressed"))
++    assert service.repository.database_path == repo.database_path
++    assert all(item.active_job_id == "" for item in service.dispatcher._workers)
++    return service, suppressed_starts
++
++
++def _b_t3_public_readouts(scoped, worker, repo, job, *, accepted):
++    recovery = []
++    service, suppressed = _b_t3_service(scoped, worker, repo, recovery)
++    before = _b_t2_plain(repo.get_job(job.job_id))
++    stored_events = repo.list_events(job.run_id)
++    stored_metrics = repo.get_metrics(job.run_id)
++    paths = repo.get_artifacts(job.run_id)
++    # The isolated factory's genuine batch_id may be empty; retain it exactly.
++    repo.create_batch(batch_id=job.batch_id, manifest=job.manifest, run_ids=[job.run_id])
++    run = service.get_run(job.run_id)
++    attempts = service.attempts_for(job.run_id)
++    artifacts = service.artifacts_for(job.run_id)
++    metrics = service.metrics_for(job.run_id)
++    events = service.events_for(job.run_id)
++    batch = service.get_batch(job.batch_id)
++    summary = service.repository.get_publication_summary(job.run_id)
++    payload = summary.to_payload()
++    assert set(payload) == set(_b_t3_public_fields())
++    assert payload["schema_version"] == "simulation.publication-status.v1"
++    assert payload["recorded_sql_status"] == before["status"] == run.status.value == "SUCCEEDED"
++    assert payload["accepted"] is accepted
++    assert payload["historical_artifact_paths"] == paths == before["artifact_paths"]
++    assert payload["confirmed_artifact_paths"] == (paths if accepted else {})
++    assert payload["confirmation_state"] == "CONFIRMED" if accepted else payload["confirmation_state"] in {
++        "UNKNOWN", "UNCONFIRMED", "PENDING"}
++    for public in (run, artifacts, metrics, events, *attempts.attempts):
++        assert public.publication.model_dump(mode="json") == payload
++    assert artifacts.artifacts == (paths if accepted else {})
++    assert [item.model_dump(mode="json") for item in metrics.metrics] == stored_metrics
++    assert len(attempts.attempts) == 1 and attempts.attempts[0].result == "SUCCEEDED"
++    assert len(events.events) == len(stored_events)
++    for event, stored in zip(events.events, stored_events, strict=True):
++        assert event.event_type == stored.event_type and event.sequence == stored.sequence
++        if stored.event_type == "artifact_created":
++            assert event.historical_payload == stored.payload
++            assert event.payload == (stored.payload if accepted else {})
++        else:
++            assert event.payload == stored.payload
++    assert batch.progress.succeeded == 1
++    assert batch.progress.confirmed_succeeded == int(accepted)
++    assert batch.progress.unconfirmed_terminal == int(not accepted)
++    assert batch.publication_state == ("COMPLETE" if accepted else "INCOMPLETE")
++    assert repo.get_job(job.job_id).status.value == "SUCCEEDED"
++    assert _b_t2_plain(repo.get_job(job.job_id)) == before
++    assert len(recovery) == len(suppressed) == 1
++    assert service.dispatcher._thread is None
++    return {"summary": payload, "run": _b_t2_plain(run), "attempts": _b_t2_plain(attempts),
++            "artifacts": _b_t2_plain(artifacts), "metrics": _b_t2_plain(metrics),
++            "events": _b_t2_plain(events), "batch": _b_t2_plain(batch),
++            "startup_recovery": recovery, "suppressed_dispatcher_start": suppressed}, service
++
++
++def _b_t3_terminal_fault(scoped, observed, repo, session, reads, variant, evidence):
++    """Fault actual SQL/queue/counter seams, never replace a positive decision."""
++    from cloud_edge_robot_arm.simulation_runtime import operational_lease
++
++    evidence.update(variant=variant, fired=False, events=[])
++    if variant == "commit_close":
++        connection_type = type(reads["job"])
++        real_execute = connection_type.execute
++
++        def execute(connection, sql, parameters=(), /):
++            result = real_execute(connection, sql, parameters)
++            if (not evidence["fired"] and sql.strip().rstrip(";").upper() == "COMMIT"
++                    and getattr(repo._transactions, "connection", None) is connection):
++                row = reads["job"].execute(
++                    "SELECT * FROM simulation_operational_leases_v1 WHERE job_id=?", (session.job_id,)
++                ).fetchone()
++                if row is not None and row["terminal_reason"] == "owned publication completed":
++                    evidence["fired"] = True
++                    evidence["events"].append({"kind": "TRUE_TERMINAL_COMMIT_THEN_SAME_CONNECTION_CLOSE",
++                        "resource_id": id(connection), "in_transaction_after_commit": connection.in_transaction,
++                        "durable_operational_row": dict(row), "thread": threading.get_ident()})
++                    assert connection.in_transaction is False
++                    connection.close()
++                    try:
++                        real_execute(connection, "SELECT 1")
++                    except sqlite3.ProgrammingError as error:
++                        evidence["actual_closed_connection_error"] = {"type": type(error).__name__, "message": str(error)}
++                        raise
++                    raise AssertionError("closed actual terminal connection executed SQL")
++            return result
++
++        scoped.setattr(connection_type, "execute", execute)
++        return
++    real_decide = operational_lease.OperationalLeaseSession._decide
++    release = threading.Event()
++    observed.release_events.append(release)
++    if variant == "confirm_timeout":
++        real_invalidate = operational_lease.OperationalLeaseSession.invalidate
++
++        def invalidate(actual, reason):
++            real_invalidate(actual, reason)
++            if actual is session and reason == "RPC wait cap exceeded" and evidence["fired"]:
++                evidence["events"].append({"kind": "ACTUAL_MAIN_RPC_TIMEOUT", "reason": reason})
++                release.set()
++
++        scoped.setattr(operational_lease.OperationalLeaseSession, "invalidate", invalidate)
++
++    def decide(actual, clock, request):
++        terminal = (request.kind == "confirm" and request.view is not None
++                    and request.view.purpose == "finalize_operational_publication")
++        consume = (request.kind == "consume" and request.source_reply is not None
++                   and request.source_reply.kind == "confirm"
++                   and request.source_reply.view.view.purpose == "finalize_operational_publication")
++        if actual is session and not evidence["fired"] and (
++                (variant == "confirm_timeout" and terminal) or (variant == "prior_bound" and consume)):
++            evidence["fired"] = True
++            if variant == "confirm_timeout":
++                evidence["events"].append({"kind": "ACTUAL_TERMINAL_REQUEST_DEQUEUED",
++                    "kind_requested": request.kind, "broker_thread": threading.get_ident()})
++                assert release.wait(timeout=session.wait_cap + 2), "actual RPC timeout did not release broker"
++                evidence["events"].append({"kind": "LATE_BROKER_RESUMED", "cancelled": request.cancelled.is_set()})
++            else:
++                previous = request.source_reply.segments[0]
++                raw = next(raw for actual_clock, raw, domain in observed.clocks
++                           if actual_clock is clock and domain == "D_lease")
++                evidence["events"].append({"kind": "ACTUAL_CONFIRM_CONSUMPTION_PRIOR_BOUND",
++                    "before_ns": raw.now, "prior_deadline_ns": previous.deadline.deadline_ns,
++                    "broker_thread": threading.get_ident()})
++                raw.now = previous.deadline.deadline_ns
++        try:
++            return real_decide(actual, clock, request)
++        except operational_lease.OperationalLeaseError as error:
++            if actual is session and evidence["fired"]:
++                evidence["events"].append({"kind": "ACTUAL_BROKER_DENIAL", "message": str(error)})
++            raise
++
++    scoped.setattr(operational_lease.OperationalLeaseSession, "_decide", decide)
++
++
++@pytest.mark.parametrize("backend", ["memory", "sqlite"])
++def test_private_startup_to_transaction_grounding(monkeypatch, tmp_path, request, backend):
++    with _b_t2_attempt(request) as attempt:
++        _b_t3_api()
++        attempt["entered_behavior"] = True
++        observations = []
++        with _b_t2_observe(monkeypatch, attempt) as observed:
++            def exercise(runtime, session, worker, repo, job, events, reads, observed):
++                original_time = copy.deepcopy(runtime.bootstrap.to_payload()["original_time"])
++                owner = runtime._operational_owner
++                assert owner._clock.domain.owner_thread_id == session.main_thread == threading.get_ident()
++                assert owner._clock.domain != session.domain
++                assert runtime.remaining_app_seconds() > 0
++                before = _b_t2_snapshot(events, reads)
++                data = _b_t3_ground_and_route(runtime, events, backend + ":startup")
++                original_hash = data["original"].digest()
++                before_heartbeat = _b_t2_plain(runtime._read_lease())
++                repo.heartbeat_lease(session.lease_id, lease_ttl_seconds=worker.lease_ttl_seconds)
++                after_heartbeat = _b_t2_plain(runtime._read_lease())
++                assert after_heartbeat["generation"] > before_heartbeat["generation"]
++                assert data["original"].digest() == runtime.original.digest() == original_hash
++                assert runtime.original.local_time.to_payload() == original_time
++                assert runtime.bootstrap.to_payload()["original_time"] == original_time
++                assert after_heartbeat["original_acquisition"] == before_heartbeat["original_acquisition"]
++                assert after_heartbeat["source_identity"] == before_heartbeat["source_identity"]
++                assert original_time["lease_identity"]["epoch"] == session.epoch
++                assert runtime.remaining_app_seconds() > 0
++                return {"before": before, "after": _b_t2_snapshot(events, reads),
++                        "original_time": original_time, "original_hash": original_hash,
++                        "grounding": data["binding"].to_payload(), "route": data["route"],
++                        "before_heartbeat": before_heartbeat, "after_heartbeat": after_heartbeat,
++                        "model_calls": 0, "physical_actions": 0, "native_admission": False}
++
++            observations.append(_b_t2_exercise(monkeypatch, tmp_path / backend, backend, observed, exercise))
++        _b_t3_case(tmp_path, request, "startup-grounding.json", observations, attempt)
++
++
++def _b_t3_utc(scoped, at):
++    from datetime import datetime
++
++    class DateTimeMeta(type):
++        def __instancecheck__(cls, value):
++            return isinstance(value, datetime)
++
++    class ShiftedDateTime(datetime, metaclass=DateTimeMeta):
++        @classmethod
++        def now(cls, tz=None):
++            return at.replace(tzinfo=None) if tz is None else at.astimezone(tz)
++
++    names = ("vision.worker_runtime", "vision.worker_owner",
++             "vision.owner_registration", "vision.execution", "vision.supervision",
++             "simulation_runtime.worker", "repositories.event_autonomy.visual_bootstrap",
++             "repositories.event_autonomy.visual_supervision", "repositories.event_autonomy.visual_owner",
++             "repositories.event_autonomy.visual_verification", "repositories.event_autonomy.memory",
++             "repositories.event_autonomy.sqlite", "edge.recovery.verification_router",
++             "edge.recovery.lifecycle", "edge.evidence.conditions", "cloud.planning.pipeline")
++    for name in names:
++        module = importlib.import_module("cloud_edge_robot_arm." + name)
++        assert hasattr(module, "datetime"), name
++        scoped.setattr(module, "datetime", ShiftedDateTime)
++
++
++def _b_t3_external_utc(observation, contract, at):
++    from datetime import timedelta
++    from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
++    from cloud_edge_robot_arm.cloud.planning.pipeline import check_scene_sufficiency
++    from cloud_edge_robot_arm.edge.evidence.models import CommitContext, DecisionEnvelope
++    from cloud_edge_robot_arm.edge.evidence.validator import validate_decision_commit
++
++    rows = []
++    for milliseconds, valid in ((1000, True), (1001, False), (-5000, True), (-5001, False)):
++        raw = observation.model_dump(mode="json")
++        raw.update(captured_at=(at + timedelta(milliseconds=milliseconds)).isoformat(), checksum_sha256="")
++        external = type(observation).model_validate(raw)
++        value = InitialPlanningRequest(user_instruction=contract.user_instruction,
++            observation=external, scene=SceneSummary(scene_version=contract.scene_version))
++        reason = check_scene_sufficiency(value)
++        assert (reason is None) is valid
++        rows.append({"offset_ms": milliseconds, "reason": reason})
++    current = CommitContext(contract.task_id, observation.episode_id, observation.observation_id,
++                            contract.plan_version, contract.command_seq, contract.scene_version,
++                            "r331-external-context", "a" * 64, False)
++    decision = DecisionEnvelope("r331-external", contract.task_id, observation.episode_id,
++        observation.observation_id, contract.plan_version, contract.command_seq, contract.scene_version,
++        current.context_hash, current.candidate_set_hash, "CONTINUE", "CPU", "CPU",
++        at - timedelta(seconds=1), at)
++    verdict = validate_decision_commit(decision, current, at)
++    assert verdict.status == "INVALID" and "decision_future_or_expired" in verdict.reasons
++    return {"scene_boundaries": rows, "expired_external_decision": _b_t2_plain(verdict)}
++
++
++@pytest.mark.parametrize("backend", ["memory", "sqlite"])
++def test_local_new_schema_ignores_utc_jump_but_external_does_not(monkeypatch, tmp_path, request, backend):
++    from datetime import UTC, datetime, timedelta
++    from dataclasses import replace
++
++    with _b_t2_attempt(request) as attempt:
++        _b_t3_api()
++        attempt["entered_behavior"] = True
++        observations = []
++        with _b_t2_observe(monkeypatch, attempt) as observed:
++            for days in (-1, 1):
++                basis = datetime.now(UTC)
++                with monkeypatch.context() as shifted:
++                    _b_t3_utc(shifted, basis + timedelta(days=days))
++
++                    def exercise(runtime, session, worker, repo, job, events, reads, observed):
++                        from types import SimpleNamespace
++                        from cloud_edge_robot_arm.vision import operational_windows as windows
++                        from cloud_edge_robot_arm.vision.execution import _VisualEpisode
++                        from cloud_edge_robot_arm.edge.evidence.conditions import _operational_freshness
++                        from cloud_edge_robot_arm.vision.supervision import decide_supervision
++
++                        initial = runtime.bootstrap.to_payload()
++                        cap = runtime.remaining_app_seconds()
++                        data = _b_t3_ground_and_route(runtime, events, backend + str(days))
++                        supervisor = _b_t3_supervision(runtime, data, backend + str(days))
++                        reference = windows._reference_for_observation(data["observation"], "condition")
++                        assert windows._check_reference(reference).status == "VALID"
++                        assert windows._check_observation(data["observation"], "condition", reference=reference) is True
++                        assert _operational_freshness(replace(data["online"], operational_reference=reference), 5.0) is True
++                        assert windows._check_context(supervisor["context"], 5.0) is True
++                        assert decide_supervision(supervisor["decision"], supervisor["context"],
++                                                  supervisor["context"], maximum_age_s=5.0) == "CONTINUE"
++                        forged = copy.deepcopy(reference)
++                        forged["source_identity"] = "0" * 64
++                        assert windows._check_reference(forged).status == "UNKNOWN"
++                        assert _operational_freshness(replace(data["online"], operational_reference=forged), 5.0) is False
++                        # Isolated existing B check_active method harness: no episode constructor,
++                        # backend initialization, skill executor, model provider or physics call.
++                        episode = object.__new__(_VisualEpisode)
++                        episode.policy = SimpleNamespace(cancelled=None)
++                        episode.worker_runtime = runtime
++                        episode.backend = SimpleNamespace(_episode_id=runtime.episode_id)
++                        episode.robot = SimpleNamespace(get_state=lambda: data["robot"])
++                        episode.worker_call = lambda action: action()
++                        episode.budget = runtime.verification_state
++                        episode.deadline = float("inf")
++                        _VisualEpisode.check_active(episode)
++                        following = runtime.remaining_app_seconds()
++                        assert 0 < following <= cap
++                        assert runtime.bootstrap.to_payload()["original_time"] == initial["original_time"]
++                        return {"utc_shift_days": days, "original_time": initial["original_time"],
++                                "cap_before": cap, "cap_after": following,
++                                "route": data["route"], "supervision": supervisor["record"],
++                                "adapter_reference": reference, "external": _b_t3_external_utc(
++                                    data["observation"], data["contract"], basis + timedelta(days=days)),
++                                "execution_B_check_active_called": True,
++                                "cap_sample_thread": threading.get_ident(), "model_calls": 0}
++
++                    observations.append(_b_t2_exercise(shifted, tmp_path / (backend + str(days)),
++                                                      backend, observed, exercise))
++
++            def late(runtime, session, worker, repo, job, events, reads, observed):
++                from cloud_edge_robot_arm.cloud.planning.models import PlannerDraft
++                from cloud_edge_robot_arm.contracts import RobotState
++
++                robot = RobotState(connected=True)
++                capture = runtime.reserve_capture(robot, initial=True)
++                observation = _b_t3_frame(runtime, "late-return")
++                runtime.complete_capture(capture, observation, robot)
++                plan = runtime.reserve_plan(robot)
++                before = runtime.bootstrap.to_payload()
++                owner = runtime._operational_owner
++                raw = next(raw for clock, raw, domain in observed.clocks if clock is owner._clock)
++                raw.now = min(hard.deadline.deadline_ns for hard in owner._hard)
++                with pytest.raises((RuntimeError, ValueError), match="bound|expired|deadline|authority|live"):
++                    runtime.remaining_app_seconds()
++                draft = PlannerDraft(raw_text="CPU late recorded reply",
++                    parsed_json={"_sentinel": "REQUEST_MORE_OBSERVATION"},
++                    observation_evidence={**observation.evidence(),
++                        "model_snapshot_hash": runtime.bootstrap.definition.model_snapshot_hash,
++                        "role_bundle_hash": runtime.bootstrap.definition.role_bundle_hash})
++                with pytest.raises((RuntimeError, ValueError), match="bound|expired|deadline|authority|live"):
++                    runtime.complete_plan(plan, draft, robot)
++                after = _b_t2_snapshot(events, reads)
++                retained = _b_t2_retained_spend(after, before, 0)
++                assert retained["payload"]["pending"]["claim_id"] == plan
++                assert retained["payload"]["state"]["remaining_reobservations"] == before["payload"]["state"]["remaining_reobservations"]
++                return {"hard_open_exact_ns": raw.now, "before": before,
++                        "retained": retained, "after": after, "late_reply_published": False}
++
++            observations.append(_b_t2_exercise(monkeypatch, tmp_path / (backend + "-bound"),
++                                              backend, observed, late))
++        _b_t3_case(tmp_path, request, "utc-provenance.json", observations, attempt)
++
++
++@pytest.mark.parametrize("variant", ["commit_close", "confirm_timeout", "prior_bound"])
++def test_b_terminal_publication_confirmation_fault(monkeypatch, tmp_path, request, variant):
++    with _b_t2_attempt(request) as attempt:
++        _b_t3_api(public=True)
++        attempt["entered_behavior"] = True
++        observations, fault = [], {}
++        with _b_t2_observe(monkeypatch, attempt) as observed:
++            with monkeypatch.context() as fault_scope:
++                def exercise(runtime, session, worker, repo, job, events, reads, observed):
++                    data = _b_t3_ground_and_route(runtime, events, "terminal:" + variant)
++                    _b_t3_terminal_fault(fault_scope, observed, repo, session, reads, variant, fault)
++                    return {"original_time": runtime.original.local_time.to_payload(),
++                            "original_hash": runtime.original.digest(), "route": data["route"]}
++
++                def after(scoped, worker, repo, job, events, reads, observed):
++                    assert fault["fired"] is True
++                    assert repo.get_job(job.job_id).status.value == "SUCCEEDED"
++                    current_attempts, leases = repo.list_attempts(job.run_id), repo.list_leases(job.run_id)
++                    assert len(current_attempts) == len(leases) == 1
++                    assert current_attempts[0].result == "SUCCEEDED" and current_attempts[0].ended_at is not None
++                    assert leases[0].released_at is not None
++                    public, _ = _b_t3_public_readouts(scoped, worker, repo, job, accepted=False)
++                    directory = worker.artifact_root / job.artifact_root
++                    rejection_files = list(directory.glob(".operational-publication-*/rejection.json"))
++                    assert len(rejection_files) == 1
++                    rejection = json.loads(rejection_files[0].read_text())
++                    assert rejection["accepted"] is False
++                    rejected = sorted(rejection_files[0].parent.joinpath("unconfirmed").glob("*"))
++                    assert rejected and all(path.is_file() for path in rejected)
++                    assert not (directory / "result.json").exists()
++                    retained = {str(path.relative_to(worker.artifact_root)): hashlib.sha256(path.read_bytes()).hexdigest()
++                                for path in rejected}
++                    return {"fault": fault, "public": public, "rejection": rejection,
++                            "retained_unconfirmed_files": retained,
++                            "terminal_sql": _b_t2_snapshot(events, reads)}
++
++                observations.append(_b_t3_exercise(fault_scope, tmp_path / variant, "sqlite", observed,
++                                                  exercise, after=after, success=True))
++        _b_t3_case(tmp_path, request, "terminal-confirmation.json", observations, attempt)
++
++
++@pytest.mark.parametrize("backend", ["memory", "sqlite"])
++def test_b_public_confirmed_publication_control(monkeypatch, tmp_path, request, backend):
++    with _b_t2_attempt(request) as attempt:
++        _b_t3_api(public=True)
++        attempt["entered_behavior"] = True
++        observations = []
++        with _b_t2_observe(monkeypatch, attempt) as observed:
++            def exercise(runtime, session, worker, repo, job, events, reads, observed):
++                data = _b_t3_ground_and_route(runtime, events, backend + ":confirmed")
++                return {"original_time": runtime.original.local_time.to_payload(),
++                        "original_hash": runtime.original.digest(), "route": data["route"],
++                        "live_job": _b_t2_plain(repo.get_job(job.job_id)), "epoch": session.epoch}
++
++            def after(scoped, worker, repo, job, events, reads, observed):
++                from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
++                from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseError
++                from cloud_edge_robot_arm.simulation_workbench.models import PublicationStatusView
++
++                public, service = _b_t3_public_readouts(scoped, worker, repo, job, accepted=True)
++                summary = service.repository.get_publication_summary(job.run_id)
++                archived = summary.to_payload()
++                assert archived["attempt"] == 1 and archived["epoch"]
++                assert all(len(archived[name]) == 64 for name in (
++                    "job_receipt_hash", "event_receipt_hash", "artifact_manifest_sha256"))
++                assert service.repository.get_publication_summary(job.run_id, attempt=1).to_payload() == archived
++                assert service.repository.get_publication_summary(job.run_id, attempt=2).to_payload()["accepted"] is False
++                with pytest.raises((AttributeError, TypeError)):
++                    summary.accepted = False
++                detached = summary.to_payload()
++                detached["confirmed_artifact_paths"].clear()
++                detached["accepted"] = True
++                detached["artifact_manifest_sha256"] = "0" * 64
++                assert service.repository.get_publication_summary(job.run_id).to_payload() == archived
++                with pytest.raises(ValueError):
++                    PublicationStatusView.model_validate({**archived, "caller_permission": True})
++                replay_before = _b_t2_snapshot(events, reads)
++                callbacks = []
++                with pytest.raises(OperationalLeaseError, match="private|owner|operational|scope|session|terminal"):
++                    repo.finalize_operational_publication(job.job_id, attempt=1,
++                        terminal=RuntimeJobStatus.SUCCEEDED, artifact_paths=archived["confirmed_artifact_paths"],
++                        metrics=repo.get_metrics(job.run_id),
++                        publish=lambda *args: callbacks.append("forged-history-publish"),
++                        validate=lambda: callbacks.append("forged-history-validate"))
++                assert callbacks == [] and _b_t2_snapshot(events, reads) == replay_before
++                # Actual fixture files, not a self-hashed caller manifest, decide archival acceptance.
++                target = worker.artifact_root / archived["confirmed_artifact_paths"]["result"]
++                raw = target.read_bytes()
++                result_payload = json.loads(raw)
++                assert result_payload["status"] == "SUCCEEDED" and result_payload["task_success"] is True
++                metrics_payload = json.loads((worker.artifact_root / archived["confirmed_artifact_paths"]["metrics"]).read_text())
++                assert isinstance(metrics_payload, list) and metrics_payload == repo.get_metrics(job.run_id)
++                file_checks = []
++                try:
++                    target.write_bytes(raw + b"\n")
++                    invalid = service.repository.get_publication_summary(job.run_id).to_payload()
++                    assert invalid["accepted"] is False and invalid["confirmed_artifact_paths"] == {}
++                    file_checks.append({"kind": "changed_file", "summary": invalid})
++                finally:
++                    target.write_bytes(raw)
++                missing = target.with_name("r331-retained-missing-result.json")
++                target.replace(missing)
++                try:
++                    invalid = service.repository.get_publication_summary(job.run_id).to_payload()
++                    assert invalid["accepted"] is False and invalid["confirmed_artifact_paths"] == {}
++                    file_checks.append({"kind": "missing_file", "summary": invalid})
++                finally:
++                    missing.replace(target)
++                assert service.repository.get_publication_summary(job.run_id).to_payload() == archived
++                # Negative-only corruption of a new mutable fixture receipt; restore exact rows.
++                table = "simulation_publication_confirmations_v1"
++                columns = [row["name"] for row in reads["job"].execute("PRAGMA table_info(" + table + ")")]
++                assert {"run_id", "attempt"} <= set(columns)
++                receipt_rows = [dict(row) for row in reads["job"].execute(
++                    "SELECT * FROM " + table + " WHERE run_id=?", (job.run_id,))]
++                assert receipt_rows
++                with reads["job"]:
++                    reads["job"].execute("UPDATE " + table + " SET attempt=attempt+1 WHERE run_id=?", (job.run_id,))
++                mismatch = service.repository.get_publication_summary(job.run_id).to_payload()
++                assert mismatch["accepted"] is False and mismatch["confirmed_artifact_paths"] == {}
++                with reads["job"]:
++                    reads["job"].execute("DELETE FROM " + table + " WHERE run_id=?", (job.run_id,))
++                missing_receipt = service.repository.get_publication_summary(job.run_id).to_payload()
++                assert missing_receipt["accepted"] is False and missing_receipt["confirmation_state"] == "UNKNOWN"
++                with reads["job"]:
++                    for row in receipt_rows:
++                        names = tuple(row)
++                        reads["job"].execute("INSERT INTO " + table + " (" + ",".join(names)
++                            + ") VALUES (" + ",".join("?" for _ in names) + ")", tuple(row[name] for name in names))
++                assert service.repository.get_publication_summary(job.run_id).to_payload() == archived
++                # Reopened real service/recovery may expose archival confirmation; it grants no effect.
++                reopened_recovery = []
++                reopened, reopen_starts = _b_t3_service(scoped, worker, repo, reopened_recovery)
++                assert reopened.get_run(job.run_id).publication.model_dump(mode="json") == archived
++                assert len(reopened_recovery) == len(reopen_starts) == 1
++                # Legacy rows have no operational source and retain historical path semantics.
++                legacy = service.repository.create_job(
++                    run_id=job.run_id + "-legacy", batch_id="legacy", backend=job.backend,
++                    scenario_id=job.scenario_id, control_mode=job.control_mode, seed=job.seed,
++                    manifest_id=job.manifest_id, reproducibility_hash=job.reproducibility_hash,
++                    draft=job.draft, manifest=job.manifest, timeout_seconds=job.timeout_seconds,
++                    max_attempts=1, artifact_root=job.artifact_root + "-legacy",
++                    source_commit=job.source_commit, source_tree_hash=job.source_tree_hash)
++                historical = {"result": legacy.artifact_root + "/result.json"}
++                service.repository.save_artifacts(legacy.job_id, historical)
++                legacy_summary = service.repository.get_publication_summary(legacy.run_id).to_payload()
++                assert legacy_summary["confirmation_state"] == "NOT_APPLICABLE"
++                assert service.artifacts_for(legacy.run_id).artifacts == historical
++                return {"public": public, "actual_file_checks": file_checks,
++                        "receipt_rows": receipt_rows, "attempt_mismatch": mismatch,
++                        "missing_receipt": missing_receipt, "legacy": legacy_summary,
++                        "reopened_recovery": reopened_recovery,
++                        "sql_after_negative_controls": _b_t2_snapshot(events, reads),
++                        "live_authority_from_archive": False, "model_calls": 0, "physical_actions": 0}
++
++            observations.append(_b_t3_exercise(monkeypatch, tmp_path / backend, backend, observed,
++                                              exercise, after=after, success=True))
++        _b_t3_case(tmp_path, request, "public-confirmed-control.json", observations, attempt)

@@ -1,0 +1,15 @@
+{
+  "kind": "SOURCE_ONLY_REACHABILITY_NO_RUNTIME_REPRODUCTION",
+  "current_binding_matches_frozen_segment": true,
+  "target_segment_sha256": "34531e20fa2a7a91e1462d962f5fad27638884cd15ee8c8911fb432fabe2a5bb",
+  "chain": [
+    "VisualWorkerRuntime._initialize_local stores _local_original and calls _register_local_original before initialize_visual_bootstrap_if_absent.",
+    "Registration checks genuine initialization caller, owner live app and exact original description, then stores owner->runtime. Registration does not require adoption.",
+    "bind_step_grounding scans tuple(_LOCAL_RUNTIMES.values()) and eagerly calls runtime.original.digest on every entry.",
+    "VisualWorkerRuntime.original first calls supervision_source_publication, whose absence raises RuntimeError.",
+    "A distinct registered unadopted runtime is therefore reachable in the scan and can abort otherwise valid target grounding. The scan can also read another owner/thread source before selecting the intended owner."
+  ],
+  "available_safe_description_index": "_LOCAL_ORIGINALS[owner] is an existing sealed canonical JSON string recorded at bootstrap and removed with _LOCAL_RUNTIMES by _revoke_worker; comparing it needs no runtime property/repository access.",
+  "authority_boundary": "Matching serialized local_time is only a shortlist. Genuine owner/runtime registry identity, captured startup thread/mode and actual app/source checks must precede the selected runtime getter; original identity/digest/source equality and existing deterministic and locked producer validations remain necessary.",
+  "scope": "Change local lookup/binding lines in bind_step_grounding only; do not move registration or mutate original/publication getters."
+}

@@ -1012,7 +1012,9 @@ def bind_step_grounding(
     required_duration_s: float | None = None,
     duration_check: GroundingDurationCheck | None = None,
 ) -> StepGroundingBinding:
-    original = freeze_original_visual_plan(**original.freeze_inputs())
+    local = type(original) is LocalVisualOriginalPlan
+    original = (LocalVisualOriginalPlan.from_payload(original.to_payload()) if local
+                else freeze_original_visual_plan(**original.freeze_inputs()))
     now = _aware(now)
     if current_identity != original.identity:
         raise ValueError("foreign job/epoch/robot owner identity")
@@ -1024,7 +1026,7 @@ def bind_step_grounding(
         _model_json(source_checkpoint, ExecutionCheckpoint)
     )
     cp_hash = checkpoint_digest(cp)
-    if not _aware(cp.created_at) <= _aware(cp.updated_at) <= now:
+    if not _aware(cp.created_at) <= _aware(cp.updated_at) or (not local and _aware(cp.updated_at) > now):
         raise ValueError("current checkpoint timestamp is future or reversed")
     contract = original.contract
     observation = RGBDObservation.model_validate_json(
@@ -1095,12 +1097,11 @@ def bind_step_grounding(
         _positive(c.tolerances.get("max_age_s", requirement.ordinary_ttl_s))
         for c in (*requirement.preconditions, *requirement.postconditions)
     ]
-    expires = min(
-        original.effective_deadline_at,
-        observation.captured_at + timedelta(seconds=min(requirement.ordinary_ttl_s, *max_ages)),
-    )
-    if not original.registered_at <= observation.captured_at <= now < expires:
-        raise ValueError("original absolute/frame deadline expired or future")
+    if not local:
+        expires = min(original.effective_deadline_at,
+            observation.captured_at + timedelta(seconds=min(requirement.ordinary_ttl_s, *max_ages)))
+        if not original.registered_at <= observation.captured_at <= now < expires:
+            raise ValueError("original absolute/frame deadline expired or future")
     duration = (
         requirement.expected_duration_s
         if required_duration_s is None
@@ -1128,6 +1129,61 @@ def bind_step_grounding(
     bound_sources = {**policy.source_hashes, **grounding_inputs.source_hashes}
     if calculation is not None:
         bound_sources.update(calculation.source_hashes)
+    if local:
+        import threading
+        from cloud_edge_robot_arm.vision.operational_windows import (
+            OperationalWindowOwner, _LOCAL_RUNTIMES, _LOCAL_ORIGINALS, _OWNERS,
+            _json as _window_json,
+        )
+        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+
+        desired = _window_json(original.local_time.to_payload())
+        candidates = [(owner, runtime) for owner, runtime in tuple(_LOCAL_RUNTIMES.items())
+                      if _LOCAL_ORIGINALS.get(owner) == desired]
+        if len(candidates) != 1:
+            raise ValueError("grounding requires the unique original private runtime")
+        owner, runtime = candidates[0]
+        if (type(owner) is not OperationalWindowOwner or type(runtime) is not VisualWorkerRuntime
+                or runtime._operational_owner is not owner or owner._closed
+                or _LOCAL_RUNTIMES.get(owner) is not runtime or _LOCAL_ORIGINALS.get(owner) != desired):
+            raise ValueError("grounding selected original owner/runtime registry changed")
+        startup = owner._startup
+        worker = startup.worker
+        if (_OWNERS.get(worker) is not owner or startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1"
+                or startup.thread_id != threading.get_ident()
+                or (startup.job_id, startup.run_id, startup.attempt, startup.lease_id, worker.worker_id)
+                != (current_identity.job_id, current_identity.run_id, current_identity.attempt,
+                    current_identity.lease_id, current_identity.worker_id)
+                or worker.repository is not startup.repository
+                or runtime.source.job_repository is not startup.repository
+                or (runtime.source.job_id, runtime.source.run_id, runtime.source.worker_id, runtime.source.lease_id)
+                != (startup.job_id, startup.run_id, worker.worker_id, startup.lease_id)
+                or runtime.role_binding is not startup.binding or worker.visual_role_binding is not startup.binding
+                or runtime._local_session is not worker._operational_lease_session
+                or _window_json(owner._local_original) != desired
+                or _window_json(runtime._local_original) != desired
+                or dict(original.source_hashes) != dict(runtime.source.source_hashes)):
+            raise ValueError("grounding selected original startup/source/thread differs")
+        owner._check_app_live()
+        selected_original = runtime.original
+        if (type(selected_original) is not LocalVisualOriginalPlan
+                or selected_original.identity != current_identity or selected_original.identity != original.identity
+                or selected_original.digest() != original.digest()
+                or _window_json(selected_original.local_time.to_payload()) != desired
+                or dict(selected_original.source_hashes) != dict(original.source_hashes)):
+            raise ValueError("grounding selected durable original source differs")
+        return runtime._local_bind_grounding({
+            "binding_scope": "SOURCE_BINDING_ONLY", "original_plan_hash": original.digest(),
+            "current_identity": current_identity.to_payload(), "original_requirements": requirement.to_payload(),
+            "owner_revision": owner_revision, "state_generation": state_generation,
+            "source_checkpoint_hash": cp_hash, "observation_id": observation.observation_id,
+            "observation_checksum_sha256": observation.checksum_sha256,
+            "calibration_version": observation.calibration_version or "", "plan_version": contract.plan_version,
+            "command_seq": contract.command_seq, "grounding_policy_hash": policy.digest(),
+            "grounding_inputs_hash": grounding_inputs.digest(),
+            "duration_check_hash": calculation.digest() if calculation is not None else None,
+            "grounding_source_hashes": bound_sources, "grounded_step": json.loads(stored),
+            "expected_duration_s": duration}, observation)
     return StepGroundingBinding(
         original.digest(),
         current_identity,

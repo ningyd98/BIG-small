@@ -1,0 +1,118 @@
+{
+  "round": "R339",
+  "title": "Exact conservative conversion of original D_app nanosecond cap",
+  "planner": {
+    "agent": "/root/astra_p6_t3_plan",
+    "model": "gpt-6-astra",
+    "status": "ACTUAL_ASTRA_PLAN_ONLY"
+  },
+  "implementer": "/root/p6_t3_sol",
+  "activation": "ROOT must review applicability and activate same Sol; this plan does not run or implement the change.",
+  "problem": "A rounded multiplication cannot establish that the rounded seconds value is <= the original exact rational remaining/1e9. The supplied static counterexample is verified by exact integer reasoning. No runtime failure or product/numeric probe is claimed.",
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649",
+      "bytes": 1774
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round339-p6-t3-conservative-float-cap-20261024/root-finding.json",
+      "sha256": "d38721478aa3c5965855c124fbc8ee8d739a4a788ddba147c037afcdfbfdbed6",
+      "bytes": 1545
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round339-p6-t3-conservative-float-cap-20261024/original-cap-source.txt",
+      "sha256": "a12d5d57ea38de6beef0ede931daf5767983d5f287bfdd13a3101ead89fdef56",
+      "bytes": 812
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round339-p6-t3-conservative-float-cap-20261024/source-slices.json",
+      "sha256": "0c1428cf34eb53dc89b7b1f9f0785f51893f35c1819b1a5fae72c077fde1980b",
+      "bytes": 3376
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round339-p6-t3-conservative-float-cap-20261024/exact-integer-proof.json",
+      "sha256": "eee06bee3c1c354d6ed4540ae93c444a347d56975800a5dda3b7b6663ca15f04",
+      "bytes": 1096
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+      "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b",
+      "bytes": 20734,
+      "role": "read-only context: exact integer validation and OperationalBracket/Deadline; no change permitted"
+    }
+  ],
+  "frozen_definition": {
+    "path": "src/cloud_edge_robot_arm/vision/operational_windows.py",
+    "name": "OperationalWindowOwner._remaining_app_seconds",
+    "segment_sha256": "278da2ca8e6d25b1067a8cc0e7fde56ac1eb6c8b7f3ca5f16bbcf8e298e3e999",
+    "successor_segment_sha256": "7fdd632f6bd6e93cb9d5a203cf245217f5bd27e5f336eced66be94d1491d2837",
+    "hash_convention": "UTF-8 ast.get_source_segment, no trailing newline"
+  },
+  "root_cause": "Double rounding hides an upward binary64 division result when multiplied back by 1e9.",
+  "decision": "Replace only the rounded multiply comparison by an as_integer_ratio exact Python integer cross-product comparison; keep the existing conditional nextafter(seconds,0.0).",
+  "replacement": {
+    "old": "        if seconds * 1_000_000_000 > remaining:\n",
+    "new": "        numerator, denominator = seconds.as_integer_ratio()\n        if numerator * 1_000_000_000 > remaining * denominator:\n"
+  },
+  "scope": {
+    "allowed": [
+      "The specified two-line conversion edit within OperationalWindowOwner._remaining_app_seconds only.",
+      "Append R339 implementation and static verification evidence under this round."
+    ],
+    "preserve": [
+      "Exact self._check_app_live() and original owner/thread/source validation.",
+      "Original self._clock.read_current(after=self.task_origin_token), original _hard min and deadlines; no extra reads or new origin.",
+      "Both original nonpositive rejection branches, exceptions, float return signature and nextafter import/direction.",
+      "All other definitions, policies, consumers, tests, historical evidence, runner and ledgers."
+    ],
+    "excluded": [
+      "Product imports/calls, pytest, collection, numerical probes, runtime commands or new tests.",
+      "Global numeric/overflow policy, new clocks/budgets/origins/renewal or broad tolerance changes.",
+      "Reverting or freezing independent R331/R338 whole-file changes."
+    ]
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "owner": "ROOT",
+      "action": "Rehash original finding and snapshot; extract live target definition by AST and require frozen segment hash; record current applicability. Independent sibling edits do not invalidate this plan. If this definition drifted, pause only this repair and reconcile against this exact scope before activation; new cause/scope requires Astra."
+    },
+    {
+      "step": 2,
+      "owner": "/root/p6_t3_sol",
+      "action": "After ROOT activation apply exact replacement once. Record immediate before/after source hashes and minimal diff. Do not rewrite the whole file from an old snapshot."
+    },
+    {
+      "step": 3,
+      "owner": "/root/p6_t3_sol",
+      "action": "Use stdlib AST parsing/text/hash only. Extract successor and require exact equality with frozen source.replace(old,new), using one replacement. AST parse whole current file for syntax, without importing/compiling/executing product. Preserve all predecessor/successor guards; record unchanged non-target byte spans relative to immediate edit input, allowing separately attributed independent changes."
+    },
+    {
+      "step": 4,
+      "owner": "ROOT",
+      "action": "Independently check exact successor segment/hash, source-only diff and exact integer proof. Confirm no tests/nodes/polls/runner/allowance edits. Save R339 acceptance or findings and carry this source successor into future R331 GREEN source-gate preparation."
+    }
+  ],
+  "verification": {
+    "allowed": "Standard-library AST/source/hash and pure integer certificate reasoning only. No module execution, test execution, test collection or exploratory numerical run.",
+    "exact_expected_segment_sha256": "7fdd632f6bd6e93cb9d5a203cf245217f5bd27e5f336eced66be94d1491d2837",
+    "proof_artifact": "exact-integer-proof.json",
+    "case_coverage_by_proof": [
+      "Above exact rational: exact cross product detects and nextafter predecessor is below/equal.",
+      "Already below or exactly representable: exact comparison false, original seconds unchanged.",
+      "remaining=1: preserved positive predecessor and repaired counterexample.",
+      "remaining<=0: original earlier exception unchanged.",
+      "Large valid finite values: Python integer cross products do not round or overflow; existing division behavior is not broadened."
+    ]
+  },
+  "runtime_prerequisites": "None for R339 source-only work. R339 authorizes no runtime. Any later original R331 GREEN requires all existing ROOT source/actor/HEAD/resource gates, including accepted applicable R337 HEAD boundary and other corrective rounds; this plan is not an execution release.",
+  "budget_state": {
+    "RED": "SPENT and accepted; preserve all original evidence, never rerun",
+    "GREEN": "UNUSED_HELD; no reset/increment/activation here",
+    "nodes": 9,
+    "worker_poll_limit": 15,
+    "new_runtime_allowance": 0
+  },
+  "acceptance_boundary": "Accept only this single-definition conservative conversion and metadata proof. No claim of runtime GREEN, T3 completion, FOUNDATION/LOCAL terminal integration, B final gate, C/native/model/physics acceptance or historical reruns."
+}
