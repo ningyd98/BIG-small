@@ -1,5 +1,13 @@
 # 2026-10-04 后续研发阶段总结
 
+## 2026-11-01 接续：R370/R371 UTC 限定修复
+
+用户授权修复当前问题1。R370补齐helper的`request_id`后，单次短GREEN出现新的时间边界误接受，原1failure及完整证据保留，未重试。实际gpt-6-astra制定R371，31项直接输入匹配后，将场景新鲜度判断从浮点毫秒取整改为精确timedelta比较，保持原阈值、等号和分支语义。原短合同4006字节不变，追加每分支12项默认/自定义TTL边界检查。
+
+唯一R371 GREEN为5 passed、0失败/错误/跳过，pytest 1.045秒，1项Starlette依赖弃用警告；原四边界、过期决策、输入不变、24个新增边界及两个旧stale拒绝用例通过。源前后相同，无超时、截断或缺失。未运行长UTC、worker/DB/模型/物理或真机，不晋升T3/P6/正式研究，也不宣称性能提升。按明确路径交付helper两字段、pipeline判断、合同/回归与精选证据；未提交性能候选和嵌套工作区保持。见 [R370失败报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/phase-step-report.md)、[实际Astra R371计划](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/plan.md)、[R371步骤报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/phase-step-report.md)。以下保留此前阶段记录。
+
+本次独立Astra审查READY。R372两次限定远端探测均TLS失败，按计划跳过推送，保留本地已验证成果；远端交付未验证，详见 [R372交付传输报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round372-utc-delivery-transport-20261101/delivery-step-report.md)。
+
 本轮授权：继续全部后续研发，每完成一步汇入阶段总结。执行依据为既有 RGB-D 研究设计与 T1—T18 依赖计划；不重复实施已验收任务，不覆盖历史失败和其他未提交改动。
 
 ## 接续核对

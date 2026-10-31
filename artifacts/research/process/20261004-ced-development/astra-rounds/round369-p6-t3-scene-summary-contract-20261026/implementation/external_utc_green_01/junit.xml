@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.705" timestamp="2026-10-26T14:05:00.685018+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_external_utc_scene_contract" name="test_external_utc_scene_contract" time="0.063"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for InitialPlanningRequest&#10;request_id&#10;  Field required [type=missing, input_value={'user_instruction': 'pla...ce=1.0, robot_state={})}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7e0fbb507050&gt;
+
+    def test_external_utc_scene_contract(monkeypatch: pytest.MonkeyPatch) -&gt; None:
+        from cloud_edge_robot_arm.cloud.planning import pipeline
+    
+        class FixedClock(datetime):
+            @classmethod
+            def now(cls, tz=None):  # type: ignore[override]
+                return AT if tz is None else AT.astimezone(tz)
+    
+        monkeypatch.setattr(pipeline, "datetime", FixedClock)
+        observation = _observation()
+        contract = _contract()
+        captured_at = observation.captured_at
+        checksum = observation.checksum_sha256
+    
+&gt;       payload = _b_t3_external_utc(observation, contract, AT)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_external_utc_scene_contract.py:95: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+observation = RGBDObservation(frame_id='r369-frame', observation_id='r369-frame', captured_at=datetime.datetime(2026, 10, 26, 0, 0, ...bration_version='r369-calibration', checksum_sha256='2035e25b60766a301c18f12666aa6ea84aa44117c6212f8d8e91439284a8ad8a')
+contract = TaskContract(task_id='r369-task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 26, 0, 0, tzinf...completion_criteria=['robot_in_safe_pose'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+at = datetime.datetime(2026, 10, 26, 0, 0, tzinfo=datetime.timezone.utc)
+
+    def _b_t3_external_utc(observation, contract, at):
+        from datetime import timedelta
+        from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
+        from cloud_edge_robot_arm.cloud.planning.pipeline import check_scene_sufficiency
+        from cloud_edge_robot_arm.edge.evidence.models import CommitContext, DecisionEnvelope
+        from cloud_edge_robot_arm.edge.evidence.validator import validate_decision_commit
+    
+        rows = []
+        for milliseconds, valid in ((1000, True), (1001, False), (-5000, True), (-5001, False)):
+            raw = observation.model_dump(mode="json")
+            raw.update(captured_at=(at + timedelta(milliseconds=milliseconds)).isoformat(), checksum_sha256="")
+            external = type(observation).model_validate(raw)
+&gt;           value = InitialPlanningRequest(user_instruction=contract.user_instruction,
+                observation=external, scene=SceneSummary(scene_version=contract.scene_version, updated_at=external.captured_at))
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for InitialPlanningRequest
+E           request_id
+E             Field required [type=missing, input_value={'user_instruction': 'pla...ce=1.0, robot_state={})}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_operational_runtime_closure.py:5611: ValidationError</failure></testcase></testsuite></testsuites>

@@ -1,5 +1,13 @@
 # Current Authoritative Status
 
+## 2026-11-01 UTC helper 与场景时间边界限定修复
+
+R370 已补齐外部 UTC helper 的 `request_id`（保留 R369 的 `updated_at`），但真实短合同随后暴露时间边界误接受；原失败及已消耗额度保留。实际 Astra R371 规划后，`check_scene_sufficiency` 两分支改用精确 `timedelta` 比较，避免浮点毫秒与整数截断吞掉越界时间。RGB-D 未来 1 秒容忍、默认 5 秒 TTL、边界等号有效及 summary 分支既有未来时间语义保持。
+
+唯一新 GREEN 为 5 passed / 0 failed / 0 error / 0 skip（pytest 1.045 秒、1 项 Starlette 依赖弃用警告），覆盖原合同、24 个新增边界行和两个既有过期拒绝用例；源前后相同、无超时或证据缺失。这是开发层 UTC 场景边界修复，完整 UTC、九节点 T3、P6B/C、P7/P8/D 和正式研究仍未验收，不构成性能结论。`local_temporal.py` 性能候选及其他工作区改动未纳入本次修复。详见 [R371 步骤报告](../artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/phase-step-report.md)。下文为历史验收时点。
+
+本次独立Astra代码审查READY，无未关闭实质问题。R372两次限定HTTP/1.1远端探测均因TLS连接失败而退出128，推送未执行，远端交付未验证；本地提交结果另记交付回执，不能宣称本地/上游/远端一致。
+
 ## 2026-10-08 P4 真实来源限定验收完成
 
 修复后的单次 MuJoCo 来源采集与另一进程的公共 reader 均退出 0，独立 Astra 审查 22 项全部通过。完整事件为 RESET1、CONTROL120、PHYSICS120、CAPTURE3；缓存实例0/0、显式76800像素，0动作。225源在本次采集与读出前后无漂移，原件 VERIFIED、source_prefix_complete=true；原 D 年龄区间1.244654602–1.977729199秒。

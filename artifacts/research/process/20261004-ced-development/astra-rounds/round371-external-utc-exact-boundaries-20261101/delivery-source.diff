@@ -1,0 +1,43 @@
+diff --git a/src/cloud_edge_robot_arm/cloud/planning/pipeline.py b/src/cloud_edge_robot_arm/cloud/planning/pipeline.py
+index 261def20..2b3f6f69 100644
+--- a/src/cloud_edge_robot_arm/cloud/planning/pipeline.py
++++ b/src/cloud_edge_robot_arm/cloud/planning/pipeline.py
+@@ -70,8 +70,9 @@ def check_scene_sufficiency(
+ ) -> str | None:
+     """Return a reason string if the scene is insufficient, else None."""
+     if request.observation is not None:
+-        age_ms = int((datetime.now(UTC) - request.observation.captured_at).total_seconds() * 1000)
+-        if age_ms < -1000 or age_ms > scene_staleness_ms:
++        age = datetime.now(UTC) - request.observation.captured_at
++        if age < -timedelta(seconds=1) or age > timedelta(milliseconds=scene_staleness_ms):
++            age_ms = int(age.total_seconds() * 1000)
+             return (
+                 f"RGBD observation is stale or future-dated (age={age_ms}ms, "
+                 f"max={scene_staleness_ms}ms)"
+@@ -83,8 +84,9 @@ def check_scene_sufficiency(
+         return None
+     scene = request.scene
+     now = datetime.now(UTC)
+-    age_ms = int((now - scene.updated_at).total_seconds() * 1_000)
+-    if age_ms > scene_staleness_ms:
++    age = now - scene.updated_at
++    if age > timedelta(milliseconds=scene_staleness_ms):
++        age_ms = int(age.total_seconds() * 1_000)
+         return f"scene is stale (age={age_ms}ms, max={scene_staleness_ms}ms)"
+ 
+     if scene.scene_confidence < 0.5:
+diff --git a/tests/test_operational_runtime_closure.py b/tests/test_operational_runtime_closure.py
+index 2c8771c8..16492a9f 100644
+--- a/tests/test_operational_runtime_closure.py
++++ b/tests/test_operational_runtime_closure.py
+@@ -5608,8 +5608,8 @@ def _b_t3_external_utc(observation, contract, at):
+         raw = observation.model_dump(mode="json")
+         raw.update(captured_at=(at + timedelta(milliseconds=milliseconds)).isoformat(), checksum_sha256="")
+         external = type(observation).model_validate(raw)
+-        value = InitialPlanningRequest(user_instruction=contract.user_instruction,
+-            observation=external, scene=SceneSummary(scene_version=contract.scene_version))
++        value = InitialPlanningRequest(request_id="external-utc-contract", user_instruction=contract.user_instruction,
++            observation=external, scene=SceneSummary(scene_version=contract.scene_version, updated_at=external.captured_at))
+         reason = check_scene_sufficiency(value)
+         assert (reason is None) is valid
+         rows.append({"offset_ms": milliseconds, "reason": reason})

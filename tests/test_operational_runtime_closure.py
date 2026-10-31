@@ -5608,8 +5608,8 @@ def _b_t3_external_utc(observation, contract, at):
         raw = observation.model_dump(mode="json")
         raw.update(captured_at=(at + timedelta(milliseconds=milliseconds)).isoformat(), checksum_sha256="")
         external = type(observation).model_validate(raw)
-        value = InitialPlanningRequest(user_instruction=contract.user_instruction,
-            observation=external, scene=SceneSummary(scene_version=contract.scene_version))
+        value = InitialPlanningRequest(request_id="external-utc-contract", user_instruction=contract.user_instruction,
+            observation=external, scene=SceneSummary(scene_version=contract.scene_version, updated_at=external.captured_at))
         reason = check_scene_sufficiency(value)
         assert (reason is None) is valid
         rows.append({"offset_ms": milliseconds, "reason": reason})

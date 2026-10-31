@@ -70,8 +70,9 @@ def check_scene_sufficiency(
 ) -> str | None:
     """Return a reason string if the scene is insufficient, else None."""
     if request.observation is not None:
-        age_ms = int((datetime.now(UTC) - request.observation.captured_at).total_seconds() * 1000)
-        if age_ms < -1000 or age_ms > scene_staleness_ms:
+        age = datetime.now(UTC) - request.observation.captured_at
+        if age < -timedelta(seconds=1) or age > timedelta(milliseconds=scene_staleness_ms):
+            age_ms = int(age.total_seconds() * 1000)
             return (
                 f"RGBD observation is stale or future-dated (age={age_ms}ms, "
                 f"max={scene_staleness_ms}ms)"
@@ -83,8 +84,9 @@ def check_scene_sufficiency(
         return None
     scene = request.scene
     now = datetime.now(UTC)
-    age_ms = int((now - scene.updated_at).total_seconds() * 1_000)
-    if age_ms > scene_staleness_ms:
+    age = now - scene.updated_at
+    if age > timedelta(milliseconds=scene_staleness_ms):
+        age_ms = int(age.total_seconds() * 1_000)
         return f"scene is stale (age={age_ms}ms, max={scene_staleness_ms}ms)"
 
     if scene.scene_confidence < 0.5:

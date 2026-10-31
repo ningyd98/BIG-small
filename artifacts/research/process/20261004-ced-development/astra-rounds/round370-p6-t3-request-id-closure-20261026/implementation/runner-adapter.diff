@@ -1,0 +1,101 @@
+--- artifacts/research/process/20261004-ced-development/astra-rounds/round369-p6-t3-scene-summary-contract-20261026/implementation/run-r369.py
++++ artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/run-r370.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""R369 finite runner: bounded pipe capture, segmented timing, always-finalize.
++"""R370 finite runner: bounded pipe capture, segmented timing, always-finalize.
+ 
+ Three literal commands: one 7-case self-test, one expected RED, one GREEN.
+ No product import, no ancestor gate, no long-run allowance.
+@@ -21,11 +21,11 @@
+ 
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+ D = Path(__file__).absolute().parent.parent
+-IMPL = Path(os.environ.get("R369_IMPL", D / "implementation"))
++IMPL = Path(os.environ.get("R370_IMPL", D / "implementation"))
+ PLAN = D / "plan.json"
+-PLAN_SHA = "7f4f51a386b55c20ee5842f641891f380041a8072dc75906116bf131d7cc8bfc"
+-LEDGER = IMPL / "r369-ledger.json"
+-KEYS = ("runner_contract_01", "external_utc_red_01", "external_utc_green_01")
++PLAN_SHA = "321210ef94acb7130d61db69a5fef25e6810c553a60715b28fa433f09da90a6b"
++LEDGER = IMPL / "r370-ledger.json"
++KEYS = ("external_utc_green_01",)
+ MIB = 1024 * 1024
+ LIMITS = {"stdout_mib": 32, "stderr_mib": 32, "chunk": 65536,
+           "cleanup_seconds": 15, "term_grace_seconds": 5, "capture_seconds": 10}
+@@ -256,7 +256,7 @@
+ 
+ def finalize(key: str, out: Path, record: dict, before: dict, spec: dict, expected: list[str] | None) -> dict:
+     capture_start = time.monotonic()
+-    result: dict = {"schema": "bigsmall.r369.run.v1", "command_id": f"R369:{key}", **record}
++    result: dict = {"schema": "bigsmall.r370.run.v1", "command_id": f"R370:{key}", **record}
+     missing: dict = {}
+     try:
+         after = source_identity(out / "source-after.json")
+@@ -309,12 +309,12 @@
+     passed, outcome = judge(result, expectation)
+     result.update({"validation_pass": passed, "outcome": outcome, "finished_utc": now()})
+     write_json(out / "result.json", result)
+-    write_json(out / "completion.json", {"schema": "bigsmall.r369.completion.v1", "command_id": f"R369:{key}",
++    write_json(out / "completion.json", {"schema": "bigsmall.r370.completion.v1", "command_id": f"R370:{key}",
+                                          "finalization_complete": True, "validation_pass": passed,
+                                          "outcome": outcome, "result": pin(out / "result.json"),
+                                          "missingness": result["missingness"]})
+     settle(key, {"validation_pass": passed, "outcome": outcome, "result": pin(out / "result.json")})
+-    print(json.dumps({"command_id": f"R369:{key}", "outcome": outcome, "validation_pass": passed,
++    print(json.dumps({"command_id": f"R370:{key}", "outcome": outcome, "validation_pass": passed,
+                       "duration_seconds": result.get("duration_seconds"),
+                       "streams": result.get("streams"), "missingness": result["missingness"]}, ensure_ascii=False))
+     return 0 if passed else 1
+@@ -400,16 +400,16 @@
+             "preflight_zero_child": probe["rejected_before_child"] and probe["cannot_reuse"],
+         }
+         passed = all(checks.values())
+-        result = {"schema": "bigsmall.r369.selfcheck.v1", "command_id": f"R369:{key}", "cases": cases,
++        result = {"schema": "bigsmall.r370.selfcheck.v1", "command_id": f"R370:{key}", "cases": cases,
+                   "probe": probe, "checks": checks, "validation_pass": passed, "missingness": {},
+                   "finished_utc": now()}
+         write_json(out / "result.json", result)
+-        write_json(out / "completion.json", {"schema": "bigsmall.r369.completion.v1",
+-                                             "command_id": f"R369:{key}", "finalization_complete": True,
++        write_json(out / "completion.json", {"schema": "bigsmall.r370.completion.v1",
++                                             "command_id": f"R370:{key}", "finalization_complete": True,
+                                              "validation_pass": passed, "result": pin(out / "result.json")})
+         settle(key, {"validation_pass": passed, "outcome": "PASS" if passed else "NOT_PASSED",
+                      "result": pin(out / "result.json")})
+-        print(json.dumps({"command_id": f"R369:{key}", "checks": checks, "validation_pass": passed}, ensure_ascii=False))
++        print(json.dumps({"command_id": f"R370:{key}", "checks": checks, "validation_pass": passed}, ensure_ascii=False))
+         return 0 if passed else 1
+     except BaseException as error:
+         settle(key, {"validation_pass": False, "outcome": f"ERROR_{type(error).__name__}"})
+@@ -431,7 +431,7 @@
+         require(not out.exists(), "exclusive output path exists")
+         out.mkdir(mode=0o700)
+         before = source_identity(out / "source-before.json")
+-        write_json(out / "invocation.json", {"schema": "bigsmall.r369.invocation.v1", "command_id": f"R369:{key}",
++        write_json(out / "invocation.json", {"schema": "bigsmall.r370.invocation.v1", "command_id": f"R370:{key}",
+                                              "spec": spec, "runner": pin(Path(__file__)), "plan": pin(PLAN),
+                                              "env": dict(os.environ)})
+         record = supervise(spec, out, spec["child_seconds"])
+@@ -444,7 +444,7 @@
+ 
+ def main(argv: list[str]) -> int:
+     if len(argv) != 2 or argv[1] not in KEYS:
+-        print(json.dumps({"error": "one literal R369 key required", "allowed": list(KEYS)}, ensure_ascii=False))
++        print(json.dumps({"error": "one literal R370 key required", "allowed": list(KEYS)}, ensure_ascii=False))
+         return 2
+     key = argv[1]
+     try:
+@@ -452,10 +452,10 @@
+         plan = json.loads(PLAN.read_text())
+         if key == "runner_contract_01":
+             return self_test(key)
+-        spec = plan["commands"][key]
++        spec = plan["command"]
+         return run_command(key, spec, "RED" if key.endswith("red_01") else "GREEN")
+     except BaseException as error:
+-        print(json.dumps({"command_id": f"R369:{key}", "error": {"type": type(error).__name__,
++        print(json.dumps({"command_id": f"R370:{key}", "error": {"type": type(error).__name__,
+                                                                  "message": str(error)}}, ensure_ascii=False))
+         return 1
+ 

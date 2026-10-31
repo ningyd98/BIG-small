@@ -1,0 +1,468 @@
+{
+  "schema": "bigsmall.r371.external-utc-exact-boundaries-plan.v1",
+  "round": "R371",
+  "date": "2026-11-01",
+  "planner": {
+    "model": "gpt-6-astra",
+    "agent": "/root/astra_r371_utc_plan"
+  },
+  "status": "PLAN_ONLY",
+  "execution_authorized": true,
+  "authorization": {
+    "source": "current user instruction via parent",
+    "text": "现修复1,UTC的问题",
+    "interpretation": "Authorizes this bounded UTC repair and its focused validation; root AGENTS.md authorizes path-specific commit/push of verified delivery. No further user handback or approval required."
+  },
+  "problem": {
+    "observed": "R370 short GREEN reached helper line 5614 and failed: assert (None is None) is False. Required updated_at/request_id construction errors have been cleared.",
+    "original_failure_directory": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/external_utc_green_01",
+    "original_result": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skips": 0,
+      "exit_code": 1,
+      "timeout": false,
+      "sources_unchanged": true,
+      "wrapper_seconds": 0.986176
+    },
+    "evidence_limit": "Original stdout/JUnit do not print the failing offset. Do not rewrite them or claim they directly identify +1001ms. Static loop order and the independent stdlib scalar calculation strongly identify +1001ms; full product execution confirmation is the planned GREEN.",
+    "red_policy": "Reuse actual R370 failure as RED for this root cause. No repeat original RED and no independent RED run for the same conversion defect in new microsecond/summary/custom-TTL cases. Write new assertions before the product edit, document the scalar witnesses below, then run one combined GREEN. No rollback to manufacture a RED.",
+    "prior_slot": "R370 external_utc_green_01 remains SPENT; new R371 identity only."
+  },
+  "root_cause": {
+    "observed_code": "Both branches derive age_ms=int(timedelta.total_seconds()*1000) before deciding freshness.",
+    "observation": "Floating-point multiplication maps exact age -1001000us to -1000.9999999999999ms; int truncates it to -1000, so the +1001ms observation is incorrectly accepted. Independently, sub-millisecond excess past either boundary is lost by int truncation.",
+    "summary": "Same integer-conversion root cause at the stale bound: exact age 5000001us truncates to 5000ms and is accepted. Its lack of a future-time rejection is existing separate branch semantics, not a defect to change in this round.",
+    "scalar_diagnostic": {
+      "method": "Planning-only python3 with stdlib datetime.timedelta; no product imports or tests. For each age in microseconds compute repr(delta.total_seconds()*1000) and int of that value.",
+      "results": [
+        {
+          "age_microseconds": -1001000,
+          "float_milliseconds_repr": "-1000.9999999999999",
+          "truncated_milliseconds": -1000
+        },
+        {
+          "age_microseconds": -1000001,
+          "float_milliseconds_repr": "-1000.0009999999999",
+          "truncated_milliseconds": -1000
+        },
+        {
+          "age_microseconds": -1000000,
+          "float_milliseconds_repr": "-1000.0",
+          "truncated_milliseconds": -1000
+        },
+        {
+          "age_microseconds": 5000000,
+          "float_milliseconds_repr": "5000.0",
+          "truncated_milliseconds": 5000
+        },
+        {
+          "age_microseconds": 5000001,
+          "float_milliseconds_repr": "5000.001",
+          "truncated_milliseconds": 5000
+        },
+        {
+          "age_microseconds": 5001000,
+          "float_milliseconds_repr": "5001.0",
+          "truncated_milliseconds": 5001
+        },
+        {
+          "age_microseconds": 1001000,
+          "float_milliseconds_repr": "1000.9999999999999",
+          "truncated_milliseconds": 1000
+        },
+        {
+          "age_microseconds": 1001001,
+          "float_milliseconds_repr": "1001.001",
+          "truncated_milliseconds": 1001
+        }
+      ]
+    },
+    "remaining_hypothesis": "Real GREEN must confirm model construction, all exact boundary rows, expired decision and unchanged input assertions. Static arithmetic is diagnosis, not software acceptance."
+  },
+  "scope": {
+    "product": [
+      "src/cloud_edge_robot_arm/cloud/planning/pipeline.py::check_scene_sufficiency only: compute exact age timedelta from the existing branch clock and timestamp; observation invalid iff age < -timedelta(seconds=1) or age > timedelta(milliseconds=scene_staleness_ms); summary invalid iff age > timedelta(milliseconds=scene_staleness_ms)."
+    ],
+    "product_details": [
+      "Keep inclusive endpoints, default 5000ms TTL and caller-supplied integer TTL. Do not introduce epsilon, rounding, larger tolerance, UTC normalization, clock replacement or schema changes.",
+      "Keep observation depth_range handling and early-return behavior; keep summary confidence, objects, regions, ambiguity and pose checks in order. Preserve existing reason prefixes. Existing integer age text may remain diagnostic-only and must never govern acceptance. No new shared time utility."
+    ],
+    "tests": [
+      "Preserve the existing 4006-byte test_operational_external_utc_scene_contract.py prefix, including every original assertion, and append two named loop-based test functions (local imports/helper definitions allowed). No parametrization that changes the fixed five node IDs.",
+      "test_rgbd_scene_exact_utc_boundaries and test_summary_scene_exact_utc_boundaries exercise the real check_scene_sufficiency with real validated model instances. Only pipeline.datetime.now is fixed at existing AT. Use clear assertion context with branch, offset_us and TTL to identify any failure.",
+      "Observation case can reuse _observation(), serialize/copy with changed captured_at and cleared checksum, then model_validate. Summary case must build a genuinely sufficient scene with one red_cube Pose and one bin_a TargetRegionSummary, confidence 1, so None at an accepted age proves sufficiency. Use nonempty request_id and user_instruction, scene_version=1 and aware updated_at."
+    ],
+    "helper": [
+      "Keep tests/test_operational_runtime_closure.py::_b_t3_external_utc exactly at its current R370 bytes, including request_id=\"external-utc-contract\" and updated_at=external.captured_at. These two earlier fixes are included in the eventual delivery diff; no further helper change needed."
+    ],
+    "runner": [
+      "Copy R370 runner into R371 implementation/run-r371.py; adapt only round/key/path/plan pin and command metadata/docstring. Existing main already reads plan.command and generic GREEN validation handles five node IDs. Keep source_identity/capture/environment/cleanup/normalization/validation logic unchanged. Source identity hashes full src/tests diffs, so product delta is captured without extending runner. Record explicit product/test before/after SHA in the step report if useful; no new diagnostic framework.",
+      "Use a fresh one-slot R371 ledger and output directory. Static compare the adapter with R370 after label normalization. No seven-case selfcheck rerun, no claim of new runner certification."
+    ],
+    "forbidden": [
+      "local_temporal.py performance edits, copy/sha tests, other source/test changes",
+      "old evidence/ledger edits, historical RED reconstruction or recursive ancestor gates",
+      "long UTC test, full modules/suite, worker/DB/model/physics runs, network services",
+      "threshold relaxation, removed assertions, mock business validator, generic runner expansion"
+    ]
+  },
+  "regression_matrix": {
+    "offset_convention": "timestamp = AT + timedelta(microseconds=offset_us); age = AT - timestamp.",
+    "observation_default_ttl_ms": 5000,
+    "observation_default_rows": [
+      {
+        "offset_us": 999999,
+        "valid": true
+      },
+      {
+        "offset_us": 1000000,
+        "valid": true
+      },
+      {
+        "offset_us": 1000001,
+        "valid": false
+      },
+      {
+        "offset_us": 1001000,
+        "valid": false
+      },
+      {
+        "offset_us": -4999999,
+        "valid": true
+      },
+      {
+        "offset_us": -5000000,
+        "valid": true
+      },
+      {
+        "offset_us": -5000001,
+        "valid": false
+      },
+      {
+        "offset_us": -5001000,
+        "valid": false
+      }
+    ],
+    "summary_default_rows": [
+      {
+        "offset_us": 999999,
+        "valid": true
+      },
+      {
+        "offset_us": 1000000,
+        "valid": true
+      },
+      {
+        "offset_us": 1000001,
+        "valid": true
+      },
+      {
+        "offset_us": 1001000,
+        "valid": true
+      },
+      {
+        "offset_us": -4999999,
+        "valid": true
+      },
+      {
+        "offset_us": -5000000,
+        "valid": true
+      },
+      {
+        "offset_us": -5000001,
+        "valid": false
+      },
+      {
+        "offset_us": -5001000,
+        "valid": false
+      }
+    ],
+    "both_branches_custom_ttl_ms": 1001,
+    "both_branches_custom_rows": [
+      {
+        "offset_us": -1000999,
+        "valid": true
+      },
+      {
+        "offset_us": -1001000,
+        "valid": true
+      },
+      {
+        "offset_us": -1001001,
+        "valid": false
+      },
+      {
+        "offset_us": -1002000,
+        "valid": false
+      }
+    ],
+    "original_contract": "Keep offsets [1000,1001,-5000,-5001] ms and valid [true,false,true,false], expired decision INVALID with decision_future_or_expired, original captured_at/checksum unchanged.",
+    "existing_targeted_tests": "Both existing selected tests only exercise stale rejection. Static source inspection shows RGBDPlannerAdapter construction validates/configures the endpoint but process() returns at insufficiency before active_planner.plan(); do not select its neighboring HTTP-server tests or whole file. No worker, database instance or physics backend construction in either selected body."
+  },
+  "command": {
+    "identity": "R371:external_utc_green_01",
+    "state": "AUTHORIZED_AFTER_SOURCE_REVIEW",
+    "launches": 1,
+    "retries": 0,
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_operational_external_utc_scene_contract.py::test_external_utc_scene_contract",
+      "tests/test_operational_external_utc_scene_contract.py::test_rgbd_scene_exact_utc_boundaries",
+      "tests/test_operational_external_utc_scene_contract.py::test_summary_scene_exact_utc_boundaries",
+      "tests/test_phase4_cloud_planning.py::test_stale_scene_triggers_sufficiency_check",
+      "tests/test_rgbd_planning.py::test_stale_rgbd_blocks_before_model_call",
+      "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/implementation/external_utc_green_01/persistent-basetemp",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/implementation/external_utc_green_01/junit.xml"
+    ],
+    "env": {
+      "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+      "LANG": "C.UTF-8",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+      "PYTHONPATH": "src:.:tests"
+    },
+    "expected_nodeids": [
+      "tests/test_operational_external_utc_scene_contract.py::test_external_utc_scene_contract",
+      "tests/test_operational_external_utc_scene_contract.py::test_rgbd_scene_exact_utc_boundaries",
+      "tests/test_operational_external_utc_scene_contract.py::test_summary_scene_exact_utc_boundaries",
+      "tests/test_phase4_cloud_planning.py::test_stale_scene_triggers_sufficiency_check",
+      "tests/test_rgbd_planning.py::test_stale_rgbd_blocks_before_model_call"
+    ],
+    "expected_tests": 5,
+    "child_seconds": 30,
+    "outer_seconds": 60,
+    "outer_kill_after_seconds": 20,
+    "cleanup_seconds_total": 15,
+    "TERM_grace_seconds": 5,
+    "capture_seconds": 10,
+    "parallel_commands": 1,
+    "new_RED_runs": 0,
+    "new_runner_selfchecks": 0,
+    "long_runs": 0,
+    "worker_polls": 0,
+    "database_instances": 0,
+    "model_calls": 0,
+    "physics_instances": 0,
+    "outer_argv": [
+      "/usr/bin/env",
+      "-i",
+      "PATH=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+      "LANG=C.UTF-8",
+      "PYTHONDONTWRITEBYTECODE=1",
+      "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+      "PYTHONPATH=src:.:tests",
+      "/usr/bin/timeout",
+      "--signal=TERM",
+      "--kill-after=20s",
+      "60s",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/implementation/run-r371.py",
+      "external_utc_green_01"
+    ]
+  },
+  "preconditions": [
+    "One root implementer; planner performs no implementation or product execution. Verify all listed input bytes/SHA before edits; unexpected drift in a relevant input means reconcile applicability before implementation. No source writer during the bounded run.",
+    "Append regressions before product edit; review diff restricted to the planned product function and appended tests. Preserve current helper and unrelated dirty source/tests. Capture fresh source identity and explicit product/test SHA; product/test do not change during run.",
+    "Existing .venv/bin/python and dependencies already used by R370, fixed AT, clean explicit environment, fresh R371 output/ledger, reviewed literal-only runner adaptation and actual outer timeout must be in place. No dependency installation or budget extension.",
+    "No inherited execution gate from old plans; current user authorization is sufficient. R370 and earlier slots remain consumed. Stdlib parsing/hash/AST comparison and git diff/status checks are read-only administrative work, not extra test launches."
+  ],
+  "acceptance": [
+    "Exactly the five listed JUnit node IDs, 5 passed / 0 failed / 0 errors / 0 skipped, child exit 0, no timeout, truncation or missing required evidence; runner source-before == source-after.",
+    "Original four helper boundaries and expired-decision/input-integrity assertions execute; 12 observation and 12 summary exact-boundary cases execute with the expected matrix including custom TTL and preserved summary future behavior.",
+    "Only development acceptance for UTC scene freshness and helper construction. No full UTC runtime, performance, true hardware/cloud/edge run or formal research acceptance claim. Existing 600-second full-UTC standard unchanged and not run here."
+  ],
+  "evidence": [
+    "Keep original R370 inputs/failure bytes. In fresh R371 directory retain plan, literal adapter diff/review, fresh ledger, original streams/JUnit/invocation/result/completion/source-before/source-after and guard/cleanup/transport receipts.",
+    "Write one phase-step-report.md with problem, actual edits, source SHA, command result, limits and outstanding boundaries; link it into the existing phase summary where appropriate without rewriting historical evidence. No demand for a user-authored handback.",
+    "Do not recurse through prior rounds or manufacture missing historical records. Existing R370 runner provenance limitations remain as recorded; duration_seconds describes wrapper including capture, not an independently measured product-only interval."
+  ],
+  "failure_policy": "Any new root cause, out-of-scope need, fixture/collection error, unexpected failure, timeout or missing evidence stops affected work and consumes the attempted slot; retain originals and request next actual Astra plan, without automatic rerun or cap extension. Do not treat an unrelated read-only missing-path search as a product failure or create repair bureaucracy for it.",
+  "git_delivery": {
+    "authorized": true,
+    "branch_at_planning": "research/20261004-continuation",
+    "upstream_at_planning": "origin/research/20261004-continuation",
+    "head_at_planning": "dd9df375e1d372490145327bcbfee5804352fcc4",
+    "after_acceptance": "Review staged diff, explicitly add only the three delivery source/test paths plus selected small R369/R370/R371 plans/failure/result/report evidence needed for provenance. Current helper diff has exactly the historical updated_at and request_id fixes. Commit/push the existing research branch and record local HEAD, upstream commit and remote branch SHA equality. Do not git add -A, amend old commits or force-push.",
+    "source_paths": [
+      "src/cloud_edge_robot_arm/cloud/planning/pipeline.py",
+      "tests/test_operational_runtime_closure.py",
+      "tests/test_operational_external_utc_scene_contract.py"
+    ],
+    "excluded": [
+      "src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "tests/test_local_temporal_copy_dispatch.py",
+      "tests/test_local_temporal_sha_contract.py",
+      "nested physics workspaces",
+      "unrelated report/presentation and old execution directories",
+      "raw batch datasets, runtime DBs, secrets, models and SDKs"
+    ],
+    "evidence_selection": "Use explicit filenames, no broad directory staging. Preserve all local originals. Inspect invocation/environment evidence before remote inclusion to exclude credentials; if needed publish a marked redacted derivative and retain/hash the original locally. Do not label a manifest/derived report a full reproduction package. Post-push receipts may be a local report linked to the actual delivered commit; do not chase a self-referential receipt commit."
+  },
+  "rollback": "If needed reverse only the R371 product/test addition using targeted patch; retain helper fixes, local_temporal dirty state, unrelated files and all failure evidence. Do not blanket reset or revert to manufacture RED.",
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "tests/test_operational_runtime_closure.py",
+      "bytes": 313354,
+      "sha256": "fac58d5486a078a4f5ebc6644c3fb82870962fc620250893106421f26ce45a88"
+    },
+    {
+      "path": "tests/test_operational_external_utc_scene_contract.py",
+      "bytes": 4006,
+      "sha256": "e691e8d907a0efc863fcc700b86fb36f8dc22708c6fe8d6f30cf71428da8025b"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/cloud/planning/pipeline.py",
+      "bytes": 27610,
+      "sha256": "9545baf29af3fe5388565283cd3fa7e196f78a0071d9129729d3e0d665ed8d75"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/cloud/planning/models.py",
+      "bytes": 6585,
+      "sha256": "54a83b33bf3f31c0a7efe4485f7f1f651578a342377787cd88ca18429173912d"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/observations.py",
+      "bytes": 11603,
+      "sha256": "1114e6b2de4107ae516f12f8972fcb3b6f71eae7ae5a45bf93adfeb4aa673bb8"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/edge/evidence/models.py",
+      "bytes": 3660,
+      "sha256": "25553a2957d78fbf78c55cb57b4dd90da5095dbebcc68705e885933317e73e42"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/edge/evidence/validator.py",
+      "bytes": 7989,
+      "sha256": "cb71ee7c8e05bdb751b34ce6be17c0c7fa29d7cd20fa557b240592d426552674"
+    },
+    {
+      "path": "tests/test_phase4_cloud_planning.py",
+      "bytes": 27447,
+      "sha256": "e2b7b12e42315fbf5c222f1ce109f1e4478ad05665a30838b44bad90a3cab54c"
+    },
+    {
+      "path": "tests/test_rgbd_planning.py",
+      "bytes": 20514,
+      "sha256": "b1d514ebe57648d948c741296aa9bfb6a821098433a8f47e9e42cd8b9964c70f"
+    },
+    {
+      "path": "tests/test_rgbd_observations.py",
+      "bytes": 8520,
+      "sha256": "333b1837cff77bdfce9344cf40f7617064570e1e3c08c881d6942316e9a250fe"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/planner.py",
+      "bytes": 28189,
+      "sha256": "33dfe0aa25b6a316a346e7247724fa20a9db6082ef5317c036bbc9f7ddaea317"
+    },
+    {
+      "path": "pyproject.toml",
+      "bytes": 2458,
+      "sha256": "b2bf5c4042d568eaf9def415ae7b2f08f0fa541a01f970b7e68e6d950035bb6c"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "bytes": 121341,
+      "sha256": "c8a5a5a45d80a9123708125e18528b5b083c388ee389a81e44536ae84dad5f9c"
+    },
+    {
+      "path": "tests/test_local_temporal_copy_dispatch.py",
+      "bytes": 8161,
+      "sha256": "51cf42610d1b4c5c6be7594e038e0b54645368763bb38540383a6fb35a8cc437"
+    },
+    {
+      "path": "tests/test_local_temporal_sha_contract.py",
+      "bytes": 2710,
+      "sha256": "990aa654b577aea5edddbfe6cee713c0c814e7b20cb0ba7a4a6cbc810e2ef31b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/plan.md",
+      "bytes": 3051,
+      "sha256": "79c88dbe144f7bc6e374b61fcd4bf6eebdb36b0366555e8a1a39f1fcbef8c95a"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/plan.json",
+      "bytes": 16725,
+      "sha256": "321210ef94acb7130d61db69a5fef25e6810c553a60715b28fa433f09da90a6b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/phase-step-report.md",
+      "bytes": 1026,
+      "sha256": "c82b7da1506cf0b5d6709a4863d6763a1d1468da4e727b684426fa612de430d2"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/execution-preflight.json",
+      "bytes": 5924,
+      "sha256": "0256c35f7f3d8f65161f502c195cf523906d136c542f3254b9719d23addceffd"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/execution-source-review.json",
+      "bytes": 2436,
+      "sha256": "8b01466f33c55f85be08072a79fbf20fd4c498834be358228f7329aba858f85f"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/run-r370.py",
+      "bytes": 21551,
+      "sha256": "3feda05240bc0a0fed5d8fda1197c67533cb0f28d3668a4eabceea74fbbbbe66"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/r370-ledger.json",
+      "bytes": 947,
+      "sha256": "98db54b957831788acdf13e3a0314962bc1bb9b63302c12e8ab1ba2ccb93b531"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/external_utc_green_01/junit.xml",
+      "bytes": 3239,
+      "sha256": "bd0c48ee0acf9d507a3c840a0985df71796bb98d20bf339ec9c2be041965132d"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/external_utc_green_01/stdout.txt",
+      "bytes": 3419,
+      "sha256": "c0eb307e8077be070f1e1faff1543df23f00ee7cb55e522c9ea80e1e93dfccc1"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/external_utc_green_01/stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/external_utc_green_01/result.json",
+      "bytes": 6616,
+      "sha256": "d2a40e7900b46348564190eefe1bdac807f18cb0a8a77d69170293ce2cb81453"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/external_utc_green_01/source-before.json",
+      "bytes": 1994,
+      "sha256": "f885bd1446c2f21c4ab1d6fd2fb10a1667c6f97359c8170d3abc3a698277a766"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/external_utc_green_01/source-after.json",
+      "bytes": 1994,
+      "sha256": "f885bd1446c2f21c4ab1d6fd2fb10a1667c6f97359c8170d3abc3a698277a766"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/external_utc_green_01/invocation.json",
+      "bytes": 2078,
+      "sha256": "e5e1bcf196821027ad68460f27a3bdc11fd9164be3f7c5454d5ebf356a84f286"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round370-p6-t3-request-id-closure-20261026/implementation/external_utc_green_01/completion.json",
+      "bytes": 530,
+      "sha256": "5b1ef52737fcf7ea6c2e79afa5c9d197fb333386c8c17a54b9739278c287f835"
+    }
+  ],
+  "planner_work": "Read sources, original failure/report/runner and git identity; compute stdlib scalar arithmetic and hashes; write only plan.md and plan.json. No pytest, product import, source edit, ledger mutation, commit or push."
+}

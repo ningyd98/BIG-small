@@ -1,0 +1,180 @@
+{
+  "schema": "bigsmall.r372.utc-delivery-transport-plan.v1",
+  "round": "R372",
+  "date": "2026-11-01",
+  "planner": {
+    "model": "gpt-6-astra",
+    "agent": "/root/astra_r371_utc_plan"
+  },
+  "status": "PLAN_ONLY",
+  "execution_authorized": true,
+  "authorization": "User authorized UTC repair; root AGENTS.md requires explicit-path commit/push and local/upstream/remote SHA verification. No additional user approval or handback required.",
+  "problem": {
+    "failure": "Read-only git ls-remote exit 128: gnutls_handshake() failed: The TLS connection was non-properly terminated.",
+    "original_evidence": "artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/remote-read-failure.json",
+    "effect": "Delivery transport failure only; R371 remains 5/5 passed, exit 0, exact nodes, no missing evidence and unchanged sources during test.",
+    "hypothesis": "Transient HTTPS/proxy/protocol transport interruption; HTTP/1.1 per-command may restore access. No verified proxy root cause or working alternate channel is claimed."
+  },
+  "identity": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "head": "dd9df375e1d372490145327bcbfee5804352fcc4",
+    "branch": "research/20261004-continuation",
+    "upstream": "origin/research/20261004-continuation",
+    "upstream_commit": "dd9df375e1d372490145327bcbfee5804352fcc4",
+    "remote_name": "origin",
+    "remote_url": "https://github.com/ningyd98/BIG-small.git",
+    "raw_remote_url_utf8_sha256": "a47d796035e44eede209b210e9872d7672b232387165e66d6fda25811a24aa82"
+  },
+  "scope": [
+    "Delivery-only: no product/test modification, execution or rerun. Keep R371 verified helper/product/contract and unrelated dirty files intact.",
+    "Read-only local inspection may report whether existing Git/environment proxy or alternate transport settings exist, but must never print proxy URLs, credential values, authorization headers, SSH keys or full config/environment dumps. Do not invent a proxy, alternate host or credential.",
+    "Use command-local HTTP/1.1; if an already configured, trusted transport to the identical repository is positively established by local evidence, the second probe and subsequent push may use that exact existing channel. Record a sanitized channel identity and chosen argv before use. Otherwise second probe may repeat the same HTTP/1.1 command once.",
+    "Do not disable TLS verification, change persistent Git configuration, install software, use force push, expand diagnostics or recurse through historical rounds.",
+    "A final independent review and minor prose/report corrections may finish before commit; do not pin or freeze the still-unfinished report. Any actionable product/test finding falls outside this transport plan."
+  ],
+  "steps": [
+    "Recheck the seven evidence pins, HEAD/branch/upstream/remote identity and R371 acceptance; confirm current delivery source bytes still match the validated source record and review. Do not require the root to reproduce tests.",
+    "Run probe 1 with the exact bounded argv below, saving exit code/stdout/stderr with credentials excluded. If successful, do not run probe 2. If the known transport problem persists, optionally inspect local proxy-setting presence and use one final bounded probe as scoped above. No implicit application-level retry loop.",
+    "Finish explicit staged-path review and create one local commit of the verified UTC delivery, regardless of whether bounded probes succeeded. Check index paths before committing; do not alter unstaged unrelated work. If a pre-existing staged change is unrelated, leave it untouched and use path-specific staging/commit preparation that excludes it; do not blindly unstage user work.",
+    "If either probe succeeded and remote tip is compatible with a normal fast-forward, push the reviewed commit once through the successful transport. If remote tip is unexpected/divergent, do not merge/rebase/force under this plan; retain local commit and report. If both probes fail, skip push, preserve the local verified commit and report transport-blocked delivery.",
+    "After push, use at most one bounded read-only remote verification query, even if push reported ambiguous transport failure; compare local HEAD, local upstream ref and actual remote branch SHA. Equality of all three proves delivery. If remote cannot be read, push failed, or SHAs disagree, report the exact state without claiming verified remote delivery. No automatic repush/fetch/repair loop."
+  ],
+  "commands": {
+    "probe_1_argv": [
+      "/usr/bin/timeout",
+      "--signal=TERM",
+      "--kill-after=5s",
+      "30s",
+      "/usr/bin/env",
+      "GIT_TERMINAL_PROMPT=0",
+      "GCM_INTERACTIVE=Never",
+      "git",
+      "-c",
+      "http.version=HTTP/1.1",
+      "ls-remote",
+      "--heads",
+      "origin",
+      "refs/heads/research/20261004-continuation"
+    ],
+    "probe_2_policy": "At most once, same argv or positively established existing trusted transport to the same repository; 30s timeout plus 5s kill grace.",
+    "push_argv": [
+      "/usr/bin/timeout",
+      "--signal=TERM",
+      "--kill-after=5s",
+      "60s",
+      "/usr/bin/env",
+      "GIT_TERMINAL_PROMPT=0",
+      "GCM_INTERACTIVE=Never",
+      "git",
+      "-c",
+      "http.version=HTTP/1.1",
+      "push",
+      "origin",
+      "HEAD:refs/heads/research/20261004-continuation"
+    ],
+    "post_push_verification_argv": [
+      "/usr/bin/timeout",
+      "--signal=TERM",
+      "--kill-after=5s",
+      "30s",
+      "/usr/bin/env",
+      "GIT_TERMINAL_PROMPT=0",
+      "GCM_INTERACTIVE=Never",
+      "git",
+      "-c",
+      "http.version=HTTP/1.1",
+      "ls-remote",
+      "--heads",
+      "origin",
+      "refs/heads/research/20261004-continuation"
+    ],
+    "local_sha_commands": [
+      [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      [
+        "git",
+        "rev-parse",
+        "@{upstream}"
+      ]
+    ]
+  },
+  "budget": {
+    "preflight_read_only_network_probes_max": 2,
+    "push_attempts_max": 1,
+    "post_push_read_only_verification_max": 1,
+    "network_operations_total_max": 4,
+    "probe_seconds": 30,
+    "push_seconds": 60,
+    "kill_grace_seconds": 5,
+    "concurrency": 1,
+    "test_launches": 0,
+    "product_imports": 0,
+    "selfchecks": 0,
+    "extra_diagnostic_tools": 0,
+    "note": "The two preflight probes are recovery allowance; the separate single post-push read is mandatory delivery verification, not a third recovery probe. Existing failed ls-remote is historical evidence, not a reusable slot. Known transport failure of the first probe is anticipated by this plan and permits probe 2; exhausted budget ends transport work."
+  },
+  "git_scope": {
+    "delivery_source_paths": [
+      "src/cloud_edge_robot_arm/cloud/planning/pipeline.py",
+      "tests/test_operational_runtime_closure.py",
+      "tests/test_operational_external_utc_scene_contract.py"
+    ],
+    "delivery_evidence": "Explicit selected filenames of R369/R370/R371 original failure provenance, plans, bounded run evidence and phase-step summaries, plus this R372 plan and bounded transport result. Preserve originals and inspect env evidence for secrets before inclusion; any redacted derivative must be labeled. Final independent review may be included once ready, without binding its unfinished text now.",
+    "exclude": [
+      "src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "tests/test_local_temporal_copy_dispatch.py",
+      "tests/test_local_temporal_sha_contract.py",
+      "nested workspaces",
+      "unrelated artifacts and all bulk raw/runtime DB/credentials/model weights/SDKs"
+    ],
+    "commit_policy": "No git add -A, commit -a, amend, force push or blanket reset. Inspect exact staged diff and paths. Post-push SHA receipt can remain local; do not chase self-referential receipt commits."
+  },
+  "acceptance": {
+    "software": "Existing R371 5/5 development acceptance stays separate and unchanged; no new full UTC/performance/real-world/formal research claim.",
+    "delivery_success": "Explicit-path local commit plus actual remote branch and upstream SHA both equal local HEAD, with preserved finite command outcomes.",
+    "delivery_blocked": "A reviewed local commit is retained; record its SHA, consumed probes, transport error, whether push was skipped/failed/ambiguous, and whether remote verification is unavailable. State clearly that remote delivery is unverified. This is an anticipated terminal outcome, not grounds for unlimited retries."
+  },
+  "stop_rules": "Known TLS/timeout failure is handled only within the explicit finite probe/push/verification sequence. New source discrepancy, credential requirement, unrelated Git failure or divergent remote scope stops affected work and requires fresh Astra scope; do not silently change code/config or ask the user to repeat authorization already given.",
+  "evidence": "Write a compact R372 delivery-step report and raw per-command result records. Preserve remote-read-failure.json and R371 acceptance bytes. Summarize success or blocked delivery in the phase summary; exclude sensitive values. No new runner or general diagnostic tool.",
+  "inputs": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/remote-read-failure.json",
+      "bytes": 512,
+      "sha256": "b661a8d613bf201ff3406ec4e69841b8debe036e69801df1df5b6582bc8e6c27"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/plan.json",
+      "bytes": 25201,
+      "sha256": "e405d08974cbe901400dadcd13770ef4496f1e9a3cd8e0c3c8bd9f8782d62261"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/implementation/external_utc_green_01/result.json",
+      "bytes": 7630,
+      "sha256": "0a8a271c3e11f15f0d58cce8c823fda9c211d33af2210e375c1b41b076808766"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/implementation/external_utc_green_01/junit.xml",
+      "bytes": 888,
+      "sha256": "53dafc49fee7bb451b1993f1f7f8ff161b8bade0abb1bf2e1a7154f2314fbb8c"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/implementation/external_utc_green_01/source-before.json",
+      "bytes": 1994,
+      "sha256": "e1c9020f4c8d1dbe55d72bda7a4c6482ffbfcea53a87e7da66a81c884bd71759"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/implementation/external_utc_green_01/source-after.json",
+      "bytes": 1994,
+      "sha256": "e1c9020f4c8d1dbe55d72bda7a4c6482ffbfcea53a87e7da66a81c884bd71759"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round371-external-utc-exact-boundaries-20261101/implementation/external_utc_green_01/completion.json",
+      "bytes": 527,
+      "sha256": "735b9e4b51c80e24799efb3563db4d528e2834e4ba66a2e4b6881d95c31cde4c"
+    }
+  ],
+  "planner_work": "Only read existing failure/acceptance files and local Git identity; write plan.md/json. No network command, product/test edit, test run, staging, commit or push."
+}
