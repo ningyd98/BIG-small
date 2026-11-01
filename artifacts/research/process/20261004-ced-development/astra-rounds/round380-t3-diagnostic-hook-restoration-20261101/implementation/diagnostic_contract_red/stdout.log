@@ -1,0 +1,150 @@
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+__________ test_terminal_diagnostic_and_fault_restore_identity[False] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d7e2e1b7cb0>
+exceptional_exit = False
+
+    @pytest.mark.parametrize("exceptional_exit", [False, True])
+    def test_terminal_diagnostic_and_fault_restore_identity(monkeypatch, exceptional_exit):
+        calls = []
+    
+        def delegate(actual, reason):
+            calls.append((actual, reason))
+    
+        monkeypatch.setattr(OperationalLeaseSession, "invalidate", delegate)
+        original = OperationalLeaseSession.invalidate
+        session = SimpleNamespace(wait_cap=0.1)
+        worker = SimpleNamespace(_operational_lease_session=session)
+        sentinel = RuntimeError("original body exception")
+        for _ in range(2):
+            diagnostics = {"invalidations": []}
+            observed = SimpleNamespace(release_events=[])
+            evidence = {}
+            caught = None
+            try:
+>               with _b_t3_terminal_patch_owner(monkeypatch) as (owner, configure):
+
+tests/test_operational_t3_diagnostic_contract.py:32: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/contextlib.py:144: in __exit__
+    next(self.gen)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d7e2e1b7cb0>
+
+    @contextmanager
+    def _b_t3_terminal_patch_owner(monkeypatch):
+        from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseSession
+    
+        original_invalidate = OperationalLeaseSession.invalidate
+        try:
+            with monkeypatch.context() as fault_scope:
+                owner = {"scoped": fault_scope}
+    
+                def configure(scoped, *_):
+                    owner["scoped"] = fault_scope
+    
+                yield owner, configure
+        finally:
+>           assert OperationalLeaseSession.invalidate is original_invalidate, "terminal invalidate hook leaked"
+E           AssertionError: terminal invalidate hook leaked
+E           assert <function _b_t3_observe_invalidation.<locals>.invalidate at 0x7d7e031c8d60> is <function test_terminal_diagnostic_and_fault_restore_identity.<locals>.delegate at 0x7d7e031c8c20>
+E            +  where <function _b_t3_observe_invalidation.<locals>.invalidate at 0x7d7e031c8d60> = <class 'cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession'>.invalidate
+
+tests/test_operational_runtime_closure.py:5149: AssertionError
+__________ test_terminal_diagnostic_and_fault_restore_identity[True] ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d7e2e1b4e00>
+exceptional_exit = True
+
+    @pytest.mark.parametrize("exceptional_exit", [False, True])
+    def test_terminal_diagnostic_and_fault_restore_identity(monkeypatch, exceptional_exit):
+        calls = []
+    
+        def delegate(actual, reason):
+            calls.append((actual, reason))
+    
+        monkeypatch.setattr(OperationalLeaseSession, "invalidate", delegate)
+        original = OperationalLeaseSession.invalidate
+        session = SimpleNamespace(wait_cap=0.1)
+        worker = SimpleNamespace(_operational_lease_session=session)
+        sentinel = RuntimeError("original body exception")
+        for _ in range(2):
+            diagnostics = {"invalidations": []}
+            observed = SimpleNamespace(release_events=[])
+            evidence = {}
+            caught = None
+            try:
+                with _b_t3_terminal_patch_owner(monkeypatch) as (owner, configure):
+                    with monkeypatch.context() as scoped:
+                        _b_t3_observe_invalidation(scoped, worker, diagnostics)
+                        configure(scoped, worker, None, None, None, {})
+                        _b_t3_terminal_fault(owner["scoped"], observed, None, session, {},
+                                             "confirm_timeout", evidence)
+                        OperationalLeaseSession.invalidate(session, "unit diagnostic delegate")
+                        assert evidence["fired"] is False  # This unit contract does not execute a broker.
+                        if exceptional_exit:
+>                           raise sentinel
+E                           RuntimeError: original body exception
+
+tests/test_operational_t3_diagnostic_contract.py:41: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d7e2e1b4e00>
+exceptional_exit = True
+
+    @pytest.mark.parametrize("exceptional_exit", [False, True])
+    def test_terminal_diagnostic_and_fault_restore_identity(monkeypatch, exceptional_exit):
+        calls = []
+    
+        def delegate(actual, reason):
+            calls.append((actual, reason))
+    
+        monkeypatch.setattr(OperationalLeaseSession, "invalidate", delegate)
+        original = OperationalLeaseSession.invalidate
+        session = SimpleNamespace(wait_cap=0.1)
+        worker = SimpleNamespace(_operational_lease_session=session)
+        sentinel = RuntimeError("original body exception")
+        for _ in range(2):
+            diagnostics = {"invalidations": []}
+            observed = SimpleNamespace(release_events=[])
+            evidence = {}
+            caught = None
+            try:
+>               with _b_t3_terminal_patch_owner(monkeypatch) as (owner, configure):
+
+tests/test_operational_t3_diagnostic_contract.py:32: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d7e2e1b4e00>
+
+    @contextmanager
+    def _b_t3_terminal_patch_owner(monkeypatch):
+        from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseSession
+    
+        original_invalidate = OperationalLeaseSession.invalidate
+        try:
+            with monkeypatch.context() as fault_scope:
+                owner = {"scoped": fault_scope}
+    
+                def configure(scoped, *_):
+                    owner["scoped"] = fault_scope
+    
+                yield owner, configure
+        finally:
+>           assert OperationalLeaseSession.invalidate is original_invalidate, "terminal invalidate hook leaked"
+E           AssertionError: terminal invalidate hook leaked
+E           assert <function _b_t3_observe_invalidation.<locals>.invalidate at 0x7d7e0334fa60> is <function test_terminal_diagnostic_and_fault_restore_identity.<locals>.delegate at 0x7d7e031c8cc0>
+E            +  where <function _b_t3_observe_invalidation.<locals>.invalidate at 0x7d7e0334fa60> = <class 'cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession'>.invalidate
+
+tests/test_operational_runtime_closure.py:5149: AssertionError
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round380-t3-diagnostic-hook-restoration-20261101/implementation/diagnostic_contract_red/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_operational_t3_diagnostic_contract.py::test_terminal_diagnostic_and_fault_restore_identity[False]
+FAILED tests/test_operational_t3_diagnostic_contract.py::test_terminal_diagnostic_and_fault_restore_identity[True]
+2 failed, 1 passed in 1.34s

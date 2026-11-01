@@ -1,0 +1,215 @@
+{
+  "schema": "bigsmall.r369.root-handoff-review.v1",
+  "actor": "/root",
+  "recorded_utc": "2026-10-26T01:50:24.709160+00:00",
+  "scope": "Read existing evidence and source only; no patch, imports of product, test/diagnostic launch, ledger mutation or Git write.",
+  "sizing_observed": {
+    "junit_suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "1",
+        "skipped": "0",
+        "tests": "1",
+        "time": "1113.625",
+        "timestamp": "2026-10-25T23:30:08.506387+08:00",
+        "hostname": "ningyd-System-Product-Name"
+      }
+    ],
+    "testcase_attributes": [
+      {
+        "classname": "tests.test_operational_runtime_closure",
+        "name": "test_local_new_schema_ignores_utc_jump_but_external_does_not[memory]",
+        "time": "1112.862"
+      }
+    ],
+    "failure_messages": [
+      "pydantic_core._pydantic_core.ValidationError: 1 validation error for SceneSummary\nupdated_at\n  Field required [type=missing, input_value={'scene_version': 1}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+    ],
+    "exit_code": 1,
+    "termination_reason": null,
+    "source_files_byte_identical": true,
+    "source_records_equal": true,
+    "duration_field_present": false,
+    "derived_origin_to_reaped_seconds": 1114.0783972269855,
+    "duration_interpretation": "Derived from retained runner timestamps; includes launch/reap polling boundaries, not a directly measured successful exercise or total node duration. Pytest suite1113.625s and testcase1112.862s are separate scopes.",
+    "sidecar": {
+      "pin": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/utc_memory_sizing_01/resources/18a8765453d414d6d6fcdb531385614dcd037dbfce58d46048e640b2329e9be4.json",
+        "bytes": 1015169,
+        "sha256": "202625c990d8fad464eac21de1922617cc5bfba7f82780ab55036dbbc6635b87"
+      },
+      "command_id": "R368:utc_memory_sizing_01",
+      "nodeid": "tests/test_operational_runtime_closure.py::test_local_new_schema_ignores_utc_jump_but_external_does_not[memory]",
+      "pid": 1166260,
+      "allocation_attempts": 1096,
+      "worker_lifecycles": [
+        {
+          "poll_id": 1,
+          "worker_resource_id": 124073075570208,
+          "attempted": true,
+          "entered": true,
+          "returned_normally": true,
+          "return_value": true,
+          "exception": null,
+          "start_sequence": 1,
+          "entry_sequence": 2,
+          "end_sequence": 3,
+          "thread_id": 124073130774656,
+          "native_thread_id": 1166260
+        }
+      ],
+      "cleanup_errors": [],
+      "assertions_completed": false,
+      "observers_restored": true,
+      "exit_exception": {
+        "type": "ValidationError",
+        "message": "1 validation error for SceneSummary\nupdated_at\n  Field required [type=missing, input_value={'scene_version': 1}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+      }
+    }
+  },
+  "source_findings": [
+    {
+      "file": "tests/test_operational_runtime_closure.py",
+      "line": 5612,
+      "finding": "_b_t3_external_utc supplies observation=external but constructs SceneSummary without required updated_at. Existing failure occurs before check_scene_sufficiency is called."
+    },
+    {
+      "file": "src/cloud_edge_robot_arm/cloud/planning/models.py",
+      "line": 46,
+      "finding": "updated_at has no default and must be timezone-aware. git blame confirms required field from335a65d46 on2026-06-13; defective test statement fromdd9df375e on2026-10-24. This is a missing required test input, not evidence of a recent product schema change."
+    },
+    {
+      "file": "src/cloud_edge_robot_arm/cloud/planning/pipeline.py",
+      "line": 72,
+      "finding": "When observation is supplied, freshness/depth checks use observation and return before scene.updated_at is read."
+    },
+    {
+      "file": "src/cloud_edge_robot_arm/vision/evaluation.py",
+      "line": 229,
+      "finding": "Production scene updated_at is observation.captured_at; execution.py1099 uses self.observation.captured_at. external.captured_at matches this convention."
+    }
+  ],
+  "inference_limits": [
+    "Keep the current_sha candidate; no evidence it caused this missing-field exception. No exact20% gain has been established.",
+    "Do not classify1113s as a successful complete exercise. The invocation failed before all original helper assertions; the sidecar explicitly marks assertions_completed=false.",
+    "Memory3300s/double-backend6600s are unvalidated equal-cost extrapolations. The current failure does not authorize replacing the original600s acceptance.",
+    "One returned worker poll does not mean its episode callback succeeded; _b_t2_exercise re-raises the stored callback exception."
+  ],
+  "runner_findings": {
+    "timing": "duration_seconds is absent, not explicitly null; useful monotonic source timestamps are retained and must not be overwritten.",
+    "output_cap": {
+      "configured_selfcheck_bytes": 1048576,
+      "observed_stdout": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/runner_contract_01/cases/output_cap/stdout.txt",
+        "bytes": 41943040,
+        "sha256": "831ede74ceb909e3e3401d00eb17d6a2081ff776206a7007047b47859137c6f0"
+      },
+      "old_assertion": "termination.reason==stdout_limit and stdout.stat().st_size>0",
+      "consequence": "Old PASS does not verify a hard byte cap. New capture must have a stated finite bound and new selfcheck must assert actual bytes and failure/cleanup evidence."
+    },
+    "other_static_limits": [
+      "consume133-141 is unlocked read-modify-write, not an atomic reservation. No concurrent-consumption incident is established.",
+      "run_command309-325 lacks unconditional cleanup/finalization for arbitrary supervise exceptions. No actual leaked process is established here.",
+      "outer timeout/resource completeness are not enforced by the shown finish predicate. Existing5/5 does not establish the complete long-run safety contract."
+    ],
+    "scope_note": "No new runtime granted. Timing/output repair and narrow helper verification may be planned together; future long run still requires complete existing preconditions, not a new unbounded framework."
+  },
+  "ledger_result_pins_match": {
+    "runner_contract_01": true,
+    "utc_memory_sizing_01": true
+  },
+  "inputs": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/astra-handback-20261026.md",
+      "bytes": 4850,
+      "sha256": "0977a22fb674c493993d1b49a136f1b795b17c5b30807049d6a5983aa9151529"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/sizing-report-20261025.md",
+      "bytes": 3809,
+      "sha256": "48e591e038a7c92562b95524505c172c53b5ebfab5eae875e14447faa295514d"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/run-r368.py",
+      "bytes": 19889,
+      "sha256": "69bd52f127c4d2d1c2a621a86c0d2f2eab674fbdbc98d87ff3a445bcb15e16ec"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/r368-ledger.json",
+      "bytes": 1422,
+      "sha256": "9ecfc1287b0d6765691345c73e80d7314b348e5468ebfe903348471b3ba1f482"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/runner_contract_01/result.json",
+      "bytes": 2863,
+      "sha256": "3d27a8c8390d2a79f534c3792489dbe1290828db9dae801535b0c36c7d9a2cb4"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/utc_memory_sizing_01/result.json",
+      "bytes": 7361,
+      "sha256": "5146fb362a512f6ad4b8849c4c7c55f30c07c06dce3661c938e3237cc3413eeb"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/utc_memory_sizing_01/completion.json",
+      "bytes": 555,
+      "sha256": "6a14ad94fe22d585a73d04cf78e422c5a99a2532b3d528cb03b959d284395152"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/utc_memory_sizing_01/junit.xml",
+      "bytes": 9594,
+      "sha256": "0327482b1dd475bff1b19cd97ccf1c6280c2862bdad4a14255acbd14078c3544"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/utc_memory_sizing_01/stdout.txt",
+      "bytes": 10115,
+      "sha256": "20893f30d79e708b62cf7023e864ff96b21671760c084bf3e9724713385e7092"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/utc_memory_sizing_01/source-before.json",
+      "bytes": 2521,
+      "sha256": "9a9708b677947cf9b6913622305113e8ca9049d8159b58e4117cf5fdbcf7a4da"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round368-p6-t3-utc-sizing-decision-20261025/implementation/utc_memory_sizing_01/source-after.json",
+      "bytes": 2521,
+      "sha256": "9a9708b677947cf9b6913622305113e8ca9049d8159b58e4117cf5fdbcf7a4da"
+    },
+    {
+      "path": "tests/test_operational_runtime_closure.py",
+      "bytes": 313285,
+      "sha256": "54b988c6257f51efcc796fd5a3f376c45fee84c31c6b3fa3f7593853da0d11ca"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/cloud/planning/models.py",
+      "bytes": 6585,
+      "sha256": "54a83b33bf3f31c0a7efe4485f7f1f651578a342377787cd88ca18429173912d"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/cloud/planning/pipeline.py",
+      "bytes": 27610,
+      "sha256": "9545baf29af3fe5388565283cd3fa7e196f78a0071d9129729d3e0d665ed8d75"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/evaluation.py",
+      "bytes": 13863,
+      "sha256": "7f9e255b9d35dbec1226c60ea81f2c0b593225a4930c976bd8f17aa38e9b64f4"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/execution.py",
+      "bytes": 104819,
+      "sha256": "69f2c1b7dabc0106697eb656bff67da331d4b5386433ae62b9f4f9ff094189f0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "bytes": 121341,
+      "sha256": "c8a5a5a45d80a9123708125e18528b5b083c388ee389a81e44536ae84dad5f9c"
+    },
+    {
+      "path": "tests/test_local_temporal_sha_contract.py",
+      "bytes": 2710,
+      "sha256": "990aa654b577aea5edddbfe6cee713c0c814e7b20cb0ba7a4a6cbc810e2ef31b"
+    }
+  ],
+  "historical_evidence_policy": "All existing raw/results/plans/ledgers remain unchanged. This is an independent review record, not a replacement of historical outcomes."
+}

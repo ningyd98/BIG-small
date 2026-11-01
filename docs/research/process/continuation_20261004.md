@@ -458,3 +458,12 @@ R03真实前缀只关闭采集链，未认证A包缺NONC按原draft拒绝/B跳�
 ## 第62步：首次验证失败与Astra交接（2026-10-06）
 
 第62步：OC2首轮完整CPU GREEN为57通过/4失败/61项；reset/capture失败原件序列化与缺文件、export/catalog环境终态断言需Astra67计划。RW1首轮GREEN为81通过/1失败/82项，畸形来源负例后的fixture别名污染待Astra68。两者源码/原日志/全失败分母已冻结，未修、未重跑、未静态/旧回归/独审；两份Astra计划已请求，此快照尚未交付。OC2原77仅批准差异、RW1其余35静止；真实prefix/source-positive与恢复0002仍0。第60步保存帧全时域观察结果保持，native/九组/G1/INITIAL/METHOD/FINAL未验收；主线T12/18、T13并行、边缘后置，本地公开载荷仍待批准。 [第62步报告](../../../artifacts/research/process/20261004-ced-development/report-step62.md)。
+
+
+## 2026-11-01 工作区 GitHub checkpoint 整理（R383–R386）
+
+用户授权整理并提交当前研发工作区，沿用research/20261004-continuation。R383原校验因输出资源目录准备缺失33PASS/25FAIL；R384中文路径映射被启动前安全门阻止、0新测试。实际Astra R385完成21480节点分类、原件保留，R386完成58+9项限定CPU软件回归，前置accepted、源不漂移、无残留。此处不宣称全仓通过或研发全部完成。
+
+R367 NONCOMPLETION、R376 commit_close失败/R381未实施、R377–379待执行、R382仅浏览器准备的原口径均保留。新真实运行0、正式研究验收未升级。完整raw、运行数据库、凭据、模型/SDK与重复快照按边界留本地，两历史嵌套gitlink保持dirty；精选清单不等于完整远端复现包。各轮计划、原始失败、实施与验证已汇入[交付步骤报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round383-workspace-github-delivery-20261101/step-report.md)。实际Git SHA与推送结果以独立交付收据为准。
+
+2026-11-02补记：stage字节审计发现Git空对象，实际Astra R387后保全110节点并精确恢复59blob；完整fsck退出0，源码/67项回归证据、原index与refs均不变，成因UNKNOWN。独立交付审查无新增实质问题，七项验收范围裁定随交付保留。此为工作区checkpoint，后续推送收据另记。

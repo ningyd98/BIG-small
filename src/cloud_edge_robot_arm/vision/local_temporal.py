@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 import json
+import re
 from math import ceil as math_ceil, isfinite
 from typing import TYPE_CHECKING, ClassVar, Self
 
@@ -57,7 +58,7 @@ def _copy(value: object) -> JSONValue:
         if not isfinite(value):
             raise ValueError("finite JSON required")
         return value
-    if isinstance(value, Mapping):
+    if type(value) is dict or isinstance(value, Mapping):
         result: dict[str, JSONValue] = {}
         for key, item in value.items():
             if type(key) is not str or key in result:
@@ -102,9 +103,12 @@ def _number(value: JSONValue, *, positive: bool = False) -> float:
     return float(value)
 
 
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}\Z")
+
+
 def _sha(value: JSONValue) -> str:
     text = _text(value)
-    if len(text) != 64 or any(char not in "0123456789abcdef" for char in text):
+    if _SHA256_HEX.fullmatch(text) is None:
         raise ValueError("SHA256 required")
     return text
 

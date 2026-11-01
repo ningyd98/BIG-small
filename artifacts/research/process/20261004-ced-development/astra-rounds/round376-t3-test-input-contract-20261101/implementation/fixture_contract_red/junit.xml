@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="2.355" timestamp="2026-11-01T15:46:51.230821+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_t3_fixture_contract" name="test_queued_fixture_has_complete_manifest[queued_default]" time="0.126"><failure message="pydantic_core._pydantic_core.ValidationError: 6 validation errors for ExperimentManifest&#10;manifest_id&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;normalized_config&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;source_commit&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;source_tree_hash&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;run_count&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;reproducibility_hash&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7d6117135e50&gt;
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round376-t3-test-input-contract-20261101/implementation/fixture_contract_red/persistent-basetemp/test_queued_fixture_has_comple0')
+variant = 'queued_default'
+
+    @pytest.mark.parametrize(
+        "variant", ["queued_default", "queued_custom", "inherited_software_factory"]
+    )
+    def test_queued_fixture_has_complete_manifest(monkeypatch, tmp_path, variant):
+        """缺少创建时 manifest 或调用方嵌套配置别名会破坏公共读出。"""
+        events = None
+        caller_draft = None
+        service = None
+        if variant == "inherited_software_factory":
+            repo, job, worker, calls, _, _, events = software_factory(monkeypatch, tmp_path)
+            assert calls == []
+        else:
+            if variant == "queued_custom":
+                caller_draft = _draft(
+                    backend="MUJOCO", input_mode="RGBD", execution_scope="VISION_CLOSED_LOOP"
+                )
+                caller_draft["parameter_overrides"]["timeout_seconds"] = 17
+            repo, job, worker = _queued_closed_loop_worker(tmp_path, caller_draft)
+        try:
+            persisted = repo.get_job(job.job_id)
+            expected_draft = deepcopy(persisted.draft)
+&gt;           manifest = ExperimentManifest.model_validate(persisted.manifest)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 6 validation errors for ExperimentManifest
+E           manifest_id
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           normalized_config
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           source_commit
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           source_tree_hash
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           run_count
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           reproducibility_hash
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_operational_t3_fixture_contract.py:36: ValidationError</failure></testcase><testcase classname="tests.test_operational_t3_fixture_contract" name="test_queued_fixture_has_complete_manifest[queued_custom]" time="0.125"><failure message="pydantic_core._pydantic_core.ValidationError: 6 validation errors for ExperimentManifest&#10;manifest_id&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;normalized_config&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;source_commit&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;source_tree_hash&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;run_count&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;reproducibility_hash&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7d6117137c50&gt;
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round376-t3-test-input-contract-20261101/implementation/fixture_contract_red/persistent-basetemp/test_queued_fixture_has_comple1')
+variant = 'queued_custom'
+
+    @pytest.mark.parametrize(
+        "variant", ["queued_default", "queued_custom", "inherited_software_factory"]
+    )
+    def test_queued_fixture_has_complete_manifest(monkeypatch, tmp_path, variant):
+        """缺少创建时 manifest 或调用方嵌套配置别名会破坏公共读出。"""
+        events = None
+        caller_draft = None
+        service = None
+        if variant == "inherited_software_factory":
+            repo, job, worker, calls, _, _, events = software_factory(monkeypatch, tmp_path)
+            assert calls == []
+        else:
+            if variant == "queued_custom":
+                caller_draft = _draft(
+                    backend="MUJOCO", input_mode="RGBD", execution_scope="VISION_CLOSED_LOOP"
+                )
+                caller_draft["parameter_overrides"]["timeout_seconds"] = 17
+            repo, job, worker = _queued_closed_loop_worker(tmp_path, caller_draft)
+        try:
+            persisted = repo.get_job(job.job_id)
+            expected_draft = deepcopy(persisted.draft)
+&gt;           manifest = ExperimentManifest.model_validate(persisted.manifest)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 6 validation errors for ExperimentManifest
+E           manifest_id
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           normalized_config
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           source_commit
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           source_tree_hash
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           run_count
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           reproducibility_hash
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_operational_t3_fixture_contract.py:36: ValidationError</failure></testcase><testcase classname="tests.test_operational_t3_fixture_contract" name="test_queued_fixture_has_complete_manifest[inherited_software_factory]" time="0.567"><failure message="pydantic_core._pydantic_core.ValidationError: 6 validation errors for ExperimentManifest&#10;manifest_id&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;normalized_config&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;source_commit&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;source_tree_hash&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;run_count&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;reproducibility_hash&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7d61170f86b0&gt;
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round376-t3-test-input-contract-20261101/implementation/fixture_contract_red/persistent-basetemp/test_queued_fixture_has_comple2')
+variant = 'inherited_software_factory'
+
+    @pytest.mark.parametrize(
+        "variant", ["queued_default", "queued_custom", "inherited_software_factory"]
+    )
+    def test_queued_fixture_has_complete_manifest(monkeypatch, tmp_path, variant):
+        """缺少创建时 manifest 或调用方嵌套配置别名会破坏公共读出。"""
+        events = None
+        caller_draft = None
+        service = None
+        if variant == "inherited_software_factory":
+            repo, job, worker, calls, _, _, events = software_factory(monkeypatch, tmp_path)
+            assert calls == []
+        else:
+            if variant == "queued_custom":
+                caller_draft = _draft(
+                    backend="MUJOCO", input_mode="RGBD", execution_scope="VISION_CLOSED_LOOP"
+                )
+                caller_draft["parameter_overrides"]["timeout_seconds"] = 17
+            repo, job, worker = _queued_closed_loop_worker(tmp_path, caller_draft)
+        try:
+            persisted = repo.get_job(job.job_id)
+            expected_draft = deepcopy(persisted.draft)
+&gt;           manifest = ExperimentManifest.model_validate(persisted.manifest)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 6 validation errors for ExperimentManifest
+E           manifest_id
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           normalized_config
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           source_commit
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           source_tree_hash
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           run_count
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+E           reproducibility_hash
+E             Field required [type=missing, input_value={}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_operational_t3_fixture_contract.py:36: ValidationError</failure></testcase></testsuite></testsuites>

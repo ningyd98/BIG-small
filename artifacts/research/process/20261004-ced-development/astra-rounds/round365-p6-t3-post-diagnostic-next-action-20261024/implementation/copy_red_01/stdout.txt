@@ -1,0 +1,166 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_strict_copy_contract_and_exact_dict_dispatch _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e9daa4aaea0>
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round365-...3-post-diagnostic-next-action-20261024/implementation/copy_red_01/persistent-basetemp/test_strict_copy_contract_and_0')
+request = <FixtureRequest for <Function test_strict_copy_contract_and_exact_dict_dispatch>>
+
+    def test_strict_copy_contract_and_exact_dict_dispatch(monkeypatch, tmp_path, request):
+        real_mapping = local.Mapping
+        classified = []
+        effects = []
+        source = Path(local.__file__)
+        before = source.read_bytes()
+        packet = {"schema": "bigsmall.r365.copy-dispatch-case.v1", "nodeid": request.node.nodeid,
+                  "command_id": os.environ.get("BIGSMALL_R158_COMMAND"), "pid": os.getpid(),
+                  "product_source": {"path": str(source), "bytes": len(before),
+                                     "sha256": hashlib.sha256(before).hexdigest()},
+                  "semantic_assertions_completed": False, "exact_dict_classifications": None,
+                  "observer_restored": False, "poll_lifecycles": "NOT_APPLICABLE_BY_PLAN"}
+    
+        class DelegatingMeta(type):
+            def __instancecheck__(cls, value):
+                # Observe the real ABC answer; never substitute validation results.
+                answer = isinstance(value, real_mapping)
+                classified.append((type(value).__name__, answer))
+                return answer
+    
+        class DelegatingMapping(metaclass=DelegatingMeta):
+            pass
+    
+        class StrictString(str):
+            pass
+    
+        class StrictInteger(int):
+            pass
+    
+        class StrictFloat(float):
+            pass
+    
+        class StrictList(list):
+            pass
+    
+        class Abort(BaseException):
+            pass
+    
+        class CustomMapping(Mapping):
+            def __init__(self, pairs, error=None):
+                self.pairs, self.error = pairs, error
+    
+            def __iter__(self):
+                raise AssertionError("copy must use actual items, not reconstructed iteration")
+    
+            def __len__(self):
+                raise AssertionError("copy must not replace items with dict(value)")
+    
+            def __getitem__(self, key):
+                raise AssertionError("copy must not reconstruct mapping through __getitem__")
+    
+            def items(self):
+                effects.append("custom-items")
+                if self.error is not None:
+                    raise self.error
+                return iter(self.pairs)
+    
+        class DictSubclass(dict):
+            def __init__(self, pairs, error=None):
+                super().__init__({"ignored-underlying-key": 99})
+                self.pairs, self.error = pairs, error
+    
+            def items(self):
+                effects.append("subclass-items")
+                if self.error is not None:
+                    raise self.error
+                return iter(self.pairs)
+    
+        class VirtualListMapping(list):
+            def items(self):
+                effects.append("virtual-list-items")
+                return iter((("virtual", 3),))
+    
+        # Only this local class is registered, never the built-in list class.
+        real_mapping.register(VirtualListMapping)
+    
+        def rejected(value, exception_type, message):
+            with pytest.raises(exception_type) as caught:
+                local._copy(value)
+            assert type(caught.value) is exception_type and str(caught.value) == message
+    
+        try:
+            with monkeypatch.context() as patch:
+                patch.setattr(local, "Mapping", DelegatingMapping)
+                for value in (None, True, False, "", "strict", -(2**63) + 1, 0, 2**63 - 1,
+                              -0.0, 0.25, -1.75):
+                    copied = local._copy(value)
+                    assert type(copied) is type(value) and copied == value
+                    if type(value) is float and value == 0:
+                        assert math.copysign(1.0, copied) == math.copysign(1.0, value)
+                for value in (-(2**63), 2**63):
+                    rejected(value, ValueError, "bounded integral JSON required")
+                for value in (float("nan"), float("inf"), float("-inf")):
+                    rejected(value, ValueError, "finite JSON required")
+                for value in (StrictString("x"), StrictInteger(1), StrictFloat(1.0), StrictList([1]),
+                              object(), (1,), {1}, b"bytes"):
+                    rejected(value, ValueError, "detached JSON data required; live objects are forbidden")
+                for key in (1, True, None, StrictString("key")):
+                    rejected({key: 1}, ValueError, "unique strict JSON keys required")
+                assert local._copy({}) == {} and local._copy([]) == []
+                ordered = {"z": 1, "a": {"last": [True, None, 2]}}
+                copied = local._copy(ordered)
+                assert copied == ordered and list(copied) == ["z", "a"]
+                assert copied is not ordered and copied["a"] is not ordered["a"]
+                assert copied["a"]["last"] is not ordered["a"]["last"]
+    
+                shared = {"items": [1, {"leaf": "original"}]}
+                aliased = {"left": shared, "right": shared}
+                first, second = local._copy(aliased), local._copy(aliased)
+                assert first["left"] is not first["right"] and first["left"] is not second["left"]
+                assert first["left"]["items"] is not first["right"]["items"]
+                first["left"]["items"][1]["leaf"] = "output-change"
+                assert shared["items"][1]["leaf"] == "original"
+                assert first["right"]["items"][1]["leaf"] == second["left"]["items"][1]["leaf"] == "original"
+                shared["items"].append(7)
+                assert len(first["right"]["items"]) == len(second["left"]["items"]) == 2
+                siblings = local._copy([shared, shared])
+                assert siblings[0] is not siblings[1]
+                assert siblings[0]["items"] is not siblings[1]["items"]
+    
+                for cls, effect in ((CustomMapping, "custom-items"), (DictSubclass, "subclass-items")):
+                    mark, calls = len(effects), len(classified)
+                    copied = local._copy(cls([("second", [2]), ("first", {"a": 1})]))
+                    assert copied == {"second": [2], "first": {"a": 1}} and list(copied) == ["second", "first"]
+                    assert effects[mark:] == [effect]
+                    assert any(name == cls.__name__ and answer is True for name, answer in classified[calls:])
+                    rejected(cls([("same", 1), ("same", object())]), ValueError,
+                             "unique strict JSON keys required")
+                    rejected(cls([(StrictString("key"), 1)]), ValueError,
+                             "unique strict JSON keys required")
+                    for error in (ValueError("items-value"), RuntimeError("items-runtime"), Abort("items-abort")):
+                        mark = len(effects)
+                        rejected(cls([], error), type(error), str(error))
+                        assert effects[mark:] == [effect]
+                assert local._copy(VirtualListMapping(["ignored-list-content"])) == {"virtual": 3}
+                assert effects[-1] == "virtual-list-items"
+                assert local._copy([1, {"deep": [2]}]) == [1, {"deep": [2]}]
+    
+                # All semantic/precedence/exception assertions above precede work measurement.
+                tree = {"a": {"x": 1}, "b": {"y": False}, "c": {}}
+                mark = len(classified)
+                assert local._copy(tree) == tree
+                cost = classified[mark:]
+                packet["exact_dict_classifications"] = len(cost)
+                packet["exact_dict_classification_answers"] = cost
+                packet["semantic_assertions_completed"] = True
+            packet["observer_restored"] = local.Mapping is real_mapping
+            assert packet["observer_restored"] and source.read_bytes() == before
+            # Sole allowed RED: no semantic assertion follows this cost assertion.
+>           assert not cost, "R365_RED_REDUNDANT_EXACT_DICT_MAPPING_CLASSIFICATIONS"
+E           AssertionError: R365_RED_REDUNDANT_EXACT_DICT_MAPPING_CLASSIFICATIONS
+E           assert not [('dict', True), ('dict', True), ('dict', True), ('dict', True)]
+
+tests/test_local_temporal_copy_dispatch.py:164: AssertionError
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round365-p6-t3-post-diagnostic-next-action-20261024/implementation/copy_red_01/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_local_temporal_copy_dispatch.py::test_strict_copy_contract_and_exact_dict_dispatch
+1 failed in 0.13s

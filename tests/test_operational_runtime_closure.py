@@ -5107,9 +5107,52 @@ def _b_t3_case(tmp_path, request, name, observations, attempt):
         output.write("\n")
 
 
+def _b_t3_exception_record(error):
+    import traceback
+
+    if error is None:
+        return None
+    return {"type": type(error).__name__, "message": str(error),
+            "traceback": "".join(traceback.format_exception(error))}
+
+
+def _b_t3_observe_invalidation(scoped, worker, diagnostics):
+    import sys
+    from cloud_edge_robot_arm.simulation_runtime import operational_lease
+
+    real_invalidate = operational_lease.OperationalLeaseSession.invalidate
+
+    def invalidate(actual, reason):
+        if actual is worker._operational_lease_session:
+            diagnostics["invalidations"].append(
+                {"reason": str(reason), "active_exception": _b_t3_exception_record(sys.exc_info()[1])}
+            )
+        return real_invalidate(actual, reason)
+
+    scoped.setattr(operational_lease.OperationalLeaseSession, "invalidate", invalidate)
+
+
+@contextmanager
+def _b_t3_terminal_patch_owner(monkeypatch):
+    from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseSession
+
+    original_invalidate = OperationalLeaseSession.invalidate
+    try:
+        with monkeypatch.context() as fault_scope:
+            owner = {"scoped": fault_scope}
+
+            def configure(scoped, *_):
+                owner["scoped"] = scoped
+
+            yield owner, configure
+    finally:
+        assert OperationalLeaseSession.invalidate is original_invalidate, "terminal invalidate hook leaked"
+
+
 def _b_t3_exercise(monkeypatch, directory, backend, observed, callback, *,
                    after=None, success=False, configure=None, initialize=None):
     """Real protected factory and poll; only disclosed CPU outcome/physical seams."""
+    import sys
     from dataclasses import replace
     from cloud_edge_robot_arm.repositories.event_autonomy import InMemoryEventAutonomyRepository
     from cloud_edge_robot_arm.simulation_runtime import operational_lease
@@ -5120,13 +5163,17 @@ def _b_t3_exercise(monkeypatch, directory, backend, observed, callback, *,
     outcomes, errors, reads, cpu_outcomes = [], [], {}, []
     received = None
     events = None
+    diagnostics = {"schema_version": "bigsmall.r376.t3-poll-diagnostics.v1",
+                   "checkpoints": [], "invalidations": [], "poll_returned": None}
 
     def during_episode(worker, repo, job, source_root):
         runtime = received[0][3].worker_runtime
         session = worker._operational_lease_session
         assert runtime.source.event_repository is events and session is not None
+        diagnostics["checkpoints"].append("during_episode_entered")
         try:
             outcomes.append(callback(runtime, session, worker, repo, job, events, reads, observed))
+            diagnostics["checkpoints"].append("during_episode_callback_completed")
         except BaseException as error:
             errors.append(error)  # Preserve the actual failure swallowed by worker settlement.
             raise
@@ -5141,6 +5188,7 @@ def _b_t3_exercise(monkeypatch, directory, backend, observed, callback, *,
             events = InMemoryEventAutonomyRepository()
             worker.visual_event_repository = events
         worker.operational_time_mode = "LOCAL_TEMPORAL_PUBLICATION_V1"
+        _b_t3_observe_invalidation(scoped, worker, diagnostics)
         if success:
             original_episode = execution.run_visual_episode
             injected = {"success": True, "status": "SUCCESS", "online_reported_complete": True,
@@ -5172,7 +5220,11 @@ def _b_t3_exercise(monkeypatch, directory, backend, observed, callback, *,
                 reads["event"].row_factory = sqlite3.Row
             if configure is not None:
                 configure(scoped, worker, repo, job, events, reads)
-            assert worker.poll_once()
+            diagnostics["checkpoints"].append("before_poll")
+            polled = worker.poll_once()
+            diagnostics["poll_returned"] = polled
+            diagnostics["checkpoints"].append("after_poll")
+            assert polled
             if errors:
                 raise errors[0]
             assert len(outcomes) == 1, repo.get_job(job.job_id).error_message
@@ -5186,18 +5238,32 @@ def _b_t3_exercise(monkeypatch, directory, backend, observed, callback, *,
                       "events": _b_t2_plain(repo.list_events(job.run_id)),
                       "sql": _b_t2_snapshot(events, reads), "calls": list(calls)}
             if after is not None:
+                diagnostics["checkpoints"].append("before_after_poll_assertions")
                 result["after_poll"] = after(scoped, worker, repo, job, events, reads, observed)
+                diagnostics["checkpoints"].append("after_poll_assertions_completed")
             return result
         finally:
-            observed.wait_observer = None
-            for released in observed.release_events:
-                released.set()
-            session = worker._operational_lease_session
-            if session is not None and not session._closed:
-                operational_lease._close_worker_lease_session(session, reason="R331-fixture-finally")
-            events.close()
-            for connection in reads.values():
-                connection.close()
+            diagnostics["exit_exception"] = _b_t3_exception_record(sys.exc_info()[1])
+            try:
+                diagnostics["job_after_poll"] = _b_t2_plain(repo.get_job(job.job_id))
+                diagnostics["attempts_after_poll"] = _b_t2_plain(repo.list_attempts(job.run_id))
+            except Exception as diagnostic_error:
+                diagnostics["status_read_error"] = _b_t3_exception_record(diagnostic_error)
+            finally:
+                try:
+                    observed.wait_observer = None
+                    for released in observed.release_events:
+                        released.set()
+                    session = worker._operational_lease_session
+                    if session is not None and not session._closed:
+                        operational_lease._close_worker_lease_session(session, reason="R331-fixture-finally")
+                    events.close()
+                    for connection in reads.values():
+                        connection.close()
+                finally:
+                    with (directory / "r376-poll-diagnostics.json").open("x", encoding="utf-8") as stream:
+                        json.dump(diagnostics, stream, ensure_ascii=False, allow_nan=False, indent=2)
+                        stream.write("\n")
 
 
 def _b_t3_frame(runtime, key):
@@ -5729,10 +5795,10 @@ def test_b_terminal_publication_confirmation_fault(monkeypatch, tmp_path, reques
         attempt["entered_behavior"] = True
         observations, fault = [], {}
         with _b_t2_observe(monkeypatch, attempt) as observed:
-            with monkeypatch.context() as fault_scope:
+            with _b_t3_terminal_patch_owner(monkeypatch) as (fault_owner, configure):
                 def exercise(runtime, session, worker, repo, job, events, reads, observed):
                     data = _b_t3_ground_and_route(runtime, events, "terminal:" + variant)
-                    _b_t3_terminal_fault(fault_scope, observed, repo, session, reads, variant, fault)
+                    _b_t3_terminal_fault(fault_owner["scoped"], observed, repo, session, reads, variant, fault)
                     return {"original_time": runtime.original.local_time.to_payload(),
                             "original_hash": runtime.original.digest(), "route": data["route"]}
 
@@ -5758,8 +5824,8 @@ def test_b_terminal_publication_confirmation_fault(monkeypatch, tmp_path, reques
                             "retained_unconfirmed_files": retained,
                             "terminal_sql": _b_t2_snapshot(events, reads)}
 
-                observations.append(_b_t3_exercise(fault_scope, tmp_path / variant, "sqlite", observed,
-                                                  exercise, after=after, success=True))
+                observations.append(_b_t3_exercise(monkeypatch, tmp_path / variant, "sqlite", observed,
+                                                  exercise, after=after, success=True, configure=configure))
         _b_t3_case(tmp_path, request, "terminal-confirmation.json", observations, attempt)
 
 

@@ -1,0 +1,3 @@
+# R382 准备证据隔离结果
+
+实际Astra计划57项pins全部核对。5份误复制历史回执按原字节隔离到ARCHIVAL_NOT_ACTIVE，20份正确输入与25份R374原件逐项不变。活动根无旧invocation/result/log/JUnit，不能把本次整理记作浏览器通过。未运行产品/测试/服务器，R377时钟未开始。首次准备脚本的原始AssertionError仅保留工具记录；未重造原失败。完整来源与前后哈希见implementation/relocation-result.json及归档origin-receipt.json。

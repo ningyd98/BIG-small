@@ -1,0 +1,23 @@
+{
+  "schema": "bigsmall.utc-cost-diagnosis.timings.v1",
+  "date": "2026-10-25",
+  "host": "ningyd@192.168.3.221",
+  "node": "tests/test_operational_runtime_closure.py::test_private_startup_to_transaction_grounding",
+  "params": ["memory", "sqlite"],
+  "runs": [
+    {"id": "baseline", "variant": "current product (one-line _copy predicate applied)", "wall_seconds": 572.65, "outcome": "2 passed", "raw": "raw/baseline.out"},
+    {"id": "old-predicate", "variant": "_copy predicate reverted to pre-R365 isinstance()", "wall_seconds": 607.00, "outcome": "2 passed", "raw": "raw/probe-f.out"},
+    {"id": "fast-sha", "variant": "_sha replaced by regex fullmatch (semantics identical)", "wall_seconds": 452.75, "outcome": "test logic completed; failed only on sink file collision", "raw": "raw/probe-e.out"},
+    {"id": "cached-accessors", "variant": "_sha regex + memoized to_payload/semantic (semantics-changing probe)", "wall_seconds": 322.19, "outcome": "test logic completed; failed only on missing sink env", "raw": "raw/probe-c.out"}
+  ],
+  "deltas": {
+    "one_line_predicate_seconds": 34.35,
+    "one_line_predicate_pct": 5.7,
+    "fast_sha_seconds": 119.90,
+    "fast_sha_pct": 20.9,
+    "accessor_cache_additional_seconds": 130.56,
+    "accessor_cache_additional_pct": 22.8
+  },
+  "harness_cap_seconds": 600,
+  "note": "All runs executed serially on an otherwise idle 16-core host; runner not used, no R365 slot consumed."
+}

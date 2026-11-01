@@ -1,0 +1,345 @@
+{
+  "schema": "bigsmall.r379.scene-asset-manifest-plan.v1",
+  "round": "R379",
+  "created_utc": "2026-11-01T07:54:02.868920+00:00",
+  "planner": {
+    "model": "gpt-6-astra",
+    "agent": "/root/astra_r371_utc_plan"
+  },
+  "status": "PLAN_ONLY",
+  "authorization": "User restoring test inputs and version registry consistency. Only synchronize current scene registry and validate; no model modification or broad product repair.",
+  "baseline": {
+    "initial_head_reference": "28ac315c2af8567b377e6e2cc3ee5acb9cda4677",
+    "allowed_progress": "Record actual HEAD after verified R376/R377/R378 deliveries. Their test/config files are not direct inputs; do not reject authorized predecessor changes as unrelated drift. Direct input hashes remain strict.",
+    "mutex": "Wait for all preceding test batches terminal/cleanup and source-writer handoff; no manifest/test/doc edits while their source-pinned checks run, no concurrent product tests. Read-only planning may overlap.",
+    "preserve": "Existing checkout and all unrelated dirty/untracked files, local_temporal candidate/two temporal tests/nested workspaces unchanged and unstaged. No reset/worktree switch/install."
+  },
+  "original_failure": {
+    "nodeid": "tests/test_phase9_asset_registry.py::test_phase9_asset_manifest_records_hash_and_license",
+    "source": "R374-continuation",
+    "stage_id": "pytest_software_06_remaining_25",
+    "when": "call",
+    "longrepr": "def test_phase9_asset_manifest_records_hash_and_license() -> None:\n        registry = AssetRegistry.from_manifest(Path(\"assets/manifest.yaml\"))\n>       asset = registry.require(\"franka_panda_mujoco_scene\")\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n\ntests/test_phase9_asset_registry.py:12: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\nself = <cloud_edge_robot_arm.simulation.asset_registry.AssetRegistry object at 0x7b67d9e1a3c0>\nasset_id = 'franka_panda_mujoco_scene'\n\n    def require(self, asset_id: str) -> AssetRecord:\n        try:\n            asset = self._assets[asset_id]\n        except KeyError as exc:\n            raise KeyError(f\"unknown asset {asset_id!r}\") from exc\n        if not asset.path.exists():\n            raise FileNotFoundError(asset.path)\n        actual = self.compute_sha256(asset.path)\n        if actual != asset.sha256:\n>           raise ValueError(f\"asset hash mismatch for {asset_id}: {actual} != {asset.sha256}\")\nE           ValueError: asset hash mismatch for franka_panda_mujoco_scene: 66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2 != 6a7938709366801ed6e36c7c504da64a48b7b16bbc02adda2a31417c7ad5b1d1\n\nsrc/cloud_edge_robot_arm/simulation/asset_registry.py:57: ValueError",
+    "evidence": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_25/implementation/pytest_software_06_remaining_25/pytest-events.jsonl"
+  },
+  "source_audit": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/asset-manifest-readonly-audit.json",
+    "classification": "Pre-existing manifest/model binding mismatch, unchanged in audited HEAD and HEAD^; strict registry rejection is correct.",
+    "expected": "6a7938709366801ed6e36c7c504da64a48b7b16bbc02adda2a31417c7ad5b1d1",
+    "current": "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2",
+    "red": "Reuse immutable original asset registry failure as RED; no redundant unchanged rerun."
+  },
+  "history": {
+    "git_inputs": [
+      {
+        "git_object": "a33b32af77ac0435a0e33c8d1984a9a8a6d284e6:assets/robots/franka_panda/scene.xml",
+        "bytes": 4924,
+        "sha256": "6a7938709366801ed6e36c7c504da64a48b7b16bbc02adda2a31417c7ad5b1d1"
+      },
+      {
+        "git_object": "d2afb0d91a98cd6ca4acdd0ea806074260df7c30:assets/robots/franka_panda/scene.xml",
+        "bytes": 4978,
+        "sha256": "182fb2bc068ba44de394622f819ae444eb7fbe51df5c5311591a8abb97bf6a08"
+      },
+      {
+        "git_object": "d3472a562356e6edc3dc1da2aa07a45096b54e5c:assets/robots/franka_panda/scene.xml",
+        "bytes": 4980,
+        "sha256": "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2"
+      },
+      {
+        "git_object": "a33b32af77ac0435a0e33c8d1984a9a8a6d284e6:assets/manifest.yaml",
+        "bytes": 485,
+        "sha256": "4a07b0f7d46795684bc449b2e8942e21ed3320c0a2680093ab6f8084ab0f8e66"
+      }
+    ],
+    "checked_readonly": true,
+    "transitions": [
+      {
+        "commit": "a33b32af77ac0435a0e33c8d1984a9a8a6d284e6",
+        "date": "2026-10-03",
+        "meaning": "Added rgbd camera and light to reference model; manifest v1->v2, sha6a793870. This is the actual historical scene corresponding to current stale manifest."
+      },
+      {
+        "commit": "d2afb0d91a98cd6ca4acdd0ea806074260df7c30",
+        "date": "2026-10-04",
+        "meaning": "Default position kp12/kv3->kp20/kv5; finger offsets0.045->0.04; explicit finger friction1.5; finger actuator kp25/kv4->kp250/kv10; scene sha182fb2bc. Manifest not updated."
+      },
+      {
+        "commit": "d3472a562356e6edc3dc1da2aa07a45096b54e5c",
+        "date": "2026-10-05",
+        "meaning": "Finger base y offsets ±0.04->±0.009; scene sha66a0e270 equals present file exactly. Manifest remains old v2."
+      }
+    ],
+    "old_to_current_scene_diff": "--- scene-phase9.reference.v2.xml\n+++ scene-current-66a0e270.xml\n@@ -5,7 +5,7 @@\n   <default>\n     <joint damping=\"0.8\" armature=\"0.01\" limited=\"true\"/>\n     <geom contype=\"1\" conaffinity=\"1\" solref=\"0.01 1\" solimp=\"0.9 0.95 0.001\" friction=\"0.8 0.01 0.001\"/>\n-    <position kp=\"12\" kv=\"3\" ctrllimited=\"true\"/>\n+    <position kp=\"20\" kv=\"5\" ctrllimited=\"true\"/>\n   </default>\n   <worldbody>\n     <camera name=\"rgbd\" pos=\"0.35 0 1.4\" quat=\"1 0 0 0\" fovy=\"50\"/>\n@@ -35,13 +35,13 @@\n                     <joint name=\"joint7\" type=\"hinge\" axis=\"0 1 0\" range=\"-2.9 2.9\"/>\n                     <geom name=\"hand\" type=\"box\" pos=\"0.035 0 0\" size=\"0.035 0.04 0.025\" contype=\"0\" conaffinity=\"0\" rgba=\"0.2 0.2 0.22 1\"/>\n                     <site name=\"tcp\" pos=\"0.105 0 0\" size=\"0.01\"/>\n-                    <body name=\"left_finger\" pos=\"0.075 0.045 0\">\n+                    <body name=\"left_finger\" pos=\"0.075 0.009 0\">\n                       <joint name=\"finger_left_joint\" type=\"slide\" axis=\"0 1 0\" range=\"0 0.04\"/>\n-                      <geom name=\"left_finger_geom\" type=\"box\" pos=\"0.025 0 0\" size=\"0.035 0.008 0.028\" contype=\"2\" conaffinity=\"2\" rgba=\"0.1 0.1 0.1 1\"/>\n+                      <geom name=\"left_finger_geom\" type=\"box\" pos=\"0.025 0 0\" size=\"0.035 0.008 0.028\" contype=\"2\" conaffinity=\"2\" friction=\"1.5 0.01 0.001\" rgba=\"0.1 0.1 0.1 1\"/>\n                     </body>\n-                    <body name=\"right_finger\" pos=\"0.075 -0.045 0\">\n+                    <body name=\"right_finger\" pos=\"0.075 -0.009 0\">\n                       <joint name=\"finger_right_joint\" type=\"slide\" axis=\"0 -1 0\" range=\"0 0.04\"/>\n-                      <geom name=\"right_finger_geom\" type=\"box\" pos=\"0.025 0 0\" size=\"0.035 0.008 0.028\" contype=\"2\" conaffinity=\"2\" rgba=\"0.1 0.1 0.1 1\"/>\n+                      <geom name=\"right_finger_geom\" type=\"box\" pos=\"0.025 0 0\" size=\"0.035 0.008 0.028\" contype=\"2\" conaffinity=\"2\" friction=\"1.5 0.01 0.001\" rgba=\"0.1 0.1 0.1 1\"/>\n                     </body>\n                   </body>\n                 </body>\n@@ -67,7 +67,7 @@\n     <position name=\"act5\" joint=\"joint5\" ctrlrange=\"-2.9 2.9\"/>\n     <position name=\"act6\" joint=\"joint6\" ctrlrange=\"-2.9 2.9\"/>\n     <position name=\"act7\" joint=\"joint7\" ctrlrange=\"-2.9 2.9\"/>\n-    <position name=\"left_finger_act\" joint=\"finger_left_joint\" ctrlrange=\"0 0.04\" kp=\"25\" kv=\"4\"/>\n-    <position name=\"right_finger_act\" joint=\"finger_right_joint\" ctrlrange=\"0 0.04\" kp=\"25\" kv=\"4\"/>\n+    <position name=\"left_finger_act\" joint=\"finger_left_joint\" ctrlrange=\"0 0.04\" kp=\"250\" kv=\"10\"/>\n+    <position name=\"right_finger_act\" joint=\"finger_right_joint\" ctrlrange=\"0 0.04\" kp=\"250\" kv=\"10\"/>\n   </actuator>\n </mujoco>\n",
+    "authoritative_source": "The committed small BIG-small Phase9 reference MJCF is the authoritative current source, not official Franka geometry. docs/phase9_assets.md and phase9_asset_management.md define CI/SI asset meaning. No separate canonical current-scene generator was identified in inspected scripts; scripts generate datasets/use the model, while pose-marker builders derive separate visual variants. Do not regenerate scene.xml or substitute a marker XML.",
+    "version_semantics": "AssetRegistry stores version as an opaque label; manifest schema phase9.assets.v1 stays unchanged. Increment asset version to phase9.reference.v3 for the currently committed source. It is a registry version, not a new physical model edit, date of capture or research admission."
+  },
+  "changes": [
+    {
+      "path": "assets/manifest.yaml",
+      "scope": "Only franka_panda_mujoco_scene sha256 ->66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2 and version ->phase9.reference.v3. Keep schema,id,path,source,license,SI and other text unchanged."
+    },
+    {
+      "path": "docs/phase9_assets.md",
+      "scope": "Short version/provenance note with old6a/v2, intermediate182fb2bc, current66/v3 and commit refs. Explain current small project model, no official robot/physical permission, historical datasets retain original hashes and results; link immutable R379 provenance receipt."
+    },
+    {
+      "path": "tests/test_phase9_asset_registry.py",
+      "scope": "Keep original positive require/hash/license/SI assertions and add expected current version plus exact registered scene path. Add parametrized real-registry negative test for stale old6a hash on current scene and altered temporary asset bytes against current66 hash. Copy only into tmp_path with original manifest-relative layout, real AssetRegistry.require must raise ValueError hash mismatch; never mutate repository scene/manifest or mock hash check."
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round379-scene-asset-manifest-consistency-20261101/inputs",
+      "scope": "Before manifest edit save exact old assets/manifest.yaml bytes as assets-manifest-before.yaml and source index; retrieve verified historical6a scene and182 intermediate via readonly git show into clearly named archived inputs, preserving SHA/object refs. Current scene may be snapshotted/hash-pinned, never replaced. Record complete history/diff and archive intent; relocated old manifest is archival bytes, not active registry path."
+    }
+  ],
+  "forbidden": [
+    "No scene.xml, marker XML, camera/light/geometry/controller/physics changes. No marker hash refresh or v1/v2 registration edits; marker registration is independent R378.",
+    "No AssetRegistry validation relaxation or bypass, fake MuJoCo backend, skips, timeout threshold changes or modifying model bytes to match old hash.",
+    "No old dataset/frame/SceneSpec source hash rewrite, no using old6a or182 products as current66 results, no new formal/physical acceptance.",
+    "No general asset-registry refactor, dataset generation, cloud calls, rendering requirement or dependency installation."
+  ],
+  "steps": [
+    "Wait predecessor terminal/cleanup/single writer; verify direct pins and actual HEAD/source baseline. Preserve exact old manifest and source history snapshots before edit.",
+    "Apply two-field manifest update and narrow provenance documentation/test guards. Keep model and separate marker bytes unchanged.",
+    "Run registry module once60s (original RED now GREEN plus negative cases), then original real MuJoCo load/reset/80step/160step modules once120s. No mocks, no replacing current model path with historical snapshot.",
+    "Capture full stdout/stderr/JUnit/exit/duration/timeout/cleanup, model/version evidence and source-before/after. Both tests use actual current registered scene; require positive time/joint/FK changes and exact physics-step counts.",
+    "Any new failure freezes affected repair; preserve evidence and refer next Astra before fixing. Independent stage may finish for diagnosis; do not claim verified delivery until required stages pass.",
+    "Review exact changed-path list and select only verified manifest/docs/test changes and immutable chosen provenance/evidence for commit, then bounded normal push and three-SHA verification under limits below."
+  ],
+  "stages": [
+    {
+      "id": "asset_registry_green",
+      "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests/test_phase9_asset_registry.py",
+        "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round379-scene-asset-manifest-consistency-20261101/implementation/asset_registry_green/persistent-basetemp",
+        "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round379-scene-asset-manifest-consistency-20261101/implementation/asset_registry_green/junit.xml"
+      ],
+      "child_timeout_s": 60,
+      "cleanup_s": 15,
+      "outer_timeout_s": 75,
+      "attempts": 1,
+      "env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "HOME": "/home/ningyd",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "PYTHONPATH": "/home/ningyd/文档/ChatGPT/BIGsmall/src:/home/ningyd/文档/ChatGPT/BIGsmall",
+        "MUJOCO_GL": "egl",
+        "REAL_MOTION_DISPATCH_ENABLED": "false",
+        "PYTHONPYCACHEPREFIX": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round379-scene-asset-manifest-consistency-20261101/implementation/asset_registry_green/pycache"
+      }
+    },
+    {
+      "id": "mjcf_load_reset_step",
+      "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests/test_phase9_mujoco_load.py",
+        "tests/test_phase9_mujoco_physics_step.py",
+        "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round379-scene-asset-manifest-consistency-20261101/implementation/mjcf_load_reset_step/persistent-basetemp",
+        "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round379-scene-asset-manifest-consistency-20261101/implementation/mjcf_load_reset_step/junit.xml"
+      ],
+      "child_timeout_s": 120,
+      "cleanup_s": 15,
+      "outer_timeout_s": 135,
+      "attempts": 1,
+      "env": {
+        "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+        "HOME": "/home/ningyd",
+        "LANG": "C.UTF-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "PYTHONPATH": "/home/ningyd/文档/ChatGPT/BIGsmall/src:/home/ningyd/文档/ChatGPT/BIGsmall",
+        "MUJOCO_GL": "egl",
+        "REAL_MOTION_DISPATCH_ENABLED": "false",
+        "PYTHONPYCACHEPREFIX": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round379-scene-asset-manifest-consistency-20261101/implementation/mjcf_load_reset_step/pycache"
+      }
+    }
+  ],
+  "runtime_preconditions": [
+    "Existing .venv with pytest/PyYAML/MuJoCo and current model file; record interpreter/dependency identity, no installs. No model import/test in planning.",
+    "Actual tool permission context recorded at execution; not inferred from earlier full-access. These stages require CPU MJCF load/reset/step, no services/network/hardware. Environment dependency/import denial is BLOCKED_ENV, not product failure/valid RED.",
+    "Fresh per-stage artifact/temp/cache dirs. No concurrent tests/source writers. Capture explicit current scene path/hash and manifest version in result, not only implicit JUnit success.",
+    "Before/after compare current scene and all three marker XML hashes plus current source guards; only planned manifest/doc/test changes allowed. No golden/archival baseline rewriting."
+  ],
+  "budget": {
+    "registry_child_s": 60,
+    "load_reset_step_child_s": 120,
+    "cleanup_s_per_stage": 15,
+    "TERM_grace_s": 5,
+    "nominal_test_max_s": 210,
+    "test_report_wall_cap_s": 600,
+    "attempts_per_stage": 1,
+    "automatic_retries": 0,
+    "parallel_tests": false,
+    "cleanup": "Own process group TERM then KILL/reap within15s; preserve timeout and cleanup failure, no orphan. No extra attempt to conceal failure.",
+    "historical": "New R379 ledger; no reset/extension/reuse of R373/R372 spent transport or test quotas."
+  },
+  "delivery": {
+    "gate": "Only after required test results and source integrity reviewed. Exact staged path list, protected files excluded. Existing research branch; no force push or broad staging.",
+    "normal_push_attempts": 1,
+    "push_timeout_s": 60,
+    "verification_remote_reads": 1,
+    "verify_timeout_s": 60,
+    "procedure": "Read current branch/remote/upstream locally, preserve remote identity without credentials. Commit explicit verified paths. One git push to current research branch (normal nonforce). One subsequent git ls-remote for that exact branch; compare with git rev-parse HEAD and local upstream ref. Save argv/exit/stdout/stderr/threeSHA receipt with redacted remote if needed. No extra speculative remote probes.",
+    "failure": "TLS/transport rejection: preserve verified local commit and original remote failure, report push or verification incomplete; do not retry, change gitconfig/proxy/TLS, install, force, or claim remote equality. If push succeeds but verify fails, status pushed-but-remote-verification-unconfirmed. New transport repair requires its own plan.",
+    "budget_boundary": "New user/AGENTS verified delivery allocation is one push+one verify; not a reset of any historical transmission budget."
+  },
+  "acceptance": {
+    "registry": "Original registry test and added negative cases pass; manifest v3 exact current66 binding, old manifest/archiveSHA preserved. Registry continues rejecting stale/tampered assets.",
+    "runtime": "Actual MuJoCo backend loads current MJCF, resets real S01 scenario, seven arm joints, simtime0 after reset;80steps advances time/state and160steps changes FK TCP per unchanged assertions. No physics model byte change.",
+    "integrity": "Current model byteSHA66 unchanged; all marker XML unchanged. No hidden source/config drift beyond allowlist. Archive data retain old identities.",
+    "limits": "Software simulation/CI registration correctness only; not full task grasp success, real hardware, official Franka model, dataset migration, calibration or formal research acceptance. Full failure remains separate if later stage reveals another issue."
+  },
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "assets/manifest.yaml",
+      "bytes": 485,
+      "sha256": "4a07b0f7d46795684bc449b2e8942e21ed3320c0a2680093ab6f8084ab0f8e66"
+    },
+    {
+      "path": "assets/robots/franka_panda/scene.xml",
+      "bytes": 4980,
+      "sha256": "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2"
+    },
+    {
+      "path": "assets/robots/franka_panda/scene_pose_marker_v1.xml",
+      "bytes": 13421,
+      "sha256": "02efdc94a346d21ce1162418d58ee344c73a1a4afef32fa8b2feff3adaf53c30"
+    },
+    {
+      "path": "assets/robots/franka_panda/scene_pose_marker_color_v2.xml",
+      "bytes": 13655,
+      "sha256": "2ba368bb5150becd1c021fe52495f3c59bd155f862502ec590b2ecd3a57899e4"
+    },
+    {
+      "path": "assets/robots/franka_panda/scene_pose_marker_outboard_v3.xml",
+      "bytes": 13797,
+      "sha256": "ddc34b13d8df403f3fdeeab94be75ca988541f2eac0a3e534704f68200c39a23"
+    },
+    {
+      "path": "docs/phase9_assets.md",
+      "bytes": 268,
+      "sha256": "f86c52da54775dfa5ef634d50a12b0c041e88d4e29c5063d83557d77a1e8e216"
+    },
+    {
+      "path": "docs/phase9_asset_management.md",
+      "bytes": 366,
+      "sha256": "437f917e0cb32b6e6be5dd95e9378c4cb58c15bd15484eb27348d244b4fb842b"
+    },
+    {
+      "path": "docs/current_authoritative_status.md",
+      "bytes": 42534,
+      "sha256": "6d87ba0f9e58b59620ca537a50354eb2147d556de9ee3b8f5ddfbd6a97fb4c47"
+    },
+    {
+      "path": "docs/research/process/change_record.md",
+      "bytes": 13224,
+      "sha256": "55616595070680b27d331c31f55f49dc31e3e4a88eb7be2adbd10141c94c6cce"
+    },
+    {
+      "path": "docs/research/process/decisions_and_risks.md",
+      "bytes": 15216,
+      "sha256": "b4e02db19c76233f89f5d7cd20d2efa74405191f17fb33b120719009b010006a"
+    },
+    {
+      "path": "docs/research/process/execution_log.md",
+      "bytes": 32501,
+      "sha256": "f8bd9fac5893e9f8f234a1f3efb820b91253493097d563ab6e68342bdd7aa15e"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/asset_registry.py",
+      "bytes": 2099,
+      "sha256": "861130eb4f52da046d68567448c2e7b30c43f3117b632e58d4c3c10f04a5951b"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/config.py",
+      "bytes": 2078,
+      "sha256": "ece5dba5a710f63ba46bc99260ae768cec07c2773e7e0687bd2f55a4758f1d7b"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/models.py",
+      "bytes": 3635,
+      "sha256": "35099db3aa50672ccc915431632fad464c62f5c64a47f393a02e560e848b26dc"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+      "bytes": 49867,
+      "sha256": "b7b6026b1173448de826e53253ae74f92b6b70ea46a404e10054c5cd451a62a6"
+    },
+    {
+      "path": "tests/test_phase9_asset_registry.py",
+      "bytes": 604,
+      "sha256": "a4c54c7931ef5f0fdf375ec8a52b2c57dca6545a808b5cdaf22196fc58a44cfa"
+    },
+    {
+      "path": "tests/test_phase9_mujoco_load.py",
+      "bytes": 768,
+      "sha256": "3ae0f643130d77cfa22c42a1a14d3ca06b62be5b57a7efca451286e8d8a26737"
+    },
+    {
+      "path": "tests/test_phase9_mujoco_physics_step.py",
+      "bytes": 1746,
+      "sha256": "fefe7be1d7a83b478205fc365f593859ae844ccd385c3b59ea8a4e20d5c5a5ba"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/asset-manifest-readonly-audit.json",
+      "bytes": 2840,
+      "sha256": "be5808801a80b13cead874e00e65ffaea7f706785bee34163d18a1f0cda29db3"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/failures.json",
+      "bytes": 191615,
+      "sha256": "c8a33e004e66af28bb47d0cb26bc356ec1a8d3c4bbe0f15c9b0db57460fa7c61"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_25/implementation/pytest_software_06_remaining_25/invocation.json",
+      "bytes": 5067,
+      "sha256": "450a727f0d1349fcb4e8968da75399cfa152203cad5a905d0df64b00427d782d"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_25/implementation/pytest_software_06_remaining_25/result.json",
+      "bytes": 577,
+      "sha256": "0a38bb99a15aeb8db163f7f612c8989aee6681e7ccb6a18715a4e575700ab4fd"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_25/implementation/pytest_software_06_remaining_25/stdout.log",
+      "bytes": 2010,
+      "sha256": "f3c6edc08b20cfb8030e09fb0a70536641caa3e76a9349de4951d3d004630063"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_25/implementation/pytest_software_06_remaining_25/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_25/implementation/pytest_software_06_remaining_25/junit.xml",
+      "bytes": 1919,
+      "sha256": "ca2bae931d624953c6734aade1be0c4f9bbe48abf63104f102f6801eb6dc27ed"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_25/implementation/pytest_software_06_remaining_25/pytest-events.jsonl",
+      "bytes": 2109,
+      "sha256": "c7b622321f722a98a2bfceb6e66b2278b357ca26a859426d8a2fe06f8401d63b"
+    }
+  ],
+  "planner_actions": "Read files/history using git log/show only, hash and parse source; write plan. No product imports/tests/signals/network/Git mutations."
+}

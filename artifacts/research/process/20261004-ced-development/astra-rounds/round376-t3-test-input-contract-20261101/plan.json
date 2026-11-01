@@ -1,0 +1,645 @@
+{
+  "schema": "bigsmall.r376.t3-test-input-contract-plan.v1",
+  "round": "R376",
+  "created_utc": "2026-11-01T07:42:53.617596+00:00",
+  "planner": {
+    "model": "gpt-6-astra",
+    "agent": "/root/astra_r371_utc_plan"
+  },
+  "status": "PLAN_ONLY",
+  "authorization": "User: 先恢复测试输入与版本登记的一致性，让关键场景真正执行到目标位置. This round only repairs T3 fixture manifest input; other independent roots deferred. No repeat design/permission question.",
+  "baseline": {
+    "head": "28ac315c2af8567b377e6e2cc3ee5acb9cda4677",
+    "workspace": "Existing research checkout; no new/switch worktree, no installs",
+    "preserve_uncommitted": [
+      "src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "tests/test_local_temporal_copy_dispatch.py",
+      "tests/test_local_temporal_sha_contract.py",
+      "artifacts/research/process/20261004-t7-parallel-local-models-physics/physics/workspace-baseline",
+      "artifacts/research/process/20261004-t7-parallel-local-models-physics/physics/workspace-h3"
+    ],
+    "local_temporal_sha256": "c8a5a5a45d80a9123708125e18528b5b083c388ee389a81e44536ae84dad5f9c",
+    "rule": "Keep all unrelated dirty/untracked files and nested workspaces unchanged and unstaged. Capture current source before/after, allow only planned test edits; do not rebaseline accidental drift."
+  },
+  "original_failure": {
+    "four_confirmed": "R374 p6_t3_06/07/08/09: public _run_record ExperimentManifest.model_validate(job.manifest) receives {} and raises six missing fields, before later public assertions. Persisted rows prove empty manifest. Terminal fault variants confirm_timeout and prior_bound are sqlite job repo; public memory/sqlite refers to event backend, not replacing the runtime SQLite repo.",
+    "separate_unknown": "p6_t3_05 commit_close failed fault.fired assertion; DB INTERRUPTED, operational_epoch_ended/original worker poll ended, no confirmation row. Earlier underlying exception unknown; not proven caused by manifest.",
+    "timing": "Five old cases took about226–245 seconds each; no old timeout. Original files remain immutable."
+  },
+  "root_cause": {
+    "chain": [
+      "T3 _b_t3_exercise -> tests.test_visual_worker_factory.software_factory",
+      "software_factory -> tests.test_rgbd_lease_handoff._cpu_visual_worker",
+      "_cpu_visual_worker -> tests.test_rgbd_runtime_control._queued_closed_loop_worker",
+      "create_job omits manifest; repository persists {}; real public runtime reader requires ExperimentManifest"
+    ],
+    "missing_required": [
+      "manifest_id",
+      "normalized_config",
+      "source_commit",
+      "source_tree_hash",
+      "run_count",
+      "reproducibility_hash"
+    ],
+    "contrast": "Normal SimulationRuntimeService.create_run passes manifest.model_dump(mode=json). Fix producer fixture, not public reader. Existing _draft in phase11_1 is already complete for this path; no change needed there."
+  },
+  "changes": [
+    {
+      "path": "tests/test_rgbd_runtime_control.py",
+      "scope": "Only _queued_closed_loop_worker manifest construction/create_job argument. Build ExperimentManifest and JSON payload before repository insertion, using a detached snapshot of the effective draft, run_count=1, existing manifest_id/reproducibility_hash/source_commit/source_tree_hash fixture values matching job columns. Keep existing synthetic test/hash identifiers disclosed as fixture-only, not real source provenance. Include schema_version/created_at via model serialization. Do not change draft defaults/overrides, run identity, timeout, job status or lease behavior; do not rewrite persisted rows after creation."
+    },
+    {
+      "path": "tests/test_operational_t3_fixture_contract.py",
+      "scope": "Add one focused parametrized contract test test_queued_fixture_has_complete_manifest with cases queued_default, queued_custom, inherited_software_factory. No worker.poll_once/model/physical execution. Read real persisted job, validate complete ExperimentManifest, compare identity/source fields and detached normalized_config with actual supplied draft; mutation of caller draft must not mutate stored manifest. Exercise actual service.get_run using explicit temp artifact root/DB with only dispatcher.start suppressed as existing T3 helper does, and assert returned manifest equals persisted one. Close resources. Do not mock validation/public result."
+    },
+    {
+      "path": "tests/test_operational_runtime_closure.py",
+      "scope": "Only _b_t3_exercise diagnostic recording and append-only same-root short helper assertions if needed. Preserve callback errors; narrowly wrap OperationalLeaseSession.invalidate for this worker session to record original reason and active sys.exc_info traceback, delegate exactly once without changing args/return/exception/timing or permission. Save fresh per-case r376-poll-diagnostics.json in finally including reached checkpoints, original exception, poll return, real job/attempt status and available fault/after-poll completion. Do not add trace/profile hooks, patch worker exception handling, set fired/accepted flags or change any existing fault/public assertions."
+    }
+  ],
+  "not_changed": [
+    "tests/test_rgbd_lease_handoff.py",
+    "tests/test_visual_worker_factory.py",
+    "tests/test_phase11_1_simulation_runtime.py",
+    "tests/test_rgbd_runtime.py",
+    "All src product files, validators, clocks, fault injection thresholds, source-binding markers/goldens/assets/browser mocks"
+  ],
+  "steps": [
+    "Freeze inputs and verify applicability/permission; create stage dirs and exact copies of old golden only. Write short contract regression, run one bounded RED before fixture change.",
+    "Implement smallest producer fixture manifest plus localized diagnostic retention. Keep existing full-target assertions intact.",
+    "Run short GREEN and shared-fixture smoke once; only proceed to long targets if contract GREEN succeeds.",
+    "Run four known manifest targets and one commit_close target separately/serially with independent600s caps; no retries. Preserve newly exposed failures. Unaffected targets may continue; no out-of-plan fix.",
+    "Write step report and target reachability table, review exact diff and source pins; deliver only verified test changes and selected evidence with selective git commit/push and local/upstream/remote SHA under AGENTS. No broad staging or nested/dirty performance inclusion. If transport blocked preserve local verified commit and report; no force push/config/TLS changes."
+  ],
+  "commands": [
+    {
+      "id": "fixture_contract_red",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "-p",
+        "r235_startup_prerequisite",
+        "tests/test_operational_t3_fixture_contract.py",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 60,
+      "runs": 1,
+      "expected": "Before fixture change: missing ExperimentManifest fields from actual factory, not import/setup failure. Reuse four original long failures as RED; do not rerun them unchanged."
+    },
+    {
+      "id": "fixture_contract_green",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "-p",
+        "r235_startup_prerequisite",
+        "tests/test_operational_t3_fixture_contract.py",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 60,
+      "runs": 1,
+      "expected": "All3 contract variants pass, persisted full manifest and real public read agree."
+    },
+    {
+      "id": "shared_fixture_smoke",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "-p",
+        "r235_startup_prerequisite",
+        "tests/test_rgbd_runtime_control.py::test_cancel_racing_failure_converges_every_record_to_cancelled",
+        "tests/test_rgbd_runtime_control.py::test_closed_loop_verification_failure_cannot_finish_succeeded",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 120,
+      "runs": 1,
+      "expected": "Existing three cases retain cancellation/failure behavior."
+    },
+    {
+      "id": "t3_green_01",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "-p",
+        "r235_startup_prerequisite",
+        "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[confirm_timeout]",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 600,
+      "runs": 1,
+      "expected": "Full original assertions complete; commit_close must actually fire, otherwise preserve failure and plan next root cause."
+    },
+    {
+      "id": "t3_green_02",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "-p",
+        "r235_startup_prerequisite",
+        "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[prior_bound]",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 600,
+      "runs": 1,
+      "expected": "Full original assertions complete; commit_close must actually fire, otherwise preserve failure and plan next root cause."
+    },
+    {
+      "id": "t3_green_03",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "-p",
+        "r235_startup_prerequisite",
+        "tests/test_operational_runtime_closure.py::test_b_public_confirmed_publication_control[memory]",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 600,
+      "runs": 1,
+      "expected": "Full original assertions complete; commit_close must actually fire, otherwise preserve failure and plan next root cause."
+    },
+    {
+      "id": "t3_green_04",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "-p",
+        "r235_startup_prerequisite",
+        "tests/test_operational_runtime_closure.py::test_b_public_confirmed_publication_control[sqlite]",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 600,
+      "runs": 1,
+      "expected": "Full original assertions complete; commit_close must actually fire, otherwise preserve failure and plan next root cause."
+    },
+    {
+      "id": "t3_green_05",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "-p",
+        "r235_startup_prerequisite",
+        "tests/test_operational_runtime_closure.py::test_b_terminal_publication_confirmation_fault[commit_close]",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 600,
+      "runs": 1,
+      "expected": "Full original assertions complete; commit_close must actually fire, otherwise preserve failure and plan next root cause."
+    }
+  ],
+  "environment_template": {
+    "HOME": "/home/ningyd",
+    "USER": "ningyd",
+    "LOGNAME": "ningyd",
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/run/user/1000/gdm/Xauthority",
+    "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/cache/node-v22.23.3-linux-x64/bin:/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+    "LANG": "C.UTF-8",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONPATH": "/home/ningyd/文档/ChatGPT/BIGsmall/src:/home/ningyd/文档/ChatGPT/BIGsmall:/home/ningyd/文档/ChatGPT/BIGsmall/tests:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/adapters:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation",
+    "MUJOCO_GL": "egl",
+    "REAL_MOTION_DISPATCH_ENABLED": "false",
+    "PLAYWRIGHT_BROWSERS_PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/cache/playwright",
+    "PYTHONPYCACHEPREFIX": "{STAGE_DIR}/pycache",
+    "RUFF_CACHE_DIR": "{STAGE_DIR}/ruff-cache",
+    "MYPY_CACHE_DIR": "{STAGE_DIR}/mypy-cache",
+    "R373_PYTEST_EVENTS": "{STAGE_DIR}/pytest-events.jsonl",
+    "R373_STAGE_DIR": "{STAGE_DIR}",
+    "BIGSMALL_R223_RESOURCE_ROOT": "{STAGE_DIR}/r223/resources",
+    "BIGSMALL_R223_CASE_ROOT": "{STAGE_DIR}/r223/cases",
+    "MODEL_CONTROL_DB": "{STAGE_DIR}/runtime/model_control.db",
+    "DASHBOARD_ARTIFACT_ROOT": "{STAGE_DIR}/runtime/artifacts",
+    "BIGSMALL_R158_COMMAND": "final_new23",
+    "BIGSMALL_R158_LEGACY_GOLDENS": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round376-t3-test-input-contract-20261101/inputs/legacy-goldens.json",
+    "BIGSMALL_R158_T2_RESOURCE_DIR": "{STAGE_DIR}/resources",
+    "BIGSMALL_R175_RESOURCE_DIR": "{STAGE_DIR}/resources-a",
+    "BIGSMALL_R235_PREREQUISITE_RECORD": "{STAGE_DIR}/prerequisite.json"
+  },
+  "environment_absent": [
+    "SIMULATION_RUNTIME_DB"
+  ],
+  "stage_paths": "Replace {STAGE_DIR} with a unique new absolute R376/implementation/<stage_id> directory before launch. Exact argv/env saved. Create resources,resources-a,r223/resources,r223/cases,runtime/artifacts,caches; preserve plugin dirs on PYTHONPATH. One child process per stage, fresh per-test DB/artifacts. No inherited credentials or module-level runtime DB override.",
+  "runtime_preconditions": [
+    "Execution host must report its actual permission profile. Parent reports workspace-write/network restricted; this planning session declares danger-full-access/approval never. Neither is evidence of the future runner context. Record actual mode and a fresh-process prerequisite; use platform escalation only if available/allowed after explicit environmental denial. Do not pass forbidden permission arguments or count environment failure as legal RED/product failure.",
+    "Use existing .venv; no installation, network/cloud/model/hardware calls. Current T3 CPU factory retains real leases/SQLite/public readouts while physical seams are disclosed software replacements.",
+    "R235 plugin and tests/test_operational_time_v1 pinned; accepted_prerequisite true and empty profile/trace channels before startup import. Do not disable guard, warm up worker or alter golden.",
+    "Copy pinned legacy-goldens bytes to R376/inputs/legacy-goldens.json, verify SHA. BIGSMALL_R158_COMMAND=final_new23 is historical compatibility label only; true stage_id=R376 stage in invocation/report.",
+    "Use stage-isolated R223 resource/case roots and R158/R175 resource sinks. MODEL_CONTROL_DB/DASHBOARD_ARTIFACT_ROOT absolute fresh paths. Remove SIMULATION_RUNTIME_DB; real T3 service receives explicit fixture DB, tests retain own tmp_path isolation.",
+    "No concurrent product tests/source writers. Verify new dirs nonexistent, raw outputs and logs retained, same interpreter/deps, actual no-owned-process cleanup receipt."
+  ],
+  "budgets": {
+    "red_runs": 1,
+    "short_green_runs": 1,
+    "smoke_runs": 1,
+    "long_case_runs": 5,
+    "automatic_retries": 0,
+    "parallel_tests": false,
+    "TERM_grace_s": 5,
+    "cleanup_max_s_per_stage": 15,
+    "stage_outer_rule": "child cap plus15s cleanup, own groups TERM/KILL/reap; failure/missing evidence recorded. Outer supervisor must not orphan separately sessioned child.",
+    "max_nominal_total_s": 3360,
+    "calculation": "60+60+120+5*600 +8*15 =3360s (56min); typical long-case observation suggests about20min for5, not a promise.",
+    "round_wall_cap_s": 3600,
+    "global_clock": "This newly authorized repair is a new separately logged<=60min R376 budget; do not retrospectively extend or reset historical R373/R3748h diagnostic ledger. Stop launching if insufficient stage+cleanup time remains.",
+    "environment_retry": "No default retry. At most one fresh-environment replacement for a stage demonstrably denied before product behavior (e.g. prerequisite/port permission), after permitted tool escalation, charged within3600s; original denial retained and first attempt not product RED. If any target behavior ran, do not replay under this exception."
+  },
+  "evidence": [
+    "Before/after source manifests and exact changed-file diff; original input SHA verification; launcher hash/env/argv/runtime permission/prerequisite receipt.",
+    "Complete stdout/stderr/JUnit/pytest-events/exit/duration/timeout/cleanup plus per-case T2 resources and original traceback/reason if worker swallows failure. Never overwrite R374 outputs.",
+    "Public targets: all get_run/attempts/artifacts/metrics/events/batch assertions and original corruption/legacy/reopen controls complete; case JSON and assertions_completed=true.",
+    "Fault targets: actual SQL COMMIT+connection-close or actual timeout/prior-bound event; fired must derive from real hook, then full public rejection/assertions complete.",
+    "Only inspect closed runtime DB evidence; preserve WAL/SHM. Prefer filesystem manifests or copied quiescent snapshot for any SQLite audit; no original DB checkpoint/mutation."
+  ],
+  "acceptance": {
+    "fixture": "Short regression green for3variants and real stored/read public manifest agreement; no validation weakening.",
+    "four_known_targets": "All four whole nodes pass and reach their original final assertions; merely absence of ValidationError or SUCCEEDED row is insufficient.",
+    "commit_close": "One real run must demonstrate original fault actually fired and all assertions passed. If INTERRUPTED/unknown exception/fired false remains, mark NOT_CLOSED with exact original exception/target progress; no automatic hypothesis leap or flag forcing. New Astra round before fixing it.",
+    "delivery": "May selectively deliver verified fixture correction if independent commit_close cause remains, but report partial T3 closure explicitly. No all5pass or whole-workflow claim unless evidence supports it.",
+    "research_boundary": "CPU/software evidence only; not actual MuJoCo/hardware/cloud/formal acceptance; previous combined UTC600s criterion unchanged. No UTC rerun in this round."
+  },
+  "deferred_roots": [
+    "Next separately planned root: marker frozen source/version binding consistency.",
+    "Browser Mock draft missing input_mode and asset manifest consistency each require their own evidence-based round; not repaired here.",
+    "If commit_close remains blocked, new narrow diagnosis plan from retained exception before repair."
+  ],
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "tests/test_rgbd_runtime_control.py",
+      "bytes": 12389,
+      "sha256": "72136d76774b668a1b39d2ffcb1f072d5a791282388cbd6040e5fb94f3df6449"
+    },
+    {
+      "path": "tests/test_rgbd_lease_handoff.py",
+      "bytes": 23788,
+      "sha256": "2eea572c84097366671b22a9ca75e044a1a732ce45554dad252ae16d2fb13987"
+    },
+    {
+      "path": "tests/test_visual_worker_factory.py",
+      "bytes": 15847,
+      "sha256": "5f99a6bf6e9850875423a5a9eca5f47bbe88e4ff12b97048f218de19b76c57f9"
+    },
+    {
+      "path": "tests/test_operational_runtime_closure.py",
+      "bytes": 313354,
+      "sha256": "fac58d5486a078a4f5ebc6644c3fb82870962fc620250893106421f26ce45a88"
+    },
+    {
+      "path": "tests/test_phase11_1_simulation_runtime.py",
+      "bytes": 36491,
+      "sha256": "6743085ad0c20cbadc5c41992b6437d3bec0db2b30f4b2a7a393f41db442013b"
+    },
+    {
+      "path": "tests/test_operational_time_v1.py",
+      "bytes": 24211,
+      "sha256": "ff226e9a616462c67d74d29931f8f9a7d21548f4f13f93ced64901b263229c0f"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_workbench/models.py",
+      "bytes": 19539,
+      "sha256": "8c15b971b36438f888af01bed083ab950bd350e9a1e566d7d2513e84b28ceae2"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_workbench/service.py",
+      "bytes": 51373,
+      "sha256": "1821a8a6af37e22e488a09fc2251cac7a09cba3de755d32ebb62e3a932ece0a7"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "bytes": 23391,
+      "sha256": "57a9068006d86105fb0b6bfeb6a872049422bab11159b4d1bc4e4145e3e68e03"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "bytes": 94282,
+      "sha256": "2eff68be6887b2b5d1b891b57dd522ff7bd420231288047e5fdee57fbca0b974"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "bytes": 138430,
+      "sha256": "6e1ae6471e5d75c195057e1f8e1f90854b1efcfe21f21660bd0a7d75a6d21eb2"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "bytes": 121341,
+      "sha256": "c8a5a5a45d80a9123708125e18528b5b083c388ee389a81e44536ae84dad5f9c"
+    },
+    {
+      "path": "tests/test_local_temporal_copy_dispatch.py",
+      "bytes": 8161,
+      "sha256": "51cf42610d1b4c5c6be7594e038e0b54645368763bb38540383a6fb35a8cc437"
+    },
+    {
+      "path": "tests/test_local_temporal_sha_contract.py",
+      "bytes": 2710,
+      "sha256": "990aa654b577aea5edddbfe6cee713c0c814e7b20cb0ba7a4a6cbc810e2ef31b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/manifest-contract-readonly-audit.json",
+      "bytes": 1982,
+      "sha256": "db608e8088a1fe967e3a74db6a6672ab48606c4e6d004da29d1bf853e1280032"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/terminal-confirm-timeout-readonly-audit.json",
+      "bytes": 5376,
+      "sha256": "78343f123168ff89a3ae05a093c17002a5f12ee2c2b38bd91a9885cac6749093"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/terminal-prior-bound-readonly-audit.json",
+      "bytes": 1695,
+      "sha256": "02406d93737c7012ad11aaee6b7e9d9f446d5bae4aaad9123011968821feec24"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/public-memory-readonly-audit.json",
+      "bytes": 1470,
+      "sha256": "337b9987bbc1e0e05ed8a155f828314adf6cf3db84f3e525f9f5c3d96d835517"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/public-sqlite-readonly-audit.json",
+      "bytes": 1185,
+      "sha256": "aec9d59f9c00077d71b82f7d600007195aef8cd75e919e42f594d386d7512b38"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/terminal-commit-close-readonly-audit.json",
+      "bytes": 4709,
+      "sha256": "fa57312d746a47503f45694cf624ccd4c565183b288faffa9f635d2c824b9e2b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/t3-results.json",
+      "bytes": 4672,
+      "sha256": "c858d6eb617d4fe67833dc68625f07d4b6777de684797f08c9939efb38d10919"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_05/invocation.json",
+      "bytes": 5266,
+      "sha256": "421ebf6516cfcd47687deaeba94535fbbb7d9014e7f2af8821424956fc17bfa1"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_05/result.json",
+      "bytes": 554,
+      "sha256": "54a4dc0867672c1ba02dbc52f6d72114fd8cf23985eff9564db674ae8fd74535"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_05/stdout.log",
+      "bytes": 6445,
+      "sha256": "94d77931b2ca53d6d0f25d9663627b061b4171010784ff076a985d2a7e9870f4"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_05/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_05/junit.xml",
+      "bytes": 5749,
+      "sha256": "2bdc56bf399d55737da172b4606e94f56abb38fa65695878de16b7f709b4ad83"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_05/pytest-events.jsonl",
+      "bytes": 6165,
+      "sha256": "e857050ac55303986afe3d17918e416e0f49573200f53e5c7e2949bbf3d2ea8d"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_05/prerequisite.json",
+      "bytes": 14277,
+      "sha256": "8de18c27956168e7a9ff0c79324be494657dacda94d2af0acc3b2d8a8a702c98"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_06/invocation.json",
+      "bytes": 5269,
+      "sha256": "0492434e41892e18321d3ebb7e990f793c1c3a7674304dbbb73152a0be04525f"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_06/result.json",
+      "bytes": 554,
+      "sha256": "c49cb72bcb048e92f39b9118aec8d90c6d6c754d65665abc8d8b1c8f79c659c6"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_06/stdout.log",
+      "bytes": 9227,
+      "sha256": "ffb690dddc79e13ad888c593ddeacdbe9660b1f8f1c64bdf7ccac1d3572db3be"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_06/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_06/junit.xml",
+      "bytes": 9558,
+      "sha256": "bbaa696a7b4dfd404582db26fc098693a4cf7fb1522affeff69be0df44865102"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_06/pytest-events.jsonl",
+      "bytes": 9020,
+      "sha256": "b6b1db88799972a935163cf9a9202ea5d99f15c2f19a03d7a0d7d319c7e5d738"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_06/prerequisite.json",
+      "bytes": 14277,
+      "sha256": "cd06cb58caf29d4ba3b06af9028c383a67eafa640f25d59c1e2bd8ebb3417a2c"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_07/invocation.json",
+      "bytes": 5265,
+      "sha256": "89399430d5e960418482af1cce26c767dbe66585d0f69ba34ef98b79d6822481"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_07/result.json",
+      "bytes": 554,
+      "sha256": "177f0c87d5e979cb113744b52336129364e325a047066aae56787e5fc25a77c7"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_07/stdout.log",
+      "bytes": 9211,
+      "sha256": "d383c436bcebab82c1b037b76ae352d0f44b79f642418627774845300275cd7b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_07/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_07/junit.xml",
+      "bytes": 9546,
+      "sha256": "18dfbad662be70c5657dcd6726b647df8435259d0aec26f2f23f0370cd6a32f6"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_07/pytest-events.jsonl",
+      "bytes": 8996,
+      "sha256": "00082d79d12a14ba7b0c9d7a1651ff615af0769367a185cb42b833c46f4863e6"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_07/prerequisite.json",
+      "bytes": 14277,
+      "sha256": "15688b325658bc9b6006aab17cea74090f4404c0f40e9453a6289d58fec1c63b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_08/invocation.json",
+      "bytes": 5257,
+      "sha256": "a9eec92abc06b5b6de0bd661bfdaa494824bc093d6cb2aa15747663416d1a4c5"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_08/result.json",
+      "bytes": 555,
+      "sha256": "77c0d1c80b12c7de9065970346d9477d40ba11cb8f4a2c412805894ffef63166"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_08/stdout.log",
+      "bytes": 15472,
+      "sha256": "bc0165b933370a6f85a5170e6b0caee0f3873f9889996e3def4c8e3c58c926cb"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_08/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_08/junit.xml",
+      "bytes": 15818,
+      "sha256": "9bf7cf7e287e6c4a87ff5f844d5cf9e40c7da25b4b8274d05deb9429dd282e64"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_08/pytest-events.jsonl",
+      "bytes": 15465,
+      "sha256": "76764e0199569c411df3b6ac33c8b9ce8e2551ec166cf272eb0144682c7b5693"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_08/prerequisite.json",
+      "bytes": 14277,
+      "sha256": "a96cdbfd93544b1a154443aee31693dec0cf21804ec8b06d68cdd318f9f6f6a7"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_09/invocation.json",
+      "bytes": 5257,
+      "sha256": "ea3beae93adb0cfc1852d5b5847f6ac85482fec7e2d43e9fbc96f27a5832d1ba"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_09/result.json",
+      "bytes": 554,
+      "sha256": "9515af4b8238ad7829416b7a63a01d1bc5573f4a58e6d85949a90948e10ad984"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_09/stdout.log",
+      "bytes": 15472,
+      "sha256": "57dd31a51283c23101faca3356bc56edf60f5aed2d8b47fadc6fcd2407ff3cf3"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_09/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_09/junit.xml",
+      "bytes": 15818,
+      "sha256": "ab6b32db720761ba7189db5d6029e34d5ddc665ede70d0866449c19b85cefada"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_09/pytest-events.jsonl",
+      "bytes": 15464,
+      "sha256": "56106cdf398cc3cf30123c1419df519c49140239f87014e46a27fa66aff77ec1"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_09/prerequisite.json",
+      "bytes": 14277,
+      "sha256": "21f81ad9458d4b8a962df0fc2a97e7c1004d4e56d6e9f843db7aa0b5b825eaaa"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation/r235_startup_prerequisite.py",
+      "bytes": 5022,
+      "sha256": "e46122f6ce00f9c5d0e13be33301b8861b567cb3f25c33d41447f1ea68880e0d"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/inputs/legacy-goldens.json",
+      "bytes": 121893,
+      "sha256": "10452e376a00b1672d540fc1332c6beeeaa42b6cff44f03f425531e26a5d0c38"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/adapters/r373_tracking.py",
+      "bytes": 958,
+      "sha256": "474f788b6caef1dec65faa5c76c968428793b380c2e1c8912a632d5d43d3c6db"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/preflight/workspace-source-before.json",
+      "bytes": 187424,
+      "sha256": "afbf100dd9fc5a6641cf595b77e41b7e595075f37ceb84bea7340118096c9090"
+    }
+  ],
+  "planner_work": "Read-only code/evidence, hashes, git HEAD/status; wrote this plan only. No product imports/tests/signals/network/Git mutation. Existing failed rg path read was investigation-only, not a product failure."
+}

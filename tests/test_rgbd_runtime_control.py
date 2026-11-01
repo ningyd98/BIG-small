@@ -175,13 +175,28 @@ def test_capture_works_without_model(monkeypatch, tmp_path) -> None:
 
 
 def _queued_closed_loop_worker(tmp_path, draft=None):
+    from copy import deepcopy
+
     from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
     from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
         SQLiteSimulationJobRepository,
     )
     from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+    from cloud_edge_robot_arm.simulation_workbench.models import ExperimentManifest
 
     repo = SQLiteSimulationJobRepository(tmp_path / "runtime.db")
+    effective_draft = deepcopy(
+        draft or {"input_mode": "RGBD", "execution_scope": "VISION_CLOSED_LOOP"}
+    )
+    # Synthetic identifiers describe this software fixture, not live source provenance.
+    manifest = ExperimentManifest(
+        manifest_id="manifest",
+        normalized_config=deepcopy(effective_draft),
+        source_commit="test",
+        source_tree_hash="test",
+        run_count=1,
+        reproducibility_hash="hash",
+    )
     job = repo.create_job(
         run_id="terminal-test",
         batch_id="",
@@ -191,7 +206,8 @@ def _queued_closed_loop_worker(tmp_path, draft=None):
         seed=0,
         manifest_id="manifest",
         reproducibility_hash="hash",
-        draft=draft or {"input_mode": "RGBD", "execution_scope": "VISION_CLOSED_LOOP"},
+        draft=effective_draft,
+        manifest=manifest.model_dump(mode="json"),
         timeout_seconds=60,
         max_attempts=1,
         artifact_root="terminal-test",

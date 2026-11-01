@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1113.625" timestamp="2026-10-25T23:30:08.506387+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_runtime_closure" name="test_local_new_schema_ignores_utc_jump_but_external_does_not[memory]" time="1112.862"><failure message="pydantic_core._pydantic_core.ValidationError: 1 validation error for SceneSummary&#10;updated_at&#10;  Field required [type=missing, input_value={'scene_version': 1}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70d8057553d0&gt;
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round368-...-utc-sizing-decision-20261025/implementation/utc_memory_sizing_01/persistent-basetemp/test_local_new_schema_ignores_0')
+request = &lt;FixtureRequest for &lt;Function test_local_new_schema_ignores_utc_jump_but_external_does_not[memory]&gt;&gt;
+backend = 'memory'
+
+    @pytest.mark.parametrize("backend", ["memory", "sqlite"])
+    def test_local_new_schema_ignores_utc_jump_but_external_does_not(monkeypatch, tmp_path, request, backend):
+        from datetime import UTC, datetime, timedelta
+        from dataclasses import replace
+    
+        with _b_t2_attempt(request) as attempt:
+            _b_t3_api()
+            attempt["entered_behavior"] = True
+            observations = []
+            with _b_t2_observe(monkeypatch, attempt) as observed:
+                for days in (-1, 1):
+                    basis = datetime.now(UTC)
+                    with monkeypatch.context() as shifted:
+                        _b_t3_utc(shifted, basis + timedelta(days=days))
+    
+                        def exercise(runtime, session, worker, repo, job, events, reads, observed):
+                            from types import SimpleNamespace
+                            from cloud_edge_robot_arm.vision import operational_windows as windows
+                            from cloud_edge_robot_arm.vision.execution import _VisualEpisode
+                            from cloud_edge_robot_arm.edge.evidence.conditions import _operational_freshness
+                            from cloud_edge_robot_arm.vision.supervision import decide_supervision
+    
+                            initial = runtime.bootstrap.to_payload()
+                            cap = runtime.remaining_app_seconds()
+                            data = _b_t3_ground_and_route(runtime, events, backend + str(days))
+                            supervisor = _b_t3_supervision(runtime, data, backend + str(days), observed)
+                            reference = windows._reference_for_observation(data["observation"], "condition")
+                            assert windows._check_reference(reference).status == "VALID"
+                            assert windows._check_observation(data["observation"], "condition", reference=reference) is True
+                            assert _operational_freshness(replace(data["online"], operational_reference=reference), 5.0) is True
+                            assert windows._check_context(supervisor["context"], 5.0) is True
+                            assert decide_supervision(supervisor["decision"], supervisor["context"],
+                                                      supervisor["context"], maximum_age_s=5.0) == "CONTINUE"
+                            forged = copy.deepcopy(reference)
+                            forged["source_identity"] = "0" * 64
+                            assert windows._check_reference(forged).status == "UNKNOWN"
+                            assert _operational_freshness(replace(data["online"], operational_reference=forged), 5.0) is False
+                            # Isolated existing B check_active method harness: no episode constructor,
+                            # backend initialization, skill executor, model provider or physics call.
+                            episode = object.__new__(_VisualEpisode)
+                            episode.policy = SimpleNamespace(cancelled=None)
+                            episode.worker_runtime = runtime
+                            episode.backend = SimpleNamespace(_episode_id=runtime.episode_id)
+                            episode.robot = SimpleNamespace(get_state=lambda: data["robot"])
+                            episode.worker_call = lambda action: action()
+                            episode.budget = runtime.verification_state
+                            episode.deadline = float("inf")
+                            _VisualEpisode.check_active(episode)
+                            following = runtime.remaining_app_seconds()
+                            assert 0 &lt; following &lt;= cap
+                            assert runtime.bootstrap.to_payload()["original_time"] == initial["original_time"]
+                            return {"utc_shift_days": days, "original_time": initial["original_time"],
+                                    "cap_before": cap, "cap_after": following,
+                                    "route": data["route"], "supervision": supervisor["record"],
+                                    "supervision_cadence": supervisor["cadence"],
+                                    "adapter_reference": reference, "external": _b_t3_external_utc(
+                                        data["observation"], data["contract"], basis + timedelta(days=days)),
+                                    "execution_B_check_active_called": True,
+                                    "cap_sample_thread": threading.get_ident(), "model_calls": 0}
+    
+&gt;                       observations.append(_b_t2_exercise(shifted, tmp_path / (backend + str(days)),
+                                                          backend, observed, exercise))
+
+tests/test_operational_runtime_closure.py:5688: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:4128: in _b_t2_exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:296: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:754: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:799: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1153: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:4105: in episode
+    outcomes.append(callback(runtime, session, worker, repo, job, events, reads, observed))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:5683: in exercise
+    "adapter_reference": reference, "external": _b_t3_external_utc(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+observation = RGBDObservation(frame_id='memory-1:owned-frame', observation_id='memory-1:owned-frame', captured_at=datetime.datetime(...sode', calibration_version='cal-1', checksum_sha256='ec86969fa74ea96e423c7f57fb63cf173c4bbc641c7157826043be0f40241afd')
+contract = TaskContract(task_id='software-shared-backend-episode', plan_version=1, command_seq=1, timestamp=datetime.datetime(202...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+at = datetime.datetime(2026, 10, 24, 15, 30, 9, 356827, tzinfo=datetime.timezone.utc)
+
+    def _b_t3_external_utc(observation, contract, at):
+        from datetime import timedelta
+        from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
+        from cloud_edge_robot_arm.cloud.planning.pipeline import check_scene_sufficiency
+        from cloud_edge_robot_arm.edge.evidence.models import CommitContext, DecisionEnvelope
+        from cloud_edge_robot_arm.edge.evidence.validator import validate_decision_commit
+    
+        rows = []
+        for milliseconds, valid in ((1000, True), (1001, False), (-5000, True), (-5001, False)):
+            raw = observation.model_dump(mode="json")
+            raw.update(captured_at=(at + timedelta(milliseconds=milliseconds)).isoformat(), checksum_sha256="")
+            external = type(observation).model_validate(raw)
+            value = InitialPlanningRequest(user_instruction=contract.user_instruction,
+&gt;               observation=external, scene=SceneSummary(scene_version=contract.scene_version))
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for SceneSummary
+E           updated_at
+E             Field required [type=missing, input_value={'scene_version': 1}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_operational_runtime_closure.py:5612: ValidationError</failure></testcase></testsuite></testsuites>

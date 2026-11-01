@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="128.909" timestamp="2026-10-24T17:00:45.743150+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_runtime_closure" name="test_private_startup_to_transaction_grounding[memory]" time="128.156"><failure message="ValueError: exact source binding scope required">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f640bb6d490&gt;
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round346-p6-t3-successor-execution-capture-20261024/implementation/t3_01/persistent-basetemp/test_private_startup_to_transa0')
+request = &lt;FixtureRequest for &lt;Function test_private_startup_to_transaction_grounding[memory]&gt;&gt;
+backend = 'memory'
+
+    @pytest.mark.parametrize("backend", ["memory", "sqlite"])
+    def test_private_startup_to_transaction_grounding(monkeypatch, tmp_path, request, backend):
+        with _b_t2_attempt(request) as attempt:
+            _b_t3_api()
+            attempt["entered_behavior"] = True
+            observations = []
+            with _b_t2_observe(monkeypatch, attempt) as observed:
+                def exercise(runtime, session, worker, repo, job, events, reads, observed):
+                    original_time = copy.deepcopy(runtime.bootstrap.to_payload()["original_time"])
+                    owner = runtime._operational_owner
+                    assert owner._clock.domain.owner_thread_id == session.main_thread == threading.get_ident()
+                    assert owner._clock.domain != session.domain
+                    assert runtime.remaining_app_seconds() &gt; 0
+                    before = _b_t2_snapshot(events, reads)
+                    data = _b_t3_ground_and_route(runtime, events, backend + ":startup")
+                    original_hash = data["original"].digest()
+                    before_heartbeat = _b_t2_plain(runtime._read_lease())
+                    repo.heartbeat_lease(session.lease_id, lease_ttl_seconds=worker.lease_ttl_seconds)
+                    after_heartbeat = _b_t2_plain(runtime._read_lease())
+                    assert after_heartbeat["generation"] &gt; before_heartbeat["generation"]
+                    assert data["original"].digest() == runtime.original.digest() == original_hash
+                    assert runtime.original.local_time.to_payload() == original_time
+                    assert runtime.bootstrap.to_payload()["original_time"] == original_time
+                    assert after_heartbeat["original_acquisition"] == before_heartbeat["original_acquisition"]
+                    assert after_heartbeat["source_identity"] == before_heartbeat["source_identity"]
+                    assert original_time["lease_identity"]["epoch"] == session.epoch
+                    assert runtime.remaining_app_seconds() &gt; 0
+                    return {"before": before, "after": _b_t2_snapshot(events, reads),
+                            "original_time": original_time, "original_hash": original_hash,
+                            "grounding": data["binding"].to_payload(), "route": data["route"],
+                            "before_heartbeat": before_heartbeat, "after_heartbeat": after_heartbeat,
+                            "model_calls": 0, "physical_actions": 0, "native_admission": False}
+    
+&gt;               observations.append(_b_t2_exercise(monkeypatch, tmp_path / backend, backend, observed, exercise))
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_runtime_closure.py:5570: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:4128: in _b_t2_exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:296: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:754: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:799: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1153: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_runtime_closure.py:4105: in episode
+    outcomes.append(callback(runtime, session, worker, repo, job, events, reads, observed))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:5551: in exercise
+    data = _b_t3_ground_and_route(runtime, events, backend + ":startup")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:5238: in _b_t3_ground_and_route
+    binding = owner_module.bind_step_grounding(
+src/cloud_edge_robot_arm/vision/owner_registration.py:1175: in bind_step_grounding
+    return runtime._local_bind_grounding({
+src/cloud_edge_robot_arm/vision/worker_runtime.py:1194: in _local_bind_grounding
+    binding = LocalStepGroundingBinding.from_payload(self._local_envelope(
+src/cloud_edge_robot_arm/vision/local_temporal.py:2027: in from_payload
+    return cls._from_local_payload(payload, cls._tag)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:1989: in _from_local_payload
+    envelope = decode_local_payload(_object(payload), tag)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:2000: in decode_local_payload
+    envelope = LocalEnvelope.from_payload(payload)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/local_temporal.py:1909: in from_payload
+    _semantic(tag, body, original, diagnostics,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tag = 'visual.owner.grounding.local.v1'
+body = {'binding_scope': 'DURABLE_BINDING_ONLY', 'calibration_version': 'cal-1', 'command_seq': 1, 'current_identity': {'atte...: 'software-shared-backend-episode', 'job_id': 'job-c521b711f5d04d5f', 'lease_id': 'lease-aab10230c9404b7d', ...}, ...}
+original = {'app_domain': {'accuracy_status': 'UNVERIFIED', 'api': 'Linux time.clock_gettime_ns(time.CLOCK_BOOTTIME)', 'boot_id':...reference': {'age_constraints': [], 'attempt': 1, 'budget_ns': 60000000000, 'budget_semantics': 'HARD_OPEN', ...}, ...}
+diagnostics = {'monotonic': None, 'utc': {}}
+
+    def _semantic(
+        tag: str, body: dict[str, JSONValue], original: dict[str, JSONValue],
+        diagnostics: dict[str, JSONValue], *, evidence_decision: dict[str, JSONValue] | None = None,
+        evidence_transaction: dict[str, JSONValue] | None = None,
+    ) -&gt; None:
+        from cloud_edge_robot_arm.cloud.planning.models import PlannerDraft
+        from cloud_edge_robot_arm.cloud.replanning.visual_dependencies import StepDependency, find_repair_window
+        from cloud_edge_robot_arm.contracts.models import RobotState, SkillExecutionResult, TaskContract, TaskStep
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import VisualBootstrapDefinition
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import requirement_from_payload
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import _bundle
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+        from cloud_edge_robot_arm.vision.owner_registration import local_owner_identity
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext, SupervisionDecision
+    
+        scope = body.get("scope")
+        expected_scope = "BOOTSTRAP_SOURCE_ONLY" if tag.startswith("visual.bootstrap.") else "SUPERVISION_SOURCE_ONLY" if tag.startswith("visual.supervision.") else "SOURCE_ROUTE_ONLY"
+        if "scope" in FIELDS[tag] and scope != expected_scope:
+            raise ValueError("exact detached semantic scope required")
+        if "binding_scope" in body and body["binding_scope"] != ("DURABLE_BINDING_ONLY" if tag == "visual.owner.publication.local.v1" else "SOURCE_BINDING_ONLY"):
+&gt;           raise ValueError("exact source binding scope required")
+E           ValueError: exact source binding scope required
+
+src/cloud_edge_robot_arm/vision/local_temporal.py:1468: ValueError</failure></testcase></testsuite></testsuites>
