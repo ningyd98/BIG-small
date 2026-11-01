@@ -1,5 +1,15 @@
 # Current Authoritative Status
 
+## 2026-11-01 全流程有界重跑终态（R373–R375）
+
+诊断已结束，全流程未通过，formal_accepted=false。4732唯一Python节点：1845通过、54失败、17未完成、2743在阶段停止前未轮到、71未运行、2按选择条件排除；64历史失败、18历史未完成、11恢复分别保留。235续跑子项全部记账不等于全部测试执行完毕。
+
+UTC相关5项短回归及memory/SQLite完整长场景均有本轮通过记录，但长场景合计4711.366秒，原合计600秒验收未满足。T3为4通过5失败；剩余主要问题包括4项空manifest公共读取、1项故障钩子未到达、44项旧标记来源绑定、1项资产SHA不一致、运行等待/覆盖缺口及静态债务。
+
+MuJoCo关键Python组24通过；前端43单测及类型/ESLint/构建通过。默认浏览器21通过、18未通过、1跳过，Mock旧草稿省略input_mode后落入RGBD默认值并被阻塞；研究页面3通过仅使用软件fixture。R223补齐环境后9项通过，R375移除模块级数据库覆盖后的同序7项一次通过，原失败不改写。
+
+1050被测源输入无漂移；实际工作区包含未提交性能候选，不是干净HEAD受控对照。selection/foundation未请求执行，power缺前置未运行完整方法先导，INITIAL缺完整独立资源预算未冻结。真实Max、独立校准、合格B0、风险/方法/功效/FINAL及正式研究仍不能由软件结果替代。详见[最终阶段总结](../artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/phase-summary.md)、[详细问题分析](../artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/issue-analysis.md)。精选证据按明确路径交付，Git提交后传输回执另记；完整raw和DB保持本地，远端不是完整复现包。以下保留此前验收时点。
+
 ## 2026-11-01 UTC helper 与场景时间边界限定修复
 
 R370 已补齐外部 UTC helper 的 `request_id`（保留 R369 的 `updated_at`），但真实短合同随后暴露时间边界误接受；原失败及已消耗额度保留。实际 Astra R371 规划后，`check_scene_sufficiency` 两分支改用精确 `timedelta` 比较，避免浮点毫秒与整数截断吞掉越界时间。RGB-D 未来 1 秒容忍、默认 5 秒 TTL、边界等号有效及 summary 分支既有未来时间语义保持。

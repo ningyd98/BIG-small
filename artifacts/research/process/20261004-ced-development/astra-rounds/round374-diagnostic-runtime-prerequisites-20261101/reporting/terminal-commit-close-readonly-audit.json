@@ -1,0 +1,123 @@
+{
+  "observed_utc": "2026-11-01T05:12:18.482943+00:00",
+  "source": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_05/persistent-basetemp/test_b_terminal_publication_co0/commit_close/runtime.db",
+    "bytes": 12296192,
+    "sha256_before": "d750c339279aef74a2db448486b67c9faaecb55a8c5ead40087f8ac7ff8f7043",
+    "sha256_after": "d750c339279aef74a2db448486b67c9faaecb55a8c5ead40087f8ac7ff8f7043"
+  },
+  "read_mode": "SQLite URI mode=ro&immutable=1 after test process reaped; no WAL present",
+  "queries": {
+    "jobs": "SELECT job_id,status,error_code,error_message,attempt,artifact_paths_json FROM simulation_jobs",
+    "attempts": "SELECT attempt,result,error,ended_at FROM simulation_job_attempts",
+    "leases": "SELECT lease_id,released_at FROM simulation_job_leases",
+    "operational": "SELECT lifecycle,durable_phase,terminal_reason FROM simulation_operational_leases_v1",
+    "events": "SELECT event_type,previous_status,next_status,reason_code,payload_json FROM simulation_job_events ORDER BY sequence"
+  },
+  "rows": {
+    "jobs": [
+      {
+        "job_id": "job-6698b880a7e6419b",
+        "status": "INTERRUPTED",
+        "error_code": "operational_epoch_ended",
+        "error_message": "original worker poll ended",
+        "attempt": 1,
+        "artifact_paths_json": "{}"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt": 1,
+        "result": "INTERRUPTED",
+        "error": "original worker poll ended",
+        "ended_at": "2026-11-01T05:11:02.666236+00:00"
+      }
+    ],
+    "leases": [
+      {
+        "lease_id": "lease-fbe6d9f5b3f6454c",
+        "released_at": "2026-11-01T05:11:02.666236+00:00"
+      }
+    ],
+    "operational": [
+      {
+        "lifecycle": "TERMINAL",
+        "durable_phase": "TERMINATED",
+        "terminal_reason": "original worker poll ended"
+      }
+    ],
+    "events": [
+      {
+        "event_type": "job_created",
+        "previous_status": "",
+        "next_status": "CREATED",
+        "reason_code": "created",
+        "payload_json": "{\"backend\":\"MUJOCO\",\"run_id\":\"terminal-test\",\"status\":\"CREATED\"}"
+      },
+      {
+        "event_type": "job_queued",
+        "previous_status": "CREATED",
+        "next_status": "QUEUED",
+        "reason_code": "test",
+        "payload_json": "{\"lease_id\":\"\",\"status\":\"QUEUED\",\"worker_id\":\"\"}"
+      },
+      {
+        "event_type": "job_leased",
+        "previous_status": "QUEUED",
+        "next_status": "LEASED",
+        "reason_code": "lease_acquired",
+        "payload_json": "{\"lease_id\":\"lease-fbe6d9f5b3f6454c\",\"worker_id\":\"worker\"}"
+      },
+      {
+        "event_type": "job_started",
+        "previous_status": "LEASED",
+        "next_status": "STARTING",
+        "reason_code": "starting",
+        "payload_json": "{\"lease_id\":\"lease-fbe6d9f5b3f6454c\",\"status\":\"STARTING\",\"worker_id\":\"worker\"}"
+      },
+      {
+        "event_type": "job_started",
+        "previous_status": "STARTING",
+        "next_status": "RUNNING",
+        "reason_code": "running",
+        "payload_json": "{\"lease_id\":\"lease-fbe6d9f5b3f6454c\",\"status\":\"RUNNING\",\"worker_id\":\"worker\"}"
+      }
+    ]
+  },
+  "publication_row_counts": {
+    "simulation_publication_confirmations_v1": 0,
+    "simulation_local_publications_v1": 9
+  },
+  "interpretation": "Fault hook was not reached. Earlier worker terminal state must be investigated before claiming a publication-confirmation bug.",
+  "source_observations": [
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "lines": [
+        374,
+        387
+      ],
+      "fact": "The operational-session exception branch computes an exception string, invalidates the session, invokes cleanup and returns.",
+      "bytes": 94282,
+      "sha256": "2eff68be6887b2b5d1b891b57dd522ff7bd420231288047e5fdee57fbca0b974"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "lines": [
+        2532
+      ],
+      "fact": "Operational cleanup records the fixed reason original worker poll ended.",
+      "bytes": 138430,
+      "sha256": "6e1ae6471e5d75c195057e1f8e1f90854b1efcfe21f21660bd0a7d75a6d21eb2"
+    },
+    {
+      "path": "tests/test_operational_runtime_closure.py",
+      "lines": [
+        5740
+      ],
+      "fact": "The first after-poll assertion requires the terminal fault hook to have fired.",
+      "bytes": 313354,
+      "sha256": "fac58d5486a078a4f5ebc6644c3fb82870962fc620250893106421f26ce45a88"
+    }
+  ],
+  "root_cause_status": "Underlying early exception unknown; no product or fixture change or extra replay performed."
+}

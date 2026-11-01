@@ -1,5 +1,15 @@
 # 2026-10-04 后续研发阶段总结
 
+## 2026-11-01 接续：R373–R375 全流程有界诊断收尾
+
+本轮按实际Astra计划完成可用阶段的有界尝试与未运行记账，不宣称全流程通过。4732唯一Python节点最终为1845通过、54失败、17未完成、2743阶段停止前未轮到、71未运行、2排除；64历史失败、18历史未完成、11个限定恢复保留。所有运行终态已收齐，源码清单1050项无漂移。
+
+UTC五项短回归及两后端长场景通过，但两后端外层合计4711.366秒仍不满足原600秒门槛；T3九项4通过5失败。44项标记绑定、1项资产登记、4项T3空manifest、1项未触发故障钩子、4项中文checker及17项未完成仍需后续独立计划。MuJoCo关键24项通过，前端43单测、类型、ESLint、构建通过；默认浏览器21通过18未通过1跳过，研究页面3通过。Mock浏览器草稿缺input_mode而默认RGBD的合同不一致已只读定位，未修复重跑。
+
+R374补齐R223前置后9项通过；R375仅移除模块级SIMULATION_RUNTIME_DB覆盖的同序7项对照一次通过，内层/外层/每测试DB路径共同验收，原6通过1失败保持。当前工作区含未提交性能候选，不将报告提交冒充干净源码完整回归。selection/foundation未请求执行，power缺前置，INITIAL缺完整独立资源预算；真实研究与FINAL未验收。
+
+[阶段总结](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/phase-summary.md)、[详细问题分析](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/issue-analysis.md)和[逐节点历史](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/coverage-manifest.json)作为本轮终态入口。后续修复继续先交实际gpt-6-astra规划，完整raw/DB不随精选证据冒充完整远端复现。Git提交与传输结果在报告后另行记录。以下保留此前阶段记录。
+
 ## 2026-11-01 接续：R370/R371 UTC 限定修复
 
 用户授权修复当前问题1。R370补齐helper的`request_id`后，单次短GREEN出现新的时间边界误接受，原1failure及完整证据保留，未重试。实际gpt-6-astra制定R371，31项直接输入匹配后，将场景新鲜度判断从浮点毫秒取整改为精确timedelta比较，保持原阈值、等号和分支语义。原短合同4006字节不变，追加每分支12项默认/自定义TTL边界检查。

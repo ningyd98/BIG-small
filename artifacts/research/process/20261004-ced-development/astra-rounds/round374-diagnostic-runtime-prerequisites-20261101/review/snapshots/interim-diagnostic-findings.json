@@ -1,0 +1,133 @@
+{
+  "schema": "bigsmall.r373-r375.diagnostic-findings.v1",
+  "state": "INTERIM_REMAINING_STAGES_RUNNING",
+  "updated_utc": "2026-11-01T06:25:19.061324+00:00",
+  "findings": [
+    {
+      "id": "UTC-01",
+      "status": "SOFTWARE_CASES_PASS_PERFORMANCE_ACCEPTANCE_UNMET",
+      "finding": "R371相关5项短回归及memory/SQLite完整UTC用例均有本轮通过记录；两个长用例外层合计4711.366125764秒，原合计600秒门槛未达标。",
+      "cause_status": "Measured elapsed time; no controlled performance attribution.",
+      "evidence": [
+        "utc-short-regression-live.json",
+        "utc-memory-result.json",
+        "utc-sqlite-result.json",
+        "utc-coverage-boundary.json"
+      ],
+      "limits": "当前脏工作区含local_temporal候选；偏移在各新场景启动前安装，未演示同一活动任务的真实宿主时钟跳变。"
+    },
+    {
+      "id": "T3-01",
+      "status": "OPEN",
+      "finding": "confirm_timeout、prior_bound、两个正常发布对照共4项，在公共读取ExperimentManifest时因空manifest缺6个必填字段失败。",
+      "cause_status": "Source-backed inherited test factory / public-reader contract mismatch.",
+      "evidence": [
+        "manifest-contract-readonly-audit.json",
+        "terminal-confirm-timeout-readonly-audit.json",
+        "terminal-prior-bound-readonly-audit.json",
+        "public-memory-readonly-audit.json",
+        "public-sqlite-readonly-audit.json"
+      ],
+      "limits": "局部拒绝/CONFIRMED记录不能替代完整断言完成；不以放宽产品校验换取通过。"
+    },
+    {
+      "id": "T3-02",
+      "status": "OPEN",
+      "finding": "commit_close测试的故障钩子未触发。持久记录仅留下INTERRUPTED/operational_epoch_ended/original worker poll ended，未恢复更早的具体异常。",
+      "cause_status": "Early termination observed; original cause unresolved.",
+      "evidence": [
+        "terminal-commit-close-readonly-audit.json"
+      ],
+      "limits": "未到达注入点，不能据此认定已验证连接关闭故障或已证实不安全发布。"
+    },
+    {
+      "id": "REG-01",
+      "status": "OPEN",
+      "finding": "标记关联36项和范围集成8项在同一登记来源校验处被拒绝；冻结记录绑定10月5日源码，当前为10月17日版本。",
+      "cause_status": "Confirmed frozen-source/current-source version mismatch.",
+      "evidence": [
+        "../marker-registration-readonly-audit.json",
+        "../marker-source-history-readonly.json"
+      ],
+      "limits": "不改写历史登记或实验字节；后续需单独规划版本一致的登记与验证。"
+    },
+    {
+      "id": "REG-02",
+      "status": "OPEN",
+      "finding": "资产注册表1项失败：scene.xml实际SHA与assets/manifest.yaml登记SHA不一致，二者均与UTC修复前提交相同。",
+      "cause_status": "Confirmed pre-existing asset manifest mismatch.",
+      "evidence": [
+        "asset-manifest-readonly-audit.json"
+      ],
+      "limits": "与标记源码登记是两个独立绑定问题；本轮未修复。"
+    },
+    {
+      "id": "RUN-01",
+      "status": "OPEN_COVERAGE_INCOMPLETE",
+      "finding": "多个普通运行模块及后续闭环阶段存在未完成用例，完整数量在全部阶段终态后核对。",
+      "cause_status": "Mixed unresolved waits, potentially expensive pipelines, and explicit group-budget truncation.",
+      "evidence": [
+        "../process/continuation-eteac-live.json",
+        "../process/closure01-live.json"
+      ],
+      "limits": "Phase12调用完整validation生成；闭环心跳节点约289秒时CPU4.35秒且无计算子进程；/proc瞬时等待不等于死锁证明。第六组末模块仅1.045秒额度，不计作长耗时缺陷。"
+    },
+    {
+      "id": "ENV-01",
+      "status": "CORRECTED_ENV_COMPARISON_PASSED",
+      "finding": "原9项writer-binding失败出现finally环境变量缺失；R374补齐独立R223资源/案例目录后，唯一完整模块对照9项通过。",
+      "cause_status": "Missing runner prerequisites observed; corrected-env comparison passes.",
+      "evidence": [
+        "../implementation/r223_env_corrected/result.json",
+        "../implementation/r223_env_corrected/junit.xml"
+      ],
+      "limits": "原finally错误可能掩盖更早异常；旧9项失败保留，不声称环境以外所有顺序因素均已排除。"
+    },
+    {
+      "id": "ENV-02",
+      "status": "ASTRA_PLANNED_NOT_RUN",
+      "finding": "工作台同模块6通过/1失败，WebSocket预期run_state、实际job_created；模块级SIMULATION_RUNTIME_DB覆盖各测试自己的临时数据库路径。",
+      "cause_status": "Strong runner-induced database-scope hypothesis; comparison pending.",
+      "evidence": [
+        "../../round375-diagnostic-database-scope-20261101/plan.json",
+        "../../round375-diagnostic-database-scope-20261101/adapter-review-02.json"
+      ],
+      "limits": "当前continuation完整终态后才可执行同序7节点一次，子进程60秒、外层90秒，零重试。"
+    },
+    {
+      "id": "STATIC-01",
+      "status": "OPEN",
+      "finding": "Ruff1137项/39文件；mypy539项/18文件；Python格式135文件；中文说明631文件；前端Prettier11文件。",
+      "cause_status": "Tool findings confirmed; file identity alone does not establish causality.",
+      "evidence": [
+        "static-findings.json",
+        "static-source-provenance.json"
+      ],
+      "limits": "这些不计作pytest功能失败。Ruff941项所在文件与HEAD同字节，189项位于脏local_temporal，7项位于未跟踪测试；mypy对应524/15。未运行独立干净HEAD对照。"
+    },
+    {
+      "id": "DOC-01",
+      "status": "OPEN_REVIEW_NEEDED",
+      "finding": "文档检查18次命中：11次脚本引用、1处Markdown链接、6次敏感文本扫描；中文checker另外4项pytest失败。",
+      "cause_status": "Scanner/checker outputs confirmed, semantic review still required.",
+      "evidence": [
+        "static-findings.json"
+      ],
+      "limits": "6次文本命中不等于6次凭据泄露；11次脚本引用对应5个不同目标。"
+    },
+    {
+      "id": "RESEARCH-01",
+      "status": "NOT_ACCEPTED",
+      "finding": "selection/foundation未请求执行；power缺前置未运行完整方法先导；INITIAL缺独立编制完整资源预算而拒绝冻结。正式G1及后续研究验收未成立。",
+      "cause_status": "Recorded nonexecution and prerequisite gaps.",
+      "evidence": [
+        "../../round373-full-workflow-rerun-20261101/implementation/ced_selection/stdout.log",
+        "../../round373-full-workflow-rerun-20261101/implementation/ced_foundation/stdout.log",
+        "../../round373-full-workflow-rerun-20261101/implementation/ced_power/stdout.log",
+        "../../round373-full-workflow-rerun-20261101/implementation/ced_initial/stderr.log"
+      ],
+      "limits": "NOT_EXECUTED记录及浏览器4200条软件BLOCKED fixture不算真实物理结果，JOINT/LOCAL_RECOVER/真实dispatch不因此启用。"
+    }
+  ],
+  "policy": "Only diagnosed observations and bounded comparisons. New fixes require an actual Astra plan; no product/test/golden changes in R373-R375."
+}

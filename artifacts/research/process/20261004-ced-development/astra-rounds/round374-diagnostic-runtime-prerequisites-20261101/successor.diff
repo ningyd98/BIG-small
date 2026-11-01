@@ -1,0 +1,105 @@
+--- R373/run_diagnostics.py
++++ R374/run_diagnostics.py
+@@ -12,9 +12,10 @@
+ import time
+ 
+ ROUND = Path(__file__).resolve().parent
++ORIGINAL_ROUND = ROUND.parent / 'round373-full-workflow-rerun-20261101'
+ ROOT = Path.cwd()
+-PLAN = json.loads((ROUND / 'plan.json').read_text())
+-BASELINE = json.loads((ROUND / 'preflight/workspace-source-before.json').read_text())
++PLAN = json.loads((ORIGINAL_ROUND / 'plan.json').read_text())
++BASELINE = json.loads((ORIGINAL_ROUND / 'preflight/workspace-source-before.json').read_text())
+ PYTHON = str(ROOT / '.venv/bin/python')
+ EXCLUDE = ' and '.join('not ' + marker for marker in PLAN['collection']['marker_exclusions'])
+ 
+@@ -29,7 +30,7 @@
+         p = ROOT / row['path']
+         if not p.exists() or hashlib.sha256(p.read_bytes()).hexdigest() != row['sha256']:
+             drift.append(row['path'])
+-    return {'manifest': str(ROUND / 'preflight/workspace-source-before.json'), 'drift': drift}
++    return {'manifest': str(ORIGINAL_ROUND / 'preflight/workspace-source-before.json'), 'drift': drift}
+ 
+ 
+ def prepare():
+@@ -75,7 +76,14 @@
+                PYTHONPYCACHEPREFIX=str(directory / 'pycache'), RUFF_CACHE_DIR=str(directory / 'ruff-cache'),
+                MYPY_CACHE_DIR=str(directory / 'mypy-cache'), R373_PYTEST_EVENTS=str(directory / 'pytest-events.jsonl'),
+                R373_STAGE_DIR=str(directory))
+-    env['PYTHONPATH'] += ':' + str(ROUND / 'adapters')
++    env['PYTHONPATH'] += ':' + str(ORIGINAL_ROUND / 'adapters')
++    for name in ('r223/resources', 'r223/cases', 'runtime/artifacts'):
++        (directory / name).mkdir(parents=True)
++    env.update(BIGSMALL_R223_RESOURCE_ROOT=str(directory / 'r223/resources'),
++               BIGSMALL_R223_CASE_ROOT=str(directory / 'r223/cases'),
++               MODEL_CONTROL_DB=str(directory / 'runtime/model_control.db'),
++               SIMULATION_RUNTIME_DB=str(directory / 'runtime/simulation_runtime.db'),
++               DASHBOARD_ARTIFACT_ROOT=str(directory / 'runtime/artifacts'))
+     if stage.get('closure'):
+         plugin = ROOT / PLAN['environment']['closure_plugin']
+         env['PYTHONPATH'] += ':' + str(plugin.parent)
+@@ -124,6 +132,32 @@
+     signals = []
+     with (directory / 'stdout.log').open('xb') as out, (directory / 'stderr.log').open('xb') as err:
+         process = subprocess.Popen(argv, cwd=invocation['cwd'], env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL, start_new_session=True)
++        try:
++            monitor(process, started, stage, out, err, signals, result_state := {})
++        finally:
++            if process.poll() is None:
++                os.killpg(process.pid, signal.SIGTERM)
++                try:
++                    process.wait(timeout=5)
++                except subprocess.TimeoutExpired:
++                    os.killpg(process.pid, signal.SIGKILL)
++                    process.wait(timeout=10)
++        state = result_state.get('state', 'INTERRUPTED')
++        process.wait()
++    result = {'stage_id': stage_id, 'state': state, 'returncode': process.returncode,
++              'elapsed_s': time.monotonic() - started, 'ended_utc': datetime.now(UTC).isoformat(),
++              'signals': signals, 'reaped': True, 'environment_retry': retry,
++              'junit_exists': (directory / 'junit.xml').exists(), 'source_after': source_check(),
++              'stream_bytes': {name: (directory / name).stat().st_size for name in ('stdout.log', 'stderr.log')}}
++    write(directory / 'result.json', result)
++    with (ROUND / 'progress.md').open('a') as ledger:
++        ledger.write(f"\n- {directory.name}: {state}, exit={process.returncode}, {result['elapsed_s']:.3f}s.\n")
++    print(json.dumps(result, ensure_ascii=False), flush=True)
++
++
++def monitor(process, started, stage, out, err, signals, result_state):
++    state = 'FINISHED'
++    try:
+         while process.poll() is None:
+             if time.monotonic() - started >= stage['timeout_s']:
+                 state = 'TIMEOUT'
+@@ -138,16 +172,9 @@
+                     process.wait(timeout=10)
+                 break
+             time.sleep(0.5)
+-        process.wait()
+-    result = {'stage_id': stage_id, 'state': state, 'returncode': process.returncode,
+-              'elapsed_s': time.monotonic() - started, 'ended_utc': datetime.now(UTC).isoformat(),
+-              'signals': signals, 'reaped': True, 'environment_retry': retry,
+-              'junit_exists': (directory / 'junit.xml').exists(), 'source_after': source_check(),
+-              'stream_bytes': {name: (directory / name).stat().st_size for name in ('stdout.log', 'stderr.log')}}
+-    write(directory / 'result.json', result)
+-    with (ROUND / 'progress.md').open('a') as ledger:
+-        ledger.write(f"\n- {directory.name}: {state}, exit={process.returncode}, {result['elapsed_s']:.3f}s; evidence implementation/{directory.name}.\n")
+-    print(json.dumps(result, ensure_ascii=False), flush=True)
++    finally:
++        result_state['state'] = state
++
+ 
+ 
+ if __name__ == '__main__':
+@@ -160,7 +187,10 @@
+         prepare()
+     else:
+         for stage_id in args.stages:
+-            start = json.loads((ROUND / 'batch-start.json').read_text())['started_epoch_s']
++            if (ROUND / 'STOP_BETWEEN_STAGES').exists():
++                print('STOP_BETWEEN_STAGES', flush=True)
++                break
++            start = json.loads((ORIGINAL_ROUND / 'batch-start.json').read_text())['started_epoch_s']
+             if time.time() - start > 28800 - 900:
+                 print('BATCH_BUDGET_STOP', flush=True)
+                 break

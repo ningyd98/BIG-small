@@ -1,0 +1,96 @@
+{
+  "observed_utc": "2026-11-01T05:16:40.574662+00:00",
+  "source": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_06/persistent-basetemp/test_b_terminal_publication_co0/confirm_timeout/runtime.db",
+    "bytes": 17403904,
+    "sha256_before": "9a4b39c3f4a02ebc0fd2dcf1600bb4ab2e88b7067104677dee467cba07f3c8f1",
+    "sha256_after": "9a4b39c3f4a02ebc0fd2dcf1600bb4ab2e88b7067104677dee467cba07f3c8f1"
+  },
+  "read_mode": "SQLite URI mode=ro&immutable=1 after reaped; no WAL present",
+  "queries": {
+    "jobs": "SELECT status,error_code,error_message,manifest_json,artifact_paths_json FROM simulation_jobs",
+    "attempts": "SELECT attempt,result,error FROM simulation_job_attempts",
+    "operational": "SELECT lifecycle,durable_phase,terminal_reason FROM simulation_operational_leases_v1"
+  },
+  "rows": {
+    "jobs": [
+      {
+        "status": "SUCCEEDED",
+        "error_code": "",
+        "error_message": "",
+        "manifest_json": "{}",
+        "artifact_paths_json": "{\"attempts\":\"terminal-test/attempts.jsonl\",\"backend_parameter_mapping\":\"terminal-test/backend_parameter_mapping.json\",\"cancellation\":\"terminal-test/cancellation.json\",\"events\":\"terminal-test/events.jsonl\",\"evidence_consistency\":\"terminal-test/evidence_consistency.json\",\"job\":\"terminal-test/job.json\",\"lease_history\":\"terminal-test/lease_history.jsonl\",\"leases\":\"terminal-test/leases.jsonl\",\"logs\":\"terminal-test/logs.json\",\"metrics\":\"terminal-test/metrics.json\",\"provenance\":\"terminal-test/provenance.json\",\"randomization_sample\":\"terminal-test/randomization_sample.json\",\"recovery\":\"terminal-test/recovery.json\",\"rerun_viewer_manifest\":\"terminal-test/rerun_viewer_manifest.json\",\"resource_usage\":\"terminal-test/resource_usage.json\",\"result\":\"terminal-test/result.json\",\"run_manifest\":\"terminal-test/run_manifest.json\",\"runtime_job\":\"terminal-test/runtime_job.json\",\"sensor_stream\":\"terminal-test/sensor_stream.json\",\"sim_real_gap_report\":\"terminal-test/sim_real_gap_report.json\",\"sim_trace\":\"terminal-test/sim_trace.json\",\"state_transitions\":\"terminal-test/state_transitions.jsonl\",\"trajectory\":\"terminal-test/trajectory.json\"}"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt": 1,
+        "result": "SUCCEEDED",
+        "error": ""
+      }
+    ],
+    "operational": [
+      {
+        "lifecycle": "TERMINAL",
+        "durable_phase": "COMMITTED",
+        "terminal_reason": "owned publication completed"
+      }
+    ]
+  },
+  "rejections": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_06/persistent-basetemp/test_b_terminal_publication_co0/confirm_timeout/terminal-test/.operational-publication-42bd7e487118448c8e6bb328f1df88f5/rejection.json",
+      "bytes": 322,
+      "sha256": "8fc476e6e105097a1b54f04ded58757cbab1343a07e1374b09b65ca564e121e3",
+      "value": {
+        "accepted": false,
+        "epoch": "42bd7e487118448c8e6bb328f1df88f5",
+        "error": "OperationalLeaseError: broker request timed out; late reply is blocked",
+        "job_id": "job-60a91c4d7b7b4e0d",
+        "lease_id": "lease-10fe3928c3c24595",
+        "preview_is_committed_evidence": false,
+        "status": "UNCONFIRMED_PREVIEW_NOT_ACCEPTED"
+      }
+    }
+  ],
+  "failure": "ExperimentManifest.model_validate(job.manifest) raised six missing required fields; persisted manifest_json is {}.",
+  "limits": "The complete test failed; existing rejection evidence does not prove all later public readout assertions.",
+  "source_observations": [
+    {
+      "path": "tests/test_operational_runtime_closure.py",
+      "line": 5135,
+      "fact": "T3 exercise reuses software_factory; public after-poll readout later invokes the runtime service.",
+      "bytes": 313354,
+      "sha256": "fac58d5486a078a4f5ebc6644c3fb82870962fc620250893106421f26ce45a88"
+    },
+    {
+      "path": "tests/test_visual_worker_factory.py",
+      "line": 172,
+      "fact": "software_factory delegates job creation to _cpu_visual_worker.",
+      "bytes": 15847,
+      "sha256": "5f99a6bf6e9850875423a5a9eca5f47bbe88e4ff12b97048f218de19b76c57f9"
+    },
+    {
+      "path": "tests/test_rgbd_lease_handoff.py",
+      "line": 294,
+      "fact": "_cpu_visual_worker delegates job creation to _queued_closed_loop_worker.",
+      "bytes": 23788,
+      "sha256": "2eea572c84097366671b22a9ca75e044a1a732ce45554dad252ae16d2fb13987"
+    },
+    {
+      "path": "tests/test_rgbd_runtime_control.py",
+      "line": 185,
+      "fact": "_queued_closed_loop_worker calls create_job without a full manifest argument.",
+      "bytes": 12389,
+      "sha256": "72136d76774b668a1b39d2ffcb1f072d5a791282388cbd6040e5fb94f3df6449"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "line": 432,
+      "fact": "Public _run_record requires ExperimentManifest.model_validate(job.manifest).",
+      "bytes": 23391,
+      "sha256": "57a9068006d86105fb0b6bfeb6a872049422bab11159b4d1bc4e4145e3e68e03"
+    }
+  ],
+  "root_cause_status": "Confirmed fixture/public-reader contract mismatch: the inherited job factory omits the manifest required by public readout. No implementation change in this diagnostic round."
+}

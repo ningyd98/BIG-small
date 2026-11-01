@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.107" timestamp="2026-11-01T14:08:38.296378+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_phase9_asset_registry" name="test_phase9_asset_manifest_records_hash_and_license" time="0.002"><failure message="ValueError: asset hash mismatch for franka_panda_mujoco_scene: 66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2 != 6a7938709366801ed6e36c7c504da64a48b7b16bbc02adda2a31417c7ad5b1d1">def test_phase9_asset_manifest_records_hash_and_license() -&gt; None:
+        registry = AssetRegistry.from_manifest(Path("assets/manifest.yaml"))
+&gt;       asset = registry.require("franka_panda_mujoco_scene")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase9_asset_registry.py:12: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;cloud_edge_robot_arm.simulation.asset_registry.AssetRegistry object at 0x7b67d9e1a3c0&gt;
+asset_id = 'franka_panda_mujoco_scene'
+
+    def require(self, asset_id: str) -&gt; AssetRecord:
+        try:
+            asset = self._assets[asset_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown asset {asset_id!r}") from exc
+        if not asset.path.exists():
+            raise FileNotFoundError(asset.path)
+        actual = self.compute_sha256(asset.path)
+        if actual != asset.sha256:
+&gt;           raise ValueError(f"asset hash mismatch for {asset_id}: {actual} != {asset.sha256}")
+E           ValueError: asset hash mismatch for franka_panda_mujoco_scene: 66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2 != 6a7938709366801ed6e36c7c504da64a48b7b16bbc02adda2a31417c7ad5b1d1
+
+src/cloud_edge_robot_arm/simulation/asset_registry.py:57: ValueError</failure></testcase></testsuite></testsuites>

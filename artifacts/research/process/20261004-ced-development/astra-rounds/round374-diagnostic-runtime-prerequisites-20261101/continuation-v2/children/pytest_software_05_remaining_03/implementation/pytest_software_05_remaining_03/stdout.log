@@ -1,0 +1,37 @@
+......F                                                                  [100%]
+=================================== FAILURES ===================================
+_____ test_simulation_websocket_uses_dashboard_auth_replay_and_size_limit ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x73e8d06cbb30>
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round374-...re_05_remaining_03/implementation/pytest_software_05_remaining_03/persistent-basetemp/test_simulation_websocket_uses0')
+
+    def test_simulation_websocket_uses_dashboard_auth_replay_and_size_limit(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from cloud_edge_robot_arm.simulation_workbench.service import SimulationWorkbenchService
+    
+        app = _app(monkeypatch, tmp_path)
+        service = SimulationWorkbenchService(artifact_root=tmp_path / "artifacts")
+        app.state.simulation_workbench_service = service
+        service.events.publish("run_state", "test", {"status": "RUNNING"}, experiment_id="sim-test")
+        client = TestClient(app)
+    
+        with client.websocket_connect("/api/v1/simulation/stream?last_sequence=0") as ws:
+            replayed = ws.receive_json()
+>           assert replayed["event_type"] == "run_state"
+E           AssertionError: assert 'job_created' == 'run_state'
+E             
+E             - run_state
+E             + job_created
+
+tests/test_phase11_simulation_workbench_backend.py:403: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/starlette/testclient.py:45
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_05_remaining_03/implementation/pytest_software_05_remaining_03/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_phase11_simulation_workbench_backend.py::test_simulation_websocket_uses_dashboard_auth_replay_and_size_limit
+1 failed, 6 passed, 1 warning in 16.75s

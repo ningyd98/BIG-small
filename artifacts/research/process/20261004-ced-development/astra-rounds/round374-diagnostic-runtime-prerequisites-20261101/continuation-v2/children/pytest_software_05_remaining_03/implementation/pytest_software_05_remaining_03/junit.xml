@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="7" time="16.749" timestamp="2026-11-01T13:46:47.723815+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_phase11_simulation_workbench_backend" name="test_sim2real_gap_report_endpoint_is_read_only" time="0.812" /><testcase classname="tests.test_phase11_simulation_workbench_backend" name="test_simulation_capabilities_and_scenarios_are_dynamic" time="0.390" /><testcase classname="tests.test_phase11_simulation_workbench_backend" name="test_simulation_validate_rejects_arbitrary_shell_path_env_and_extra_fields" time="1.944" /><testcase classname="tests.test_phase11_simulation_workbench_backend" name="test_single_mock_run_writes_phase11_artifacts_events_metrics_and_reproduction" time="5.847" /><testcase classname="tests.test_phase11_simulation_workbench_backend" name="test_batch_sweep_cancel_comparison_export_and_blocked_backend" time="6.074" /><testcase classname="tests.test_phase11_simulation_workbench_backend" name="test_simulation_api_has_no_hardware_or_level1_routes" time="0.679" /><testcase classname="tests.test_phase11_simulation_workbench_backend" name="test_simulation_websocket_uses_dashboard_auth_replay_and_size_limit" time="0.121"><failure message="AssertionError: assert 'job_created' == 'run_state'&#10;  &#10;  - run_state&#10;  + job_created">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x73e8d06cbb30&gt;
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round374-...re_05_remaining_03/implementation/pytest_software_05_remaining_03/persistent-basetemp/test_simulation_websocket_uses0')
+
+    def test_simulation_websocket_uses_dashboard_auth_replay_and_size_limit(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -&gt; None:
+        from cloud_edge_robot_arm.simulation_workbench.service import SimulationWorkbenchService
+    
+        app = _app(monkeypatch, tmp_path)
+        service = SimulationWorkbenchService(artifact_root=tmp_path / "artifacts")
+        app.state.simulation_workbench_service = service
+        service.events.publish("run_state", "test", {"status": "RUNNING"}, experiment_id="sim-test")
+        client = TestClient(app)
+    
+        with client.websocket_connect("/api/v1/simulation/stream?last_sequence=0") as ws:
+            replayed = ws.receive_json()
+&gt;           assert replayed["event_type"] == "run_state"
+E           AssertionError: assert 'job_created' == 'run_state'
+E             
+E             - run_state
+E             + job_created
+
+tests/test_phase11_simulation_workbench_backend.py:403: AssertionError</failure></testcase></testsuite></testsuites>

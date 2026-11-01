@@ -1,0 +1,244 @@
+{
+  "schema": "bigsmall.r375.diagnostic-database-scope-plan.v1",
+  "round": "R375",
+  "date": "2026-11-01",
+  "planner": {
+    "model": "gpt-6-astra",
+    "agent": "/root/astra_r371_utc_plan"
+  },
+  "status": "PLAN_ONLY",
+  "execution_authorized": true,
+  "authorization": "User full-workflow diagnostic continuation and AGENTS Astra-before-repair rule. One artifact-only test environment correction and whole-module comparison, no product/test changes.",
+  "original_failure": {
+    "directory": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_05_remaining_03/implementation/pytest_software_05_remaining_03",
+    "nodeid": "tests/test_phase11_simulation_workbench_backend.py::test_simulation_websocket_uses_dashboard_auth_replay_and_size_limit",
+    "observed": "At line403 expected event_type run_state, received job_created. Module had6 passes/1 failure in18.016287187s; original stdout/JUnit/events/result retained. Source-after reported no drift.",
+    "environment_fact": "Original invocation injects one SIMULATION_RUNTIME_DB at module-stage runtime/simulation_runtime.db, overriding each test artifact_root-derived DB."
+  },
+  "causal_hypothesis": {
+    "chain": [
+      "Both _client and _app set DASHBOARD_ARTIFACT_ROOT to their per-test tmp_path/artifacts. Earlier tests create genuine MOCK runs/batches and durable job events.",
+      "SimulationWorkbenchService.__init__ gives nonempty SIMULATION_RUNTIME_DB precedence over artifact_root; therefore those different test services receive the same module DB under this invocation.",
+      "Websocket handler first calls service.runtime.replay_stream_after(0); only if empty does it use newly constructed service.events. A prior durable job_created can precede the last test local run_state."
+    ],
+    "status": "Strong source-backed runner-induced cross-test database-scope hypothesis, not a confirmed product defect. One same-order full-module run with only this semantic env override removed can test it. A single isolated target pass would not test module-order contamination and is not authorized as substitute.",
+    "limitations": "A passing new run plus observed separate DB paths supports this diagnosis; one run does not prove global absence of order races or validate all other tests. New paths are unavoidable isolation metadata differences; retain explicit env diff."
+  },
+  "path_safety_review": {
+    "whole_module": "Static AST confirms7 test functions, exactly the7 nodes and same order in original invocation; no additional parametrization or module fixture. All helpers use per-test tmp_path/artifacts. The only direct SimulationWorkbenchService call also passes that per-test path.",
+    "factory": "create_app with explicit MockPlannerAdapter builds routers/state; no eager workbench DB construction in factory/lifespan. _service/_ws_service create workbench lazily using DASHBOARD_ARTIFACT_ROOT. Extra openapi app inherits current test monkeypatched root.",
+    "fallback": "With SIMULATION_RUNTIME_DB absent, service chooses data/simulation_runtime.db only if artifact_root == Path(\"artifacts\"). Here all tested workbench roots are absolute tmp_path/artifacts; additionally keep an absolute stage-wide DASHBOARD_ARTIFACT_ROOT as safe fallback before test monkeypatches. Thus expected simDBs are per-test artifact_root/simulation_runtime.db, not historical data/.",
+    "other_paths": "Keep MODEL_CONTROL_DB at a fresh stage runtime/model_control.db, REAL_MOTION_DISPATCH_ENABLED=false, credential-free env and all existing safety/resource/cache controls. It is outside this hypothesis and not changed semantically. Do not remove all runtime env safeguards globally.",
+    "same_test": "The final websocket test uses multiple apps in its own tmp_path; do not force separate DB per app or modify assertions, as that would change test semantics. The intended isolation boundary is each test, not each service."
+  },
+  "allowed_changes": [
+    "Create a new standalone artifact-only launcher/environment adapter under R375; may reuse bounded subprocess pattern without editing/import-mutating any frozen R374 runner.",
+    "Derive child env from the pinned original invocation, relocate every old-stage output/cache/resource/model-control path into the fresh R375 run directory, and remove SIMULATION_RUNTIME_DB entirely via env.pop before child spawn. Record absent key, not an empty string or changed product fallback.",
+    "Create required ordinary resource/runtime directories and exact stage event/JUnit paths, leaving existing test-level monkeypatches untouched. Save launcher/hash/env-diff before running."
+  ],
+  "forbidden": [
+    "No product/test/assertion/golden/dependency changes.",
+    "No changes to R374 frozen scripts/pins/manifest or currently running continuation.",
+    "No new fixtures, per-test monkeypatch/autouse plugins, constructor hooks, database mocks or overwritten old DBs/logs.",
+    "No isolated target-only substitute, original-env re-RED, second attempt or retry-until-green.",
+    "No fix of unrelated marker hashes/docstrings/other findings, no paid model/hardware operation."
+  ],
+  "preconditions": [
+    "Wait until the entire continuation-v2 run is terminal, its process exited and owned child cleanup is confirmed. A mere earlier module result or absence of a fresh log line is not completion. Do not signal/interfere with current session40005/PID249686; recheck actual identity only if needed.",
+    "No concurrent product tests or source writer. Verify direct input pins and original R3731050-file source baseline, including dirty local_temporal candidate unchanged. Do not rebaseline drift.",
+    "Use existing .venv and pinned r373_tracking plugin. Current full-access/approvalnever: do not pass sandbox_permissions. No installation, network permission flow or new environment retries.",
+    "Output directory must not already exist. Required parent/resource directories created fresh. Ensure final env has no SIMULATION_RUNTIME_DB and retained MODEL_CONTROL_DB/DASHBOARD_ARTIFACT_ROOT are absolute paths below this run.",
+    "Start only if at least90s remain before original report-reserve cutoff. If continuation ends too late or cleanup/source prerequisites fail, record NOT_RUN_BUDGET/BLOCKED and keep hypothesis unverified; no stopping continuation to free this slot."
+  ],
+  "command": {
+    "identity": "R375:workbench_module_without_runtime_db",
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "-p",
+      "r373_tracking",
+      "-m",
+      "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+      "tests/test_phase11_simulation_workbench_backend.py::test_sim2real_gap_report_endpoint_is_read_only",
+      "tests/test_phase11_simulation_workbench_backend.py::test_simulation_capabilities_and_scenarios_are_dynamic",
+      "tests/test_phase11_simulation_workbench_backend.py::test_simulation_validate_rejects_arbitrary_shell_path_env_and_extra_fields",
+      "tests/test_phase11_simulation_workbench_backend.py::test_single_mock_run_writes_phase11_artifacts_events_metrics_and_reproduction",
+      "tests/test_phase11_simulation_workbench_backend.py::test_batch_sweep_cancel_comparison_export_and_blocked_backend",
+      "tests/test_phase11_simulation_workbench_backend.py::test_simulation_api_has_no_hardware_or_level1_routes",
+      "tests/test_phase11_simulation_workbench_backend.py::test_simulation_websocket_uses_dashboard_auth_replay_and_size_limit",
+      "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db/persistent-basetemp",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db/junit.xml"
+    ],
+    "env": {
+      "HOME": "/home/ningyd",
+      "USER": "ningyd",
+      "LOGNAME": "ningyd",
+      "DISPLAY": ":1",
+      "XAUTHORITY": "/run/user/1000/gdm/Xauthority",
+      "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/cache/node-v22.23.3-linux-x64/bin:/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+      "LANG": "C.UTF-8",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+      "PYTHONPATH": "/home/ningyd/文档/ChatGPT/BIGsmall/src:/home/ningyd/文档/ChatGPT/BIGsmall:/home/ningyd/文档/ChatGPT/BIGsmall/tests:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/adapters",
+      "MUJOCO_GL": "egl",
+      "REAL_MOTION_DISPATCH_ENABLED": "false",
+      "PLAYWRIGHT_BROWSERS_PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/cache/playwright",
+      "PYTHONPYCACHEPREFIX": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db/pycache",
+      "RUFF_CACHE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db/ruff-cache",
+      "MYPY_CACHE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db/mypy-cache",
+      "R373_PYTEST_EVENTS": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db/pytest-events.jsonl",
+      "R373_STAGE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db",
+      "BIGSMALL_R223_RESOURCE_ROOT": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db/r223/resources",
+      "BIGSMALL_R223_CASE_ROOT": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db/r223/cases",
+      "MODEL_CONTROL_DB": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db/runtime/model_control.db",
+      "DASHBOARD_ARTIFACT_ROOT": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round375-diagnostic-database-scope-20261101/implementation/workbench_module_without_runtime_db/runtime/artifacts"
+    },
+    "env_absent": [
+      "SIMULATION_RUNTIME_DB"
+    ],
+    "expected_nodeids_in_order": [
+      "tests/test_phase11_simulation_workbench_backend.py::test_sim2real_gap_report_endpoint_is_read_only",
+      "tests/test_phase11_simulation_workbench_backend.py::test_simulation_capabilities_and_scenarios_are_dynamic",
+      "tests/test_phase11_simulation_workbench_backend.py::test_simulation_validate_rejects_arbitrary_shell_path_env_and_extra_fields",
+      "tests/test_phase11_simulation_workbench_backend.py::test_single_mock_run_writes_phase11_artifacts_events_metrics_and_reproduction",
+      "tests/test_phase11_simulation_workbench_backend.py::test_batch_sweep_cancel_comparison_export_and_blocked_backend",
+      "tests/test_phase11_simulation_workbench_backend.py::test_simulation_api_has_no_hardware_or_level1_routes",
+      "tests/test_phase11_simulation_workbench_backend.py::test_simulation_websocket_uses_dashboard_auth_replay_and_size_limit"
+    ],
+    "expected_tests": 7,
+    "child_timeout_s": 60,
+    "TERM_grace_s": 5,
+    "cleanup_total_s": 15,
+    "outer_timeout_s": 90,
+    "launches": 1,
+    "retries": 0,
+    "concurrency": 1
+  },
+  "global_budget": {
+    "original_batch_start_epoch_s": 1793500426.4638567,
+    "original_batch_start_utc": "2026-11-01T02:33:46.463843+00:00",
+    "max_wall_s": 28800,
+    "report_reserve_s": 900,
+    "no_new_test_after_epoch_s": 1793528326.4638567,
+    "report_reserve_cutoff_utc": "2026-11-01T10:18:46.463857+00:00",
+    "start_requires_remaining_s": 90,
+    "accounting": "One new explicitly authorized<=60s diagnosis, with bounded cleanup, charged inside original8h wall. Not refunded from/relabelled as old group05 quota. Original failed attempt remains consumed. No clock reset or timeout extension."
+  },
+  "evidence_and_acceptance": {
+    "retain": [
+      "Original pinned failure and source/runner input hashes; fresh exact argv/env and explicit semantic env delta",
+      "Complete stdout/stderr, ordered pytest-events,JUnit,exit/elapsed/timeout/cleanup,source-before/after",
+      "After process cleanup, readonly inventory of generated simulation_runtime.db paths. Each produced simDB must be inside a per-test persistent-basetemp child/artifacts; do not require seven DBs because some tests may not create one. Confirm no stage runtime/simulation_runtime.db was created by this run. Preserve actual DB bytes locally.",
+      "Optional before/after stat/hash of known historical default data/simulation_runtime.db without writing/opening for mutation; report limitation if not inventoried. Do not claim exhaustive filesystem audit."
+    ],
+    "success": "Exactly same7 nodes in original order,7 pass/0fail/error/skip,exit0,no timeout/missing required evidence,source unchanged,observed per-test simDB path isolation. The final websocket assertion and subsequent auth/size-limit assertions must execute unchanged.",
+    "failure": "Any failure/timeout/missing evidence remains a new diagnostic finding; no retry. If job_created persists or another issue appears, hypothesis not closed; preserve and request a new minimal Astra scope before any further fix.",
+    "reporting": "Report original module6pass1fail plus new diagnostic outcome separately; do not replace old results or hide attempts. If all pass and path evidence matches, state corrected runner DB scope resolved the observed module failure in this comparison, not product bug fixed or all-order equivalence proven.",
+    "boundaries": "No full-workflow pass claim, true cloud/hardware/formal research claim, or modification of old two-backend600s UTC acceptance. Current continuation outcomes remain separately attributed.",
+    "derived_summary": "May append the new R375 attempt to the derived4732-unique-node coverage/findings report, linking both original and comparison attempts. Do not inflate unique node count by7, erase the old failed attempt, overwrite frozen evidence, or relabel old R374 module as passed. A current isolated-environment result can be shown alongside original outcome with source/environment identity.",
+    "database_handling": "This plan needs only filesystem path/size/hash inventory, no SQLite query of original evidence. Note any adjacent -wal/-shm files without checkpointing. Do not open original DBs in a mode that creates/modifies SHM/DB. If a later read is considered necessary, first prepare a new artifact copy of the quiescent DB and existing WAL/SHM with manifest; query only that copy and label snapshot limitations. No live/original DB mutation or checkpoint is authorized."
+  },
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "tests/test_phase11_simulation_workbench_backend.py",
+      "bytes": 15846,
+      "sha256": "b48d3471e004680e6fd2961a963ef849e56e581db375d421663e0dbee256b6eb"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_workbench/service.py",
+      "bytes": 51373,
+      "sha256": "1821a8a6af37e22e488a09fc2251cac7a09cba3de755d32ebb62e3a932ece0a7"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/service.py",
+      "bytes": 23391,
+      "sha256": "57a9068006d86105fb0b6bfeb6a872049422bab11159b4d1bc4e4145e3e68e03"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "bytes": 138430,
+      "sha256": "6e1ae6471e5d75c195057e1f8e1f90854b1efcfe21f21660bd0a7d75a6d21eb2"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/cloud/api/app.py",
+      "bytes": 45515,
+      "sha256": "4b11a990ec82aa9fbc4c820adb65fde1e565cb2158011a34e670015d9e5d04c4"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/cloud/api/simulation_workbench.py",
+      "bytes": 14162,
+      "sha256": "ad975dfaa5dca7a4f3feffe84443885b78daccbce1f30762458c654b93522ab0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/cloud/api/model_control.py",
+      "bytes": 11645,
+      "sha256": "4506e5ea0704e89e547ea3c481210b4a802f21b80da3426450bb01efd6a9a91a"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/run_diagnostics.py",
+      "bytes": 10369,
+      "sha256": "c103aec31d23f2756e6315046aa96644001aa6dfa2b571e0b9e195c4bc1565c8"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/planned-stages.json",
+      "bytes": 530326,
+      "sha256": "6ff89acaf0eee801255c4f78b3cf932573cf32150a8f573c0fa536dd7b526d43"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/adapters/r373_tracking.py",
+      "bytes": 958,
+      "sha256": "474f788b6caef1dec65faa5c76c968428793b380c2e1c8912a632d5d43d3c6db"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/batch-start.json",
+      "bytes": 120,
+      "sha256": "5590291693b2f2c7b027a8c2e8a122963d2066e40c4c74c897531ea9efbd46ba"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/preflight/workspace-source-before.json",
+      "bytes": 187424,
+      "sha256": "afbf100dd9fc5a6641cf595b77e41b7e595075f37ceb84bea7340118096c9090"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_05_remaining_03/implementation/pytest_software_05_remaining_03/invocation.json",
+      "bytes": 5821,
+      "sha256": "bc3e714839f2983f6b1b9c3423d8606a8a76881499ef47e690943f5fdddbeeab"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_05_remaining_03/implementation/pytest_software_05_remaining_03/pytest-events.jsonl",
+      "bytes": 7415,
+      "sha256": "3276f45553f60ef5d63f0fdebfdd19f5a7af5e2a33262d4277f2f09ccb9f7293"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_05_remaining_03/implementation/pytest_software_05_remaining_03/junit.xml",
+      "bytes": 2785,
+      "sha256": "0329be79e8254463cf33d3ace2009ebb58c5dde3b4968c9598c5301dbaff2e6c"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_05_remaining_03/implementation/pytest_software_05_remaining_03/stdout.log",
+      "bytes": 2598,
+      "sha256": "1f67942f5bfb038d33b4c0e09d7ee7cdb4a9cf34498b33fc690c430bee92ad0d"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_05_remaining_03/implementation/pytest_software_05_remaining_03/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_05_remaining_03/implementation/pytest_software_05_remaining_03/result.json",
+      "bytes": 576,
+      "sha256": "370bfcb491a8be129abecad263341e23fbdeff009eddcd1d06ee8201679681fa"
+    }
+  ],
+  "planner_work": "Only read entire module,factory/service/source and original failure; static AST/order check,hashes,and write these plans. No tests,product imports,runner edits,signals or network."
+}

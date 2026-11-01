@@ -1,0 +1,55 @@
+--- original-config
++++ copied-config
+@@ -1,23 +1,22 @@
+-import { defineConfig, devices } from "@playwright/test";
++import { defineConfig, devices } from "/home/ningyd/文档/ChatGPT/BIGsmall/dashboard/node_modules/@playwright/test/index.mjs";
+ import path from "node:path";
+ 
+-const evidenceRoot = path.resolve(
+-  process.cwd(),
+-  "../artifacts/research/process/20261004-ced-development/t17b-ui-module/browser",
+-);
++const evidenceRoot = process.env.R373_STAGE_DIR!;
+ 
+ export default defineConfig({
+-  testDir: "./tests/e2e",
++  testDir: "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/adapters/research-tests",
+   testMatch: "**/research-evidence.spec.ts",
+   timeout: 60000,
+   workers: 1,
+   outputDir: path.join(evidenceRoot, "test-results"),
++  reporter: [["list"], ["junit", {outputFile: path.join(evidenceRoot, "junit.xml")}]],
+   use: {
+     baseURL: "http://127.0.0.1:5199",
+     trace: "retain-on-failure",
+   },
+   webServer: [
+     {
++      cwd: "/home/ningyd/文档/ChatGPT/BIGsmall/dashboard",
+       command: `cd .. && python "${path.join(evidenceRoot, "backend.py")}"`,
+       env: {
+         ...process.env,
+@@ -29,6 +28,7 @@
+       timeout: 30000,
+     },
+     {
++      cwd: "/home/ningyd/文档/ChatGPT/BIGsmall/dashboard",
+       command: "npm run dev",
+       env: {
+         ...process.env,
+--- original-spec
++++ copied-spec
+@@ -1,11 +1,8 @@
+-import { expect, test } from "@playwright/test";
++import { expect, test } from "/home/ningyd/文档/ChatGPT/BIGsmall/dashboard/node_modules/@playwright/test/index.mjs";
+ import { readFileSync, writeFileSync } from "node:fs";
+ import path from "node:path";
+ 
+-const evidenceRoot = path.resolve(
+-  process.cwd(),
+-  "../artifacts/research/process/20261004-ced-development/t17b-ui-module/browser",
+-);
++const evidenceRoot = process.env.R373_STAGE_DIR!;
+ 
+ test("a registered missing source stays NOT_RUN with unavailable denominators", async ({
+   page,

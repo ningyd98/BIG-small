@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="239.234" timestamp="2026-11-01T13:15:05.160439+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_runtime_closure" name="test_b_terminal_publication_confirmation_fault[prior_bound]" time="238.530"><failure message="pydantic_core._pydantic_core.ValidationError: 6 validation errors for ExperimentManifest&#10;manifest_id&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;normalized_config&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;source_commit&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;source_tree_hash&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;run_count&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing&#10;reproducibility_hash&#10;  Field required [type=missing, input_value={}, input_type=dict]&#10;    For further information visit https://errors.pydantic.dev/2.13/v/missing">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x720a4cb19ca0&gt;
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/implementation/p6_t3_07/persistent-basetemp/test_b_terminal_publication_co0')
+request = &lt;FixtureRequest for &lt;Function test_b_terminal_publication_confirmation_fault[prior_bound]&gt;&gt;
+variant = 'prior_bound'
+
+    @pytest.mark.parametrize("variant", ["commit_close", "confirm_timeout", "prior_bound"])
+    def test_b_terminal_publication_confirmation_fault(monkeypatch, tmp_path, request, variant):
+        with _b_t2_attempt(request) as attempt:
+            _b_t3_api(public=True)
+            attempt["entered_behavior"] = True
+            observations, fault = [], {}
+            with _b_t2_observe(monkeypatch, attempt) as observed:
+                with monkeypatch.context() as fault_scope:
+                    def exercise(runtime, session, worker, repo, job, events, reads, observed):
+                        data = _b_t3_ground_and_route(runtime, events, "terminal:" + variant)
+                        _b_t3_terminal_fault(fault_scope, observed, repo, session, reads, variant, fault)
+                        return {"original_time": runtime.original.local_time.to_payload(),
+                                "original_hash": runtime.original.digest(), "route": data["route"]}
+    
+                    def after(scoped, worker, repo, job, events, reads, observed):
+                        assert fault["fired"] is True
+                        assert repo.get_job(job.job_id).status.value == "SUCCEEDED"
+                        current_attempts, leases = repo.list_attempts(job.run_id), repo.list_leases(job.run_id)
+                        assert len(current_attempts) == len(leases) == 1
+                        assert current_attempts[0].result == "SUCCEEDED" and current_attempts[0].ended_at is not None
+                        assert leases[0].released_at is not None
+                        public, _ = _b_t3_public_readouts(scoped, worker, repo, job, accepted=False)
+                        directory = worker.artifact_root / job.artifact_root
+                        rejection_files = list(directory.glob(".operational-publication-*/rejection.json"))
+                        assert len(rejection_files) == 1
+                        rejection = json.loads(rejection_files[0].read_text())
+                        assert rejection["accepted"] is False
+                        rejected = sorted(rejection_files[0].parent.joinpath("unconfirmed").glob("*"))
+                        assert rejected and all(path.is_file() for path in rejected)
+                        assert not (directory / "result.json").exists()
+                        retained = {str(path.relative_to(worker.artifact_root)): hashlib.sha256(path.read_bytes()).hexdigest()
+                                    for path in rejected}
+                        return {"fault": fault, "public": public, "rejection": rejection,
+                                "retained_unconfirmed_files": retained,
+                                "terminal_sql": _b_t2_snapshot(events, reads)}
+    
+&gt;                   observations.append(_b_t3_exercise(fault_scope, tmp_path / variant, "sqlite", observed,
+                                                      exercise, after=after, success=True))
+
+tests/test_operational_runtime_closure.py:5761: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_runtime_closure.py:5189: in _b_t3_exercise
+    result["after_poll"] = after(scoped, worker, repo, job, events, reads, observed)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:5746: in after
+    public, _ = _b_t3_public_readouts(scoped, worker, repo, job, accepted=False)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_operational_runtime_closure.py:5415: in _b_t3_public_readouts
+    run = service.get_run(job.run_id)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/service.py:107: in get_run
+    return self._run_record(self.repository.get_job_by_run_id(run_id))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;cloud_edge_robot_arm.simulation_runtime.service.SimulationRuntimeService object at 0x720a4af236e0&gt;
+job = SimulationJobRecord(job_id='job-d059ee4dc7b34199', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...s.jsonl', 'trajectory': 'terminal-test/trajectory.json'}, provenance={}, source_commit='test', source_tree_hash='test')
+
+    def _run_record(self, job: Any) -&gt; SimulationRunRecord:
+        status = SimulationRunStatus(job.status.value)
+        publication = self._publication(job.run_id)
+        queue_position = (
+            max(1, self.repository.queued_count()) if status == SimulationRunStatus.QUEUED else 0
+        )
+        return SimulationRunRecord(
+            run_id=job.run_id,
+            job_id=job.job_id,
+            queue_position=queue_position,
+            backend=SimulationBackend(job.backend),
+            run_type=SimulationRunType.SINGLE,
+            status=status,
+            scenario_id=job.scenario_id,
+            control_mode=job.control_mode,
+            seed=job.seed,
+&gt;           manifest=ExperimentManifest.model_validate(job.manifest),
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            created_at=job.created_at,
+            accepted_at=job.queued_at,
+            updated_at=job.updated_at,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            attempt=job.attempt,
+            max_attempts=job.max_attempts,
+            timeout_seconds=job.timeout_seconds,
+            cancel_requested=job.cancel_requested,
+            worker_id=job.worker_id,
+            lease_id=job.lease_id,
+            runtime_reason=job.error_message,
+            blockers=[job.error_message] if job.error_message else [],
+            artifact_paths=(job.artifact_paths if publication.confirmation_state == "NOT_APPLICABLE"
+                            else publication.confirmed_artifact_paths),
+            publication=publication,
+            hardware_claim="PLANNING_ONLY"
+            if job.backend == SimulationBackend.MOVEIT_DRY_RUN.value
+            else "SIMULATION_ONLY",
+            real_controller_contacted=False,
+            hardware_motion_observed=False,
+            hardware_write_operations=[],
+            provenance=job.provenance,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 6 validation errors for ExperimentManifest
+E       manifest_id
+E         Field required [type=missing, input_value={}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+E       normalized_config
+E         Field required [type=missing, input_value={}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+E       source_commit
+E         Field required [type=missing, input_value={}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+E       source_tree_hash
+E         Field required [type=missing, input_value={}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+E       run_count
+E         Field required [type=missing, input_value={}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+E       reproducibility_hash
+E         Field required [type=missing, input_value={}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+src/cloud_edge_robot_arm/simulation_runtime/service.py:432: ValidationError</failure></testcase></testsuite></testsuites>
