@@ -467,3 +467,5 @@ R03真实前缀只关闭采集链，未认证A包缺NONC按原draft拒绝/B跳�
 R367 NONCOMPLETION、R376 commit_close失败/R381未实施、R377–379待执行、R382仅浏览器准备的原口径均保留。新真实运行0、正式研究验收未升级。完整raw、运行数据库、凭据、模型/SDK与重复快照按边界留本地，两历史嵌套gitlink保持dirty；精选清单不等于完整远端复现包。各轮计划、原始失败、实施与验证已汇入[交付步骤报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round383-workspace-github-delivery-20261101/step-report.md)。实际Git SHA与推送结果以独立交付收据为准。
 
 2026-11-02补记：stage字节审计发现Git空对象，实际Astra R387后保全110节点并精确恢复59blob；完整fsck退出0，源码/67项回归证据、原index与refs均不变，成因UNKNOWN。独立交付审查无新增实质问题，七项验收范围裁定随交付保留。此为工作区checkpoint，后续推送收据另记。
+
+工作区checkpoint 13579b8ed9face9e90cd6947073ab2101b558e96 已推送并核对三SHA一致，1125路径及67项限定软件回归证据随库保留；详细交付边界与原生回执见[2026-11-02交付说明](git_delivery_20261102.md)。

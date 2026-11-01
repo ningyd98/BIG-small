@@ -30,3 +30,7 @@ R367 旧 UTC 双 backend NONCOMPLETION 保留；R376 原五长节点4通过、co
 后续stage字节读取发现Git空对象；先由实际Astra制定R387，再保全110节点、精确恢复59blob。完整fsck退出0，HEAD/refs/reflogs/index及源码/67项证据均不变；50非可达OID与1临时节点只保全隔离，产生原因UNKNOWN。步骤、原生结果与私有保全边界见R387。
 
 独立最终审查Critical/Important/Minor均0，七项未裁定范围逐项记录于review/rulings.md。完整差异检查的20份冻结日志/补丁空白告警按原hash保留；含告警内容的新原生检查输出同样原样留存，最终审计分别核验新编写文件与冻结输出。完整reachability输出留本地并公布hash，不冒充完整远端运行输入。
+
+## 实际首次交付
+
+1125路径/86570333字节的checkpoint 13579b8ed9face9e90cd6947073ab2101b558e96 已正常推送，HEAD/上游/实时远端三SHA相同。final-precommit-audit、精确index-byte-manifest及提交/推送原始输出保存在delivery/；源码与67项证据保持。后续仅小型交付收据入库，最终自身SHA保存在外部私有回执及用户答复。
