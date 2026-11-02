@@ -1,0 +1,36 @@
+{
+  "schema": "r398.original-static-finding.v1",
+  "source": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round398-diagnostic-denial-reporting-20261102/inputs/script-static-review.before.json",
+    "bytes": 5064,
+    "sha256": "21fa54839071257e4b5a81d3206c512f30810e6295283dde6ebce782e087dc50"
+  },
+  "finding": {
+    "id": "R397-I1",
+    "severity": "Important",
+    "file": "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/diagnostic/diagnose.py",
+    "lines": [
+      446,
+      459,
+      460,
+      463,
+      476
+    ],
+    "title": "Unprotected diagnostic parsing can preempt audit-denial result precedence",
+    "evidence": "Line 446 reads and JSON-parses every audit log line before checking marker or exit78 at 448-456. Line 459 similarly parses boundary lines before result construction. Partial/unreadable diagnostic data from the explicitly supported persistence-failure/fail-stop path can raise and prevent result.json from carrying INFRA_BLOCKED_AUDIT_DENIAL. Later child-outcome/ready reads are also unprotected auxiliary decoding.",
+    "impact": "R397 requires every marker, exit78 or denial row to force the blocked classification even when persistence is incomplete. Cleanup happens first and the child still stops, but a partial audit record can defeat the required result and causal-verdict classification. This is reporting failure, not product continuation or observed network escape.",
+    "recommendation": "Route through actual Astra. Establish denial from marker existence/exit78 before fallible decoding, preserve raw diagnostic bytes, record read/decode/type errors and valid rows, and prevent auxiliary artifact parsing from masking the known denial. No repair or test was performed by reviewer."
+  },
+  "previous_child_stop_defect": "R396-I1 resolved statically in R397; no continuation regression claimed.",
+  "driver_before": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/diagnostic/diagnose.py",
+    "bytes": 27301,
+    "sha256": "8a35abf5bfcf78bfde8aa1dd40d345fefcb5f7e955e5bbe1f4307809c8f267bb"
+  },
+  "behavior_attempts": 0,
+  "product_imports": 0,
+  "sqlite_connections": 0,
+  "network": 0,
+  "git_writes": 0,
+  "R396_clock": "NOT_STARTED"
+}

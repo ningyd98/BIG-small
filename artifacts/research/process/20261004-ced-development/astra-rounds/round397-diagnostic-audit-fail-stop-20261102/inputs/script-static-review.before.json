@@ -1,0 +1,71 @@
+{
+  "schema": "r396.script-static-review.v1",
+  "ready_for_single_R396_attempt": false,
+  "driver_sha256": "411f3cd39272be1b25a62b3c0d74c817588f0df533a8e6790eca1478f23b8d36",
+  "driver_bytes": 24566,
+  "plan_sha256": "2a993ef8f055a519c728f8baeee28d0c63bb19f4f087b1060dd81bc40544b74e",
+  "input_audit_sha256": "2bc88e98cb417e566380f49b24f1c8eb64790a253d2df83e5addb8ce8bf050b1",
+  "head": "9abf127ab0d7d64fb02670eb278519f8d3bde5e9",
+  "branch": "refs/heads/research/20261004-continuation",
+  "C": [],
+  "I": [
+    {
+      "id": "R396-I1",
+      "severity": "Important",
+      "file": "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/diagnostic/diagnose.py",
+      "lines": [
+        129,
+        143,
+        209,
+        220,
+        269,
+        272
+      ],
+      "title": "Audit denial does not enforce the planned stop boundary",
+      "evidence": "audit_hook increments denied_operations, writes a row and raises PermissionError. The child has no denied_operations check after imports, before READY, or before advancing from PCSC to ETEAC. The only later consumption is supervisor blocked_operations collection after exit/cap (414-424). Native runner.git_sha (1456-1466) catches Exception, illustrating that an exception from an audit hook need not escape product code; its presently allowed exact invocation is not itself a denied event.",
+      "impact": "If a library or product path catches a denied-operation exception, the attempt can continue through product work or advance to ETEAC despite R396 requiring stop-and-report on any denied operation. Operation denial itself remains effective; the defect is continuation after a mandatory stop, not a demonstrated network escape.",
+      "recommendation": "Obtain the next actual Astra plan before changing the driver. Provide a driver-owned fail-stop mechanism for denied operations that is independent of whether native product code catches PermissionError, preserves the denial record and still lets the supervisor own cleanup. Do not change product functions or retry this attempt."
+    }
+  ],
+  "M": [],
+  "verification": {
+    "independently_checked_input_pins": 35,
+    "ast_parse": "PASS_STATIC_ONLY",
+    "trace_request_bytes_hash_and_json": "MATCH",
+    "trace_response_manifest": "MATCH_HISTORICAL_ONLY",
+    "head_cached_upstream_branch": "MATCH",
+    "tracked_product_diff": "EMPTY",
+    "tracked_status": "Only two original dirty gitlinks",
+    "nested_preservation": "Reused pinned R393 final receipt and R396 preparation-static-check-v2; no repeated large nested diff",
+    "driver_execution": 0,
+    "product_imports": 0,
+    "tests": 0,
+    "sqlite_connections": 0,
+    "network": 0,
+    "signals": 0,
+    "git_writes": 0
+  },
+  "strengths": [
+    "Exact original request retained; only native SINGLE derivation fields change, in PCSC then ETEAC order.",
+    "New diagnostic run and manifest IDs, current commit, explicit uncomputed tree hash and historical-only original manifest.",
+    "One native worker and new SQLite repository, one poll per mode, PCSC non-success stops progression.",
+    "Filtered profile and frame sampling do not acquire product locks, call repository getters/SQL, wrap product functions or close a live harness.",
+    "Distinct per-mode caps, child readiness and total caps; PID/start-time/session identity before owned termination; raw DB tuple retained.",
+    "Software PASS, browser retest, formal acceptance and direct historical stack proof remain explicitly false."
+  ],
+  "declined_to_judge": [
+    {
+      "behavior": "Actual replay stack, same-thread/same-lock identity, heartbeat and absence of close entry",
+      "reason": "No behavioral run allowed before static approval; these remain final-review criteria."
+    },
+    {
+      "behavior": "Product bug fix and formal research/E2E acceptance",
+      "reason": "Outside diagnosis-only scope."
+    },
+    {
+      "behavior": "Live remote Git SHA and complete remote raw reproducibility",
+      "reason": "No network or delivery performed during this static review."
+    }
+  ],
+  "assessment": "NOT_READY_FOR_SINGLE_ATTEMPT; one Important must be routed through actual Astra. No driver or product edits made. Static self-lock chain is a hypothesis, not dynamic or historical proof."
+}

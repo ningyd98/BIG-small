@@ -1,0 +1,127 @@
+{
+  "schema": "astra.plan.v1",
+  "round": "R397",
+  "planner_model": "gpt-6-astra",
+  "status": "PLANNED_NOT_IMPLEMENTED",
+  "title": "Diagnostic audit denial must stop independently of product exception handling",
+  "inherits": {
+    "plan": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/plan.json",
+      "bytes": 16681,
+      "sha256": "2a993ef8f055a519c728f8baeee28d0c63bb19f4f087b1060dd81bc40544b74e"
+    },
+    "input_audit": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/input-audit.json",
+      "bytes": 13271,
+      "sha256": "2bc88e98cb417e566380f49b24f1c8eb64790a253d2df83e5addb8ce8bf050b1"
+    },
+    "head": "9abf127ab0d7d64fb02670eb278519f8d3bde5e9",
+    "branch": "research/20261004-continuation",
+    "new_behavior_allocation": 0,
+    "R396_clock": "not started; original 600 seconds retained; no reset",
+    "native_polls": "Original one PCSC and one ETEAC maximum; this is static gate repair only",
+    "git": "Original R396 single commit/push/exact remote verify quota unchanged and unused"
+  },
+  "input_audit": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/input-audit.json",
+    "bytes": 3513,
+    "sha256": "9d0de639c68cd8e30d7b5cef70990a30fbe3dd194e1fd9855cdfbe6fdc548d1f"
+  },
+  "original_failure": {
+    "intake": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/original-finding.json",
+      "bytes": 978,
+      "sha256": "4b6ff6c895ed9179eea0256692f1b128b70b550e2be8292803ef1f57d27dc273"
+    },
+    "review": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/review/script-static-review.json",
+      "bytes": 4314,
+      "sha256": "90f0ad72cbb8edf256fee3f708f81a6ec12bfd0c22cbae0b08079d1477764119"
+    },
+    "id": "R396-I1",
+    "severity": "Important",
+    "root_cause": "Denied operation is prevented but PermissionError is catchable by product/dependency code; stop-and-report is not controlled by driver. A caught denial can be followed by READY or a later mode.",
+    "not_established": "No denied operation happened; no behavioral execution, network escape, ETEAC root confirmation or software failure inferred from this static finding."
+  },
+  "write_scope": {
+    "only_existing_code": "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/diagnostic/diagnose.py",
+    "new_records": [
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/plan.md",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/plan.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/original-finding.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/input-audit.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/step-report.md",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/review-resolution.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/inputs/script-static-review.before.md",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/inputs/script-static-review.before.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/review/script-static-review.md",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/review/script-static-review.json"
+    ],
+    "runtime_outputs_after_original_R396_approval": [
+      "R396 diagnostic/run/audit-denied.json (first denial only; runtime local marker)",
+      "Existing diagnostic audit-events/result/cleanup/child-outcome receipts with denial classification; no new active probe"
+    ],
+    "freeze": "Before-driver and before-ready-false review snapshots already match originals; preserve all three. R396 plan/input audit/product files/old evidence immutable. Successor static review may occupy R396 original review paths only because exact original review bytes remain under R397 inputs and are referenced by this plan."
+  },
+  "minimal_changes": [
+    {
+      "area": "audit denial",
+      "spec": "Add driver-owned fail_stop_denial(event) with fixed exit code 78. Set sticky denied state/count before other recording; construct only bounded primitive metadata (event name, PID/thread ID, monotonic timestamp, current mode). First denial creates fixed run_root/audit-denied.json using O_CREAT|O_EXCL|O_WRONLY, mode0600; never replace an existing first-denial marker. Write bounded JSON without product getters, locks, args dumps or arbitrary repr. Emit existing denial log best effort. Wrap all persistence in try/finally with unconditional os._exit(78), even on serialization/open/write/log failure. If a competing denial already created marker, retain it and still exit. Do not rely on raising any Python Exception/BaseException for termination; original denied OS operation must never be reached.",
+      "rationale": "os._exit cannot be swallowed by product broad except and ends the entire owned child even if denial came from a heartbeat/dependency thread. It skips child/native finally on this infrastructure stop; that fact is recorded and never claimed as native close evidence. OS teardown releases descriptors; parent owns descendant cleanup and preservation."
+    },
+    {
+      "area": "child boundary guard",
+      "spec": "Add require_no_denial checks after imports, before repository/worker setup completion and READY publication, at top of each mode before MODE_STARTED/job creation, immediately before poll_once, immediately after poll return before get_job/next-mode work, and before successful child outcome. Sticky flag or marker existence must enter the same fail-stop path; no additional poll/job/import/test. No monitor calls harness.close. Guards are defensive; unconditional denial-path exit is the noncatchable stop guarantee."
+    },
+    {
+      "area": "supervisor live watch",
+      "spec": "Assert marker absent before the only child launch; inspect marker existence first in every existing <=20ms supervisor loop iteration, before READY/cap logic. Marker existence, including partial/unreadable JSON, sets reason AUDIT_DENIAL and immediately enters existing owned TERM/KILL/reap cleanup. Never wait for marker to become parseable or a product boundary. No new process, timer budget, or sandbox escalation. Existing child natural exit is also checked afterward for marker and reserved code 78."
+    },
+    {
+      "area": "result precedence",
+      "spec": "After cleanup, any marker presence OR child exit code 78 OR denied log row forces state INFRA_BLOCKED_AUDIT_DENIAL and causal_verdict BLOCKED_BY_DIAGNOSTIC_POLICY. Marker parse/write errors remain fail closed with raw bytes retained. Denial takes precedence over mode-cap, natural exit or apparent native success. Report event/phase if available, marker_parse_error if applicable, operation_executed=false when audit hook rejected it, native_cleanup_skipped_on_fail_stop=true for forced child exit, and observed poll entries separately from allowed quota. If no marker due persistence error but code78, do not invent event detail. Final process return must be nonzero for any denial, even if cleanup succeeds. Do not claim no denied events based solely on log absence; consult all three sources."
+    },
+    {
+      "area": "unchanged path",
+      "spec": "For denial-free execution preserve existing exact input, native worker/locks/runner, mode order, selected profile/stack observation, 5/15/35/65 samples, all original caps, cleanup ownership and output semantics. Do not amend product, broaden network/executable allowlist or add standalone denial/lock smoke probes."
+    }
+  ],
+  "static_verification": {
+    "allowed": [
+      "AST parse driver bytes without import/exec/compile-to-pycache.",
+      "Review concrete data-flow: every denied branch enters fail_stop_denial; its finally unconditionally exits78 regardless of write failure/Exception catch; no path returns to denied operation.",
+      "Verify fixed exclusive marker path has no overwrite/untrusted path; parent fail-stops based on existence even partial; natural-exit/code78 check and log-only fallback have same blocked precedence.",
+      "Verify READY/mode/poll/success guard placement, and nonzero diagnostic result for every denial source.",
+      "Diff before-driver to repaired-driver limited to these sections; compare unchanged source/audit SHA using existing pins, no large nested diff.",
+      "Independent static successor review pins repaired driver SHA and must explicitly mark ready_for_single_R396_attempt=true and resolve R396-I1; reference R397."
+    ],
+    "forbidden": [
+      "Executing driver or fail-stop helper, test/smoke import, artificial denied operation, subprocess rehearsal, product import, SQLite, network or signals during R397."
+    ],
+    "failure_boundary": "If the static repair reveals a different root/scope need, stop for next actual Astra plan. No automatic retry or behavioral validation of this static-only issue."
+  },
+  "acceptance": [
+    "Original ready=false and driver bytes preserved with exact SHA; complete review has no other blockers.",
+    "One narrowly repaired driver and static proof that product exception handling cannot resume after a denial; parent cleanup remains identity-bound.",
+    "No new behavioral attempt allocated or executed in R397; R396 has not launched merely because this plan exists.",
+    "Independent static delta review passes before starting original R396 unique command/clock. ETEAC cause remains a hypothesis until real original-budget evidence."
+  ],
+  "delivery_addendum": {
+    "narrow_extension_to_R396_selected_evidence": [
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/plan.md",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/plan.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/original-finding.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/input-audit.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/step-report.md",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/review-resolution.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/inputs/script-static-review.before.md",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round397-diagnostic-audit-fail-stop-20261102/inputs/script-static-review.before.json"
+    ],
+    "excluded": [
+      "inputs/diagnose.before.py (duplicate snapshot local-only)",
+      "runtime audit-denied marker/DB/WAL/SHM/full raw/cache/tmp remain local-only; concise result carries denial metadata if produced"
+    ],
+    "budgets": "No new commit/push/network allowance; one selected R396 delivery may include these eight explicit small records. No rewriting inherited plan or resetting clock/quota."
+  },
+  "planning_actions": "Only driver/plan/intake/review reads and AST parse; wrote this plan and small audit. No implementation or runtime actions."
+}

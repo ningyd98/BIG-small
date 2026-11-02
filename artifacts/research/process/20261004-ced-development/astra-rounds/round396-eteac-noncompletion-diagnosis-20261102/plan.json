@@ -1,0 +1,187 @@
+{
+  "schema": "astra.plan.v1",
+  "round": "R396",
+  "title": "ETEAC noncompletion: one bounded native-worker diagnostic",
+  "planner_model": "gpt-6-astra",
+  "status": "PLANNED_NOT_EXECUTED",
+  "head": "9abf127ab0d7d64fb02670eb278519f8d3bde5e9",
+  "branch": "refs/heads/research/20261004-continuation",
+  "input_audit": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/input-audit.json",
+    "bytes": 13271,
+    "sha256": "2bc88e98cb417e566380f49b24f1c8eb64790a253d2df83e5addb8ce8bf050b1"
+  },
+  "problem": {
+    "original_job": "job-ee8c30f834344668",
+    "original_run": "sim-6364857a907b",
+    "evidence": "R390 approved frozen JSON plus original E2E07 trace. PCSC succeeded ~1.503 s; ETEAC RUNNING attempt 1 from 10:59:36.009520 through 11:06:46.974494 (430.964974 s), stored timeout 30 s, no completion/attempt end/lease release; downstream queued.",
+    "goal": "Locate and explain non-return inside actual MOCK worker/runner using one isolated reproduction; do not fix product or claim browser pass.",
+    "hypotheses": [
+      {
+        "id": "H1",
+        "priority": "primary",
+        "claim": "ETEAC retry-budget initialization reacquires its own non-reentrant event repository lock through wrapped get_retry_budget.",
+        "static_chain": [
+          "edge/runtime/task_executor.py:submit_contract event-contract branch",
+          "edge/event_mode/controller.py:initialize_task",
+          "edge/recovery/retry_budget.py:initialize",
+          "repositories/event_autonomy/sqlite.py:initialize_retry_budget_if_absent holds _write_lock and calls self.get_retry_budget",
+          "repositories/event_autonomy/protocol.py:local_event_repository.wrap.dispatch obtains same _write_lock when scope is None"
+        ],
+        "not_yet": "Not a dynamically confirmed deadlock or proven historical stack."
+      },
+      {
+        "id": "H2",
+        "claim": "Different runner/SQLite/cleanup wait or nonadvancing computation if H1 is not reached; stack and boundary evidence discriminate. No blind alternate trial."
+      },
+      {
+        "id": "H3",
+        "claim": "Wall timeout is checked around, not preemptively inside, synchronous MOCK runner; independent lease heartbeat can keep RUNNING fresh. This explains persistence only when non-return location is established."
+      }
+    ]
+  },
+  "allowed_writes": [
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/diagnostic/*",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/review/*",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/step-report.md",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/acceptance.json",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/delivery/*"
+  ],
+  "prohibited": [
+    "Any edit to src/, tests/, dashboard/, configs/, assets/ or previous round evidence; any nested worktree write.",
+    "Replacing locks/threads/clock/runner/repository, forcing terminal state, changing concurrency/retries/timeouts, monkeypatching product functions, bypassing decorators or private guards.",
+    "Full browser suite, AUTO case, other scenarios, standalone lock probes, additional behavior attempt, model/hardware/MuJoCo actions, HTTP server/socket bind, outside network, old DB/WAL/SHM SQLite connection/copy.",
+    "Cleanup/delete of raw evidence or new interrupted database; reset/checkout/worktree switch/force/config/proxy/TLS changes."
+  ],
+  "implementation_steps": [
+    "Before behavioral clock, implement only diagnostic/diagnose.py (stdlib supervisor plus child) and prepare immutable invocation/source/environment/input receipts. Freeze script and obtain independent static review against this plan; syntax parse allowed without importing product. No smoke execution/product import for preparation.",
+    "Check input SHA/HEAD/branch, original nested guard values and clean source scope; reuse R393 final preservation receipt as baseline and use exact --untracked-files=all if checking nested status. No large binary diff regeneration solely for planning. Save current minimal before/after source hashes and protection receipts.",
+    "Supervisor launches exactly one child process in new session with PID/starttime identity, explicit environment, fresh run root and no database reuse. Child loads original request from pinned audit, creates exactly two jobs sequentially, PCSC then ETEAC, on one native MOCK worker with one repository and default UTC_LEGACY_VETO/30s lease.",
+    "For each mode derive native single-run draft exactly as service.create_batch does: retain original request fields; only run_type=SINGLE, control_modes=[mode], scenarios=[S01_NORMAL_STATIC], seeds=[0], repetitions=1. Construct fresh SQLiteSimulationJobRepository and real create_job, CREATED->QUEUED update_status_cas then worker.poll_once, without service.start/dispatcher/API. Preserve timeout_seconds=30,max_attempts=2; only one poll per job so no attempt retry. Do not enqueue AUTO.",
+    "Use new diagnostic run IDs/batch identity/artifact paths. Metadata must label DEVELOPMENT_ONLY diagnostic replay: actual source_commit=9abf127..., source_tree_hash empty/uncomputed with explicit reason, diagnostic manifest/reproducibility IDs distinguish from historical ExperimentManifest. Preserve original manifest verbatim only as historical source in input receipt; do not falsely advertise original source tree as current. Canonical request SHA and actual source pinset SHA are separate fields. All scalar execution inputs passed by _experiment_config must equal original; log resulting config at boundary using passive frame values.",
+    "Install observation-only filtered sys.setprofile/threading.setprofile before product calls. Capture call/return (including c_call lock.acquire if emitted) and per-thread sequence/monotonic time for specified boundaries; no function wrapping or return modification. Profile callback must never acquire product locks, call repository getters/SQL or repr/dump arbitrary objects. Bound to 5000 JSONL events, thereafter increment suppression counter without blocking execution; flush promptly.",
+    "Child monitor schedules faulthandler.dump_traceback(all_threads=True) to dedicated fd at fixed per-mode times and passively samples sys._current_frames stack plus allowed primitive identities/scalars. Record nested sqlite initializer frame and protocol dispatch frame self IDs, _write_lock IDs, non-mutating locked() state and dispatch name/scope-is-None; no acquire/release. Link same thread/frame chain and same repository/lock IDs. Also sample thread IDs/names, virtual clock _now_ms, worker active_job_id and last boundary, without getters or mutation.",
+    "End normally if both polls return; otherwise supervisor ends only the owned child process group at relevant cap, preserving last stack and all DB/raw bytes. Never close a still-used harness from monitor or mark product job terminal manually. Reap and prove no owned live descendants; retain new SQLite tuple quiescent after process exit, no postmortem SQL needed.",
+    "Inspect captured boundary/stack evidence offline; publish concise causal report distinguishing observed replay, inferred relation to original symptom, alternative location or NOT_REPRODUCED. Independent final review required before selected evidence delivery; any product fix/new behavior trial requires next actual Astra plan."
+  ],
+  "observation_boundaries": [
+    "SimulationWorker.poll_once/_execute/_run/_run_mock/_raise_if_cancelled_or_timed_out",
+    "ExperimentRunner.__init__/run/_execute_scenario/_build_result",
+    "RuntimeExperimentHarness.__init__/submit_contract/close",
+    "TaskExecutor.submit_contract/_execute_runtime/_save_checkpoint",
+    "EventTriggeredModeController.initialize_task",
+    "RetryBudgetService.initialize",
+    "SQLiteEventAutonomyRepository.initialize_retry_budget_if_absent/get_retry_budget/close",
+    "protocol.local_event_repository dispatch, including closure name and scope absence; no global writer audit"
+  ],
+  "execution": {
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python3",
+      "-B",
+      "-s",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/diagnostic/diagnose.py",
+      "--run-root",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/diagnostic/run",
+      "--input-audit",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/input-audit.json"
+    ],
+    "env": {
+      "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+      "LANG": "C.UTF-8",
+      "PYTHONPATH": "/home/ningyd/文档/ChatGPT/BIGsmall/src",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONNOUSERSITE": "1",
+      "PYTHONUNBUFFERED": "1",
+      "GIT_OPTIONAL_LOCKS": "0",
+      "REAL_MOTION_DISPATCH_ENABLED": "false",
+      "TMPDIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round396-eteac-noncompletion-diagnosis-20261102/diagnostic/run/tmp"
+    },
+    "child_argv": "Same interpreter/script --child with same run-root/audit; exactly one supervisor-owned child. No forked product workers.",
+    "environment_policy": "Build env from exact allowlist, no inherited tokens/provider keys/proxy or MODEL_CONTROL_DB. Supervisor may pass only its own fixed driver flags. TMPDIR precreated inside fresh round; use venv already present, no install. Product imports inside the approved child are permitted only for this attempt.",
+    "sandbox": "workspace-write; restricted network; .git read-only. Use default sandbox. No HTTP/socket needed, no escalation or permission pre-probe. Permission/import/unexpected setup error is INFRA_BLOCKED, preserve and stop; no automatic retry or broader sandbox. A future explicit tool approval cannot silently add attempts.",
+    "safety": "Before imports, child audit hook records/denies network connect/bind/name-resolution and external exec except native git rev-parse HEAD with exact repo cwd/argv (runner.git_sha provenance read). Do not monkeypatch native product functions. No hardware backend instantiated: native worker backend MOCK only, draft LEGACY_PIPELINE. If denied operation occurs stop and report, never treat it as original ETEAC root.",
+    "readiness": "New regular empty run-root, no symlink ancestors; source/audit pins match. One READY record after product imports/repo+worker setup, <=10s from child launch. Supervisor uses file/pipe readiness, never HTTP or TCP. Begin each mode cap before job setup/CAS and poll; record exact target-entry monotonic independently.",
+    "budgets": {
+      "behavior_attempts": 1,
+      "pcsc_polls": 1,
+      "eteac_polls": 1,
+      "auto_polls": 0,
+      "retries": 0,
+      "child_readiness_seconds": 10,
+      "pcsc_mode_cap_seconds": 30,
+      "eteac_mode_cap_seconds": 75,
+      "child_total_cap_seconds": 125,
+      "owned_cleanup_seconds": 10,
+      "supervisor_cap_seconds": 140,
+      "round_wall_seconds": 600,
+      "round_clock_start": "Immediately before unique supervisor invocation, after static driver review/preflight. No reset; final review/delivery must fit or stop with pending delivery."
+    },
+    "stacks_seconds_from_mode_start": {
+      "PCSC": [
+        5,
+        15,
+        25
+      ],
+      "ETEAC": [
+        5,
+        15,
+        35,
+        65
+      ]
+    },
+    "no_target_rule": "If PCSC fails/nonreturns or setup fails, do not substitute another control or proceed blindly to ETEAC; preserve classified incomplete result. If ETEAC completes before later snapshots, do not manufacture stacks or rerun; report NOT_REPRODUCED or actual failure.",
+    "cleanup": "At cap, capture supervisor receipt; signal only owned verified PID/starttime/process group TERM then <=5s, KILL only remaining owned members then <=5s wait/reap. No broad pkill, unrelated processes or signals. On natural completion child joins monitor and verifies native heartbeat threads ended; harness.close is native worker finally only. DBs remain local, no unlink/recovery/WAL checkpoint. Record forced termination separately from product terminal outcome."
+  },
+  "acceptance": {
+    "expected_diagnostic_nonterminal": "ETEAC reaching H1 and remaining blocked at cap, terminated by owned supervisor, is expected diagnostic RED and evidence success; it is not software PASS, natural timeout, cancellation success or browser completion. No original failure overwritten.",
+    "h1_confirmed_replay_requires": [
+      "Native PCSC poll terminal and original-semantic ETEAC entered actual worker/runner path.",
+      "At least two separated snapshots show same worker thread stack inside protocol.dispatch acquiring lock while outer sqlite.initialize_retry_budget_if_absent is inside with self._write_lock.",
+      "Same repository and same lock identities in both frames, ordinary non-reentrant Lock by pinned constructor, scope None/name=get_retry_budget; initializer called its wrapped reader and has no return.",
+      "Runner.run and harness.submit entered without return, close never entered, unchanged pinned code; heartbeat separate if observed.",
+      "Explain static timeout placement and serial dispatcher consequence, separately from exact internal replay cause."
+    ],
+    "if_incomplete": "If only one stack, inconsistent identities, sampler failure, instrumentation limit hiding key boundary or different wait, report LOCATION_PARTIAL/UNKNOWN. A stable stack alone does not prove deadlock; no guessed performance fix.",
+    "historical_boundary": "Historical R377 lacks its own stack; report reproduction strongly supports common cause given matched input/code, not direct historical stack proof. No full E2E recheck or research upgrade.",
+    "final_outputs": [
+      "diagnostic/invocation.json",
+      "diagnostic/source-before.json",
+      "diagnostic/source-after.json",
+      "diagnostic/input-replay.json",
+      "diagnostic/boundaries.jsonl",
+      "diagnostic/stacks.txt",
+      "diagnostic/frame-samples.jsonl",
+      "diagnostic/result.json",
+      "diagnostic/cleanup.json",
+      "diagnostic/causal-report.md",
+      "review/script-static-review.json",
+      "review/code-review.md",
+      "review/code-review.json",
+      "acceptance.json",
+      "step-report.md"
+    ]
+  },
+  "delivery": {
+    "scope": "Only R396 explicitly enumerated small plan/audit/driver/receipts/boundaries/stacks/report/review files after independent review. Freeze path/byte/SHA candidate and review it; no directory git add.",
+    "excluded": "All DB/WAL/SHM, generated runtime raw, caches, tmp, old inputs duplicate trace, full screenshots/export, nested gitlinks, unchanged source/checkpoint files. Raw kept local; selected records are not full reproduction package.",
+    "git_preconditions": "research/20261004-continuation HEAD/current cached upstream 9abf127...; index no unrelated staged changes; original main and other refs/nested pointers/internal protected states preserved. Same HEAD before staging; unexpected change stops. Actual .git writes only through allowed tool approval.",
+    "quota": {
+      "ordinary_commit": 1,
+      "commit_seconds": 60,
+      "push": 1,
+      "push_seconds": 60,
+      "exact_branch_ls_remote": 1,
+      "ls_remote_seconds": 60,
+      "retry": 0
+    },
+    "commands": [
+      "git add -- <exact frozen selected R396 paths>",
+      "git commit -m \"Record bounded ETEAC noncompletion diagnosis\"",
+      "git push origin HEAD:refs/heads/research/20261004-continuation",
+      "git ls-remote --exit-code origin refs/heads/research/20261004-continuation"
+    ],
+    "verify": "Local HEAD/cached origin research/live exact remote SHA equal; original main and other refs unchanged. Failure is pending/failed delivery with preserved receipt; no force/amend/extra remote probe. Postcommit receipt local-only; no second recursive receipt commit."
+  },
+  "planning_actions": "Static source/JSON/ZIP member reads and readonly git ref identity only. No product import/probe/test/SQLite/Git mutation/network. Only plan.md/plan.json/input-audit.json written."
+}
