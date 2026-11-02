@@ -7,7 +7,6 @@ qualified counterexamples, not newly captured or physically accepted evidence.
 from __future__ import annotations
 
 import base64
-import hashlib
 import io
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -27,7 +26,8 @@ from cloud_edge_robot_arm.vision.observations import RGBDObservation
 from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerRegistration, detect_pose_marker
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs/research/ced_marker_registration_v1.yaml"
+CONFIG = ROOT / "configs/research/ced_marker_registration_v2.yaml"
+CONFIG_SHA256 = "d009cd6b06b1a429b6c67429c6d4da4c8ea9c4bc0e5f50a81cab237e1d54f8e9"
 PROCESS = ROOT / "artifacts/research/process/20261004-ced-development"
 STATIC = PROCESS / "t7b-pose-marker-color/actual-capture-640/frame/observation-full.json"
 INITIAL = (
@@ -38,7 +38,7 @@ INITIAL = (
 
 def replay(observation):
     registration = load_marker_registration(
-        CONFIG, expected_registry_sha256=hashlib.sha256(CONFIG.read_bytes()).hexdigest(), root=ROOT
+        CONFIG, expected_registry_sha256=CONFIG_SHA256, root=ROOT
     )
     context = marker_frame_context(
         observation,

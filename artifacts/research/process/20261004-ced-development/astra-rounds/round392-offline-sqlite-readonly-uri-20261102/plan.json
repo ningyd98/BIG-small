@@ -1,0 +1,143 @@
+{
+  "schema": "bigsmall.r392.offline-sqlite-readonly-uri-plan.v1",
+  "round": "R392",
+  "created_utc": "2026-11-02T11:27:39.704938+00:00",
+  "planner": {
+    "model": "gpt-6-astra",
+    "agent": "/root/astra_r389_revalidate",
+    "actual_model_call": true
+  },
+  "status": "APPROVED_ONE_KEYWORD_FIX_REQUIRES_INDEPENDENT_STATIC_REVIEW_BEFORE_R390",
+  "problem": "Independent static review identified missing explicit uri=True on the private SQLite copy connection in not-yet-run R390 offline diagnostic script. R390 mandates mode=ro opening plus query_only; URI intent must be explicit.",
+  "original_failure_evidence": {
+    "kind": "STATIC_REVIEW_IMPORTANT_NOT_RUNTIME_FAILURE",
+    "source": "Coordinator delivered independent reviewer finding; no review artifact path supplied or present at planning. Preserve original review in task history and a new receipt; do not invent a test failure.",
+    "reported_finding": "database_copy中 sqlite3.connect(copyPath.as_uri()+'?mode=ro', timeout=1) 漏显式uri=True，sqlite默认uri=False，query_only不替代打开时readonly。",
+    "script": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round390-browser-queue-target-reachability-20261102/analysis/offline_diagnose.py",
+      "bytes": 11496,
+      "sha256": "269c8af0eb50de149b8676f880428ebb840a0d42f5cc57af412e0b80be60427a"
+    },
+    "line": 133,
+    "original_statement": "connection = sqlite3.connect((destination / original.name).as_uri() + \"?mode=ro\", timeout=1)",
+    "static_ast": {
+      "sqlite3_connect_calls": 1,
+      "keywords": [
+        "timeout"
+      ],
+      "uri_keyword_present": false
+    },
+    "local_stdlib_interface": {
+      "command": [
+        "/usr/bin/python3",
+        "-I",
+        "- (print sqlite3.connect.__text_signature__ only)"
+      ],
+      "python_version": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+      "text_signature": "($module, /, database, timeout=5.0, detect_types=0,\n        isolation_level='', check_same_thread=True,\n        factory=ConnectionType, cached_statements=128, uri=False, *,\n        autocommit=sqlite3.LEGACY_TRANSACTION_CONTROL)",
+      "uri_default": false,
+      "connection_opened": false,
+      "method": "Read builtin local signature only; imported stdlib sqlite3, never called connect/database_copy/main or imported product/diagnostic module."
+    },
+    "execution_not_started_checks": {
+      "analysis/execution-start.json": true,
+      "analysis/diagnostic-result.json": true,
+      "analysis/input-freeze.json": true,
+      "forensic-copy": true
+    },
+    "original_database_state": "Executor reports original DB neither opened nor copied; filesystem confirms no forensic-copy/execution-start/input-freeze/result artifacts. This is not a claim of a whole-host open-file audit."
+  },
+  "root_cause": {
+    "confirmed": "The sole sqlite3.connect call has timeout=1 but omits uri=True; installed CPython interface defaults uri=False. A URI-looking string with mode=ro and a subsequent query_only pragma is not the explicit open-time read-only contract required by R390.",
+    "boundary": "No erroneous connection was executed and no original/copy DB mutation is alleged. Build/runtime SQLite URI behavior has not been probed and is not needed to add explicit API opt-in. query_only remains defense in depth, not a substitute for URI mode=ro."
+  },
+  "scope": {
+    "allowed_path": "artifacts/research/process/20261004-ced-development/astra-rounds/round390-browser-queue-target-reachability-20261102/analysis/offline_diagnose.py",
+    "allowed_exact_replacement": {
+      "from": "connection = sqlite3.connect((destination / original.name).as_uri() + \"?mode=ro\", timeout=1)",
+      "to": "connection = sqlite3.connect((destination / original.name).as_uri() + \"?mode=ro\", timeout=1, uri=True)"
+    },
+    "expected_after": {
+      "bytes": 11506,
+      "sha256": "4f1037f47f757130b85d25e722732630d740ee76662add5d0b05fcda02053500"
+    },
+    "allowed_receipts": "New R392 preflight/review/step reports and original-script preservation snapshot only; no rewrite of R390 plan or old inputs/results.",
+    "not_changed": [
+      "Destination copied database path and ?mode=ro URI text",
+      "timeout=1, query_only=ON, progress handler, row_limit10000 and all SQL/selected tables/columns/IDs",
+      "Original-byte/WAL/SHM copy/integrity checks, cleanup/finally, original file boundary",
+      "R390 input list, stage output locations, hypotheses/claim boundaries, clocks and attempt counts",
+      "All product/test/dashboard/config/asset/source files and browser execution"
+    ]
+  },
+  "steps": [
+    "Recheck script original pin and R390 no-start/no-copy state. Preserve exact original script bytes in R392/inputs/offline_diagnose.before.py with the known hash; preserve review finding as reported. This is administrative source snapshot only.",
+    "Add only uri=True to sole sqlite3.connect line. No SQL, path, result logic or budget edits.",
+    "Statically verify full bytes equal exact authorized replacement and expected after hash; AST shows sole connection has literal uri=True plus unchanged timeout=1, and unchanged mode=ro/query_only. Do not execute/import the diagnostic module, call sqlite3.connect, create sample DB, probe writability, or run a test.",
+    "Obtain independent read-only static review of exact diff and preserved original/current pins; record APPROVED_R390_READONLY_CONNECTION_FIX or equivalent and retain Important finding resolution. No R390 execution before review passes.",
+    "After approval and original R390 prerequisites, execute its sole original120s offline-analysis attempt/300s wall ledger. R392 grants no additional attempts or behavior allowance and does not reset a started ledger. Preserve runtime limitation/partial evidence per R390; new unexpected failure needs new actual Astra plan.",
+    "Append small R392 step receipt; R378/R391 marker review and independent R379 work may continue under their original single-writer/terminal/source-pin gates. This script review does not require unrelated marker/asset work to wait."
+  ],
+  "preconditions": [
+    "Actual workspace-write/networkrestricted/.gitreadonly; no network/escalation inherited from browser work.",
+    "R390 script currently unexecuted and original DB untouched by this task; if execution-start or forensic-copy already appears unexpectedly, stop and reassess before editing.",
+    "No concurrent writer to diagnostic script; product tests/source-pinned runs cannot overlap a mutation if their source snapshot includes this script. Respect main executor handoff.",
+    "All original R390 inputs stay exact; independent source/version work outside its pinned direct inputs is not authorization to silently repin drift.",
+    "Independent static review required after edit; local stdlib signature inspection is not a database opening test."
+  ],
+  "budgets": {
+    "R392_behavior_tests": 0,
+    "R392_sqlite_connection_probes": 0,
+    "R392_analysis_attempts": 0,
+    "inherited_R390": {
+      "attempts": 1,
+      "automatic_retries": 0,
+      "analysis_child_cap_s": 120,
+      "cleanup_allowance_s": 15,
+      "round_wall_cap_s": 300,
+      "clock": "Fresh offline-diagnostic ledger starts at diagnostic invocation only, not planning; no behavior-test budget granted. Exit cleanly at internal monotonic deadline and bounded SQLite progress handler. Preserve partial evidence on limit.",
+      "row_cap_per_query": 10000,
+      "no_extra_browser_or_software_tests": true
+    },
+    "allocation_note": "Only one unused original R390 analysis attempt remains;120child+15cleanup/300wall,0retry. No browser/pytest/model/physical run allocated; no new runtime clock from planning."
+  },
+  "validation": {
+    "static_only": [
+      "Original bytes/SHA pinned",
+      "Exactly one literal uri=True keyword added and no other byte delta",
+      "AST parse and exact after SHA",
+      "Independent review accepted",
+      "No execution or forensic-copy artifacts before authorized R390 run"
+    ],
+    "not_required": "No write probe, sample database, database query, test suite, or repeated browser evidence; these would consume or expand unallocated behavior."
+  },
+  "acceptance": [
+    "One-keyword correction demonstrably satisfies explicit URI open option while preserving ?mode=ro and query_only.",
+    "Review approved before R390 sole attempt; original script/finding preserved, no originalDB or product/source mutation from this plan.",
+    "No extra analysis/test/budget allocation; existing target failures and unknown causes remain unchanged until R390 records actual offline evidence.",
+    "Marker75PASS and later independent asset results remain separate; source issue cannot retroactively invalidate or upgrade them."
+  ],
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round390-browser-queue-target-reachability-20261102/analysis/offline_diagnose.py",
+      "bytes": 11496,
+      "sha256": "269c8af0eb50de149b8676f880428ebb840a0d42f5cc57af412e0b80be60427a"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round390-browser-queue-target-reachability-20261102/plan.json",
+      "bytes": 203263,
+      "sha256": "1e2dbb91157052caa0856ec8daecb57ad2fbd51d4ae3bd8e4d5377cf965ac456"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round390-browser-queue-target-reachability-20261102/plan.md",
+      "bytes": 4221,
+      "sha256": "073f700895869ac7b5a913eafae535df771f1e185805958298b22d84c81b7ba9"
+    }
+  ],
+  "planner_actions": "Read source, hash, AST parse inert bytes and inspect local sqlite3 builtin signature; write plan.md/json only. No diagnostic module/product import, SQLite connection, test, network, Git or signal."
+}

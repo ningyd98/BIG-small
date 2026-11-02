@@ -1,0 +1,7 @@
+# R391 仓库外输入修复与标记验收
+
+实际Astra26pins与前序23guard终态核对。仅outside_root负例以canonical/tmp唯一TemporaryDirectory提供真正ROOT外的普通无symlink同字节registry，ExitStack保证原loader调用之后清理；原expectedregistry ValueError、字节、parent/file symlink断言保持，loader未改。原R37851P/1F直接作为RED。
+
+新轮完整两module一次52通过（17.16秒pytest/17.822秒外层），0failure/error/skip，源前后与进程清理满足。原23项pose/evidence/assets不重跑，合计75项当前所需检查通过。R378v2仅登记id及已审marker_association来源SHA两处payload更新，v1/六来源/帧/所有资产原字节保持；严格旧v1拒绝、crosshash拒绝、真实边界/反例/非接纳断言通过。
+
+软件开发回放不代表新采集、native/物理接纳或正式研究验收。原R378失败完整保留，浏览器19开放不被覆盖。详见acceptance.json与最终独立review。R379待本轮独审清理移交后独立进行。

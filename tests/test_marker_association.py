@@ -6,9 +6,11 @@ import base64
 import hashlib
 import importlib
 import io
+from contextlib import ExitStack
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import cv2
 import numpy as np
@@ -20,7 +22,10 @@ from cloud_edge_robot_arm.contracts.models import TaskTarget
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs/research/ced_marker_registration_v1.yaml"
+CONFIG = ROOT / "configs/research/ced_marker_registration_v2.yaml"
+CONFIG_SHA256 = "d009cd6b06b1a429b6c67429c6d4da4c8ea9c4bc0e5f50a81cab237e1d54f8e9"
+FROZEN_V1 = ROOT / "configs/research/ced_marker_registration_v1.yaml"
+FROZEN_V1_SHA256 = "209a133c05d5b98f940bf9467133ea24120cbb946083dbbb80309cc022172605"
 PROCESS = ROOT / "artifacts/research/process/20261004-ced-development"
 STATIC = PROCESS / "t7b-pose-marker-color/actual-capture-640/frame/observation-full.json"
 INITIAL = (
@@ -34,11 +39,53 @@ def api():
     return importlib.import_module("cloud_edge_robot_arm.vision.marker_association")
 
 
+def test_frozen_v1_rejects_current_sources():
+    assert hashlib.sha256(FROZEN_V1.read_bytes()).hexdigest() == FROZEN_V1_SHA256
+    with pytest.raises(ValueError, match="source/asset binding"):
+        api().load_marker_registration(
+            FROZEN_V1, expected_registry_sha256=FROZEN_V1_SHA256, root=ROOT
+        )
+
+
+def test_v2_registration_changes_only_identity_and_reviewed_source_binding():
+    module = api()
+    previous = yaml.safe_load(FROZEN_V1.read_text())
+    current = yaml.safe_load(CONFIG.read_text())
+    source = "src/cloud_edge_robot_arm/vision/marker_association.py"
+    reviewed_sha256 = "3fb8c53681b5140c121f45c4d378fbe6b3b5ba5d7daee09fef696cf38bf8238a"
+    expected = {
+        **previous,
+        "registration_id": "ced-marker-color-v2-object-development-v2",
+        "registration_source_hashes": {
+            **previous["registration_source_hashes"], source: reviewed_sha256
+        },
+    }
+    assert current == expected
+    assert len(current["registration_source_hashes"]) == 6
+    assert previous["registration_source_hashes"][source] == (
+        "f538c6b751ab560b2523cfbe2d237f8956b092931af276bfcda744d10ee4f426"
+    )
+    unchanged = {k: v for k, v in previous["registration_source_hashes"].items() if k != source}
+    assert len(unchanged) == 5
+    assert all(current["registration_source_hashes"][k] == v for k, v in unchanged.items())
+    assert current["admission_scope"] == "DEVELOPMENT_ONLY"
+    assert hashlib.sha256(CONFIG.read_bytes()).hexdigest() == CONFIG_SHA256
+    successor = module.load_marker_registration(
+        CONFIG, expected_registry_sha256=CONFIG_SHA256, root=ROOT
+    )
+    frozen = module.MarkerObjectRegistration.from_payload(previous, root=ROOT)
+    assert successor.sources_valid() and not frozen.sources_valid()
+    assert successor.digest() != frozen.digest()
+    for path, mismatched_sha in [(CONFIG, FROZEN_V1_SHA256), (FROZEN_V1, CONFIG_SHA256)]:
+        with pytest.raises(ValueError, match="registry"):
+            module.load_marker_registration(path, expected_registry_sha256=mismatched_sha, root=ROOT)
+
+
 def inputs(path=STATIC):
     module = api()
     observation = RGBDObservation.model_validate_json(path.read_text())
     registration = module.load_marker_registration(
-        CONFIG, expected_registry_sha256=hashlib.sha256(CONFIG.read_bytes()).hexdigest(), root=ROOT
+        CONFIG, expected_registry_sha256=CONFIG_SHA256, root=ROOT
     )
     context = module.marker_frame_context(
         observation,
@@ -207,7 +254,7 @@ def test_symlink_source_root_or_ancestor_cannot_supply_a_diagnostic_candidate(tm
     with pytest.raises(ValueError, match="source"):
         module.load_marker_registration(
             CONFIG,
-            expected_registry_sha256=hashlib.sha256(CONFIG.read_bytes()).hexdigest(),
+            expected_registry_sha256=CONFIG_SHA256,
             root=altered_root,
         )
 
@@ -215,23 +262,30 @@ def test_symlink_source_root_or_ancestor_cannot_supply_a_diagnostic_candidate(tm
 @pytest.mark.parametrize("path_kind", ["parent_link", "file_link", "outside_root"])
 def test_registry_path_must_be_regular_under_root_without_symlink_ancestors(tmp_path, path_kind):
     module, _, _, _ = inputs()
-    if path_kind == "parent_link":
-        parent = tmp_path / "registry-parent-link"
-        parent.symlink_to(CONFIG.parent, target_is_directory=True)
-        altered = parent / CONFIG.name
-    elif path_kind == "file_link":
-        altered = tmp_path / "registry-link.yaml"
-        altered.symlink_to(CONFIG)
-    else:
-        altered = tmp_path / "identical-but-unregistered.yaml"
-        altered.write_bytes(CONFIG.read_bytes())
-    assert altered.read_bytes() == CONFIG.read_bytes()  # byte hash alone cannot authorize path
-    with pytest.raises(ValueError, match="registry"):
-        module.load_marker_registration(
-            altered,
-            expected_registry_sha256=hashlib.sha256(CONFIG.read_bytes()).hexdigest(),
-            root=ROOT,
-        )
+    with ExitStack() as cleanup:
+        if path_kind == "parent_link":
+            parent = tmp_path / "registry-parent-link"
+            parent.symlink_to(CONFIG.parent, target_is_directory=True)
+            altered = parent / CONFIG.name
+        elif path_kind == "file_link":
+            altered = tmp_path / "registry-link.yaml"
+            altered.symlink_to(CONFIG)
+        else:
+            directory = cleanup.enter_context(
+                TemporaryDirectory(prefix="bigsmall-marker-outside-", dir=Path("/tmp").resolve())
+            )
+            altered = Path(directory) / "identical-but-unregistered.yaml"
+            altered.write_bytes(CONFIG.read_bytes())
+            assert altered.is_file() and not altered.is_symlink()
+            assert not any(path.is_symlink() for path in (altered, *altered.parents))
+            assert not altered.resolve().is_relative_to(ROOT.resolve())
+        assert altered.read_bytes() == CONFIG.read_bytes()  # byte hash alone cannot authorize path
+        with pytest.raises(ValueError, match="registry"):
+            module.load_marker_registration(
+                altered,
+                expected_registry_sha256=CONFIG_SHA256,
+                root=ROOT,
+            )
 
 
 def test_depth_hole_invalid_mask_and_camera_change_cannot_reuse_identity():

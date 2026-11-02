@@ -764,6 +764,7 @@ async function readStreamReplay(
 function draft(overrides: Record<string, unknown> = {}) {
   const base = {
     backend: "MOCK",
+    input_mode: "LEGACY_PIPELINE",
     run_type: "SINGLE",
     scenarios: ["S01_NORMAL_STATIC"],
     control_modes: ["PCSC"],

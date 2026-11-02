@@ -1,5 +1,15 @@
 # 2026-10-04 后续研发阶段总结
 
+## 2026-11-02 接续：输入与登记一致性恢复、浏览器停点
+
+R376/R380/R381 已恢复完整 manifest、故障诊断作用域和 SQLite 线程连接归属，原五个失败 T3 目标均有针对性完整断言通过；原 commit_close 一次外层 241.577 秒通过，accepted=false、23 份未确认资料与原生 closed-database 故障均验证。没有重跑九项整体套件。R378/R391 创建严格绑定的新标记登记 v2，保留 v1，并修正真正仓库外负例；两模块 52 项和独立 23 项共 75 项通过。R379 只更新资产 manifest 当前 SHA 与 v3 版本，registry 3 项及原真实 MuJoCo 3 项通过，四份 XML 原字节不变。
+
+R377 仅给 Mock 草稿补 LEGACY_PIPELINE，不改产品默认、等待或断言。默认套件一次为 20 PASS/17 ERROR/2 FAILURE/1 原有 SKIP；旧 18 项未通过中恢复 2 项，16 项仍未达目标，另有 3 项 RGBD 本次未达目标，合计 19 项开放。研究页 3 项一次通过仅证明 SOFTWARE_ONLY fixture，4200 BLOCKED/NOT_RUN/formal=false、0 模型请求/0 物理动作保持。
+
+R390/R392 经实际 Astra 与独审后完成唯一只读副本离线分析，63 输入、10 trace 和原 DB 元组保持。PCSC 约 1.503 秒成功后，ETEAC 的 RUNNING 记录跨度 430.964974 秒，配置 timeout 30，未记录完成/attempt ended/lease release；后续任务含三个 capture 均 QUEUED/attempt 0。同步执行未记录完成/返回和后续未领取有证据，runner/清理/锁具体停点、死锁和性能根因仍未证实；RGBD 不能归为渲染/规划/取消已执行失败。下一探针、产品修复、策略修改或重跑先由实际 Astra 制定新计划。
+
+本轮限定独审通过后按 R393 精选路径交付研发分支，实际 Git 回执在操作后另记。R389 已接受用户授权的 fdb2e94 检查点，temporal 候选与两个测试已在其中提交；旧记录不追溯改写。未新增全仓或正式研究通过结论，旧 4732 节点终态、中文 checker/静态/覆盖问题及 UTC 原 600 秒门未满足仍保留。完整 raw、DB、forensic-copy 与大型导出留在本地，精选证据不是完整复现包。详见[本轮详细总结](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round393-research-branch-delivery-preconditions-20261102/phase-summary.md)。以下保留此前历史记录。
+
 ## 2026-11-01 接续：R373–R375 全流程有界诊断收尾
 
 本轮按实际Astra计划完成可用阶段的有界尝试与未运行记账，不宣称全流程通过。4732唯一Python节点最终为1845通过、54失败、17未完成、2743阶段停止前未轮到、71未运行、2排除；64历史失败、18历史未完成、11个限定恢复保留。所有运行终态已收齐，源码清单1050项无漂移。

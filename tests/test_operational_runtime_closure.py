@@ -5534,9 +5534,11 @@ def _b_t3_terminal_fault(scoped, observed, repo, session, reads, variant, eviden
             result = real_execute(connection, sql, parameters)
             if (not evidence["fired"] and sql.strip().rstrip(";").upper() == "COMMIT"
                     and getattr(repo._transactions, "connection", None) is connection):
-                row = reads["job"].execute(
-                    "SELECT * FROM simulation_operational_leases_v1 WHERE job_id=?", (session.job_id,)
-                ).fetchone()
+                with closing(sqlite3.connect(repo.database_path)) as observer:
+                    observer.row_factory = sqlite3.Row
+                    row = observer.execute(
+                        "SELECT * FROM simulation_operational_leases_v1 WHERE job_id=?", (session.job_id,)
+                    ).fetchone()
                 if row is not None and row["terminal_reason"] == "owned publication completed":
                     evidence["fired"] = True
                     evidence["events"].append({"kind": "TRUE_TERMINAL_COMMIT_THEN_SAME_CONNECTION_CLOSE",

@@ -1,0 +1,3 @@
+# R392 显式只读 URI
+
+实际Astra4pins核对，原script按字节保存。唯一差异为sqlite3.connect添加uri=True，修后SHA4f1037f47f757130b85d25e722732630d740ee76662add5d0b05fcda02053500；静态整文件精确替换/AST确认，其余mode=ro、query_only、SQL、输入与预算保持。原独审static finding以来源明确的新intake记录，不重造数据库行为失败。未执行数据库连接、分析脚本或任何新测试；等待独立静态审查后才使用R390原唯一额度。

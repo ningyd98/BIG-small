@@ -1,5 +1,15 @@
 # Current Authoritative Status
 
+## 2026-11-02 测试输入与版本登记恢复
+
+T3 原五个失败目标已有针对性完整断言通过证据：完整 manifest 快照、诊断 owner 归属及 commit_close 当前线程独立观察连接分别由 R376/R380/R381 修复；没有重跑九项整体套件。标记新 v2 仅更新登记 id 与已审来源 SHA，旧 v1 保留，仓库外负例使用真正 ROOT 外输入；相关 52+23=75 项通过。资产 manifest 更新当前既有 scene SHA 和 v3 版本，registry 3 项与真实 MuJoCo 加载/物理步进 3 项通过，scene 及三个 marker XML 原字节不变。上述均完成限定独审，不升级真实硬件或正式研究验收。
+
+浏览器 Mock 草稿显式恢复 LEGACY_PIPELINE 输入合同，但默认 40 项为 20 通过、17 error、2 failure、1 原有跳过。旧 18 项未通过中仅 E2E05、E2E22 恢复，另有 3 项原先通过的 RGBD 本次未达目标；共 19 项仍开放。研究页面 3 项通过仅为 SOFTWARE_ONLY/4200 BLOCKED/NOT_RUN/formal=false，模型请求和物理动作均 0。
+
+R390 唯一离线诊断及独审完成，原 DB 元组不变。PCSC 成功后 ETEAC 保持 RUNNING，记录跨度 430.964974 秒而配置 timeout 为 30；完成、attempt ended 与 lease release 均为空，后续选定任务包括三个 capture 仍 QUEUED/attempt 0。证据支持“ETEAC 同步执行未记录完成/返回，后续任务未领取”，内部停点 UNKNOWN，死锁/性能根因未证实。三个 RGBD 尚未到渲染/规划/取消的目标位置；下一主动探针或修复先交新实际 Astra 计划。
+
+本轮没有全仓重跑。此前 4732 节点终态、4 项中文 checker、覆盖缺口、静态债务及 UTC 长场景合计 4711.366 秒超过原 600 秒门等继续保留。中途用户授权检查点已保存 temporal 候选与两个测试，旧段落中的“未提交”仅为历史状态。当前精选交付仍不含完整 raw/DB/forensic/大导出，不能称完整远端复现包；Git 原生结果另记，不预先宣称推送成功。详见[本轮详细阶段总结](../artifacts/research/process/20261004-ced-development/astra-rounds/round393-research-branch-delivery-preconditions-20261102/phase-summary.md)。以下各节保留其原验收时点，formal_accepted=false。
+
 ## 2026-11-01 全流程有界重跑终态（R373–R375）
 
 诊断已结束，全流程未通过，formal_accepted=false。4732唯一Python节点：1845通过、54失败、17未完成、2743在阶段停止前未轮到、71未运行、2按选择条件排除；64历史失败、18历史未完成、11恢复分别保留。235续跑子项全部记账不等于全部测试执行完毕。

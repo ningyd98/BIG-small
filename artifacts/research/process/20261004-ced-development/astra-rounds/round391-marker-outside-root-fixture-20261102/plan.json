@@ -1,0 +1,1047 @@
+{
+  "schema": "bigsmall.r391.marker-outside-root-fixture-plan.v1",
+  "round": "R391",
+  "created_utc": "2026-11-02T11:21:26.261460+00:00",
+  "planner": {
+    "model": "gpt-6-astra",
+    "agent": "/root/astra_r389_revalidate",
+    "actual_model_call": true
+  },
+  "status": "APPROVED_NARROW_TEST_FIX_AFTER_R378_GUARD_TERMINAL_HANDOFF",
+  "authorization": "Existing user request restores genuine test inputs/registration versions; AGENTS requires actual Astra new plan for unexpected failure. No product behavior or loader policy change authorized.",
+  "baseline": {
+    "head_reported": "fdb2e94d3d7bc041e7d958f2514a08406fad4668",
+    "head_attestation": "Executor handoff and existing invocation receipts; planner did not run Git.",
+    "workspace": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "permissions": "workspace-write/network restricted/.git read-only; /tmp writable",
+    "preserve": "All authorized R381 closure/newunit, console singlefield, R378v2/consumer changes; checkpointed temporal sources and historical nested dirty workspaces. No reset or source rollback."
+  },
+  "original_failure": {
+    "stage": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green",
+    "result": {
+      "state": "FINISHED",
+      "launched": true,
+      "returncode": 1,
+      "elapsed_s": 17.226191581998137,
+      "ended_utc": "2026-11-02T11:16:45.436022+00:00",
+      "source_drift": [],
+      "signals": [],
+      "cancellations": [],
+      "errors": [],
+      "remaining_live": [],
+      "reaped": true,
+      "adopted_children_reaped": [],
+      "ports_after": [],
+      "permission_profile": "workspace-write/network restricted/.git read-only"
+    },
+    "junit_counts": {
+      "tests": 52,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "passed": 51,
+    "case": {
+      "case": "test_registry_path_must_be_regular_under_root_without_symlink_ancestors[outside_root]",
+      "text": "tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round378-...version-consistency-20261101/implementation/marker_complete_green/persistent-basetemp/test_registry_path_must_be_reg2')\npath_kind = 'outside_root'\n\n    @pytest.mark.parametrize(\"path_kind\", [\"parent_link\", \"file_link\", \"outside_root\"])\n    def test_registry_path_must_be_regular_under_root_without_symlink_ancestors(tmp_path, path_kind):\n        module, _, _, _ = inputs()\n        if path_kind == \"parent_link\":\n            parent = tmp_path / \"registry-parent-link\"\n            parent.symlink_to(CONFIG.parent, target_is_directory=True)\n            altered = parent / CONFIG.name\n        elif path_kind == \"file_link\":\n            altered = tmp_path / \"registry-link.yaml\"\n            altered.symlink_to(CONFIG)\n        else:\n            altered = tmp_path / \"identical-but-unregistered.yaml\"\n            altered.write_bytes(CONFIG.read_bytes())\n        assert altered.read_bytes() == CONFIG.read_bytes()  # byte hash alone cannot authorize path\n>       with pytest.raises(ValueError, match=\"registry\"):\nE       Failed: DID NOT RAISE <class 'ValueError'>\n\ntests/test_marker_association.py:274: Failed"
+    },
+    "classification": "INVALID_OUTSIDE_ROOT_NEGATIVE_FIXTURE_NOT_PRODUCT_LOADER_DEFECT",
+    "raw_fixture": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/persistent-basetemp/test_registry_path_must_be_reg2/identical-but-unregistered.yaml",
+      "bytes": 1755,
+      "sha256": "d009cd6b06b1a429b6c67429c6d4da4c8ea9c4bc0e5f50a81cab237e1d54f8e9"
+    },
+    "fixture_observations": {
+      "resolved_path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/persistent-basetemp/test_registry_path_must_be_reg2/identical-but-unregistered.yaml",
+      "is_regular_file": true,
+      "has_symlink_ancestor": false,
+      "is_relative_to_actual_ROOT": true,
+      "bytes_equal_current_v2": true
+    },
+    "expected_assertion": "pytest.raises(ValueError, match=\"registry\")",
+    "actual": "Failed: DID NOT RAISE <class ValueError>; original raw stdout/JUnit and basetemp preserved unchanged."
+  },
+  "root_cause": {
+    "confirmed": "R378 selected persistent --basetemp under repository; old outside_root branch copied same registry into tmp_path and assumed tmp_path was outside ROOT. It is a genuine regular in-root file with identical v2 bytes and valid sources. Loader accepts any regular non-symlink registry under root whose expected SHA and sources validate; no canonical filename whitelist exists. Thus this supplied positive-path input cannot exercise outside-root rejection.",
+    "source_evidence": [
+      {
+        "path": "src/cloud_edge_robot_arm/vision/marker_association.py",
+        "lines": [
+          64,
+          70,
+          231,
+          237,
+          239,
+          248
+        ],
+        "meaning": "Lexical symlink check, regular-file-under-root predicate, expected byte hash and source binding."
+      },
+      {
+        "path": "tests/test_marker_association.py",
+        "lines": [
+          260,
+          261,
+          270,
+          271,
+          272,
+          273,
+          274
+        ],
+        "meaning": "Parametrized outside_root case uses repo-internal tmp_path then expects registry ValueError."
+      }
+    ],
+    "prior_discovery": "R378 input registration fixes reached52 actual checks;51passed and this previously masked negative fixture failed. Do not retrospectively modify original source-binding failures or claim complete R378 before successor verification.",
+    "other_tmp_path_audit": "Within the two target modules, other tmp_path use copies source files then deliberately changes one source, or explicitly creates parent/file/root/ancestor symlinks. These do not assume tmp_path is outside ROOT; extent module has no tmp_path use. No further root-dependent fixture correction authorized."
+  },
+  "changes": [
+    {
+      "path": "tests/test_marker_association.py",
+      "scope": "Only test_registry_path_must_be_regular_under_root_without_symlink_ancestors outside_root construction and minimal stdlib imports/scoped cleanup plumbing. Use tempfile.TemporaryDirectory under canonical Path(\"/tmp\").resolve() with unique bigsmall-marker-outside-root- prefix, retain it through loader call, cleanup in context/finally. ExitStack may manage this branch while keeping existing parent_link/file_link tmp_path construction unchanged. Write CONFIG.read_bytes() into ordinary file in that external directory. Explicitly assert not altered.resolve().is_relative_to(ROOT.resolve()), regular file and no lexical symlink ancestor (canonical base plus check), then preserve shared exact-byte equality and original pytest.raises(ValueError, match=\"registry\") call with current CONFIG_SHA256/root=ROOT."
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round391-marker-outside-root-fixture-20261102",
+      "scope": "Plan/preflight source pins, unchanged-source/asset/frame audit, fresh one-stage results/JUnit/logs and final review/step report only. No original files rewritten."
+    }
+  ],
+  "not_changed": [
+    "load_marker_registration and all src files; expected SHA/path checks/source binding policy",
+    "Current v2 bytes/SHA d009cd6b06b1a429b6c67429c6d4da4c8ea9c4bc0e5f50a81cab237e1d54f8e9 and frozenv1 bytes/SHA209a133c05d5b98f940bf9467133ea24120cbb946083dbbb80309cc022172605",
+    "Two symlink negative cases, all prior assertion predicates/matches/parameters and existing marker geometry/thresholds",
+    "Six registered sources, original STATIC/INITIAL frame bytes, all model/marker assets, admission DEVELOPMENT_ONLY and replay NOT_ADMITTED",
+    "test_marker_extent_integration.py beyond its already authorized R378v2 consumer update",
+    "R37719browser failures, researchSOFTWARE_ONLY/NOT_RUN, R390diagnostic-only boundary; no incidental repair"
+  ],
+  "steps": [
+    "Wait R378 pose_evidence_asset_guards terminal and owned cleanup plus single-writer release. Keep its original one180s attempt running independently; do not modify source during it. Record its terminal receipt before R391 edits. A new independent guard failure requires separate actual Astra plan and is not covered here.",
+    "Revalidate pinned post-R378 test/registration/source/asset/frame bytes and original1FAIL/51PASS evidence. Freeze immediate source-before snapshot; only one test path may change. Record current actual permissions and confirmed writable external /tmp canonical base; do not create external fixture during planning.",
+    "Apply minimal outside-root fixture construction with guaranteed cleanup and explicit filesystem preconditions. Do not change loader, expectedValueError or all unchanged branch assertions. Do not move whole basetemp out of repo to hide fixture location dependency.",
+    "Reuse the actual R378 failure as RED. No repeated pre-fix run, no separate new focused run/collect-only. Run both entire marker modules once with original -p no:cacheprovider/env in new R391 repository-internal basetemp. This deliberately retains the environment that exposed the invalid outside assumption.",
+    "Capture original52 checks all complete, expected52PASS/0FAIL/0ERROR/0SKIP, original samebyte/symlink negatives and new outside filesystem assertion exercised. Record external dir cleanup on success/error through code review and actual owned artifact audit; no unrelated temporary deletion.",
+    "Perform independent review of exact narrow diff and before/after protected hashes; append step/phase summaries preserving R3781FAIL history and separate successor outcome. R379 may continue after terminal cleanup and reviewed handoff under its original plan."
+  ],
+  "validation_stage": {
+    "id": "marker_complete_green",
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "argv": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_marker_association.py",
+      "tests/test_marker_extent_integration.py",
+      "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round391-marker-outside-root-fixture-20261102/implementation/marker_complete_green/persistent-basetemp",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round391-marker-outside-root-fixture-20261102/implementation/marker_complete_green/junit.xml"
+    ],
+    "env": {
+      "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+      "HOME": "/home/ningyd",
+      "LANG": "C.UTF-8",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+      "PYTHONPATH": "/home/ningyd/文档/ChatGPT/BIGsmall/src:/home/ningyd/文档/ChatGPT/BIGsmall",
+      "MUJOCO_GL": "egl",
+      "REAL_MOTION_DISPATCH_ENABLED": "false",
+      "PYTHONPYCACHEPREFIX": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round391-marker-outside-root-fixture-20261102/implementation/marker_complete_green/pycache"
+    },
+    "directory": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round391-marker-outside-root-fixture-20261102/implementation/marker_complete_green",
+    "expected": "52PASS, zero fail/error/skip; test inputs now genuine outsideROOT while original negative assertion preserved.",
+    "child_timeout_s": 300,
+    "cleanup_s": 15,
+    "attempts": 1
+  },
+  "budgets": {
+    "new_round": true,
+    "round_wall_cap_s": 600,
+    "stage_count": 1,
+    "child_cap_s": 300,
+    "cleanup_cap_s": 15,
+    "nominal_max_s": 315,
+    "automatic_retries": 0,
+    "parallel_tests": false,
+    "clock": "Start new R391 clock once after preceding guard terminal/cleanup and implementation-ready preflight; never reset/extend R378 spent budget. Existing R378 RED reused, only one successor GREEN authorized.",
+    "no_repeated_guard": "R378 unchanged pose_evidence_asset_guards is not rerun; its own original allowance remains separate."
+  },
+  "runtime_preconditions": [
+    "Existing .venv and cached dependencies; no installs/network/models/hardware. Actual workspace-write/networkrestricted/.gitreadonly must be recorded, never inherit browser escalation.",
+    "Canonical /tmp exists outside canonical ROOT and writable under current environment. If external temp creation fails before behavior, preserveenvironment failure and stop; no path fallback into ROOT, skips or altered assertions.",
+    "Current test sources frozen launch-to-exit, onlytestassociation path allowed diff; R378guard and any other source-pinned tests fully terminal before edit/launch; independent read-only planning allowed.",
+    "Fresh R391 stage/artifact/cache dirs exist_ok=False, original basetemp remains frozen. Existing pinned bounded runner3e3df7c41be9e11df727b9720dceb6199d422ef944de5540890e49569277560c may be reused with new paths and original environment; caller enforces all pin/gate/result checks.",
+    "Bounded owned cleanup/no residual children, namespace limitation explicit; no intentional signalstress. Anyunexpectedfailure/newroot/scopeexpansion stops affected work for next actual Astra."
+  ],
+  "predecessor_guard_at_planning": {
+    "result": {
+      "state": "FINISHED",
+      "launched": true,
+      "returncode": 0,
+      "elapsed_s": 1.850816735997796,
+      "ended_utc": "2026-11-02T11:18:19.130747+00:00",
+      "source_drift": [],
+      "signals": [],
+      "cancellations": [],
+      "errors": [],
+      "remaining_live": [],
+      "reaped": true,
+      "adopted_children_reaped": [],
+      "ports_after": [],
+      "permission_profile": "workspace-write/network restricted/.git read-only"
+    },
+    "pin": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/pose_evidence_asset_guards/result.json",
+      "bytes": 401,
+      "sha256": "830fc58dfbb2a1148b013235042ea774608bdd776c9fd6082a2eaccbee4c9e2f"
+    }
+  },
+  "independent_successor": {
+    "R379": "Existing independent asset plan remains applicable after reviewed R378/R391 terminal handoff and exact original27pins. No source edit/test concurrency; original scope/stages/budget and delivery gates remain unchanged.",
+    "delivery": "Only new independently verified paths and chosen immutable evidence; fullraw/DB/credentials/weights/SDK excluded; prior failures never deleted or rewritten. Existing singlepush/exactremoteverify allocation not reset by R391."
+  },
+  "acceptance": [
+    "Original RED is preserved as invalid outside fixture; narrow test-only fix produces genuine ordinary external samebyte input and unchanged registryValueError assertion.",
+    "Full52case successor suite passes within newbound with no skips or weakened assertions; unchanged guard outcome is separately recorded.",
+    "Frozenv1/currentv2/sixsources/frames/assets unchanged and diagnostic admission DEVELOPMENT_ONLY/NOT_ADMITTED remains.",
+    "No claim of loader vulnerability/productfix, physical effect, model/cloud/realhardware success or formal research admission.",
+    "R377/browser unresolved state does not change; no new scope inferred from marker success."
+  ],
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/plan.json",
+      "bytes": 52610,
+      "sha256": "7536bc6a8503e3b209d3ccc2f92c98d625789c7ff41618c0f15366c3c9c6cb2b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/plan.md",
+      "bytes": 6187,
+      "sha256": "bdad381e184e0a0b300a5b466495b520e4f09a3a22ee928ccdacc73ba81842ef"
+    },
+    {
+      "path": "configs/research/ced_marker_registration_v2.yaml",
+      "bytes": 1755,
+      "sha256": "d009cd6b06b1a429b6c67429c6d4da4c8ea9c4bc0e5f50a81cab237e1d54f8e9"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/persistent-basetemp/test_registry_path_must_be_reg2/identical-but-unregistered.yaml",
+      "bytes": 1755,
+      "sha256": "d009cd6b06b1a429b6c67429c6d4da4c8ea9c4bc0e5f50a81cab237e1d54f8e9"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/result.json",
+      "bytes": 402,
+      "sha256": "35983ec35d635b8f05a28327cce8d3b3011935a7253d7039c40f968fe56b6dd2"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/stdout.log",
+      "bytes": 1959,
+      "sha256": "0f78bf56a4930fd02a2df49bcbac763b7b32c06bfd4632b9f8d3b7c04b821c1a"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/junit.xml",
+      "bytes": 10233,
+      "sha256": "bb4a65659357defecc4fe5c99f53fa71edbe282b571628a81c82b38df1e94497"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/source-before.json",
+      "bytes": 227682,
+      "sha256": "999440c627a5d8847b3c63031677569673ff25313decc25719f378f9937f4933"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/source-after.json",
+      "bytes": 227682,
+      "sha256": "999440c627a5d8847b3c63031677569673ff25313decc25719f378f9937f4933"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/invocation.json",
+      "bytes": 101834,
+      "sha256": "6538df73424352e3c592cfaa15bae2b1174645303443b2d77a001d6847fe4f34"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/owned-process-identities.json",
+      "bytes": 121,
+      "sha256": "cdfdcee5f077296e9274fb31366522e9788c3decd307716ee189272f1a61e403"
+    },
+    {
+      "path": "tests/test_marker_association.py",
+      "bytes": 19312,
+      "sha256": "fe937de7504b09975c418eb580123ba2e8a826378506d727f2a2b7ccd166f8b2"
+    },
+    {
+      "path": "tests/test_marker_extent_integration.py",
+      "bytes": 10279,
+      "sha256": "3fcd734614d0ff6b28c18e32d222b929e0c5c9f9edc3ca63cdd49222ac4f00b6"
+    },
+    {
+      "path": "tests/test_pose_marker_evidence.py",
+      "bytes": 11922,
+      "sha256": "e46857f1214bfd0b595d765a240d29c3dc05352275dc36bbd480d4457b8d1722"
+    },
+    {
+      "path": "tests/test_pose_marker_assets.py",
+      "bytes": 6489,
+      "sha256": "5b080341b80f8819013064d3945182cf11577dbf9368d5f5601c5fc909c74efc"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/marker_association.py",
+      "bytes": 28147,
+      "sha256": "3fb8c53681b5140c121f45c4d378fbe6b3b5ba5d7daee09fef696cf38bf8238a"
+    },
+    {
+      "path": "configs/research/ced_marker_registration_v1.yaml",
+      "bytes": 1755,
+      "sha256": "209a133c05d5b98f940bf9467133ea24120cbb946083dbbb80309cc022172605"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round389-test-consistency-checkpoint-revalidation-20261102/plan.json",
+      "bytes": 23322,
+      "sha256": "ac541a6733a677ac58d900c53b1a049d4efa356d7020e57f03d8906ad536dd01"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round390-browser-queue-target-reachability-20261102/plan.json",
+      "bytes": 203263,
+      "sha256": "1e2dbb91157052caa0856ec8daecb57ad2fbd51d4ae3bd8e4d5377cf965ac456"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/pose_evidence_asset_guards/result.json",
+      "bytes": 401,
+      "sha256": "830fc58dfbb2a1148b013235042ea774608bdd776c9fd6082a2eaccbee4c9e2f"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/pose_evidence_asset_guards/junit.xml",
+      "bytes": 3789,
+      "sha256": "bab9d3724fa15bcce554274398a4454fc338314a79691f7a94c6ffcf83f8630d"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/pose_evidence_asset_guards/source-after.json",
+      "bytes": 227682,
+      "sha256": "999440c627a5d8847b3c63031677569673ff25313decc25719f378f9937f4933"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/pose_evidence_asset_guards/stdout.log",
+      "bytes": 335,
+      "sha256": "042d46ce04572cf17f452e13dfd9ad516eb64042548f38bf734d734999eb9df6"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/pose_evidence_asset_guards/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "R378_original_input_audit": [
+    {
+      "original": {
+        "path": "AGENTS.md",
+        "bytes": 1774,
+        "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+      },
+      "current": {
+        "path": "AGENTS.md",
+        "bytes": 1774,
+        "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "tests/test_marker_association.py",
+        "bytes": 17093,
+        "sha256": "d79b441869b7e34bc7e877cb908d32bc4da735063062b9fed040c25fac5fd205"
+      },
+      "current": {
+        "path": "tests/test_marker_association.py",
+        "bytes": 19312,
+        "sha256": "fe937de7504b09975c418eb580123ba2e8a826378506d727f2a2b7ccd166f8b2"
+      },
+      "match": false,
+      "authorized_R378_consumer_change": true
+    },
+    {
+      "original": {
+        "path": "tests/test_marker_extent_integration.py",
+        "bytes": 10245,
+        "sha256": "b0955a6b4ff9942c0a8ec1f26b570757b583e24eea864da036e2c43e34c9dca1"
+      },
+      "current": {
+        "path": "tests/test_marker_extent_integration.py",
+        "bytes": 10279,
+        "sha256": "3fcd734614d0ff6b28c18e32d222b929e0c5c9f9edc3ca63cdd49222ac4f00b6"
+      },
+      "match": false,
+      "authorized_R378_consumer_change": true
+    },
+    {
+      "original": {
+        "path": "tests/test_pose_marker_evidence.py",
+        "bytes": 11922,
+        "sha256": "e46857f1214bfd0b595d765a240d29c3dc05352275dc36bbd480d4457b8d1722"
+      },
+      "current": {
+        "path": "tests/test_pose_marker_evidence.py",
+        "bytes": 11922,
+        "sha256": "e46857f1214bfd0b595d765a240d29c3dc05352275dc36bbd480d4457b8d1722"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "tests/test_pose_marker_assets.py",
+        "bytes": 6489,
+        "sha256": "5b080341b80f8819013064d3945182cf11577dbf9368d5f5601c5fc909c74efc"
+      },
+      "current": {
+        "path": "tests/test_pose_marker_assets.py",
+        "bytes": 6489,
+        "sha256": "5b080341b80f8819013064d3945182cf11577dbf9368d5f5601c5fc909c74efc"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "src/cloud_edge_robot_arm/vision/operational_windows.py",
+        "bytes": 51008,
+        "sha256": "3bed52bb9ec8689a943ef3808223ba23e92749cd6af414edff1309e81517b0a7"
+      },
+      "current": {
+        "path": "src/cloud_edge_robot_arm/vision/operational_windows.py",
+        "bytes": 51008,
+        "sha256": "3bed52bb9ec8689a943ef3808223ba23e92749cd6af414edff1309e81517b0a7"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+        "bytes": 20734,
+        "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b"
+      },
+      "current": {
+        "path": "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+        "bytes": 20734,
+        "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "assets/robots/franka_panda/scene.xml",
+        "bytes": 4980,
+        "sha256": "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2"
+      },
+      "current": {
+        "path": "assets/robots/franka_panda/scene.xml",
+        "bytes": 4980,
+        "sha256": "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "assets/robots/franka_panda/scene_pose_marker_v1.xml",
+        "bytes": 13421,
+        "sha256": "02efdc94a346d21ce1162418d58ee344c73a1a4afef32fa8b2feff3adaf53c30"
+      },
+      "current": {
+        "path": "assets/robots/franka_panda/scene_pose_marker_v1.xml",
+        "bytes": 13421,
+        "sha256": "02efdc94a346d21ce1162418d58ee344c73a1a4afef32fa8b2feff3adaf53c30"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "configs/research/ced_marker_registration_v1.yaml",
+        "bytes": 1755,
+        "sha256": "209a133c05d5b98f940bf9467133ea24120cbb946083dbbb80309cc022172605"
+      },
+      "current": {
+        "path": "configs/research/ced_marker_registration_v1.yaml",
+        "bytes": 1755,
+        "sha256": "209a133c05d5b98f940bf9467133ea24120cbb946083dbbb80309cc022172605"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-marker-extent-next/fix-round-1/source/src/cloud_edge_robot_arm/vision/marker_association.py",
+        "bytes": 26835,
+        "sha256": "f538c6b751ab560b2523cfbe2d237f8956b092931af276bfcda744d10ee4f426"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-marker-extent-next/fix-round-1/source/src/cloud_edge_robot_arm/vision/marker_association.py",
+        "bytes": 26835,
+        "sha256": "f538c6b751ab560b2523cfbe2d237f8956b092931af276bfcda744d10ee4f426"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/failures.json",
+        "bytes": 191615,
+        "sha256": "c8a33e004e66af28bb47d0cb26bc356ec1a8d3c4bbe0f15c9b0db57460fa7c61"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/reporting/failures.json",
+        "bytes": 191615,
+        "sha256": "c8a33e004e66af28bb47d0cb26bc356ec1a8d3c4bbe0f15c9b0db57460fa7c61"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "src/cloud_edge_robot_arm/vision/marker_association.py",
+        "bytes": 28147,
+        "sha256": "3fb8c53681b5140c121f45c4d378fbe6b3b5ba5d7daee09fef696cf38bf8238a"
+      },
+      "current": {
+        "path": "src/cloud_edge_robot_arm/vision/marker_association.py",
+        "bytes": 28147,
+        "sha256": "3fb8c53681b5140c121f45c4d378fbe6b3b5ba5d7daee09fef696cf38bf8238a"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "src/cloud_edge_robot_arm/vision/pose_markers.py",
+        "bytes": 9260,
+        "sha256": "68f9e6e0675a4b6ccdead896bd767c685fd53357591ab1fdf4d71d124c72264f"
+      },
+      "current": {
+        "path": "src/cloud_edge_robot_arm/vision/pose_markers.py",
+        "bytes": 9260,
+        "sha256": "68f9e6e0675a4b6ccdead896bd767c685fd53357591ab1fdf4d71d124c72264f"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "src/cloud_edge_robot_arm/vision/observations.py",
+        "bytes": 11603,
+        "sha256": "1114e6b2de4107ae516f12f8972fcb3b6f71eae7ae5a45bf93adfeb4aa673bb8"
+      },
+      "current": {
+        "path": "src/cloud_edge_robot_arm/vision/observations.py",
+        "bytes": 11603,
+        "sha256": "1114e6b2de4107ae516f12f8972fcb3b6f71eae7ae5a45bf93adfeb4aa673bb8"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "src/cloud_edge_robot_arm/vision/online_intent.py",
+        "bytes": 2143,
+        "sha256": "d38cf2c6fb578aa646b3dbc2d2865d952e56c4142d8951951edd82adb82dfaf0"
+      },
+      "current": {
+        "path": "src/cloud_edge_robot_arm/vision/online_intent.py",
+        "bytes": 2143,
+        "sha256": "d38cf2c6fb578aa646b3dbc2d2865d952e56c4142d8951951edd82adb82dfaf0"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "assets/robots/franka_panda/scene_pose_marker_color_v2.xml",
+        "bytes": 13655,
+        "sha256": "2ba368bb5150becd1c021fe52495f3c59bd155f862502ec590b2ecd3a57899e4"
+      },
+      "current": {
+        "path": "assets/robots/franka_panda/scene_pose_marker_color_v2.xml",
+        "bytes": 13655,
+        "sha256": "2ba368bb5150becd1c021fe52495f3c59bd155f862502ec590b2ecd3a57899e4"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "src/cloud_edge_robot_arm/vision/pose_marker_assets.py",
+        "bytes": 2199,
+        "sha256": "b1e1be9ea6bae24c43f0eeb5aadbc200444b6126a2993329080ea7c42d142a62"
+      },
+      "current": {
+        "path": "src/cloud_edge_robot_arm/vision/pose_marker_assets.py",
+        "bytes": 2199,
+        "sha256": "b1e1be9ea6bae24c43f0eeb5aadbc200444b6126a2993329080ea7c42d142a62"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/implementation/pytest_software_05/pytest-events.jsonl",
+        "bytes": 244600,
+        "sha256": "569eccecf141be23d456899ae4bf9c89fe2da300ba40e3d27854164aa4931b5f"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/implementation/pytest_software_05/pytest-events.jsonl",
+        "bytes": 244600,
+        "sha256": "569eccecf141be23d456899ae4bf9c89fe2da300ba40e3d27854164aa4931b5f"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/implementation/pytest_software_05/stdout.log",
+        "bytes": 212,
+        "sha256": "11f10b2951e30068758cf6a66fc62131c3fb4aa5918f44b4354cf5a026d270f0"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/implementation/pytest_software_05/stdout.log",
+        "bytes": 212,
+        "sha256": "11f10b2951e30068758cf6a66fc62131c3fb4aa5918f44b4354cf5a026d270f0"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/implementation/pytest_software_05/stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/implementation/pytest_software_05/stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/implementation/pytest_software_05/invocation.json",
+        "bytes": 77562,
+        "sha256": "e081302c50f9c3522b6d11ca0c319b50ad04fa0640e90a54e8a27984ddae3f3e"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/implementation/pytest_software_05/invocation.json",
+        "bytes": 77562,
+        "sha256": "e081302c50f9c3522b6d11ca0c319b50ad04fa0640e90a54e8a27984ddae3f3e"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/pytest-events.jsonl",
+        "bytes": 23543,
+        "sha256": "413d8057507c77349e9b1def0cba3b0233f064bd8a690a4b8ba31f8e204a2255"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/pytest-events.jsonl",
+        "bytes": 23543,
+        "sha256": "413d8057507c77349e9b1def0cba3b0233f064bd8a690a4b8ba31f8e204a2255"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/stdout.log",
+        "bytes": 18224,
+        "sha256": "3fb26fcac8db56ef3b5142a841ecf53687f36f02ca1765acc8a1ce0e0a8949f9"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/stdout.log",
+        "bytes": 18224,
+        "sha256": "3fb26fcac8db56ef3b5142a841ecf53687f36f02ca1765acc8a1ce0e0a8949f9"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/result.json",
+        "bytes": 578,
+        "sha256": "2f5e871aad86ea339711be0f8cb182a5117648fab3186cbc892f22039d45ebd3"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/result.json",
+        "bytes": 578,
+        "sha256": "2f5e871aad86ea339711be0f8cb182a5117648fab3186cbc892f22039d45ebd3"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/junit.xml",
+        "bytes": 18294,
+        "sha256": "198255b1e643e0b58e0f2d3dd3a8191adca325c93a1bc035e56fdc2dc5708c78"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/junit.xml",
+        "bytes": 18294,
+        "sha256": "198255b1e643e0b58e0f2d3dd3a8191adca325c93a1bc035e56fdc2dc5708c78"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/invocation.json",
+        "bytes": 6031,
+        "sha256": "c888f8910b8b5963098ff6db9b0246d62887218e99ec8109d5523511b3c0199f"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round374-diagnostic-runtime-prerequisites-20261101/continuation-v2/children/pytest_software_06_remaining_06/implementation/pytest_software_06_remaining_06/invocation.json",
+        "bytes": 6031,
+        "sha256": "c888f8910b8b5963098ff6db9b0246d62887218e99ec8109d5523511b3c0199f"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/observation-full.json",
+        "bytes": 2113847,
+        "sha256": "c4067a0cdf272f93afc69d7d33d805ed6290808e3b0ccdc735c8ad60213b12df"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/observation-full.json",
+        "bytes": 2113847,
+        "sha256": "c4067a0cdf272f93afc69d7d33d805ed6290808e3b0ccdc735c8ad60213b12df"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/observation.json",
+        "bytes": 3361,
+        "sha256": "040ab9396bc1120797d4c4ecd7cc50e93355df5474f5540678b005df46d2b1f2"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/observation.json",
+        "bytes": 3361,
+        "sha256": "040ab9396bc1120797d4c4ecd7cc50e93355df5474f5540678b005df46d2b1f2"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/rgb.png",
+        "bytes": 48733,
+        "sha256": "6dfc2bfee9b5f287fbd617f5fbb24a21f545d7b55afedb37e0313d4adb128a8e"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/rgb.png",
+        "bytes": 48733,
+        "sha256": "6dfc2bfee9b5f287fbd617f5fbb24a21f545d7b55afedb37e0313d4adb128a8e"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/depth.f32",
+        "bytes": 1228800,
+        "sha256": "2b3e841d8f808fd53869633fa965fb250d3ab78200614a2531536f16134d060e"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/depth.f32",
+        "bytes": 1228800,
+        "sha256": "2b3e841d8f808fd53869633fa965fb250d3ab78200614a2531536f16134d060e"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/valid_mask.u8",
+        "bytes": 307200,
+        "sha256": "5db99ac751d9b3f4e0186c6ce69b2227da13adcb32232e50a345cda55a5d538d"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/valid_mask.u8",
+        "bytes": 307200,
+        "sha256": "5db99ac751d9b3f4e0186c6ce69b2227da13adcb32232e50a345cda55a5d538d"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/observation-full.json",
+        "bytes": 2112984,
+        "sha256": "5b467094c1b83c21d78e13d8db3313960d63d40133930702f8f4fdd9545b2c56"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/observation-full.json",
+        "bytes": 2112984,
+        "sha256": "5b467094c1b83c21d78e13d8db3313960d63d40133930702f8f4fdd9545b2c56"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/observation.json",
+        "bytes": 1183,
+        "sha256": "d822718b44324e7d4d4dafc416bc024c2331963851833c02923e4beef3037c06"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/observation.json",
+        "bytes": 1183,
+        "sha256": "d822718b44324e7d4d4dafc416bc024c2331963851833c02923e4beef3037c06"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/rgb.png",
+        "bytes": 48069,
+        "sha256": "1e60a803c98efdd17f7c7214a6435c9132b67404baa6adc9f67629d3a741f725"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/rgb.png",
+        "bytes": 48069,
+        "sha256": "1e60a803c98efdd17f7c7214a6435c9132b67404baa6adc9f67629d3a741f725"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/depth.f32",
+        "bytes": 1228800,
+        "sha256": "3bcd93ae3f64f2d680c34a169d907cb88e61149265067c70df0eef78a29b5d67"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/depth.f32",
+        "bytes": 1228800,
+        "sha256": "3bcd93ae3f64f2d680c34a169d907cb88e61149265067c70df0eef78a29b5d67"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/valid_mask.u8",
+        "bytes": 307200,
+        "sha256": "5db99ac751d9b3f4e0186c6ce69b2227da13adcb32232e50a345cda55a5d538d"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/valid_mask.u8",
+        "bytes": 307200,
+        "sha256": "5db99ac751d9b3f4e0186c6ce69b2227da13adcb32232e50a345cda55a5d538d"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/observation-full.json",
+        "bytes": 537541,
+        "sha256": "32d37c38983474b93ba8423f573917ae7c0e6714c907a807a79917d9a365450c"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/observation-full.json",
+        "bytes": 537541,
+        "sha256": "32d37c38983474b93ba8423f573917ae7c0e6714c907a807a79917d9a365450c"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/observation.json",
+        "bytes": 3141,
+        "sha256": "996ec12ef5b8eb69b6b2b6a9033a80a5936f2358b2f6726dfe40deef2abb55d6"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/observation.json",
+        "bytes": 3141,
+        "sha256": "996ec12ef5b8eb69b6b2b6a9033a80a5936f2358b2f6726dfe40deef2abb55d6"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/rgb.png",
+        "bytes": 18502,
+        "sha256": "0ec037c4343ca55ddad34cd130499eb2e20e7d662b2384af2129deb5858c8f5b"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/rgb.png",
+        "bytes": 18502,
+        "sha256": "0ec037c4343ca55ddad34cd130499eb2e20e7d662b2384af2129deb5858c8f5b"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/depth.f32",
+        "bytes": 307200,
+        "sha256": "8097bfa5399dc633febb1f550f4b1c494255aac947e2f2f07363bc44588a942b"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/depth.f32",
+        "bytes": 307200,
+        "sha256": "8097bfa5399dc633febb1f550f4b1c494255aac947e2f2f07363bc44588a942b"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/valid_mask.u8",
+        "bytes": 76800,
+        "sha256": "92b225e17fa1a966a3ea0243ead8ac1d16284a2bd08f92345a104af8fa21b5db"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/valid_mask.u8",
+        "bytes": 76800,
+        "sha256": "92b225e17fa1a966a3ea0243ead8ac1d16284a2bd08f92345a104af8fa21b5db"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-640/frame/observation-full.json",
+        "bytes": 2113823,
+        "sha256": "5f3228000db34eba97a74efb48893fbb3a52905cff30cb30a462c4258d3ba1b2"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-640/frame/observation-full.json",
+        "bytes": 2113823,
+        "sha256": "5f3228000db34eba97a74efb48893fbb3a52905cff30cb30a462c4258d3ba1b2"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-640/frame/observation.json",
+        "bytes": 3139,
+        "sha256": "09a4490f17710c4d9f8ea2f77573eb8d1f4dddaadb616612883febd46ff1f36a"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-640/frame/observation.json",
+        "bytes": 3139,
+        "sha256": "09a4490f17710c4d9f8ea2f77573eb8d1f4dddaadb616612883febd46ff1f36a"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-640/frame/rgb.png",
+        "bytes": 48715,
+        "sha256": "c93bd5f4b252da84f274993e56c12463662e1a12dc2a167c5c6cd9565c3bbc26"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-640/frame/rgb.png",
+        "bytes": 48715,
+        "sha256": "c93bd5f4b252da84f274993e56c12463662e1a12dc2a167c5c6cd9565c3bbc26"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-640/frame/depth.f32",
+        "bytes": 1228800,
+        "sha256": "b50745243900a1b935276e86d7f36fe4b2c452b9c18d2dee7f0bf4d9f82807fe"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-640/frame/depth.f32",
+        "bytes": 1228800,
+        "sha256": "b50745243900a1b935276e86d7f36fe4b2c452b9c18d2dee7f0bf4d9f82807fe"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-640/frame/valid_mask.u8",
+        "bytes": 307200,
+        "sha256": "5db99ac751d9b3f4e0186c6ce69b2227da13adcb32232e50a345cda55a5d538d"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-640/frame/valid_mask.u8",
+        "bytes": 307200,
+        "sha256": "5db99ac751d9b3f4e0186c6ce69b2227da13adcb32232e50a345cda55a5d538d"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/summary.json",
+        "bytes": 3279,
+        "sha256": "9df61542535097567b4844f0f150a7cb49ce2bab99dcbf24ae564bba74b116a8"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/summary.json",
+        "bytes": 3279,
+        "sha256": "9df61542535097567b4844f0f150a7cb49ce2bab99dcbf24ae564bba74b116a8"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    },
+    {
+      "original": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/observability.json",
+        "bytes": 3094,
+        "sha256": "e6804441d55444ee16c25403915723f292dab00b43cb10f229214a17e978dd52"
+      },
+      "current": {
+        "path": "artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/observability.json",
+        "bytes": 3094,
+        "sha256": "e6804441d55444ee16c25403915723f292dab00b43cb10f229214a17e978dd52"
+      },
+      "match": true,
+      "authorized_R378_consumer_change": false
+    }
+  ],
+  "planner_incident": {
+    "action": "Initial read-only rg targeted nonexistent vision/marker_registration.py before locating actual import marker_association.py",
+    "result": "rg exit2 file not found; no product/test behavior executed",
+    "resolution": "Actual Astra planner followed test import to correct existing source; no implementation or test failure introduced."
+  },
+  "planner_actions": "Read-only files, lstat/resolve/hash/JSON/XML; write plan.md/json only. No product import, tests, Git, network, signals or external fixture creation."
+}

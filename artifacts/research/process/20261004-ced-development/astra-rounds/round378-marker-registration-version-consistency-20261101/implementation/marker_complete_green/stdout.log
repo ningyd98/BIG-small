@@ -1,0 +1,29 @@
+.........................F..........................                     [100%]
+=================================== FAILURES ===================================
+_ test_registry_path_must_be_regular_under_root_without_symlink_ancestors[outside_root] _
+
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round378-...version-consistency-20261101/implementation/marker_complete_green/persistent-basetemp/test_registry_path_must_be_reg2')
+path_kind = 'outside_root'
+
+    @pytest.mark.parametrize("path_kind", ["parent_link", "file_link", "outside_root"])
+    def test_registry_path_must_be_regular_under_root_without_symlink_ancestors(tmp_path, path_kind):
+        module, _, _, _ = inputs()
+        if path_kind == "parent_link":
+            parent = tmp_path / "registry-parent-link"
+            parent.symlink_to(CONFIG.parent, target_is_directory=True)
+            altered = parent / CONFIG.name
+        elif path_kind == "file_link":
+            altered = tmp_path / "registry-link.yaml"
+            altered.symlink_to(CONFIG)
+        else:
+            altered = tmp_path / "identical-but-unregistered.yaml"
+            altered.write_bytes(CONFIG.read_bytes())
+        assert altered.read_bytes() == CONFIG.read_bytes()  # byte hash alone cannot authorize path
+>       with pytest.raises(ValueError, match="registry"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_marker_association.py:274: Failed
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round378-marker-registration-version-consistency-20261101/implementation/marker_complete_green/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_marker_association.py::test_registry_path_must_be_regular_under_root_without_symlink_ancestors[outside_root]
+1 failed, 51 passed in 16.55s
