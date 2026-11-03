@@ -1,0 +1,130 @@
+.........F........FFF.F..                                                [100%]
+=================================== FAILURES ===================================
+_______ test_publication_guard_is_cross_process_and_repository_reentrant _______
+tests/test_rgbd_lease_handoff.py:178: in test_publication_guard_is_cross_process_and_repository_reentrant
+    assert queue.get(timeout=5) == "waiting"
+           ^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/multiprocessing/queues.py:114: in get
+    raise Empty
+E   _queue.Empty
+____________ test_expiry_scan_cannot_interrupt_a_replacement_lease _____________
+tests/test_rgbd_lease_handoff.py:478: in test_expiry_scan_cannot_interrupt_a_replacement_lease
+    assert repo.expire_leases() == []
+           ^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded
+    return cast(R, repository._writer_call(function, args, kwargs))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2071: in _writer_call
+    return self._dispatch_writer(function, args, kwargs, job_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2105: in _dispatch_writer
+    value = function(*args, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:986: in expire_leases
+    updated = self.update_status_cas(
+tests/test_rgbd_lease_handoff.py:474: in race
+    replacement.append(_handoff(repo, job, worker, tmp_path))
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_rgbd_lease_handoff.py:17: in _handoff
+    repo.update_status_cas(
+tests/test_rgbd_lease_handoff.py:475: in race
+    return original_cas(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded
+    return cast(R, repository._writer_call(function, args, kwargs))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2043: in _writer_call
+    raise OperationalLeaseError(
+E   cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: nested public mutation is not a registered same-job subordinate
+________ test_expiry_scan_rechecks_current_expiration_in_atomic_update _________
+tests/test_rgbd_lease_handoff.py:511: in test_expiry_scan_rechecks_current_expiration_in_atomic_update
+    assert repo.expire_leases() == []
+           ^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded
+    return cast(R, repository._writer_call(function, args, kwargs))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2071: in _writer_call
+    return self._dispatch_writer(function, args, kwargs, job_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2105: in _dispatch_writer
+    value = function(*args, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:986: in expire_leases
+    updated = self.update_status_cas(
+tests/test_rgbd_lease_handoff.py:500: in refresh_before_cas
+    connection.execute(
+E   sqlite3.OperationalError: database is locked
+__ test_cancel_racing_handoff_cancels_current_job_without_restoring_old_owner __
+tests/test_rgbd_lease_handoff.py:528: in test_cancel_racing_handoff_cancels_current_job_without_restoring_old_owner
+    returned = repo.request_cancel(job.job_id)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded
+    return cast(R, repository._writer_call(function, args, kwargs))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2071: in _writer_call
+    return self._dispatch_writer(function, args, kwargs, job_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2105: in _dispatch_writer
+    value = function(*args, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:726: in request_cancel
+    return self._request_cancel_unlocked(job_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:765: in _request_cancel_unlocked
+    updated = self.update_status_cas(
+tests/test_rgbd_lease_handoff.py:524: in race
+    replacement.append(_handoff(repo, job, worker, tmp_path))
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_rgbd_lease_handoff.py:17: in _handoff
+    repo.update_status_cas(
+tests/test_rgbd_lease_handoff.py:525: in race
+    return original_cas(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded
+    return cast(R, repository._writer_call(function, args, kwargs))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2043: in _writer_call
+    raise OperationalLeaseError(
+E   cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: nested public mutation is not a registered same-job subordinate
+______________ test_stale_retry_snapshot_cannot_requeue_new_owner ______________
+tests/test_rgbd_lease_handoff.py:578: in test_stale_retry_snapshot_cannot_requeue_new_owner
+    repo.retry_job(job.job_id)
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded
+    return cast(R, repository._writer_call(function, args, kwargs))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2071: in _writer_call
+    return self._dispatch_writer(function, args, kwargs, job_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2105: in _dispatch_writer
+    value = function(*args, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:1354: in retry_job
+    return self._retry_job_unlocked(job_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:1358: in _retry_job_unlocked
+    job = self.get_job(job_id)
+          ^^^^^^^^^^^^^^^^^^^^
+tests/test_rgbd_lease_handoff.py:573: in race
+    _handoff(repo, job, worker, tmp_path)
+tests/test_rgbd_lease_handoff.py:29: in _handoff
+    repo.update_status_cas(
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded
+    return cast(R, repository._writer_call(function, args, kwargs))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2043: in _writer_call
+    raise OperationalLeaseError(
+E   cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: nested public mutation is not a registered same-job subordinate
+=============================== warnings summary ===============================
+tests/test_rgbd_lease_handoff.py::test_late_episode_frame_write_cannot_overwrite_new_lease_frames
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round413-full-long-validation-20261103/implementation/py-module-229/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_lease_handoff.py::test_publication_guard_is_cross_process_and_repository_reentrant
+FAILED tests/test_rgbd_lease_handoff.py::test_expiry_scan_cannot_interrupt_a_replacement_lease
+FAILED tests/test_rgbd_lease_handoff.py::test_expiry_scan_rechecks_current_expiration_in_atomic_update
+FAILED tests/test_rgbd_lease_handoff.py::test_cancel_racing_handoff_cancels_current_job_without_restoring_old_owner
+FAILED tests/test_rgbd_lease_handoff.py::test_stale_retry_snapshot_cannot_requeue_new_owner
+5 failed, 20 passed, 1 warning in 20.25s

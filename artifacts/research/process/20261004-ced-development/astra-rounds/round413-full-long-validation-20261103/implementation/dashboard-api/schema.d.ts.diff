@@ -1,0 +1,150 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/dashboard/src/api/generated/schema.d.ts
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round413-full-long-validation-20261103/implementation/dashboard-api/schema.d.ts
+@@ -1872,6 +1872,7 @@
+        * @default
+        */
+       error: string;
++      publication?: components["schemas"]["PublicationStatusView"] | null;
+       /** Result */
+       result: string;
+       /**
+@@ -2056,6 +2057,11 @@
+       blocked: number;
+       /** Cancelled */
+       cancelled: number;
++      /**
++       * Confirmed Succeeded
++       * @default 0
++       */
++      confirmed_succeeded: number;
+       /** Failed */
+       failed: number;
+       /**
+@@ -2078,6 +2084,11 @@
+       timed_out: number;
+       /** Total */
+       total: number;
++      /**
++       * Unconfirmed Terminal
++       * @default 0
++       */
++      unconfirmed_terminal: number;
+     };
+     /**
+      * BatchRecord
+@@ -2099,6 +2110,12 @@
+       hardware_write_operations?: string[];
+       manifest: components["schemas"]["ExperimentManifest"];
+       progress: components["schemas"]["BatchProgress"];
++      /**
++       * Publication State
++       * @default NOT_APPLICABLE
++       * @enum {string}
++       */
++      publication_state: "NOT_APPLICABLE" | "COMPLETE" | "INCOMPLETE";
+       /** Run Ids */
+       run_ids: string[];
+       status: components["schemas"]["SimulationRunStatus"];
+@@ -4011,6 +4028,59 @@
+       display_name?: string | null;
+       /** Model Name */
+       model_name?: string | null;
++    };
++    /**
++     * PublicationStatusView
++     * @description Strict detached publication audit, separate from recorded SQL outcomes.
++     */
++    PublicationStatusView: {
++      /**
++       * Accepted
++       * @default false
++       */
++      accepted: boolean;
++      /** Artifact Manifest Sha256 */
++      artifact_manifest_sha256?: string | null;
++      /** Attempt */
++      attempt?: number | null;
++      /**
++       * Confirmation State
++       * @enum {string}
++       */
++      confirmation_state:
++        | "NOT_APPLICABLE"
++        | "PENDING"
++        | "CONFIRMED"
++        | "UNCONFIRMED"
++        | "UNKNOWN";
++      /** Confirmed Artifact Paths */
++      confirmed_artifact_paths?: {
++        [key: string]: string;
++      };
++      /** Epoch */
++      epoch?: string | null;
++      /** Event Receipt Hash */
++      event_receipt_hash?: string | null;
++      /** Generation */
++      generation?: number | null;
++      /** Historical Artifact Paths */
++      historical_artifact_paths?: {
++        [key: string]: string;
++      };
++      /** Job Receipt Hash */
++      job_receipt_hash?: string | null;
++      /** Operation Id */
++      operation_id?: string | null;
++      /** Reasons */
++      reasons?: string[];
++      /** Recorded Sql Status */
++      recorded_sql_status: string;
++      /**
++       * Schema Version
++       * @default simulation.publication-status.v1
++       * @constant
++       */
++      schema_version: "simulation.publication-status.v1";
+     };
+     /** QueueStatusResponse */
+     QueueStatusResponse: {
+@@ -4977,6 +5047,7 @@
+       artifacts: {
+         [key: string]: string;
+       };
++      publication?: components["schemas"]["PublicationStatusView"] | null;
+     };
+     /**
+      * SimulationBackend
+@@ -5026,6 +5097,7 @@
+     SimulationEventsResponse: {
+       /** Events */
+       events: components["schemas"]["TimelineEvent"][];
++      publication?: components["schemas"]["PublicationStatusView"] | null;
+     };
+     /**
+      * SimulationMetric
+@@ -5068,6 +5140,7 @@
+     SimulationMetricsResponse: {
+       /** Metrics */
+       metrics: components["schemas"]["SimulationMetric"][];
++      publication?: components["schemas"]["PublicationStatusView"] | null;
+     };
+     /**
+      * SimulationRunListResponse
+@@ -5142,6 +5215,7 @@
+       provenance?: {
+         [key: string]: unknown;
+       };
++      publication?: components["schemas"]["PublicationStatusView"] | null;
+       /**
+        * Queue Position
+        * @default 0
+@@ -5747,6 +5821,10 @@
+     TimelineEvent: {
+       /** Event Type */
+       event_type: string;
++      /** Historical Payload */
++      historical_payload?: {
++        [key: string]: unknown;
++      } | null;
+       /** Payload */
+       payload?: {
+         [key: string]: unknown;

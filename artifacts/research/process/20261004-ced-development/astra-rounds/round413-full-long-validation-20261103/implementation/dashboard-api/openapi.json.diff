@@ -1,0 +1,287 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/dashboard/src/api/generated/openapi.json
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round413-full-long-validation-20261103/implementation/dashboard-api/openapi.json
+@@ -154,6 +154,16 @@
+             "default": "",
+             "title": "Error",
+             "type": "string"
++          },
++          "publication": {
++            "anyOf": [
++              {
++                "$ref": "#/components/schemas/PublicationStatusView"
++              },
++              {
++                "type": "null"
++              }
++            ]
+           },
+           "result": {
+             "title": "Result",
+@@ -518,6 +528,12 @@
+             "title": "Cancelled",
+             "type": "integer"
+           },
++          "confirmed_succeeded": {
++            "default": 0,
++            "minimum": 0.0,
++            "title": "Confirmed Succeeded",
++            "type": "integer"
++          },
+           "failed": {
+             "minimum": 0.0,
+             "title": "Failed",
+@@ -559,6 +575,12 @@
+           "total": {
+             "minimum": 0.0,
+             "title": "Total",
++            "type": "integer"
++          },
++          "unconfirmed_terminal": {
++            "default": 0,
++            "minimum": 0.0,
++            "title": "Unconfirmed Terminal",
+             "type": "integer"
+           }
+         },
+@@ -606,6 +628,12 @@
+           },
+           "progress": {
+             "$ref": "#/components/schemas/BatchProgress"
++          },
++          "publication_state": {
++            "default": "NOT_APPLICABLE",
++            "enum": ["NOT_APPLICABLE", "COMPLETE", "INCOMPLETE"],
++            "title": "Publication State",
++            "type": "string"
+           },
+           "run_ids": {
+             "items": {
+@@ -3966,6 +3994,141 @@
+         "title": "ProfilePatchRequest",
+         "type": "object"
+       },
++      "PublicationStatusView": {
++        "additionalProperties": false,
++        "description": "Strict detached publication audit, separate from recorded SQL outcomes.",
++        "properties": {
++          "accepted": {
++            "default": false,
++            "title": "Accepted",
++            "type": "boolean"
++          },
++          "artifact_manifest_sha256": {
++            "anyOf": [
++              {
++                "type": "string"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Artifact Manifest Sha256"
++          },
++          "attempt": {
++            "anyOf": [
++              {
++                "minimum": 0.0,
++                "type": "integer"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Attempt"
++          },
++          "confirmation_state": {
++            "enum": [
++              "NOT_APPLICABLE",
++              "PENDING",
++              "CONFIRMED",
++              "UNCONFIRMED",
++              "UNKNOWN"
++            ],
++            "title": "Confirmation State",
++            "type": "string"
++          },
++          "confirmed_artifact_paths": {
++            "additionalProperties": {
++              "type": "string"
++            },
++            "title": "Confirmed Artifact Paths",
++            "type": "object"
++          },
++          "epoch": {
++            "anyOf": [
++              {
++                "type": "string"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Epoch"
++          },
++          "event_receipt_hash": {
++            "anyOf": [
++              {
++                "type": "string"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Event Receipt Hash"
++          },
++          "generation": {
++            "anyOf": [
++              {
++                "minimum": 0.0,
++                "type": "integer"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Generation"
++          },
++          "historical_artifact_paths": {
++            "additionalProperties": {
++              "type": "string"
++            },
++            "title": "Historical Artifact Paths",
++            "type": "object"
++          },
++          "job_receipt_hash": {
++            "anyOf": [
++              {
++                "type": "string"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Job Receipt Hash"
++          },
++          "operation_id": {
++            "anyOf": [
++              {
++                "type": "string"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Operation Id"
++          },
++          "reasons": {
++            "items": {
++              "type": "string"
++            },
++            "title": "Reasons",
++            "type": "array"
++          },
++          "recorded_sql_status": {
++            "title": "Recorded Sql Status",
++            "type": "string"
++          },
++          "schema_version": {
++            "const": "simulation.publication-status.v1",
++            "default": "simulation.publication-status.v1",
++            "title": "Schema Version",
++            "type": "string"
++          }
++        },
++        "required": ["recorded_sql_status", "confirmation_state"],
++        "title": "PublicationStatusView",
++        "type": "object"
++      },
+       "QueueStatusResponse": {
+         "properties": {
+           "blocked": {
+@@ -6135,6 +6298,16 @@
+             },
+             "title": "Artifacts",
+             "type": "object"
++          },
++          "publication": {
++            "anyOf": [
++              {
++                "$ref": "#/components/schemas/PublicationStatusView"
++              },
++              {
++                "type": "null"
++              }
++            ]
+           }
+         },
+         "required": ["artifacts"],
+@@ -6232,6 +6405,16 @@
+             },
+             "title": "Events",
+             "type": "array"
++          },
++          "publication": {
++            "anyOf": [
++              {
++                "$ref": "#/components/schemas/PublicationStatusView"
++              },
++              {
++                "type": "null"
++              }
++            ]
+           }
+         },
+         "required": ["events"],
+@@ -6319,6 +6502,16 @@
+             },
+             "title": "Metrics",
+             "type": "array"
++          },
++          "publication": {
++            "anyOf": [
++              {
++                "$ref": "#/components/schemas/PublicationStatusView"
++              },
++              {
++                "type": "null"
++              }
++            ]
+           }
+         },
+         "required": ["metrics"],
+@@ -6442,6 +6635,16 @@
+             "additionalProperties": true,
+             "title": "Provenance",
+             "type": "object"
++          },
++          "publication": {
++            "anyOf": [
++              {
++                "$ref": "#/components/schemas/PublicationStatusView"
++              },
++              {
++                "type": "null"
++              }
++            ]
+           },
+           "queue_position": {
+             "default": 0,
+@@ -7513,6 +7716,18 @@
+             "title": "Event Type",
+             "type": "string"
+           },
++          "historical_payload": {
++            "anyOf": [
++              {
++                "additionalProperties": true,
++                "type": "object"
++              },
++              {
++                "type": "null"
++              }
++            ],
++            "title": "Historical Payload"
++          },
+           "payload": {
+             "additionalProperties": true,
+             "title": "Payload",

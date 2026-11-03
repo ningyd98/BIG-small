@@ -1,0 +1,91 @@
+{
+  "schema": "bigsmall.astra.selected-report-admission.v1",
+  "round": "R416",
+  "planner_model": "gpt-6-astra",
+  "created_utc": "2026-11-03T15:12:15.625167+00:00",
+  "status": "PLANNED_NOT_IMPLEMENTED",
+  "authorization": "用户全量长测及报告交付授权与AGENTS明确路径commit/push要求；仅补正被reports/规则忽略的已授权精选文件登记，不授权测试重跑/产品修复或扩大交付。",
+  "problem": {
+    "evidence": "R416/intake/ignore-evidence.json原件：git check-ignore -v R413/reports/build_reports.py返回0，.gitignore:64:reports/；当前尚未stage，不能冒称git add已失败。",
+    "cause": "reports/是Git忽略目录规则，普通add不能按既定清单纳入用户请求的报告；这与产品/测试失败无关。",
+    "decision": "允许一次仅最终精确NUL列表的git add -f；-f在此仅覆盖忽略规则以登记指定文件，不是force-push，不授权其它force操作。保留.gitignore和旧计划原字节。"
+  },
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 3403,
+      "sha256": "ae671da4305810935f7f30551dcb05427abe4c1ecb254b1a2f4ecbc2d806e07e"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round413-full-long-validation-20261103/plan.json",
+      "bytes": 26980,
+      "sha256": "f8f76aa5bab624f34df10ce75258cc37d5afdbfa5476c4939ef9823b97636b90"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round413-full-long-validation-20261103/reports/prepare_delivery.py",
+      "bytes": 7439,
+      "sha256": "e80279a71edd4a20efb3de3d4700c62b3de676d74eb40b4c34c425110b0a4e62"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round416-selected-report-ignore-admission-20261103/intake/ignore-evidence.json",
+      "bytes": 951,
+      "sha256": "1d5e17c5c2b5ce78a9a8ff17bc5d5250400cac1c01931fb70ee4181dd047637c"
+    }
+  ],
+  "baseline": {
+    "head": "ab18abd0f82a024b62f4423c946c6585f8d18c65",
+    "branch": "research/20261004-continuation",
+    "source_hash": "3bfb7dbb8036b8389fa9a9bccdb2e961a1fd225be2d42b511539044e944995f4",
+    "reverify": "最终报告、manifest与fresh review尚未完成；实施前按实际新产物冻结，不pin增长报告或假称审核通过。HEAD/index/source保护须再次验证。"
+  },
+  "scope": [
+    "仅R413/R414/R415原已授权精确精选证据以及R416 plan.md、plan.json、intake/ignore-evidence.json和必要小步骤/解除记录",
+    "允许本地尚未冻结的R413/reports/prepare_delivery.py窄追加R416明确上述文件、忽略准入审计和exact -f登记说明；不得通用递归R416或放宽原文件类型/敏感内容/体积边界",
+    "最终fresh whole-evidence review仍一次，审核报告真实性、核心manifest与新增准入政策；不额外helper独审；计划不更改旧R413delivery其它限制"
+  ],
+  "forbidden": [
+    "不改.gitignore、产品、测试、旧raw/DB、冻结plans和已完成stage",
+    "不得目录整体add或git add .；不得使用通配路径/隐含pathspec magic；不纳入其它untracked或两dirtygitlink内部",
+    "禁止DB/SQLite/WAL/SHM、tmp/cache/pycache/resources/runtime数据库、weights/SDK/凭据、图片traces视频、完整batch raw/重复fixtures及敏感扫描原文",
+    "禁止force push、amend、reset、rebase、clean；失败不自动unstage/reset或重新stage；无额外测试/分析/Git配额"
+  ],
+  "preparation": [
+    "复核输入pins；保存当前prepare_delivery.py的原hash（可小快照local-only）并按明确允许窄改，仅新增R416精确记录和-ignore admission策略。最终报告先完整离线生成并冻结；不把尚未生成报告当输入已通过。",
+    "生成core-content精确manifest，每项repo-relative path、bytes、SHA256；所有条目必须常规文件、路径无.. /绝对路径/控制路径magic且所有祖先无symlink，resolve落在已授权精确round范围内；不是只按文件suffix过滤。R416只允许明确计划/intake/必要小记录，不继承宽泛root glob。",
+    "对候选及最终追加文件执行只读git check-ignore -v -z --stdin，NUL解析并保存真实规则/path审计；工具0/1语义区分，>1为命令错误。凡被忽略条目必须位于R413/R414/R415中已授权reports目录，且被实际reports/规则匹配；若出现其它忽略规则或目录则不使用-f带入，停止其准入并下一计划，不擅自移文件/改规则。未被ignore的R416小计划等同样可在最终精确列表里。",
+    "用全局排除清单核对所有候选，包括未被ignore者；保留raw本地而非用-f绕过DB/credential排除。敏感扫描原stdout仍local-only，报告使用脱敏分类。",
+    "一名fresh actual Astra审核心内容manifest hash与最终元数据添加政策；重要证据问题需下一计划。核心manifest不包含自身；最终selected manifest仅按已审政策追加review两文件/coremanifest/交付说明等确切元数据，另hash最终manifest自身，避免自指与第二次无穷review。不得在审核后继续改变核心报告字节。",
+    "最终NUL清单写一个精确repo-relative路径一项，以NUL结束，无目录、无重复、无空项；允许最终manifest自身作为额外明确项并单独hash。准入检查必须覆盖这些review/manifest追加文件；保存清单SHA、总数/bytes与所有ignored条目的规则。"
+  ],
+  "git_gate": [
+    "全部运行已终态，source/test/Git refs/index保护符合原计划，HEAD仍ab18abd0、分支仍research/20261004-continuation、index空；两dirtygitlinks外层指针及保护快照保留，不进入内部；核对当前原源SHA与被测官方hash归属，不能以证据提交声称重新测试。",
+    "清单所有当前文件hash与冻结manifest一致；核心review通过；source没有新增改变；NUL清单未混入未经审查文件。受控工具require_escalated执行现有Git额度，不再另问human。",
+    "唯一stage：git --literal-pathspecs add -f --pathspec-from-file=<absolute-final-selected-paths.nul> --pathspec-file-nul。--literal-pathspecs明确所有项为字面路径，-f仅用于精确已准入ignored报告。所有非ignored项也受同一清单约束；不得其它git add命令/目录宽选。",
+    "stage后只读核对cached name/status与清单完全相符（原index为空，不允许意外M/D/R/gitlink）；核对stage blob实际bytes/SHA与manifest，当前工作文件也仍相等。任何偏差保留真实状态停止commit，不自动reset/补stage。",
+    "沿原额度一次普通commit，再一次normal push到origin的research/20261004-continuation；仅该目标branch可前进。一次exact ls-remote refs/heads/research/20261004-continuation与local/upstream三SHA核对。不得force push/多次网络探测；拒绝/auth/远端变化等保留后下一Astra。"
+  ],
+  "budget": {
+    "additional_behavior_runs": 0,
+    "additional_git_attempts": 0,
+    "selective_stage_total": 1,
+    "normal_commit_total": 1,
+    "normal_push_total": 1,
+    "exact_ls_remote_total": 1,
+    "stage_commit_cap_s_each": 120,
+    "push_verify_cap_s_each": 60,
+    "inheritance": "全部是R413未使用的原交付额度；R416只澄清精确忽略准入，不新增次数/时钟。"
+  },
+  "acceptance": [
+    "所请求研发进展和测试报告确实出现在最终精选manifest/index/commit内，hash相符；只准入已授权reports忽略项",
+    "诚实保留本轮35Python FAIL、6skip、1INCOMPLETE、2外部NOT_RUN和静态/Phase12 REJECTED等真实最终证据，不把队列exit0或报告交付写成全绿",
+    "原始失败、来源、清理和覆盖账本都可追溯；完整raw包不冒充远端已交付",
+    "普通push后local/upstream/exactremote三SHA一致；postcommit回执local-only，不第二次commit回执"
+  ],
+  "stop": "manifest范围/忽略规则/源/审核/index不符则停相关Git登记；不为交付而删除失败记录或修改.gitignore。任何新发现产品/测试失败不在此修，报告实际状态。",
+  "planner_actions": "只读核对真实ignore intake、当前helper和HEAD并写本plan.md/json；未修改helper、.gitignore或任何Git/index/源/测试。"
+}
