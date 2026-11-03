@@ -858,6 +858,10 @@ class SQLiteEventAutonomyRepository:
             return saved
 
     def get_event(self, event_id: str) -> EdgeEvent | None:
+        return self._get_event_unlocked(event_id)
+
+    def _get_event_unlocked(self, event_id: str) -> EdgeEvent | None:
+        """Storage read for the routed getter or a caller already holding _write_lock."""
         row = self._conn.execute(
             "SELECT payload_json FROM edge_events WHERE event_id = ?",
             (event_id,),
@@ -939,6 +943,10 @@ class SQLiteEventAutonomyRepository:
         return self.get_retry_budget(budget.task_id) or budget
 
     def get_retry_budget(self, task_id: str) -> RecoveryBudget | None:
+        return self._get_retry_budget_unlocked(task_id)
+
+    def _get_retry_budget_unlocked(self, task_id: str) -> RecoveryBudget | None:
+        """Storage read for the routed getter or a caller already holding _write_lock."""
         row = self._conn.execute(
             "SELECT * FROM recovery_budgets WHERE task_id = ?", (task_id,)
         ).fetchone()
@@ -973,7 +981,7 @@ class SQLiteEventAutonomyRepository:
         with self._write_lock, self._conn:
             self._conn.execute("BEGIN IMMEDIATE")
             _local_legacy_write_guard_unlocked(self, "initialize_retry_budget_if_absent", (budget,), {})
-            existing = self.get_retry_budget(budget.task_id)
+            existing = self._get_retry_budget_unlocked(budget.task_id)
             if existing is not None:
                 return existing.model_copy(deep=True)
             self._conn.execute(
@@ -1006,7 +1014,7 @@ class SQLiteEventAutonomyRepository:
                     budget.updated_at.isoformat(),
                 ),
             )
-            saved = self.get_retry_budget(budget.task_id)
+            saved = self._get_retry_budget_unlocked(budget.task_id)
             assert saved is not None
             return saved.model_copy(deep=True)
 
@@ -1034,7 +1042,7 @@ class SQLiteEventAutonomyRepository:
         commit: bool = True,
     ) -> tuple[bool, RecoveryBudget | None]:
         now = _iso_now()
-        budget = self.get_retry_budget(task_id)
+        budget = self._get_retry_budget_unlocked(task_id)
         if budget is None:
             return False, None
         if budget.retry_count_used != expected_count or budget.remaining_retries <= 0:
@@ -1082,7 +1090,7 @@ class SQLiteEventAutonomyRepository:
         if cursor.rowcount != 1:
             if commit:
                 self._conn.commit()
-            return False, self.get_retry_budget(task_id)
+            return False, self._get_retry_budget_unlocked(task_id)
         self._conn.execute(
             """INSERT INTO recovery_attempts
                (task_id, step_id, skill, event_id, attempt_number, created_at)
@@ -1091,7 +1099,7 @@ class SQLiteEventAutonomyRepository:
         )
         if commit:
             self._conn.commit()
-        return True, self.get_retry_budget(task_id)
+        return True, self._get_retry_budget_unlocked(task_id)
 
     def initialize_verification_budget_if_absent(
         self,
@@ -1105,10 +1113,10 @@ class SQLiteEventAutonomyRepository:
         with self._write_lock, self._conn:
             self._conn.execute("BEGIN IMMEDIATE")
             _local_legacy_write_guard_unlocked(self, "initialize_verification_budget_if_absent", (task_id, state), {})
-            existing = self.get_verification_budget(task_id)
+            existing = self._get_verification_budget_unlocked(task_id)
             if existing is None:
                 existing = VerificationBudgetRecord.create(task_id, state)
-                retry = self.get_retry_budget(task_id)
+                retry = self._get_retry_budget_unlocked(task_id)
                 existing.state.remaining_retries = min(
                     max(0, existing.state.limits.max_retries - retry.task_retry_count)
                     if retry
@@ -1137,6 +1145,10 @@ class SQLiteEventAutonomyRepository:
             return existing.detached()
 
     def get_verification_budget(self, task_id: str) -> VerificationBudgetRecord | None:
+        return self._get_verification_budget_unlocked(task_id)
+
+    def _get_verification_budget_unlocked(self, task_id: str) -> VerificationBudgetRecord | None:
+        """Storage read for the routed getter or a caller already holding _write_lock."""
         from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
 
         row = self._conn.execute(
@@ -1169,7 +1181,7 @@ class SQLiteEventAutonomyRepository:
                 _same_or_conflict(
                     "RecoveryRecord", record.recovery_id, row["initial_hash"], record.content_hash()
                 )
-                existing = self.get_recovery(record.recovery_id)
+                existing = self._get_recovery_unlocked(record.recovery_id)
                 assert existing is not None
                 return existing
             if self._conn.execute(
@@ -1178,13 +1190,13 @@ class SQLiteEventAutonomyRepository:
                 raise IdempotencyConflictError("event already has a recovery record")
             if any(
                 item.attempt_id == record.attempt_id
-                for item in self.list_recoveries(record.task_id)
+                for item in self._list_recoveries_unlocked(record.task_id)
             ):
                 raise ValueError("execution attempt already belongs to a failure event")
             validate_detected(
                 record,
-                self.get_event(record.event_id),
-                self.get_verification_budget(record.task_id),
+                self._get_event_unlocked(record.event_id),
+                self._get_verification_budget_unlocked(record.task_id),
             )
             self._conn.execute(
                 "INSERT INTO recovery_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1202,6 +1214,10 @@ class SQLiteEventAutonomyRepository:
             return record.detached()
 
     def get_recovery(self, recovery_id: str) -> RecoveryRecord | None:
+        return self._get_recovery_unlocked(recovery_id)
+
+    def _get_recovery_unlocked(self, recovery_id: str) -> RecoveryRecord | None:
+        """Storage read for the routed getter or a caller already holding _write_lock."""
         from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
 
         row = self._conn.execute(
@@ -1237,6 +1253,18 @@ class SQLiteEventAutonomyRepository:
         ).fetchall()
         return [record for row in rows if (record := self.get_recovery(row["recovery_id"]))]
 
+    def _list_recoveries_unlocked(self, task_id: str) -> list[RecoveryRecord]:
+        """Read legacy recovery identities while the caller holds _write_lock."""
+        rows = self._conn.execute(
+            "SELECT recovery_id FROM recovery_records WHERE task_id=? ORDER BY rowid",
+            (task_id,),
+        ).fetchall()
+        return [
+            record
+            for row in rows
+            if (record := self._get_recovery_unlocked(row["recovery_id"]))
+        ]
+
     def advance_recovery_if_current(
         self,
         record: RecoveryRecord,
@@ -1251,8 +1279,8 @@ class SQLiteEventAutonomyRepository:
         with self._write_lock, self._conn:
             self._conn.execute("BEGIN IMMEDIATE")
             _local_legacy_write_guard_unlocked(self, "advance_recovery_if_current", (record,), {'expected_state': expected_state, 'expected_revision': expected_revision, 'expected_budget_revision': expected_budget_revision, 'verified_transition': verified_transition})
-            current = self.get_recovery(record.recovery_id)
-            pool = self.get_verification_budget(current.task_id) if current else None
+            current = self._get_recovery_unlocked(record.recovery_id)
+            pool = self._get_verification_budget_unlocked(current.task_id) if current else None
             if not (
                 all(
                     type(value) is int and value >= 0
@@ -1298,8 +1326,8 @@ class SQLiteEventAutonomyRepository:
         with self._write_lock, self._conn:
             self._conn.execute("BEGIN IMMEDIATE")
             _local_legacy_write_guard_unlocked(self, "reserve_reobservation_if_current", (), {'recovery_id': recovery_id, 'expected_revision': expected_revision, 'expected_budget_revision': expected_budget_revision, 'reservation': reservation})
-            current = self.get_recovery(recovery_id)
-            pool = self.get_verification_budget(current.task_id) if current else None
+            current = self._get_recovery_unlocked(recovery_id)
+            pool = self._get_verification_budget_unlocked(current.task_id) if current else None
             if not (
                 all(
                     type(value) is int and value >= 0
@@ -1348,9 +1376,9 @@ class SQLiteEventAutonomyRepository:
         with self._write_lock, self._conn:
             self._conn.execute("BEGIN IMMEDIATE")
             _local_legacy_write_guard_unlocked(self, "consume_retry_and_authorize_recovery_if_current", (), {'recovery_id': recovery_id, 'expected_recovery_revision': expected_recovery_revision, 'expected_verification_budget_revision': expected_verification_budget_revision, 'expected_retry_count': expected_retry_count, 'step_id': step_id, 'skill': skill, 'authorization': authorization})
-            record = self.get_recovery(recovery_id)
-            pool = self.get_verification_budget(record.task_id) if record else None
-            budget = self.get_retry_budget(record.task_id) if record else None
+            record = self._get_recovery_unlocked(recovery_id)
+            pool = self._get_verification_budget_unlocked(record.task_id) if record else None
+            budget = self._get_retry_budget_unlocked(record.task_id) if record else None
             reasons: tuple[str, ...] = ("authorization_compare_and_set_conflict",)
             if (
                 all(
@@ -1373,7 +1401,7 @@ class SQLiteEventAutonomyRepository:
                     record,
                     pool,
                     budget,
-                    self.get_event(record.event_id),
+                    self._get_event_unlocked(record.event_id),
                     self.get_active_contract(record.task_id),
                     self.get_latest_execution_checkpoint(record.task_id),
                     self._replan_cancelled_locked(record.task_id),
@@ -1443,6 +1471,10 @@ class SQLiteEventAutonomyRepository:
             self._conn.commit()
 
     def get_state(self, task_id: str) -> str | None:
+        return self._get_state_unlocked(task_id)
+
+    def _get_state_unlocked(self, task_id: str) -> str | None:
+        """Storage read for the routed getter or a caller already holding _write_lock."""
         row = self._conn.execute(
             "SELECT current_state FROM event_mode_states WHERE task_id = ?",
             (task_id,),
@@ -1950,7 +1982,7 @@ class SQLiteEventAutonomyRepository:
             staged = None
             if replan_record is not None:
                 staged = ReplanApplyRecord.model_validate(replan_record.model_dump())
-                previous = self.get_replan_apply_record(staged.apply_id)
+                previous = self._get_replan_apply_record_unlocked(staged.apply_id)
                 checkpoint = self.get_latest_execution_checkpoint(task_id)
                 cancelled = self._replan_cancelled_locked(task_id)
                 if (
@@ -2137,7 +2169,7 @@ class SQLiteEventAutonomyRepository:
     # ── Replan apply and ACK ────────────────────────────────────────────
 
     def _replan_cancelled_locked(self, task_id: str) -> bool:
-        return self.get_state(task_id) in {
+        return self._get_state_unlocked(task_id) in {
             "CANCELLED",
             "ABORTED",
             "STOPPED",
@@ -2214,7 +2246,7 @@ class SQLiteEventAutonomyRepository:
         with self._write_lock, self._conn:
             self._conn.execute("BEGIN IMMEDIATE")
             _local_legacy_write_guard_unlocked(self, "update_replan_apply_record_if_current", (record,), {'expected_status': expected_status})
-            previous = self.get_replan_apply_record(record.apply_id)
+            previous = self._get_replan_apply_record_unlocked(record.apply_id)
             if previous is None:
                 return None
             if record.status == "EXECUTION_STARTED":
@@ -2247,6 +2279,10 @@ class SQLiteEventAutonomyRepository:
             return self._update_apply_locked(record)
 
     def get_replan_apply_record(self, apply_id: str) -> ReplanApplyRecord | None:
+        return self._get_replan_apply_record_unlocked(apply_id)
+
+    def _get_replan_apply_record_unlocked(self, apply_id: str) -> ReplanApplyRecord | None:
+        """Storage read for the routed getter or a caller already holding _write_lock."""
         row = self._conn.execute(
             "SELECT payload_json FROM replan_apply_records WHERE apply_id = ?",
             (apply_id,),
@@ -2635,8 +2671,8 @@ class SQLiteEventAutonomyRepository:
         return (
             active,
             checkpoint,
-            self.get_verification_budget(task_id),
-            self.get_retry_budget(task_id),
+            self._get_verification_budget_unlocked(task_id),
+            self._get_retry_budget_unlocked(task_id),
         )
 
     def _visual_versions_match(self, original: VisualOriginalPlan) -> bool:

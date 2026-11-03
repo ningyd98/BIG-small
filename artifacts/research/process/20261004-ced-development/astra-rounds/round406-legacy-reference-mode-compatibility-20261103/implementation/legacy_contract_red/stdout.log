@@ -1,0 +1,86 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_default_legacy_capture_and_observation_valid _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d70b78cc440>
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round406-...ce-mode-compatibility-20261103/implementation/legacy_contract_red/persistent-basetemp/test_default_legacy_capture_an0')
+
+    def test_default_legacy_capture_and_observation_valid(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            assert runtime._operational_owner._startup.mode == "UTC_LEGACY_VETO"
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, "condition")
+            assert module._check_reference(reference).status == "VALID"
+            assert module._check_observation(observation, "condition", reference=reference) is True
+            assert module._check_observation(observation, "condition") is True
+    
+>       exercise(monkeypatch, tmp_path, run)
+
+tests/test_legacy_reference_mode_compatibility.py:19: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:218: in exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:296: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:754: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:799: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1153: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_windows.py:178: in run
+    results.append(callback(module, runtime, counter, worker, repo, job))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_legacy_reference_mode_compatibility.py:13: in run
+    observation = captured(runtime)
+                  ^^^^^^^^^^^^^^^^^
+tests/test_operational_windows.py:230: in captured
+    claim = runtime.reserve_capture(RobotState(connected=True), initial=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/worker_runtime.py:2195: in reserve_capture
+    record = self._transition(
+src/cloud_edge_robot_arm/vision/worker_runtime.py:2175: in _transition
+    result = self.source.event_repository.transition_visual_bootstrap_if_current(
+src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py:234: in dispatch
+    return original(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py:413: in transition_visual_bootstrap_if_current
+    result = derive_bootstrap(current, request, now=datetime.now(UTC))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py:804: in derive_bootstrap
+    _consume_transition(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+payload = {'bootstrap_id': 'b09a2082086806630bf83902b0b95fbc8feafb916d4a72884bc1d5ff813e08bb', 'claim_id': None, 'current_lease'...:37:20.218491+00:00', ...}, 'definition_hash': '12e0097cc21d22bbf7a79c75b5335f661b6e0c31362c3f4d808f86e0953de5dd', ...}
+
+    def _consume_transition(payload: dict[str, Any], *, required: bool = False) -> None:
+        references = payload.get("operational_windows")
+        if not references:
+            if required or _current_owner() is not None:
+                raise OperationalTimeError("operational transition cannot downgrade to legacy")
+            return
+        scope = _TRANSITIONS.pop(threading.get_ident(), None)
+        if scope is None or _current_owner() is not scope[0] or scope[1] != _hash(payload):
+            raise OperationalTimeError("replayed public transition has no live effect authority")
+        if tuple(r["window_id"] for r in references) != scope[2] or any(
+            _check_reference(r).status != "VALID" for r in references
+        ):
+>           raise OperationalTimeError("original transition obligations unavailable or exhausted")
+E           cloud_edge_robot_arm.research.operational_time_v1.OperationalTimeError: original transition obligations unavailable or exhausted
+
+src/cloud_edge_robot_arm/vision/operational_windows.py:887: OperationalTimeError
+=============================== warnings summary ===============================
+tests/test_legacy_reference_mode_compatibility.py::test_default_legacy_capture_and_observation_valid
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round406-legacy-reference-mode-compatibility-20261103/implementation/legacy_contract_red/junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_legacy_reference_mode_compatibility.py::test_default_legacy_capture_and_observation_valid
+1 failed, 1 warning in 2.42s

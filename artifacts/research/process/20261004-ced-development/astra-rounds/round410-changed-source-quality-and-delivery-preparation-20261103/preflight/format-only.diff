@@ -1,0 +1,145 @@
+--- src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py.before
++++ src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
+@@ -1259,7 +1259,11 @@
+             "SELECT recovery_id FROM recovery_records WHERE task_id=? ORDER BY rowid",
+             (task_id,),
+         ).fetchall()
+-        return [record for row in rows if (record := self._get_recovery_unlocked(row["recovery_id"]))]
++        return [
++            record
++            for row in rows
++            if (record := self._get_recovery_unlocked(row["recovery_id"]))
++        ]
+ 
+     def advance_recovery_if_current(
+         self,
+--- tests/test_eteac_retry_lock_regression.py.before
++++ tests/test_eteac_retry_lock_regression.py
+@@ -48,7 +48,9 @@
+         "real repository call did not return; bounded child killed and reaped\n"
+         + stdout.decode(errors="replace") + stderr.decode(errors="replace")
+     )
+-    assert process.returncode == 0, stdout.decode(errors="replace") + stderr.decode(errors="replace")
++    assert process.returncode == 0, (
++        stdout.decode(errors="replace") + stderr.decode(errors="replace")
++    )
+ 
+ 
+ @pytest.mark.parametrize("backend", ["memory", "sqlite"])
+@@ -69,8 +71,12 @@
+ 
+ 
+ def _repository(backend, directory):
+-    from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
+-    from cloud_edge_robot_arm.repositories.event_autonomy.sqlite import SQLiteEventAutonomyRepository
++    from cloud_edge_robot_arm.repositories.event_autonomy.memory import (
++        InMemoryEventAutonomyRepository,
++    )
++    from cloud_edge_robot_arm.repositories.event_autonomy.sqlite import (
++        SQLiteEventAutonomyRepository,
++    )
+ 
+     return (SQLiteEventAutonomyRepository(directory / "events.sqlite") if backend == "sqlite"
+             else InMemoryEventAutonomyRepository())
+@@ -131,10 +137,14 @@
+     from cloud_edge_robot_arm.experiments.runner import git_sha
+     from cloud_edge_robot_arm.real_robot.provenance import current_source_tree_hash
+     from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+-    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
++    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
++        SQLiteSimulationJobRepository,
++    )
+     from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+     from cloud_edge_robot_arm.simulation_workbench.models import (
+-        ExperimentDraft, ExperimentManifest, SimulationRunType,
++        ExperimentDraft,
++        ExperimentManifest,
++        SimulationRunType,
+     )
+     from tests.test_phase11_1_simulation_runtime import _sqlite_fd_targets
+ 
+@@ -148,7 +158,9 @@
+     )
+     assert listing and source_commit != "UNKNOWN" and len(source_commit) == 40
+     source_tree_hash = current_source_tree_hash()
+-    source_paths = [p["path"] for p in original["source_pins"]] + [str(Path(__file__).relative_to(ROOT))]
++    source_paths = [p["path"] for p in original["source_pins"]] + [
++        str(Path(__file__).relative_to(ROOT))
++    ]
+     pins = [{"path": name, "sha256": hashlib.sha256((ROOT / name).read_bytes()).hexdigest()}
+             for name in source_paths]
+     pinset_hash = hashlib.sha256(json.dumps(pins, sort_keys=True).encode()).hexdigest()
+@@ -159,7 +171,9 @@
+         "original_request_sha256": original["frozen_input"]["request_sha256"],
+     }
+     artifacts = directory / "artifacts"
+-    repository = SQLiteSimulationJobRepository(directory / "runtime.sqlite", artifact_root=artifacts)
++    repository = SQLiteSimulationJobRepository(
++        directory / "runtime.sqlite", artifact_root=artifacts
++    )
+     worker = SimulationWorker(worker_id="r399-native-mock", backend="MOCK",
+                               repository=repository, artifact_root=artifacts)
+     jobs = []
+@@ -173,14 +187,16 @@
+         reproducibility = hashlib.sha256(json.dumps({"draft": normalized,
+             "source_commit": source_commit, "source_tree_hash": source_tree_hash,
+             "source_pinset_sha256": pinset_hash}, sort_keys=True).encode()).hexdigest()
+-        manifest = ExperimentManifest(manifest_id="r399-" + mode.lower(), normalized_config=normalized,
++        manifest = ExperimentManifest(
++            manifest_id="r399-" + mode.lower(), normalized_config=normalized,
+             source_commit=source_commit, source_tree_hash=source_tree_hash,
+             run_count=1, reproducibility_hash=reproducibility).model_dump(mode="json")
+         manifest["development_provenance"] = provenance
+         run_id = "r399-native-" + mode.lower()
+         job = repository.create_job(run_id=run_id, batch_id="r399-native-pair", backend="MOCK",
+             scenario_id="S01_NORMAL_STATIC", control_mode=mode, seed=0,
+-            manifest_id=manifest["manifest_id"], reproducibility_hash=reproducibility, draft=normalized,
++            manifest_id=manifest["manifest_id"], reproducibility_hash=reproducibility,
++            draft=normalized,
+             timeout_seconds=30, max_attempts=2, artifact_root=run_id,
+             source_commit=source_commit, source_tree_hash=source_tree_hash,
+             manifest=manifest, provenance=provenance)
+@@ -190,7 +206,9 @@
+         jobs.append(job)
+         manifests.append(manifest)
+     assert jobs[0].created_at < jobs[1].created_at
+-    evidence_path = Path(os.environ.get("R399_EVIDENCE_DIR", str(directory))) / "native-queue-receipt.json"
++    evidence_path = (
++        Path(os.environ.get("R399_EVIDENCE_DIR", str(directory))) / "native-queue-receipt.json"
++    )
+     receipt = {"provenance": provenance, "manifests": manifests,
+                "queue_order": [job.run_id for job in jobs], "runs": [],
+                "browser_retest": False, "physical_or_formal_acceptance": False}
+@@ -213,7 +231,8 @@
+         handles = _sqlite_fd_targets(artifacts / job.artifact_root)
+         snapshot = {"job": asdict(current), "attempts": [asdict(a) for a in attempts],
+             "leases": [asdict(lease) for lease in leases], "elapsed_s": duration,
+-            "consumed": consumed, "heartbeat_threads_after": heartbeat, "run_sqlite_fds_after": handles,
++            "consumed": consumed, "heartbeat_threads_after": heartbeat,
++            "run_sqlite_fds_after": handles,
+             "result": experiment.model_dump(mode="json"),
+             "result_sha256": hashlib.sha256(result_path.read_bytes()).hexdigest()}
+         receipt["runs"].append(snapshot)
+@@ -224,7 +243,9 @@
+         assert consumed and duration < 30 and current.status == RuntimeJobStatus.SUCCEEDED
+         assert current.attempt == 1 and current.completed_at is not None
+         assert experiment.task_success and experiment.experiment_id == job.run_id
+-        assert experiment.mode.value == job.control_mode and experiment.scenario_id == job.scenario_id
++        assert (
++            experiment.mode.value == job.control_mode and experiment.scenario_id == job.scenario_id
++        )
+         assert len(attempts) == 1 and attempts[0].ended_at is not None
+         assert attempts[0].result == "SUCCEEDED"
+         assert len(leases) == 1 and leases[0].released_at is not None
+--- tests/test_legacy_reference_mode_compatibility.py.before
++++ tests/test_legacy_reference_mode_compatibility.py
+@@ -1,8 +1,8 @@
+ """Default-mode compatibility with real owner, source and SQLite lease checks."""
+ 
++import sqlite3
+ from dataclasses import replace
+ from datetime import UTC, datetime, timedelta
+-import sqlite3
+ 
+ from tests.test_operational_windows import captured, exercise
+ 

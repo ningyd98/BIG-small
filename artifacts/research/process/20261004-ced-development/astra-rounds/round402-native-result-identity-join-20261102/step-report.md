@@ -1,0 +1,7 @@
+# R402 身份关联修正
+
+严格按实际Astra计划，仅将native结果join改为experiment.experiment_id==job.run_id；task_success等全部其它断言保留。结果run_id是stable_run_id确定性哈希，不是随机值。旧test原字节保留；静态反向单属性后AST与旧树一致。
+
+所有活动stage终态并清理后才修改。R401guard源和产品未变，原RED/GREEN4个仓库函数原样；不能称整个测试文件新旧相同。小adapter仅新明示native successor接受新SHA，原freeze不改。新鲜DB一次验证待执行，原native失败不覆盖。1800秒clock与Git配额不重置。
+
+唯一successor实际结果：pytest1 passed，进程6.484549159秒；ETEAC1.563512146秒、PCSC1.692479735秒，两个job均自然SUCCEEDED/task_success，attempt1结束、lease释放、heartbeat/fd空。ETEAC返回后sentinel仍QUEUED attempt0，随后第二poll成功。无force/no源漂移，已reap。原native身份断言失败及旧test原件仍保留。

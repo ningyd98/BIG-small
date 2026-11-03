@@ -1,0 +1,374 @@
+{
+  "schema": "astra.plan.v1",
+  "round": "R399",
+  "planner_model": "gpt-6-astra",
+  "status": "PLANNED_NOT_IMPLEMENTED",
+  "created_utc": "2026-11-02T16:04:30.164726+00:00",
+  "directory_date": "20261102 is UTC planning day; local Asia/Shanghai is already 20261103. Log actual UTC execution times.",
+  "head": "ac6351b66a6dd05fb67aadd59935ce5726748709",
+  "branch": "research/20261004-continuation",
+  "input_audit": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/input-audit.json",
+    "bytes": 19860,
+    "sha256": "d8d60313d6331fd3290cb1fde254248988c90628f499cebcca4212ee6777dd75"
+  },
+  "problem": {
+    "evidence": "R396 approved native PCSC success and ETEAC 5/15/35/65s same-thread/same-self/same-Lock stacks; initializer holds ordinary Lock then calls decorated reader, whose scope=None dispatch reacquires lock; close never entered. See pinned causal report/evidence/review.",
+    "requested_outcome": "Repair confirmed same-lock public-reader recursion without changing authorization/transaction/concurrency semantics; native original-input ETEAC returns and queued sentinel progresses.",
+    "same_root_scope": "All and only six decorated reader families and exact held-lock transitive edges in input-audit. Include _consume_retry_locked, internal recovery listing, _replan_cancelled_locked and _visual_group_locked; do not stop after initial retry initializer."
+  },
+  "design": {
+    "chosen": "Factor original SQL/row decode/validation bodies into narrowly private _get_*_unlocked methods in sqlite.py. Public get_* methods keep decorator routing and delegate their unchanged body to helper; already-locked internal sites use helper directly after their existing writer/transaction guards. Ordinary Lock remains unchanged.",
+    "reader_families": [
+      "get_event",
+      "get_recovery",
+      "get_replan_apply_record",
+      "get_retry_budget",
+      "get_state",
+      "get_verification_budget"
+    ],
+    "internal_listing": "Add _list_recoveries_unlocked for initialize_recovery_if_absent internal attempt-identity iteration, calling _get_recovery_unlocked. Preserve external list_recoveries behavior (including its public get_recovery routing), list_unresolved semantics and detached/hash validation.",
+    "public_semantics": "Public method names/signatures and local_event_repository decorator remain. No __wrapped__ escape, raw-class call bypass, dispatch special casing, removed private scope, new public authority, changes to _local_target/_local_read_record/_LOCAL_READERS/_LOCAL_WRITERS. Helpers are storage readers only, no writes/commit/lock acquisition, documented callers. Public original body delegates helper; only internal callsites proven lock-held bypass redundant public routing. Validate that an operational/local record cannot take legacy write path because existing guard still executes inside original actual lock/transaction.",
+    "keep": [
+      "Same threading.Lock instance type and construction; no RLock substitution.",
+      "Same with lock / connection, BEGIN IMMEDIATE, _local_legacy_write_guard_unlocked placement, commit flags, CAS clauses, row-count gates, rollback/context-manager order.",
+      "Same SELECTs, row decode, hash/index consistency checks, copies/detachment, idempotent frozen budgets and deadlines.",
+      "Memory repository, protocol, worker, dispatcher, runner and all timeouts remain byte-for-byte unchanged.",
+      "Existing tests/assertions/goldens and previous evidence unchanged."
+    ],
+    "rejected": "RLock broadens reentrancy across writer/read/transaction boundaries and masks nested transactions, with larger semantic reach than fixing exact internal read edges. Releasing lock around read breaks atomicity; neither is authorized.",
+    "excluded_calls": "get_active_contract/get_latest_execution_checkpoint/get_checkpoint/list_events and other nondecorated reader calls are not changed merely because public. No unrelated repo cleanup or broad writer refactor."
+  },
+  "changes": [
+    {
+      "path": "src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "kind": "minimal product fix described above"
+    },
+    {
+      "path": "tests/test_eteac_retry_lock_regression.py",
+      "kind": "new bounded regression/native acceptance tests; original existing tests unmodified"
+    }
+  ],
+  "round_artifacts_allowed": [
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/run_stage.py",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/preflight/*",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/implementation/*",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/review/*",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/delivery/*",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/round-start.json",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/step-report.md",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/acceptance.json",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/causal-repair-summary.md"
+  ],
+  "test_first": {
+    "before_product_edit": "Write new test module and narrow stage adapter only; freeze them. Run sole RED node before changing sqlite.py. Test names fixed by commands. Expected RED is the known deadlock and does not trigger another plan. Preserve stdout/JUnit/timeout stack and all fresh DB files.",
+    "bounded_regression": "Use a short child subcommand in the new test module (stdlib subprocess/multiprocessing with explicit timeout and owned reaping) to exercise real SQLite/in-memory repository calls. No non-daemon ThreadPoolExecutor as sole timeout boundary. Child emits ready/call-entry receipt, optionally faulthandler one timed stack; parent fails pytest within <=10s for known lock wait and proves child reaped. No lock replacement or mocked successful method. Parent pytest remains bounded by existing supervisor as backstop.",
+    "coverage": [
+      "retry initialization absent and repeated/spent frozen budget, detached return, get_retry and consume success/stale count/event replay paths",
+      "verification init and repeat with frozen retry pool; recovery initialize/repeat/list identity, transition/reservation/authorization guard paths",
+      "replan apply CAS/cancel-state reader and visual-group retry/verification readers exercised through original public operations or existing fixture helpers",
+      "memory differential behavior for same operations with unchanged implementation; retain real concurrency/restart/rollback tests in semantic stage",
+      "Do not add implementation-mirroring assertions as sole proof. A static audit confirming no wrapped-reader edge remains in actual held-lock paths complements behavioral checks."
+    ],
+    "green_rule": "Run new contracts once after minimal fix; then each specified regression stage once, serial. No automated retries or quota recycling. New root, green failure, source drift or timeout stops affected work for actual Astra; no expanding timeout/ignoring failures."
+  },
+  "native_acceptance": {
+    "entry": "New test_native_eteac_then_queued_pcsc uses original R396 pinned input-audit.frozen_input.request. It derives SINGLE ETEAC and PCSC sentinel exactly as service.create_batch; no input mode/mode semantics/default substitution.",
+    "execution": "One fresh repository and one real MOCK SimulationWorker in a single bounded child. Queue ETEAC then sentinel PCSC before first poll, with reproducible verified acquisition order; after first poll require ETEAC terminal and sentinel still QUEUED attempt0, then second poll consumes that sentinel. New IDs/DB/artifact root within R399 stage. No dispatcher start/HTTP/socket, AUTO, MUJOCO/hardware/external model/network or global parallelism. One poll per job and max_attempts=2 but no retries.",
+    "input": "S01_NORMAL_STATIC, seed0, NORMAL original profile, LEGACY_PIPELINE, cache enabled, retry2, supervision300, timeout_ms30000 / timeout_seconds30, UTC_LEGACY_VETO. Same underlying native worker/runner; no mock runner or lock.",
+    "identity": "Inside approved native child, call pinned real_robot.provenance.current_source_tree_hash() once with cwd=repository root before queuing, within existing stage budget. Store this official working-source hash (not empty), actual source_commit ac6351b and post-fix source pinset SHA/new-test digest in both new manifests and compact receipt. This function performs read-only git ls-files and file hashing, no hardware/network. Distinguish patched working bytes from unchanged parent HEAD; do not call full current_source_provenance or large nested diff. Historical manifest is historical-only. Failure/empty Git listing is an infrastructure failure, not permission to use empty/made-up hash. Record actual current-source path/hash inputs at stage freeze.",
+    "budget": "Each poll <=30s measured and independently supervised, child native stage <=75s inside stage90 cap. Existing 30s application timeout unchanged. Expected natural terminal before cap; any forced stop is failure, not successful timeout.",
+    "assertions": [
+      "Both actual poll_once calls return True, each target job RUNNING->SUCCEEDED attempt1; native result task_success=true / successful ExperimentResult, matching run/config identity.",
+      "Real attempt ended and lease released/inactive; sentinel attempt0 before second poll and attempt1 afterward; no manual status writes after queueing.",
+      "No simulation-lease thread left after each return; no open fds to harness per-run SQLite after close; process reaped and no owned live descendants.",
+      "Record job/attempt/lease snapshots via existing repository APIs/new local DB only, result/artifact hashes, elapsed monotonic times and actual code pins. Do not query old DB or rerun original R396 driver."
+    ],
+    "meaning": "Native MOCK runtime regression acceptance + focused software pass only. Does not certify all19 historical browser failures resolved, RGBD/MuJoCo/physical operation, formal research or full remote raw reproducibility."
+  },
+  "commands": [
+    {
+      "id": "lock_contract_red",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "tests/test_eteac_retry_lock_regression.py::test_retry_initializer_returns_without_reentrant_lock[sqlite]",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 60,
+      "runs": 1,
+      "retry": 0,
+      "expected": "Expected pytest FAIL caused only by bounded child timeout after ready/original initialize entry, with stack showing known sqlite->protocol same-lock wait. A pytest process-level timeout or setup/import failure is not accepted RED."
+    },
+    {
+      "id": "lock_contract_green",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "tests/test_eteac_retry_lock_regression.py",
+        "-k",
+        "not native_eteac_then_queued_pcsc",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 120,
+      "runs": 1,
+      "retry": 0,
+      "expected": "All new bounded repository liveness/semantic contracts pass; no outer or inner timeout."
+    },
+    {
+      "id": "repository_semantics_green",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "tests/test_replan_activation.py",
+        "tests/test_recovery_lifecycle_module.py",
+        "tests/test_verified_recovery_lifecycle.py",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 300,
+      "runs": 1,
+      "retry": 0,
+      "expected": "All existing selected-module assertions, both backends, restart/concurrency/CAS/rollback and detached payload checks pass."
+    },
+    {
+      "id": "visual_repository_green",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "tests/test_visual_owner_repository.py",
+        "tests/test_visual_verification_repository.py",
+        "tests/test_visual_supervision_repository.py",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 180,
+      "runs": 1,
+      "retry": 0,
+      "expected": "Existing legacy visual owner/verification/supervision assertions pass on both backends; no scope/authority upgrade."
+    },
+    {
+      "id": "operational_fences_green",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "-p",
+        "r235_startup_prerequisite",
+        "tests/test_operational_runtime_closure.py::test_b_local_writer_requires_private_scope",
+        "tests/test_operational_runtime_closure.py::test_private_transaction_helpers_require_writer_owner",
+        "tests/test_operational_windows.py::test_public_worker_or_source_without_startup_capability_cannot_issue",
+        "tests/test_operational_windows.py::test_foreign_thread_has_no_owner_context",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 180,
+      "runs": 1,
+      "retry": 0,
+      "expected": "Original protected local writer/private transaction/owner negatives pass. Existing startup prerequisite accepted."
+    },
+    {
+      "id": "worker_short_green",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "tests/test_phase11_1_simulation_runtime.py::test_runtime_state_machine_rejects_illegal_transition",
+        "tests/test_phase11_1_simulation_runtime.py::test_sqlite_repository_uses_cas_sequences_and_unique_leases",
+        "tests/test_phase11_1_simulation_runtime.py::test_sqlite_repository_closes_connections_between_calls",
+        "tests/test_phase11_1_simulation_runtime.py::test_simulation_worker_closes_experiment_runtime_sqlite_handles",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 90,
+      "runs": 1,
+      "retry": 0,
+      "expected": "Four exact non-HTTP existing tests pass, original worker cleanup/CAS assertions unchanged."
+    },
+    {
+      "id": "native_queue_green",
+      "argv": [
+        "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "r373_tracking",
+        "-m",
+        "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+        "tests/test_eteac_retry_lock_regression.py::test_native_eteac_then_queued_pcsc",
+        "--basetemp={STAGE_DIR}/persistent-basetemp",
+        "--junitxml={STAGE_DIR}/junit.xml"
+      ],
+      "child_timeout_s": 90,
+      "runs": 1,
+      "retry": 0,
+      "expected": "Fresh actual MOCK ETEAC naturally SUCCEEDED/task success then prequeued PCSC sentinel naturally consumed and SUCCEEDED; each poll <30s, no forced termination, one attempt each, leases released, closed run DB handles. This is native MOCK software evidence, not browser/physical/formal research PASS."
+    }
+  ],
+  "stage_launcher": {
+    "argv_template": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/run_stage.py",
+      "{stage_id}"
+    ],
+    "reuse": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round376-t3-test-input-contract-20261101/run_stage.py",
+      "bytes": 9418,
+      "sha256": "1190432dec21c2fda9e69883146c46905bf9a4f862d11a41a582e412e3990e5e"
+    },
+    "adapter_scope": "Reuse existing run_stage supervision, output capture, exclusive stage dirs, source hash receipts, PID/starttime/group ownership, TERM5/KILL/reap and round wall handling. Adapt only R399 plan schema/changes/predecessors and explicit stage IDs. Do not copy R396 diagnostic controller or add new denial system. Plain static read/AST and frozen argv sufficient before RED; no mandatory separate helper review chain.",
+    "source_freeze": "Prior stage terminal and cleanup before next. No concurrent source writer/test. Per-stage before/after hashes must match; permitted sqlite changes occur only after accepted RED and before GREEN, then re-freeze. Test source fixed from RED through GREEN; any test correction records old bytes and reason, cannot silently weaken assertions."
+  },
+  "environment_template": {
+    "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+    "LANG": "C.UTF-8",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONPATH": "/home/ningyd/文档/ChatGPT/BIGsmall/src:/home/ningyd/文档/ChatGPT/BIGsmall:/home/ningyd/文档/ChatGPT/BIGsmall/tests:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/adapters:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation",
+    "REAL_MOTION_DISPATCH_ENABLED": "false",
+    "GIT_OPTIONAL_LOCKS": "0",
+    "R373_PYTEST_EVENTS": "{STAGE_DIR}/pytest-events.jsonl",
+    "R373_STAGE_DIR": "{STAGE_DIR}",
+    "BIGSMALL_R223_RESOURCE_ROOT": "{STAGE_DIR}/r223/resources",
+    "BIGSMALL_R223_CASE_ROOT": "{STAGE_DIR}/r223/cases",
+    "MODEL_CONTROL_DB": "{STAGE_DIR}/runtime/model_control.db",
+    "DASHBOARD_ARTIFACT_ROOT": "{STAGE_DIR}/runtime/artifacts",
+    "BIGSMALL_R158_COMMAND": "final_new23",
+    "BIGSMALL_R158_LEGACY_GOLDENS": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round381-t3-commit-close-thread-affinity-20261101/inputs/legacy-goldens.json",
+    "BIGSMALL_R158_T2_RESOURCE_DIR": "{STAGE_DIR}/resources",
+    "BIGSMALL_R175_RESOURCE_DIR": "{STAGE_DIR}/resources-a",
+    "BIGSMALL_R235_PREREQUISITE_RECORD": "{STAGE_DIR}/prerequisite.json",
+    "TMPDIR": "{STAGE_DIR}/tmp",
+    "R399_EVIDENCE_DIR": "{STAGE_DIR}"
+  },
+  "environment_absent": [
+    "SIMULATION_RUNTIME_DB",
+    "Provider credentials",
+    "Proxy overrides"
+  ],
+  "preconditions": [
+    "Use existing research checkout and existing .venv, no new worktree/installation. Actual permissions workspace-write/network restricted/.git readonly. No required socket so default sandbox; permission denial is INFRA_BLOCKED, not expected RED, no automatic escalation/retry.",
+    "All audit pins match before source edit; current HEAD/local branch/cached upstream ac6351b. Product tracked clean except original two dirty gitlinks at intake. Original nested HEAD/index/status/binary guards continue from R396/R393 receipts; never enter/write/restore them. Use explicit --untracked-files=all when checking nested status; no planning repeated large diff.",
+    "Read existing R373 tracking and R235 startup plugin pins; use startup prerequisite only on operational_fences stage, original source hash verified. R381 legacy-goldens manifest remains frozen, referenced read-only. Precreate all STAGE_DIR/tmp/resources/resources-a/r223/resources/r223/cases/runtime/artifacts paths.",
+    "No product import/test/SQLite in planner. Executor may import/run only listed stages after plan. R235 import scheduling is original fixture prerequisite, no behavioral warmup.",
+    "New R399 clock starts immediately before RED once tests/adapter/preflight ready; original R396 budget already completed and cannot be reused. Track actual UTC, monotonic durations."
+  ],
+  "budgets": {
+    "round_wall_cap_s": 1800,
+    "clock_start": "Immediately before unique RED stage; includes product implementation, all stages, independent final review and delivery; never reset",
+    "stage_count": 7,
+    "child_caps_s": [
+      60,
+      120,
+      300,
+      180,
+      180,
+      90,
+      90
+    ],
+    "cleanup_max_s_per_stage": 15,
+    "nominal_test_and_cleanup_cap_s": 1125,
+    "automatic_retries": 0,
+    "parallel_stages": false,
+    "full_old_suite": false,
+    "browser_suite": 0,
+    "native_jobs": 2,
+    "new_short_contract_inner_cap_s": 10,
+    "native_poll_cap_s": 30,
+    "git_commit_cap_s": 60,
+    "git_push_cap_s": 60,
+    "git_exact_verify_cap_s": 60,
+    "insufficient_budget": "Do not start a stage without its full cap+cleanup reserve; mark NOT_RUN_BUDGET, preserve incomplete acceptance, no extension."
+  },
+  "acceptance": [
+    "Expected RED matched known same-lock deadlock and parent/child cleanly reaped; new regression then GREEN.",
+    "Exact protected source scope: sqlite.py and new test module only; all six held-lock reader families fixed and no residual wrapped-reader edge in audited scope. Guards/ordinary Lock/transactions/public/local scopes unchanged, documented comparison with memory.",
+    "All specified semantic/visual/fence/worker regressions pass with original assertions; original failures retained. No 4732 fullsuite or long T3 repetition.",
+    "Native fresh ETEAC naturally completes and queued sentinel progresses with exact original semantics, recorded identity/result/attempt/lease/cleanup.",
+    "Independent final code/evidence reviewer checks source diff, concurrency/transaction/private-scope preservation, test selection/counts/RED validity/native evidence and exact selected candidate. No success claim before evidence."
+  ],
+  "delivery": {
+    "selected_sources": [
+      "src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py",
+      "tests/test_eteac_retry_lock_regression.py"
+    ],
+    "small_records": "Only R399 plan/audit, bounded new run_stage adapter, compact input/argv/env/source receipts, pytest stdout/stderr/JUnit/results, bounded RED traceback, native compact snapshots/result hashes, step/acceptance/causal summary, final review/candidate manifest. Explicit path-by-path allowlist after terminal evidence.",
+    "exclude": "DB/WAL/SHM/raw/native artifact trees/cache/tmp/basetemp/pycache/full old snapshots/dirty gitlinks/old checkpoint or unchanged sources/model weights/secrets/traces. Keep all failed raw locally.",
+    "quota": {
+      "ordinary_commit": 1,
+      "commit_timeout_s": 60,
+      "push": 1,
+      "push_timeout_s": 60,
+      "exact_ls_remote": 1,
+      "exact_ls_remote_timeout_s": 60,
+      "retry": 0
+    },
+    "commands": [
+      "git add -- <exact reviewed frozen paths>",
+      "git commit -m \"Fix ETEAC repository reader lock recursion\"",
+      "git push origin HEAD:refs/heads/research/20261004-continuation",
+      "git ls-remote --exit-code origin refs/heads/research/20261004-continuation"
+    ],
+    "gate": "Final independent APPROVED R399 code/evidence scope; no unexpected staged files; same ac6351b parent/branch and protected refs/gitlinks. .git writes require allowed tool approval; no reset/checkout/force/amend/config/proxy/TLS changes or extra network probes. Verify committed blobs equal frozen candidate and local/upstream/exact remote SHA equality; other refs/main unchanged. Failure stops, no retry. Postcommit receipt local-only, no recursive second commit."
+  },
+  "failure_boundary": "Same-root expected pre-fix RED proceeds within plan. Any new root, source expansion, unrelated test failure or native nonterminal after fix requires next actual Astra planning; do not guess a further fix or enlarge budgets.",
+  "planning_actions": "Static source/test/evidence/AST and read-only HEAD inspection only; wrote R399 plan and input-audit. No implementation, product import, tests, SQL, signal, Git mutation or network."
+}

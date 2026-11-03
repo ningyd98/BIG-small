@@ -1,0 +1,143 @@
+{
+  "schema": "astra.repair-plan.v1",
+  "round": "R403",
+  "author_model": "gpt-6-astra",
+  "created_utc": "2026-11-02T16:37:25.681232+00:00",
+  "status": "PLAN_READY_DIAGNOSTIC_ONLY",
+  "base_head": "ac6351b66a6dd05fb67aadd59935ce5726748709",
+  "branch": "research/20261004-continuation",
+  "problem": {
+    "created_utc": "2026-11-02T16:37:25.681232+00:00",
+    "origin": "Stable original stage result/stdout/JUnit, not reconstructed raw",
+    "stage": "artifacts/research/process/20261004-ced-development/astra-rounds/round401-operational-fence-timeout-localization-20261102/implementation/fence_remaining_nodes_green",
+    "result": {
+      "stage_id": "fence_remaining_nodes_green",
+      "state": "FINISHED",
+      "returncode": 1,
+      "elapsed_s": 8.438308256008895,
+      "ended_utc": "2026-11-02T16:31:28.410290+00:00",
+      "prerequisite_accepted": true,
+      "expected_accepted": false,
+      "source_drift_during_stage": [],
+      "signals": [],
+      "errors": [],
+      "remaining_live": [],
+      "reaped": true
+    },
+    "classification": "PRE_TARGET_FAILURE; foreign-thread owner isolation untested in this instance",
+    "failure": "OperationalTimeError: original transition obligations unavailable or exhausted",
+    "chain": [
+      "captured(runtime)",
+      "reserve_capture(initial=True)",
+      "_transition",
+      "transition_visual_bootstrap_if_current",
+      "derive_bootstrap",
+      "_consume_transition"
+    ],
+    "observed_counts": {
+      "failed": 1,
+      "passed": 4
+    },
+    "correction": "8.11s is pytest summary; supervisor result elapsed_s=8.438308256008895. No proven timeout, foreign-owner regression, or SQLite retry-lock regression."
+  },
+  "input_audit": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/input-audit.json",
+    "bytes": 6065,
+    "sha256": "37610334a4c95c43a4721b9318461a340c56d02a444a4ad2caff67d044660494"
+  },
+  "static_findings": [
+    "CpuCounter.now starts 0 and this callback never advances it; elapsed wall time alone cannot establish original operational deadline exhaustion.",
+    "_consume_transition accepts the registered scope/hash then rejects mismatched window ids OR any non-VALID _check_reference result. _check_reference and owner.check catch exceptions and collapse them into UNKNOWN; original stdout does not expose which branch/reason occurred.",
+    "_check_live checks exact owner/thread, source inventory and live UTC lease; _check_reference also validates descriptor and registered window equality. These are distinct hypotheses, not confirmed causes.",
+    "software_factory retains actual SQLite/job lease while replacing physical APIs; do not enlarge job/verification budgets or replace the clock. Target foreign thread is constructed only after captured(runtime) completes."
+  ],
+  "allowed_changes": {
+    "product": [],
+    "tests": [],
+    "administrative": [
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/adapters/r403_observe.py",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/run_stage.py (only explicit R403 overlay/stage, no old result or gate mutation)",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/preflight/*",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/*",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/step-report.md",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/review-resolution.json"
+    ]
+  },
+  "instrumentation": {
+    "method": "Small pytest plugin, sys.settrace on current main test thread only around selected node call via hookwrapper; restore prior trace in finally. No product function replacement, extra reads of DB/clock/lease, monkeypatch, retries, thread creation, or exception suppression. Existing fixture monkeypatch behavior unchanged.",
+    "events": "Record exception events (type and bounded plain message, source/function/line) and call/return for operational_windows._check_reference, _check_live, _check_app_live, check, _validate_references, _consume_transition, _descriptor_plain and their product call-chain exceptions. Restrict filenames to cloud_edge_robot_arm and selected test, events to exception/call/return; no line events needed. For return verdict read already-computed status/reasons only. Optional existing primitive locals: startup mode, counter.now, window id, owner/current thread IDs and reference window-id equality; no evaluating product methods/properties or full object repr/payload dump.",
+    "bounds": "Max 256 records / 256KiB; mark truncated and stop collecting if cap, never change product execution. Instrumentation errors are INFRA/observability failures, never product root proof or PASS. Persist at test teardown, preserve exceptions unmodified. Exact original assertion outcomes required.",
+    "startup_gate": "Enable only in pytest_runtest_call hookwrapper, after R235 startup prerequisite accepted with empty trace/profile hooks. Plugin import/setup must leave hooks empty. Repository static search found no gettrace/getprofile/settrace/setprofile in src/cloud_edge_robot_arm. Restore previous main-thread trace in finally; never inject exceptions from tracer; if recording fails mark observability unavailable outside product frames and retain original outcome. No threading.settrace."
+  },
+  "execution": {
+    "command": [
+      "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+      "-B",
+      "-m",
+      "pytest",
+      "-p",
+      "r403_observe",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "-p",
+      "r373_tracking",
+      "-m",
+      "not real_robot_runtime and not isaac and not isaac_runtime and not ros2 and not real_rgbd_dataset and not benchmark",
+      "-p",
+      "r235_startup_prerequisite",
+      "tests/test_operational_windows.py::test_foreign_thread_has_no_owner_context",
+      "--basetemp=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/persistent-basetemp",
+      "--junitxml=/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/junit.xml"
+    ],
+    "env": {
+      "PATH": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin:/usr/bin:/bin",
+      "LANG": "C.UTF-8",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+      "PYTHONPATH": "/home/ningyd/文档/ChatGPT/BIGsmall/src:/home/ningyd/文档/ChatGPT/BIGsmall:/home/ningyd/文档/ChatGPT/BIGsmall/tests:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round373-full-workflow-rerun-20261101/adapters:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round235-p6-t2-bootstrap-json-and-startup-prerequisites-20261015/implementation:/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/adapters",
+      "REAL_MOTION_DISPATCH_ENABLED": "false",
+      "GIT_OPTIONAL_LOCKS": "0",
+      "R373_PYTEST_EVENTS": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/pytest-events.jsonl",
+      "R373_STAGE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed",
+      "BIGSMALL_R223_RESOURCE_ROOT": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/r223/resources",
+      "BIGSMALL_R223_CASE_ROOT": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/r223/cases",
+      "MODEL_CONTROL_DB": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/runtime/model_control.db",
+      "DASHBOARD_ARTIFACT_ROOT": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/runtime/artifacts",
+      "BIGSMALL_R158_COMMAND": "final_new23",
+      "BIGSMALL_R158_LEGACY_GOLDENS": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round381-t3-commit-close-thread-affinity-20261101/inputs/legacy-goldens.json",
+      "BIGSMALL_R158_T2_RESOURCE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/resources",
+      "BIGSMALL_R175_RESOURCE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/resources-a",
+      "BIGSMALL_R235_PREREQUISITE_RECORD": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/prerequisite.json",
+      "TMPDIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/tmp",
+      "R399_EVIDENCE_DIR": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed",
+      "R403_OBSERVATIONS": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round403-foreign-owner-target-precondition-20261102/implementation/foreign_owner_observed/observations.jsonl"
+    },
+    "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "supervision": "Reuse R399 owned-process supervisor and 15s cleanup with fresh stage, source-before/after, prerequisite, pytest-events/JUnit/result. No new supervisor. Register stage foreign_owner_observed. One invocation only; no retry.",
+    "preconditions": [
+      "All active R402/R401 stages terminal and reaped; serial source writer and stage execution. R402 independent native successor may finish first.",
+      "Match pinned product and guard modules, original stage failure and clean cleanup. Apply only R402 explicit new-test successor SHA when applicable; retain actual source provenance.",
+      "Workspace-write/restricted network, no socket escalation/HTTP/model/hardware/MuJoCo actions; same CPU fixture and original R235 accepted prerequisite.",
+      "Remaining original R399 clock must cover 60s child+15s cleanup; otherwise stop BLOCKED_BUDGET with no attempt. Do not start if unable to preserve final reporting/cleanup.",
+      "Pure AST/static check of plugin and narrow adapter overlay only; no smoke/helper execution or extra approval loop. Freeze exact argv/env/adapter/plugin SHA before running."
+    ]
+  },
+  "budget": {
+    "R399_wall_s": 1800,
+    "clock_reset": false,
+    "new_single_node_runs": 1,
+    "child_cap_s": 60,
+    "cleanup_s": 15,
+    "retries": 0,
+    "new_git_quota": 0,
+    "git": "Original one commit/push/exact remote validation quotas/caps unchanged; no extra commit for this round."
+  },
+  "acceptance": {
+    "diagnosis": "Original reference rejection reason requires observed caught exception/returned verdict and exact source location; distinguish descriptor/source/lease/clock/ownership. UNKNOWN remains UNKNOWN if not enough evidence. No fixture/product repair authorized by this plan.",
+    "guard": "Only natural test call AND teardown PASS with both unchanged foreign UNKNOWN and same-thread VALID assertions reached, clean cleanup and no source drift can supply this missing guard instance. If it passes, record prior failure as unreproduced; do not claim its cause is solved. Final independent reviewer must assess both receipts before guard aggregation; isolated pass is not a root-cause repair.",
+    "failure": "If fails or times out, original guard gate remains BLOCKED; preserve observations and request next actual Astra plan before any product/fixture fix or further rerun. Native ETEAC success cannot waive guard.",
+    "aggregate": "Original memory PASS + R401 sqlite PASS + original remaining four PASS + accepted target receipt may aggregate only at matching product and guard-module bytes; R402 test-file-only identity correction must be disclosed, never claim entire pinsets unchanged. Original combined timeout and remaining_nodes failure retained."
+  },
+  "delivery": "Narrow append R403 plan.md/json, input-audit.json, original-finding.json, adapter/plugin, static receipt, compact invocation/result/events/observations/JUnit/stdout/stderr/source receipts/step/review resolution to R399 explicit selection; no DB/WAL/SHM, raw fixture copies, full snapshots or dirty gitlinks. No delivery until all original acceptance and final independent code/evidence review gates satisfied. Development software evidence only; actual hardware/formal research NOT_RUN."
+}

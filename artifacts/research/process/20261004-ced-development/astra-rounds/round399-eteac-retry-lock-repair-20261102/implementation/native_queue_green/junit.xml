@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="4.613" timestamp="2026-11-03T00:26:17.541953+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_eteac_retry_lock_regression" name="test_native_eteac_then_queued_pcsc" time="4.525"><failure message="AssertionError: ENTER native poll r399-native-eteac&#10;  Traceback (most recent call last):&#10;    File &quot;/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_eteac_retry_lock_regression.py&quot;, line 244, in &lt;module&gt;&#10;      _native_case(directory)&#10;    File &quot;/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_eteac_retry_lock_regression.py&quot;, line 226, in _native_case&#10;      assert experiment.task_success and experiment.run_id == job.run_id&#10;             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;  AssertionError&#10;  &#10;assert 1 == 0&#10; +  where 1 = &lt;Popen: returncode: 1 args: ['/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/pyt...&gt;.returncode">tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/implementation/native_queue_green/persistent-basetemp/test_native_eteac_then_queued_0')
+
+    def test_native_eteac_then_queued_pcsc(tmp_path):
+        """A real ETEAC poll returns so its already queued successor can run."""
+&gt;       _run_child("native", "sqlite", tmp_path, cap=75)
+
+tests/test_eteac_retry_lock_regression.py:68: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+case = 'native', backend = 'sqlite'
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/implementation/native_queue_green/persistent-basetemp/test_native_eteac_then_queued_0')
+cap = 75
+
+    def _run_child(case, backend, tmp_path, cap=8):
+        evidence = Path(os.environ.get("R399_EVIDENCE_DIR", str(tmp_path)))
+        prefix = evidence / f"child-{case}-{backend}"
+        argv = [sys.executable, "-B", "-u", str(Path(__file__).resolve()),
+                "--child", case, backend, str(tmp_path)]
+        process = subprocess.Popen(argv, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        started = time.monotonic()
+        timed_out = False
+        try:
+            stdout, stderr = process.communicate(timeout=cap)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            process.kill()
+            stdout, stderr = process.communicate(timeout=2)
+        prefix.with_suffix(".stdout").write_bytes(stdout)
+        prefix.with_suffix(".stderr").write_bytes(stderr)
+        _save(prefix.with_suffix(".json"), {
+            "argv": argv, "returncode": process.returncode, "timed_out": timed_out,
+            "reaped": process.returncode is not None, "elapsed_s": time.monotonic() - started,
+        })
+        assert not timed_out, (
+            "real repository call did not return; bounded child killed and reaped\n"
+            + stdout.decode(errors="replace") + stderr.decode(errors="replace")
+        )
+&gt;       assert process.returncode == 0, stdout.decode(errors="replace") + stderr.decode(errors="replace")
+E       AssertionError: ENTER native poll r399-native-eteac
+E         Traceback (most recent call last):
+E           File "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_eteac_retry_lock_regression.py", line 244, in &lt;module&gt;
+E             _native_case(directory)
+E           File "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_eteac_retry_lock_regression.py", line 226, in _native_case
+E             assert experiment.task_success and experiment.run_id == job.run_id
+E                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         AssertionError
+E         
+E       assert 1 == 0
+E        +  where 1 = &lt;Popen: returncode: 1 args: ['/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/pyt...&gt;.returncode
+
+tests/test_eteac_retry_lock_regression.py:51: AssertionError</failure></testcase></testsuite></testsuites>

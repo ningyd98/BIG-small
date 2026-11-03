@@ -1,0 +1,21 @@
+# ETEAC 修复、验收与研发交付候选总结
+
+当前两项产品修复完成：SQLite内部已持普通Lock的读取改走六类私有读取体，避免公共装饰入口重复取锁；合法默认UTC_LEGACY_VETO模式在引用/观测检查中走既有typed validator，真实owner/thread/source/clock/UTC租约和未知模式拒绝不变。未改worker默认、dispatcher、产品timeout或原断言。
+
+R399原RED真实捕获同线程protocol215→sqlite976锁等待并有界回收。修后4项新仓储、272项仓储语义、220项visual通过，4项原backend不适用skip；worker短测4通过。R402真实native MOCK ETEAC 1.563512秒自然完成，之后预排队PCSC 1.692480秒自然完成，各attempt1终结、lease释放、heartbeat/运行SQLiteFD为空。该native为当时源字节与测试1e74版本，不冒充当前新字节重跑。
+
+R405原模式错误由实际unsupported UTC_LEGACY_VETO→UNKNOWN→transition拒绝确认；R406两次可达RED后20项GREEN，原foreign线程UNKNOWN/原线程VALID真正到达，伪造来源/未知mode/失效UTC租约仍拒绝。R409两个原writer权限节点分别141.598和140.934秒自然通过，保留原fixture profile、全部写入拒绝库存/快照/negativecancel/清理。两串行约282.5秒超过旧合并180秒，外层按单项240秒分段验收；没有声称产品性能优化或新SLO达标。
+
+R408真实默认浏览器40项39PASS+原E2E06环境SKIP，114.443秒；独立研究3PASS，22.700秒。总43项42PASS1SKIP，旧19未通过用例按classname+name全部逐项自然PASS。原等待/断言/输入LEGACY_PIPELINE/registry不变。默认RGBD3项包含实际MuJoCo/EGL图像渲染；研究600组/4200条全部BLOCKED，SOFTWARE_ONLY、actual NOT_RUN、formal=false，页面与真实导出相同。20份backend+fixture输入哈希不变，两套所属进程回收、四端口释放、无源码漂移。详见R408/case-comparison.json和acceptance.json。
+
+R410实际Ruff55条中15新增已清；sqlite27+operational_windows13共40条历史告警保留，完整Ruff仍exit1，不能宣称全项目lint通过。仅换行与stdlib import排序：SQLite/native测试整模块AST相同；legacy新test仅前三个stdlib import排序规范化，其余AST相同。新字节独立登记；未重写旧运行原件或伪称格式后行为重跑。git diff --check通过。
+
+当前格式后官方source_tree_hash为`3bfb7dbb8036b8389fa9a9bccdb2e961a1fd225be2d42b511539044e944995f4`，parent HEAD仍`ac6351b66a6dd05fb67aadd59935ce5726748709`，四源码实际SHA及1220项当前源清单另记。官方策略含两项未跟踪新test；上述hash属于当前工作树，parent HEAD代表修复前提交。R408旧hash4b41e88f、native旧hash25b44519保持对应各自原运行，R410有严格静态桥接。
+
+保留历史：R399原1800秒轮次在1959.506秒行政关闭，彼时未完整验收/未交付；旧combined超时和R401原前置失败不改。R407首份部分native栈后缺调用终态，旧child退出码未持久化、必须UNKNOWN，R409 plain成功不证明旧中断原因。R411修正skip缺time的离线报告：duration=null/available=false，未伪造0或PASS；声明输出父目录先创建再排他写，原失败记录保留。
+
+本候选仅精选软件研发交付，当前等待fresh独审和普通Git提交推送。未运行物理机械臂/付费模型/正式研究验收，也未重复完整4732 suite或T3长研究用例。40既有静态告警作为低优先级后续事项；R407诊断中断确切原因仍未知。
+
+完整raw、DB/WAL/SHM、persistent-basetemp、浏览器trace/截图/导出、复制fixture与冻结输入副本保留本地，不进入精选包；选定清单/派生报告不是完整远端raw复现包。R399-R411引用的被排除raw只在当前本地工作区可用。原两dirty gitlinks及无关未跟踪文件不纳入，禁止清理覆盖。
+
+最终审查政策：先冻结core-content-manifest全部内容，fresh审核其hash与四源码。审查后最终清单只新增该core manifest自身和审查员的两份报告；final manifest不包含自身hash，自身另外校验并精确staging。任何core变更均使审查失效。提交/推送后回执本地保存，不进行回执第二次提交。

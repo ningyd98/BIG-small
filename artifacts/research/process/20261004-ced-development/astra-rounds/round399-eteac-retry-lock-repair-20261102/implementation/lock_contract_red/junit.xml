@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="8.095" timestamp="2026-11-03T00:11:09.456799+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_eteac_retry_lock_regression" name="test_retry_initializer_returns_without_reentrant_lock[sqlite]" time="8.014"><failure message="AssertionError: real repository call did not return; bounded child killed and reaped&#10;  READY; ENTER initialize_retry_budget_if_absent&#10;  Timeout (0:00:02)!&#10;  Thread 0x0000781098f63080 (most recent call first):&#10;    File &quot;/home/ningyd/\u6587\u6863/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py&quot;, line 215 in dispatch&#10;    File &quot;/home/ningyd/\u6587\u6863/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py&quot;, line 976 in initialize_retry_budget_if_absent&#10;    File &quot;/home/ningyd/\u6587\u6863/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py&quot;, line 234 in dispatch&#10;    File &quot;/home/ningyd/\u6587\u6863/ChatGPT/BIGsmall/tests/test_eteac_retry_lock_regression.py&quot;, line 92 in _retry_case&#10;    File &quot;/home/ningyd/\u6587\u6863/ChatGPT/BIGsmall/tests/test_eteac_retry_lock_regression.py&quot;, line 249 in &lt;module&gt;&#10;  &#10;assert not True">tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/implementation/lock_contract_red/persistent-basetemp/test_retry_initializer_returns0')
+backend = 'sqlite'
+
+    @pytest.mark.parametrize("backend", ["memory", "sqlite"])
+    def test_retry_initializer_returns_without_reentrant_lock(tmp_path, backend):
+        """A decorated reader inside the initializer must not prevent its return."""
+&gt;       _run_child("retry", backend, tmp_path)
+
+tests/test_eteac_retry_lock_regression.py:57: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+case = 'retry', backend = 'sqlite'
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round399-eteac-retry-lock-repair-20261102/implementation/lock_contract_red/persistent-basetemp/test_retry_initializer_returns0')
+cap = 8
+
+    def _run_child(case, backend, tmp_path, cap=8):
+        evidence = Path(os.environ.get("R399_EVIDENCE_DIR", str(tmp_path)))
+        prefix = evidence / f"child-{case}-{backend}"
+        argv = [sys.executable, "-B", "-u", str(Path(__file__).resolve()),
+                "--child", case, backend, str(tmp_path)]
+        process = subprocess.Popen(argv, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        started = time.monotonic()
+        timed_out = False
+        try:
+            stdout, stderr = process.communicate(timeout=cap)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            process.kill()
+            stdout, stderr = process.communicate(timeout=2)
+        prefix.with_suffix(".stdout").write_bytes(stdout)
+        prefix.with_suffix(".stderr").write_bytes(stderr)
+        _save(prefix.with_suffix(".json"), {
+            "argv": argv, "returncode": process.returncode, "timed_out": timed_out,
+            "reaped": process.returncode is not None, "elapsed_s": time.monotonic() - started,
+        })
+&gt;       assert not timed_out, (
+            "real repository call did not return; bounded child killed and reaped\n"
+            + stdout.decode(errors="replace") + stderr.decode(errors="replace")
+        )
+E       AssertionError: real repository call did not return; bounded child killed and reaped
+E         READY; ENTER initialize_retry_budget_if_absent
+E         Timeout (0:00:02)!
+E         Thread 0x0000781098f63080 (most recent call first):
+E           File "/home/ningyd/\u6587\u6863/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py", line 215 in dispatch
+E           File "/home/ningyd/\u6587\u6863/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py", line 976 in initialize_retry_budget_if_absent
+E           File "/home/ningyd/\u6587\u6863/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py", line 234 in dispatch
+E           File "/home/ningyd/\u6587\u6863/ChatGPT/BIGsmall/tests/test_eteac_retry_lock_regression.py", line 92 in _retry_case
+E           File "/home/ningyd/\u6587\u6863/ChatGPT/BIGsmall/tests/test_eteac_retry_lock_regression.py", line 249 in &lt;module&gt;
+E         
+E       assert not True
+
+tests/test_eteac_retry_lock_regression.py:47: AssertionError</failure></testcase></testsuite></testsuites>

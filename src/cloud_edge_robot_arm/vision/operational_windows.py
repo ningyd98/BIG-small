@@ -786,7 +786,7 @@ def _check_reference(reference: object) -> EvidenceVerdict:
             from cloud_edge_robot_arm.vision.local_temporal import _reference as _validate_local_reference
 
             _validate_local_reference(reference)
-        elif mode == "OPERATIONAL_LEASE_FOUNDATION_V1":
+        elif mode in {"UTC_LEGACY_VETO", "OPERATIONAL_LEASE_FOUNDATION_V1"}:
             _validate_references([reference])
         else:
             raise OperationalTimeError("unsupported live operational owner mode")
@@ -828,7 +828,7 @@ def _check_observation(
             from cloud_edge_robot_arm.vision.local_temporal import _reference as _validate_local_reference
 
             _validate_local_reference(reference)
-        elif mode == "OPERATIONAL_LEASE_FOUNDATION_V1":
+        elif mode in {"UTC_LEGACY_VETO", "OPERATIONAL_LEASE_FOUNDATION_V1"}:
             _validate_references([reference])
         else:
             raise OperationalTimeError("unsupported live operational owner mode")

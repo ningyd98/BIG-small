@@ -1,0 +1,7 @@
+# R407 未完成诊断
+
+原memory节点setup通过，但20秒首份native栈输出在主线程local_temporal._copy途中截断，随后未留下call/teardown/JUnit/observer摘要。stdout/stderr0字节。所属子进程已reap，signals/errors/remaining_live均空，source前后完全相同。当前证据未持久化真实child退出码，必须记UNKNOWN，不能臆造信号或根因。
+
+启动器直接读取缺失摘要，在run_stage.py170报FileNotFoundError，未写原result.json；该缺口原样保留。完整错误来源为executor原工具输出，不冒充已保存的childstderr。SQL与browser均不运行。待实际Astra下一轮先让终态报告不受可选诊断摘要影响，再运行不加native采样的原测试；不改原fixture自带profile/断言/产品/clock。
+
+R406二十项GREEN保留。此轮慢guard不计通过，不以部分栈推断热点比例、性能修复或死锁。旧约140秒单项通过与原180秒合并不足事实保留。
