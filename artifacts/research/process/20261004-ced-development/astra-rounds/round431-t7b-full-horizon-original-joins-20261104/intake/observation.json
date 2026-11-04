@@ -1,0 +1,231 @@
+{
+  "head": "aecf1fd836ff08819edb053a2e87b4b2a83235b0",
+  "branch": "research/20261004-continuation",
+  "problem": "Independent actual Astra R429/R430 review REQUEST_CHANGES F1-F3; no reproductions or fixes yet. Full denominator joins, temporal containment and strict subrecord validation incomplete.",
+  "review": "artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/review/independent-astra-review.json",
+  "findings": [
+    {
+      "id": "R429-F1",
+      "priority": 1,
+      "title": "Require a bijection from COMMAND/CAPTURE originals to audited records",
+      "file": "src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py",
+      "start": 409,
+      "end": 417,
+      "additional_locations": [
+        {
+          "start": 570,
+          "end": 624
+        },
+        {
+          "start": 740,
+          "end": 745
+        },
+        {
+          "start": 816,
+          "end": 829
+        }
+      ],
+      "evidence": "COMMAND events are counted against legacy_commands, but each row only has to be a member of END.result.command_records. Extra returned records are ignored by replay and failure retention. CAPTURE allocation is compared only to legacy_frames; only before/terminal frames are reconstructed, and no set equality joins all CAPTURE D events to frames/allocated acquisition IDs.",
+      "impact": "An original command failure/foreign command or an unrepresented CAPTURE inside the reviewed window can be omitted from the audited inventory while coverage remains STRUCTURALLY_COMPLETE. Fixed UNKNOWN authority does not make the structural claim correct.",
+      "bounded_case_proposals": [
+        "Starting from existing complete handwritten fixture, append one distinct accepted command record to a COMMAND END result without adding a legacy_commands row; repack only the new test originals. Require INCOMPLETE and a precise unmatched-command reason.",
+        "Same counterexample with accepted=false and an explicit original rejection reason; require retention in original_failures, not only generic INCOMPLETE.",
+        "Insert one otherwise well-formed CAPTURE D event between the two HOLD physics operations, plus its backend BEGIN/END and legacy operation/interval rows; renumber affected operation/sequence/token/bracket references consistently, but omit its legacy_frame and allocated_acquisition_id. Require INCOMPLETE and preserve the missing capture denominator."
+      ],
+      "requested_change": "Plan exact unique mapping and payload inventory checks for COMMAND and every relevant CAPTURE, preserving extra/rejected/pending records and missing allocated records; do not repair by filtering originals.",
+      "validation_status": "STATIC_PATH_FINDING_NOT_EXECUTED",
+      "confidence": "high"
+    },
+    {
+      "id": "R429-F2",
+      "priority": 1,
+      "title": "Join attempt/HOLD interval clocks to the operations they claim to contain",
+      "file": "src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py",
+      "start": 338,
+      "end": 342,
+      "additional_locations": [
+        {
+          "start": 695,
+          "end": 715
+        },
+        {
+          "start": 757,
+          "end": 767
+        },
+        {
+          "start": 783,
+          "end": 814
+        },
+        {
+          "start": 816,
+          "end": 824
+        }
+      ],
+      "evidence": "Intervals only require start_step<=end_step and start[0]<end[0]. Purpose membership later uses step labels and parent IDs. Neither purpose nor attempt original start/end clock tuples are tied to child operation clocks. The preopen check is a tautology after window_events was filtered to begin_seq>before.end_seq.",
+      "impact": "An attempt can be recorded as opened before the selected preopen capture, or a HOLD interval can be recorded entirely after the terminal capture, yet the same labeled physics rows still qualify as execution/HOLD coverage.",
+      "bounded_case_proposals": [
+        "Copy the complete fixture and move only the HOLD purpose interval original start/end clock tuples to ordered times strictly after terminal; keep step121..123 and IDs unchanged. Repack and require INCOMPLETE for temporal containment.",
+        "Copy the complete fixture and move the attempt interval start clock tuple before the before-CAPTURE boundary while retaining the current valid end. Repack and require INCOMPLETE for preopen/dispatch binding."
+      ],
+      "requested_change": "Plan a source-supported association between purpose/attempt interval boundary evidence, child operation intervals, D order and before/terminal captures. Verify temporal containment and actual preopen ordering; do not infer it solely from step labels or a filtered operation set.",
+      "validation_status": "STATIC_PATH_FINDING_NOT_EXECUTED",
+      "confidence": "high"
+    },
+    {
+      "id": "R429-F3",
+      "priority": 2,
+      "title": "Validate complete RawV3 record fields instead of only dataclass field names",
+      "file": "src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py",
+      "start": 930,
+      "end": 940,
+      "additional_locations": [
+        {
+          "start": 638,
+          "end": 642
+        },
+        {
+          "start": 718,
+          "end": 731
+        }
+      ],
+      "evidence": "The loop takes RawV3 dataclass field names but validates only exact keys and record_seq. It never reconstructs the typed record or performs its field checks. action_window reads only success/error_code/action_type/details.physics_steps from returned_result and compares action.attempt by == to preregistration attempt.",
+      "impact": "A truncated executor returned_result can count as an original complete successful return; action.attempt=true compares equal to integer1. Existing TypedActionSpanV3 validation requires complete ActionResult fields, integer duration and aware timestamps, and rejects bool attempt.",
+      "bounded_case_proposals": [
+        "Replace the complete fixture returned_result with only success=true, error_code=null, action_type=MOVE_ABOVE and details.physics_steps=1. Repack and require INCOMPLETE while preserving the allocated action denominator.",
+        "Set only legacy_actions[0].attempt=true with preregistration attempt remaining integer1. Repack and require rejection/INCOMPLETE according to the planned malformed-subrecord contract."
+      ],
+      "requested_change": "Plan strict schema/type/value validation for consumed action, command, interval and acquisition records, reusing RawV3 rules where compatible. Preserve identifiable missing subrecords as INCOMPLETE with denominators rather than treating equality/coercion as validation.",
+      "validation_status": "STATIC_PATH_FINDING_NOT_EXECUTED",
+      "confidence": "high"
+    }
+  ],
+  "source_fact_correction": {
+    "prior_plan_claim_incorrect": "COMMAND result lacks physics_state and therefore cannot MARK",
+    "verified_source": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py:291-304",
+    "correct_fact": "Result is initialized with physics_state, then COMMAND adds command_records.",
+    "additional_source": "src/cloud_edge_robot_arm/research/operational_time_v1.py:312",
+    "runtime_demonstrated": false,
+    "old_plan_or_evidence_rewritten": false,
+    "next_plan_requirement": "Correct current summaries and align handwritten COMMAND fixture with actual result layout; preserve F1-F3 and investigate joins without claiming live producer success."
+  },
+  "runtime": "R429 84 PASS retained, R430 three statics PASS; no new runtime before plan. No actual simulator/hardware/network.",
+  "suggested_scope": "Modify only newly introduced horizon original reader and its test file; new round artifacts. Exact rational kernel and earlier tests/source unchanged. Seven bounded review counterexamples plus positive, one RED and GREEN, 600s each, explicit JUnit; frozen R429 baseline plus current phase-specific new-file pins, preserve every previous manifest/source snapshot. All identifiable invalid subrecords keep INCOMPLETE/allocation counts.",
+  "clock_note": "D BOOTTIME and legacy MONOTONIC are different domains. Do not compare numerical ns/seq across them. Use same-domain legacy parent/child interval clock-pair containment, tied to D via exact operation IDs. Current handwritten fixture has empty legacy_clock_pairs and shared purpose/child boundary sequences; upgrade fixture to faithful independent pair tee and temporal order under explicit plan.",
+  "input_pins": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py",
+      "bytes": 41871,
+      "sha256": "2a10ca932c3c85213bc036aefce16431beb016cb9c218e16d7a0fe31024201f0"
+    },
+    {
+      "path": "tests/test_native_completion_horizon_originals_v1.py",
+      "bytes": 18758,
+      "sha256": "af5a64746fc67cad42e41c99cf2a12eca24664af5d482234aa7367581db33744"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/native_completion_horizon.py",
+      "bytes": 4082,
+      "sha256": "02af682c04d1b7dafbaca887a0e84c3ecdb202e6f4b0b96a68838d5bb4cae934"
+    },
+    {
+      "path": "tests/test_native_completion_horizon_v1.py",
+      "bytes": 3662,
+      "sha256": "1a962a4b37706d9508320bae005510e945283326e657eac21ec7579194ca8d8e"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/raw_episode_v3.py",
+      "bytes": 76565,
+      "sha256": "6aaeb0b482cab54d97468f28be281cb8f13788199d3140d9e0d0ddc0c8802096"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/native_clock_source_v2.py",
+      "bytes": 13818,
+      "sha256": "bccb34516d395f51554f4dd94a6fab8ee5def4cadbeebad5240688a76711fa0c"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/native_reset_capture_v2.py",
+      "bytes": 8395,
+      "sha256": "a22ce81503a1dd7d6aa9b81a57eb61cebcbda64ec58228a5c4dbe21da1e41f5a"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/raw_recorder_v3.py",
+      "bytes": 44175,
+      "sha256": "4eabd3bf9cdf15b3942c4a740781a95c22ea684f410853c853d0336952d7a303"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+      "bytes": 49867,
+      "sha256": "b7b6026b1173448de826e53253ae74f92b6b70ea46a404e10054c5cd451a62a6"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+      "bytes": 20734,
+      "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/review/independent-astra-review.json",
+      "bytes": 15161,
+      "sha256": "5a4e76834c24397a28e2b3ec01bc6076259cbc41846991444c196ad9e9119bc7"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/review/independent-astra-review.md",
+      "bytes": 10257,
+      "sha256": "570d079bbb7f3fafb00617504cc7629142f402c4c2345fd268f0caba918b64f9"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/plan.md",
+      "bytes": 10556,
+      "sha256": "d62990b6dc9c1c95fa7d937ab1af9a1b716317cb26f197625e7369837d450bf2"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/plan.json",
+      "bytes": 9453,
+      "sha256": "9c39e216d0b83fcb1b6597be109c1b4dbe85a8bcd3d0b1aebbd06bdf0947d23e"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/intake/runtime-source-baseline.json",
+      "bytes": 241885,
+      "sha256": "ff25663bd3ff9e8a072ff9f5266f425d655d12a31219b7743ba063790d2e1040"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/implementation/run_validation.py",
+      "bytes": 4425,
+      "sha256": "dbf62ac2f42405834f10f564fb0fff26b525e3d5cdd5599ce1d358b0744bc90b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/validation/green/evidence-summary.json",
+      "bytes": 743,
+      "sha256": "b4ec1450aa125ba73f7a80d95fdd7ec8961606803e5c8b508f3320359acf9cfe"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/validation/green/spec.json",
+      "bytes": 6966,
+      "sha256": "4f55ab87b7bf4ce8db9d6e079ff5c6dfa9c120333f22a55207f4ed25fc563f53"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round430-t7b-horizon-static-20261104/plan.md",
+      "bytes": 5396,
+      "sha256": "b90d91ec6fe8c8e2e0fd630610f4edb8aff986737d2493da929589ee0d0567b4"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round430-t7b-horizon-static-20261104/plan.json",
+      "bytes": 10404,
+      "sha256": "0f0b15efe6561aac17a9b3ab7c684155fb818a772206167e9657817c6be6a47a"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round430-t7b-horizon-static-20261104/validation/ast-equivalence.json",
+      "bytes": 1274,
+      "sha256": "dd4b967a6511ea9047f020e14010d5f1af5b3a130838b323df6e8edd2d6654a1"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round430-t7b-horizon-static-20261104/validation/static/results.json",
+      "bytes": 1642,
+      "sha256": "e949d74b6950f77140ebb38c45d7e08a37950232d19568a62b58c2ba5519ed35"
+    }
+  ]
+}

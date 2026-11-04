@@ -1,0 +1,57 @@
+diff --git a/artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/implementation/pre-green-source-originals/src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py b/src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py
+index ceeb87c0..f281f9f8 100644
+--- a/artifacts/research/process/20261004-ced-development/astra-rounds/round429-t7b-full-horizon-evidence-20261104/implementation/pre-green-source-originals/src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py
++++ b/src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py
+@@ -45,8 +45,10 @@ from cloud_edge_robot_arm.vision.owner_registration import VisualOriginalPlan
+ _CONTROLLER = "src/cloud_edge_robot_arm/edge/runtime/skill_executor.py"
+ _RECIPE = set(
+     (
+-        "skill dt_numerator dt_denominator registered_dt_s original_timeout_ns original_expected_ns "
+-        "compiled_timeout_ns compiled_expected_ns effective_owner_required_ns builtin_tail_included "
++        "skill dt_numerator dt_denominator registered_dt_s original_timeout_ns "
++        "original_expected_ns "
++        "compiled_timeout_ns compiled_expected_ns effective_owner_required_ns "
++        "builtin_tail_included "
+         "registered_wait_steps"
+     ).split()
+ )
+@@ -60,17 +62,22 @@ _SIDE = set(
+ _PREREG = set(
+     (
+         "schema_version source_session_id episode_id domain_sha256 span_id recipe step_id attempt "
+-        "original_plan_sha256 executed_step_sha256 owner_requirements_sha256 controller_source_sha256 "
++        "original_plan_sha256 executed_step_sha256 owner_requirements_sha256 "
++        "controller_source_sha256 "
+         "tail_inclusion_basis"
+     ).split()
+ )
+ _RAW = set(
+     (
+-        "schema_version source_session_id domain_sha256 operational_ledger backend_operation_ledger "
+-        "pending_operation_ids incomplete_operation_ids legacy_operations legacy_intervals legacy_clock_pairs "
+-        "legacy_reset_journal legacy_reset_metadata legacy_reset_result legacy_reset_count legacy_physics "
++        "schema_version source_session_id domain_sha256 operational_ledger "
++        "backend_operation_ledger "
++        "pending_operation_ids incomplete_operation_ids legacy_operations "
++        "legacy_intervals legacy_clock_pairs "
++        "legacy_reset_journal legacy_reset_metadata legacy_reset_result "
++        "legacy_reset_count legacy_physics "
+         "legacy_commands legacy_frames legacy_frame_aux legacy_actions legacy_purpose_allocations "
+-        "last_captured_frame explicit_acquisitions observed_episode_id observed_total_physics_steps source_hashes"
++        "last_captured_frame explicit_acquisitions observed_episode_id "
++        "observed_total_physics_steps source_hashes"
+     ).split()
+ )
+ _BOUNDARY_SLIM = set("operation_id kind phase episode_id physics_step error_type error".split())
+@@ -308,7 +315,10 @@ class _Audit:
+             seqs.extend([event["begin_seq"], event["mark_seq"], event["end_seq"]])
+         self.check(
+             all(type(v) is int and v >= 1 for v in seqs)
+-            and all(type(a) is int and type(b) is int and a < b for a, b in zip(seqs, seqs[1:])),
++            and all(
++                type(a) is int and type(b) is int and a < b
++                for a, b in zip(seqs, seqs[1:], strict=False)
++            ),
+             "D_sequence_gap_or_reorder",
+         )
+         self.check(

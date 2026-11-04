@@ -1,0 +1,5 @@
+# R433 阶段结论
+
+原始失败逐行保留缺口已修复，组合反例先准确RED后GREEN；最终92项全部阶段通过、三项静态通过。独立实际Astra审查结论为READY_FOR_SCOPED_SOFTWARE_DELIVERY，F4与R432类型问题均闭合，限定范围内无剩余交付阻塞。
+
+只改retain_failures方法体并新增单个测试；旧fixture、原91项测试、输出字段和资格边界不变。完整原件仅本地保存。真实full-H运行、执行守卫和正式资格仍未验收。交付SHA回执见R429 delivery/delivery-complete.json。

@@ -1,0 +1,19 @@
+--- artifacts/research/process/20261004-ced-development/astra-rounds/round431-t7b-full-horizon-original-joins-20261104/implementation/pre-green-reader.py
++++ src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py
+@@ -593,12 +593,13 @@
+         referenced = set()
+         for interval in self.raw["legacy_intervals"]:
+             for key in ("start", "end"):
+-                pair = _legacy_pair(interval[key])
++                interval_pair = _legacy_pair(interval[key])
+                 self.check(
+-                    pair == by_sequence.get(pair[0]) and pair[0] not in referenced,
++                    interval_pair == by_sequence.get(interval_pair[0])
++                    and interval_pair[0] not in referenced,
+                     "legacy_interval_clock_tee_mismatch",
+                 )
+-                referenced.add(pair[0])
++                referenced.add(interval_pair[0])
+         previous_end = None
+         for event in self.events.values():
+             if event["kind"] == "RESET":

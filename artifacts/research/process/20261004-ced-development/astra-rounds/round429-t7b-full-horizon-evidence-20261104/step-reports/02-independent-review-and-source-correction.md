@@ -1,0 +1,7 @@
+# R429/R430 独立审查与源码事实更正
+
+实际gpt-6-astra独立审查给出REQUEST_CHANGES：F1（P1）COMMAND/CAPTURE原件未穷尽一一联接，F2（P1）attempt/HOLD原区间未与子操作及预开/终态时序绑定，F3（P2）RawV3字段只校验键名导致bool attempt或截断ActionResult可能被接受。审查没有运行反例，提出7个有界负例。源码位置、证据、SHA及完整原始结论见review/independent-astra-review.json和.md。
+
+84项既有测试通过和R430静态通过依然是各自范围内的有效证据；它们未覆盖这些新反例，不能宣布结构门完成。交付暂停，已交实际Astra制定R431计划，再复现和修复。
+
+更正前期事实：backend.py的_operation_result在291行先建立physics_state，302–303行再为COMMAND加入command_records。因此旧计划所谓“COMMAND缺少physics_state，无法MARK”的推断错误。没有据此运行真实COMMAND，也不将源码路径解释为真实生产端已验证。旧计划、失败和样例原件均不改写；新的样例与报告按真实结果布局修正。确实仍缺完整动作的来源绑定、full-H验证入口与实际执行守卫，现有prefix禁止adopt owner且限定无动作step120。正式资格保持UNKNOWN。

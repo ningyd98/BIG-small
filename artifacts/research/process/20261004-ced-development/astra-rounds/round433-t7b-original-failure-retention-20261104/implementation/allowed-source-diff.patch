@@ -1,0 +1,109 @@
+--- R432/src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py
++++ src/cloud_edge_robot_arm/research/native_completion_horizon_originals.py
+@@ -663,24 +663,42 @@
+         for key in ("pending_operation_ids", "incomplete_operation_ids"):
+             if self.raw[key]:
+                 self.failures.append(json.dumps({key: self.raw[key]}, sort_keys=True))
+-        for group in (
+-            ledger["events"],
+-            self.raw["legacy_actions"],
+-            self.raw["legacy_intervals"],
+-            self.raw["backend_operation_ledger"],
++        for group_name, group in (
++            ("operational_ledger.events", ledger["events"]),
++            ("legacy_actions", self.raw["legacy_actions"]),
++            ("legacy_intervals", self.raw["legacy_intervals"]),
++            ("backend_operation_ledger", self.raw["backend_operation_ledger"]),
+         ):
+-            for row in group:
+-                result = row.get("returned_result")
+-                if (
+-                    row.get("error")
+-                    or row.get("error_type")
+-                    or (
+-                        "returned_result" in row
+-                        and (result is None or result.get("success") is not True)
++            for index, row in enumerate(group):
++                try:
++                    if type(row) is not dict:
++                        raise ValueError("failure scan row must be an object")
++                    result = row.get("returned_result")
++                    if result is not None and type(result) is not dict:
++                        raise ValueError("returned_result must be an object or null")
++                    failed = (
++                        row.get("error")
++                        or row.get("error_type")
++                        or (
++                            "returned_result" in row
++                            and (result is None or result.get("success") is not True)
++                        )
++                        or row.get("disposition") in {"PARTIAL", "ABORTED", "REJECTED"}
+                     )
+-                    or row.get("disposition") in {"PARTIAL", "ABORTED", "REJECTED"}
+-                ):
+-                    self.failures.append(json.dumps(row, sort_keys=True))
++                except (ValueError, TypeError, KeyError, AttributeError, IndexError) as error:
++                    self.failure(
++                        dict(
++                            group=group_name,
++                            index=index,
++                            original=row,
++                            error="invalid failure scan record",
++                            error_type=type(error).__name__,
++                        )
++                    )
++                    self.check(False, f"malformed_failure_scan_record:{group_name}:{index}")
++                    continue
++                if failed:
++                    self.failure(row)
+         self.check(not self.failures, "original_failures_or_pending_operations")
+ 
+     def operations(self) -> None:
+--- R431/tests/test_native_completion_horizon_originals_v1.py
++++ tests/test_native_completion_horizon_originals_v1.py
+@@ -528,6 +528,45 @@
+     result = audit((raw, prereg, sidecar))
+     assert result.coverage_status == "INCOMPLETE"
+     assert any("ORIGINAL_ACTION_FAILURE" in row for row in result.original_failures)
++
++
++def test_malformed_result_does_not_hide_later_original_failure(source, tmp_path):
++    raw, prereg, sidecar = copy.deepcopy(source)
++    first = raw["legacy_actions"][0]
++    later = copy.deepcopy(first)
++    first.update(returned_result=[], error=None)
++    marker = "R431_LATER_ACTION_FAILURE"
++    later.update(
++        span_id="span-2",
++        record_seq=max(row["record_seq"] for row in raw["legacy_actions"]) + 1,
++        disposition="RETURNED",
++        error=marker,
++    )
++    later["returned_result"].update(success=False, error_code=marker)
++    raw["legacy_actions"].append(later)
++    raw["operational_ledger"]["allocated_action_ids"].append("span-2")
++    inputs = raw, prereg, sidecar
++    before = encoded(inputs)
++    sidecar_bytes, originals = pack(inputs)
++    for name, payload in originals.items():
++        (tmp_path / name).write_bytes(payload)
++    (tmp_path / "sidecar.json").write_bytes(sidecar_bytes)
++    (tmp_path / "input-sha256.txt").write_text(hashlib.sha256(before).hexdigest() + "\n")
++    result = audit(inputs)
++    assert encoded(inputs) == before
++    assert result.coverage_status == "INCOMPLETE"
++    assert result.allocated_action_count == 2
++    assert (
++        result.evidence_scope,
++        result.qualification,
++        result.native_authority,
++        result.producer_status,
++        result.guard_status,
++    ) == ("SOFTWARE_ONLY", "UNKNOWN", "UNAVAILABLE", "UNAVAILABLE", "NOT_PROVEN")
++    failures = [json.loads(value) for value in result.original_failures]
++    originals_retained = [value.get("original", value) for value in failures]
++    assert first in originals_retained
++    assert later in originals_retained, "later original action failure was omitted"
+ 
+ 
+ def rebuild_clock_tee(raw):
