@@ -1,0 +1,7 @@
+# R426 旋转顶点测试预期纠正
+
+实际Astra确认R425计划中的90度位移预期错误。对x,y为±1的顶点，90度旋转位移平方为4；180度为8。只修改test_pointwise_sum_and_rotated_vertices的两个预期，并补180度的八顶点、U/M及endpoint对照；产品代码与另一个新测试SHA不变。
+
+原R425 23PASS/1FAIL作为本轮已观察RED，未重复运行。原测试字节保存在test_native_completion_v2.original.py，原计划/日志未改。按R426计划一次新完整24节点GREEN全部三阶段PASS，0skip/xfail，无来源漂移和剩余子进程；修改测试Ruff/format均通过。
+
+该纠正不改变算法、物理阈值或准入语义。真实采集NOT_STARTED，native准入HOLD，正式验收NOT_STARTED。与R425一起进行一次fresh最终审查和精确路径研发分支交付。
