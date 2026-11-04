@@ -1,0 +1,13 @@
+# R421 模拟恢复租约与归档一致性实施报告
+
+实际gpt-6-astra最终计划SHA：plan.md ce204fbcd39fbb3c0ecfb8b9e107a1fbedc845409576f0e593d20c51ca0c8831；plan.json 6708c5c87c8e0641e10097a11600eb1028adb873908d9d60c12e0c13f64dde46。初次20pins匹配后只增加计划内两个RED测试；规划者随后补充typed语义说明，最终计划复核19项仍匹配，唯一变化为已批准新测试，产品未改且未运行测试。两次preflight都保留。
+
+新独立RED：NOT NULL DEFAULT空串schema下2条未释放被漏计为0；直接运行recovery而未运行duplicate时，旧lease typed released_at=None且原归档consistent=false。两项都在预期业务断言FAIL，非setup/import错误。
+
+修复在expire_leases返回后、恢复服务前，公开publication_guard内fresh检查原job/run/worker/lease/acquired/expires/INTERRUPTED和UTC真实过期，只release精确captured旧模拟lease一次，回读证明已释放且owner不变。拒绝未过期、非中断、错run/job/lease/worker、已释放7个反例，release_calls均空。保留TTL1、1.05秒等待、job30秒和顺序，未改Worker/repository/collector/guard。模拟cleanup证据写入新receipt，不能冒充生产自动恢复或任务执行。
+
+修正SQL observer谓词为空串或NULL，保持finally close；不以expiry判release。typed repository原本把空串/NULL→None，因此main计数及collector原判定无需修改。旧audit的0没有证明力，不能推断duplicate后来释放了旧lease；此前相关解读撤回，旧字节保留。
+
+r421-*补充GREEN共8pure+6native各一次，全部PASS：独立恢复归档写成时已consistent=true，旧lease真实release早于replacement acquire；attempt1 INTERRUPTED、attempt2 BLOCKED保持；默认RGBD原BLOCKED期待不改，三probe证据都有效、释放计数匹配。hash/identity/attempt/consistent=false四项只损坏新main归档，断言invalid_probes仅main且具体错误对应，recovery/duplicate证据有效，外层FAILED/FINALIZATION。正确计数下lease0、FD前后0、heartbeat空。所有owned回收，source无漂移。R419指标和格式变化后最终42项同新模块集成复验另记，不是自动重试。
+
+scope限两文件；旧失败/原件不动，未放宽一致性或确认门。实际legacy正对照后续通过，但生产默认仍RGBD阻断；未恢复指标研究资格、全量研究或硬件验收。联合fresh Astra review及选择性交付见R419阶段总结与交付回执。

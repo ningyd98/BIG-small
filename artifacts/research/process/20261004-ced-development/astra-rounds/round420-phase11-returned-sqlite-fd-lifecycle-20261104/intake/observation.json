@@ -1,0 +1,68 @@
+{
+  "schema": "r420.original-lifecycle-observation.v1",
+  "created_utc": "2026-11-03T23:58:37.605984+00:00",
+  "problem": "Native adapter returned with current-run SQLite FDs still open; audit found 4 handles, zero unreleased leases and no heartbeat thread.",
+  "stage": "R419 red-native",
+  "original_expected_red": {
+    "projection_call_fail": 17,
+    "native_call_fail": 4,
+    "all_setup_teardown_passed": true,
+    "failure_assertions": "outer SUCCESS vs expected false/blocked/failed"
+  },
+  "fd_issue_not_yet_separate_assertion": "Native status assertion failed before FD assertion; this is audit evidence, not a separately executed FD failure.",
+  "observed_audit": {
+    "label": "blocked",
+    "outer_status": "SUCCESS",
+    "runtime_invoked": true,
+    "runtime_completed": true,
+    "task_success": true,
+    "authoritative": true,
+    "unreleased_leases": 0,
+    "run_sqlite_fds": [
+      "/tmp/bigsmall-r419-red-native/test_current_rgbd_mock_blocker0/output/source_evidence/r419-receipt-proof/phase11_runtime/runtime.sqlite3",
+      "/tmp/bigsmall-r419-red-native/test_current_rgbd_mock_blocker0/output/source_evidence/r419-receipt-proof/phase11_runtime/runtime.sqlite3-wal",
+      "/tmp/bigsmall-r419-red-native/test_current_rgbd_mock_blocker0/output/source_evidence/r419-receipt-proof/phase11_runtime/runtime.sqlite3-shm",
+      "/tmp/bigsmall-r419-red-native/test_current_rgbd_mock_blocker0/output/source_evidence/r419-receipt-proof/phase11_runtime/runtime.sqlite3"
+    ],
+    "heartbeat_threads": [],
+    "receipt_path": "/tmp/bigsmall-r419-red-native/test_current_rgbd_mock_blocker0/output/source_evidence/r419-receipt-proof/phase11_runtime_actual_run.json",
+    "main_status": "BLOCKED_BY_ENV",
+    "recovery_status": "BLOCKED_BY_ENV",
+    "duplicate_status": "BLOCKED_BY_ENV"
+  },
+  "actual_process_terminal": {
+    "red_projection_exit": 1,
+    "red_native_exit": 1,
+    "supervisor_cleanup_complete": true,
+    "source_drift": []
+  },
+  "hypothesis": "sqlite3 connection context managers commit/rollback but may retain handles until GC; inspect adapter _sqlite_summary and actual repository ownership. Do not assume test observer caused or did not cause it.",
+  "new_product_edits": 0,
+  "inputs": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round419-phase11-receipt-truthfulness-20261104/validation/red-native/native-blocked-audit.json",
+      "bytes": 1089,
+      "sha256": "361844a8b92103df75c5e5774050e2cb776ce06eeaf4440970643da272ffaff4"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round419-phase11-receipt-truthfulness-20261104/validation/red-native/result.json",
+      "bytes": 398,
+      "sha256": "9037dccb1af51c7d47683c3847efbf98aa3eb73171e3c2c63ef3576d8e3cccc8"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round419-phase11-receipt-truthfulness-20261104/validation/red-projection/result.json",
+      "bytes": 401,
+      "sha256": "e30aa27af307d3f13b5c7ff843e52bf8ce7c372d95743f26a11cd7a45a778927"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/final_evaluation/adapters/simulation_runtime.py",
+      "bytes": 18365,
+      "sha256": "e63c8278ae26015d2aad360cf289a45000c4e137989257e9f20d1aa115769089"
+    },
+    {
+      "path": "tests/test_phase11_adapter_receipt_truthfulness.py",
+      "bytes": 11021,
+      "sha256": "4d1dc37910251cc3ed9cf8928e28c2fa289cb80665dc8d4780c5d1fb16219614"
+    }
+  ]
+}
