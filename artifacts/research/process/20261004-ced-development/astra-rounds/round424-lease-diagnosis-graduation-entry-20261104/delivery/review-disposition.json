@@ -1,0 +1,68 @@
+{
+  "created_utc": "2026-11-04T07:18:41.821197+00:00",
+  "review_verdict": "NO_BLOCKER_FOR_SCOPED_DIAGNOSIS_AND_RESEARCH_BRANCH_DELIVERY",
+  "review_input_pins_still_match": true,
+  "critical": 0,
+  "important": 0,
+  "deferred_minors": [
+    {
+      "id": "R424-M1",
+      "title": "Budget NOT_STARTED branch is not handled by the runner main loop",
+      "file": "artifacts/research/process/20261004-ced-development/astra-rounds/round424-lease-diagnosis-graduation-entry-20261104/implementation/run_stage.py",
+      "start": 78,
+      "end": 78,
+      "evidence": "run():28-30 writes validation/<id>-not-started.json and returns when remaining <= 30. main():78 then unconditionally opens validation/<id>/result.json, which that branch never creates.",
+      "impact": "If the reserved-budget branch is reached, FileNotFoundError prevents a complete remaining-NOT_STARTED ledger and run-budget-terminal receipt. The branch was not reached in this 31.074797766981646-second completed run; it neither invalidates the six preserved outcomes nor permits extra execution.",
+      "severity_basis": "Minor for this completed, one-off diagnostic delivery because the recorded run is complete and safely inside budget; not a certification that the runner is reusable under budget exhaustion.",
+      "minimum_followup_scope": "Before reuse, a new Astra-scoped driver change should return/handle NOT_STARTED explicitly and preserve the terminal ledger for all unstarted jobs. Preserve current frozen script and raw evidence; no R424 rerun or product/test-source change is needed for this review.",
+      "blocking_for_current_scoped_delivery": false
+    }
+  ],
+  "regrade_basis": "Reasonable current user receives complete preserved diagnosis; hypothetical reuse under exhausted budget loses summary but does not invalidate current 6 outcomes or production. Minor is deferred only for current scope; no claim of generic driver readiness.",
+  "declined_to_judge_rulings": [
+    {
+      "id": "D1",
+      "boundary": "Original lease-01 child exact exit and exclusive original-run cause",
+      "decision": "原节点子进程精确exit继续UNKNOWN；H1只确认独立原helper受控路径，不重跑补造历史。",
+      "cost_if_wrong": "把探针当原节点会导致过度归因；本报告明确保留此不确定性。"
+    },
+    {
+      "id": "D2",
+      "boundary": "Whole lease/concurrency correctness or repaired original tests",
+      "decision": "5原节点仍FAIL，合法并发目标断言未完成；不认定租约整体正确或已修复。",
+      "cost_if_wrong": "真实并发缺陷可能尚未被发现，使用相关路径前须有效正/负用例。"
+    },
+    {
+      "id": "D3",
+      "boundary": "Live model store, credentials, CLI overrides, paid-service availability and budget authorization",
+      "decision": "仅登记checked-in默认状态；运行store/profile/付费服务须临运行前再核验。",
+      "cost_if_wrong": "历史通道或默认配置不能保证当前模型运行成功/授权。"
+    },
+    {
+      "id": "D4",
+      "boundary": "Real native calibration/effect acceptance, current complete experiment inventory, INITIAL/METHOD/FINAL or hardware release",
+      "decision": "仅放行T3b/T7b受限开发，实际来源/校准/效果与INITIAL/METHOD/FINAL/硬件仍按证据门逐级验收。",
+      "cost_if_wrong": "软件或开发数据若冒充正式证据，会使研究结论无效。"
+    },
+    {
+      "id": "D5",
+      "boundary": "New all-suite/performance/browser status and unrelated historical regressions",
+      "decision": "不更新全量/UTC性能/浏览器等未重跑结论，不按定向数量减法更新历史失败。",
+      "cost_if_wrong": "未覆盖的回归或性能问题仍可能存在。"
+    },
+    {
+      "id": "D6",
+      "boundary": "Git push success, three-SHA receipt and complete remote reproduction package",
+      "decision": "主代理继续精确Git交付，完成后另保存local/upstream/live remote三SHA；本地raw与远端精选包分列。",
+      "cost_if_wrong": "在最终回执前不能认定推送成功；精选包不保证完整远端复现。"
+    },
+    {
+      "id": "D7",
+      "boundary": "Generic runner robustness under exhausted budget or failures outside the observed run",
+      "decision": "R424-M1按实际影响复核为本轮非阻塞Minor；本轮未走预算耗尽分支，不改冻结驱动、不追加实验，复用前须另Astra计划修复。",
+      "cost_if_wrong": "预算不足时NOT_STARTED虽落盘，main会读缺失result抛错并缺总收口，驱动不能据本轮验收为通用健壮。"
+    }
+  ],
+  "production_or_original_test_changes": 0,
+  "extra_test_runs_after_review": 0
+}

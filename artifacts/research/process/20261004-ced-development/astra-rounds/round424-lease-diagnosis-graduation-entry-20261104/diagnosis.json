@@ -1,0 +1,239 @@
+{
+  "scope": "Observed SOFTWARE_ONLY paths; no fix/acceptance/general concurrency guarantee",
+  "H1": {
+    "status": "CONFIRMED_FOR_CONTROLLED_PROBE_PATH_CONSISTENT_WITH_ORIGINAL",
+    "original_stage": "lease-01",
+    "original_failure": "_queue.Empty",
+    "root": "子helper构造先拿同publication_guard，waiting在构造后；父持锁等waiting造成测试握手循环。",
+    "evidence": [
+      {
+        "case": "original_constructor_inside_parent_guard",
+        "constructor_return_before_parent_held": false,
+        "reached_flock_while_parent_held": true,
+        "not_observed_after_flock_before_release": true,
+        "progressed_after_planned_release": true,
+        "trace": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round424-lease-diagnosis-graduation-entry-20261104/validation/probe-guard-handshake/guard-evidence/original_constructor_inside_parent_guard.jsonl",
+          "bytes": 2546,
+          "sha256": "c150fa9f06b699f452ade40e2a7ad655325b720d7499d56df4ac7b0208157243"
+        }
+      },
+      {
+        "case": "preinitialized_control",
+        "constructor_return_before_parent_held": true,
+        "reached_flock_while_parent_held": true,
+        "not_observed_after_flock_before_release": true,
+        "progressed_after_planned_release": true,
+        "trace": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round424-lease-diagnosis-graduation-entry-20261104/validation/probe-guard-handshake/guard-evidence/preinitialized_control.jsonl",
+          "bytes": 2620,
+          "sha256": "a35abf5adfe022ade5a67da1dcd9a616d500bec6572aa0d32886b713e610f51b"
+        }
+      }
+    ],
+    "limitation": "原lease-01父测试在finally自行terminate子进程，未导出其准确exitcode；保留original_child_exit=UNKNOWN，不用独立探针两个child exit0反推原节点。原节点trace过滤器不记录构造/guard，故其trace文件为空；H1运行证据来自独立原helper探针及预初始化对照。"
+  },
+  "H2": {
+    "status": "CONFIRMED_FOR_OBSERVED_PATH",
+    "stages": [
+      "lease-02",
+      "lease-04",
+      "lease-05"
+    ],
+    "root": "测试race/_handoff在活动公开writer事务内调用非登记从属写入；真实caller身份规则在目标CAS断言前拒绝。",
+    "proof": [
+      {
+        "stage": "lease-02",
+        "evidence": [
+          {
+            "event": "exception",
+            "monotonic_ns": 230562127614775,
+            "pid": 36,
+            "thread_id": 132496992931968,
+            "function": "_writer_call",
+            "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+            "line": 2043,
+            "connection_present": true,
+            "in_transaction": true,
+            "owner_operation": "expire_leases",
+            "caller_chain": [
+              {
+                "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+                "function": "guarded",
+                "line": 106
+              },
+              {
+                "file": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_rgbd_lease_handoff.py",
+                "function": "race",
+                "line": 475
+              },
+              {
+                "file": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_rgbd_lease_handoff.py",
+                "function": "_handoff",
+                "line": 17
+              }
+            ],
+            "repository_database_path": "/tmp/bigsmall-r424-lease-02/test_expiry_scan_cannot_interr0/lease.db",
+            "caller": {
+              "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+              "function": "guarded",
+              "line": 106
+            },
+            "requested_writer": "update_status_cas",
+            "exception": {
+              "type": "OperationalLeaseError",
+              "message": "nested public mutation is not a registered same-job subordinate"
+            }
+          }
+        ]
+      },
+      {
+        "stage": "lease-04",
+        "evidence": [
+          {
+            "event": "exception",
+            "monotonic_ns": 230573663859706,
+            "pid": 68,
+            "thread_id": 123729212043392,
+            "function": "_writer_call",
+            "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+            "line": 2043,
+            "connection_present": true,
+            "in_transaction": true,
+            "owner_operation": "request_cancel",
+            "caller_chain": [
+              {
+                "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+                "function": "guarded",
+                "line": 106
+              },
+              {
+                "file": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_rgbd_lease_handoff.py",
+                "function": "race",
+                "line": 525
+              },
+              {
+                "file": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_rgbd_lease_handoff.py",
+                "function": "_handoff",
+                "line": 17
+              }
+            ],
+            "repository_database_path": "/tmp/bigsmall-r424-lease-04/test_cancel_racing_handoff_can0/lease.db",
+            "caller": {
+              "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+              "function": "guarded",
+              "line": 106
+            },
+            "requested_writer": "update_status_cas",
+            "exception": {
+              "type": "OperationalLeaseError",
+              "message": "nested public mutation is not a registered same-job subordinate"
+            }
+          }
+        ]
+      },
+      {
+        "stage": "lease-05",
+        "evidence": [
+          {
+            "event": "exception",
+            "monotonic_ns": 230576938470330,
+            "pid": 84,
+            "thread_id": 136302411001984,
+            "function": "_writer_call",
+            "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+            "line": 2043,
+            "connection_present": true,
+            "in_transaction": true,
+            "owner_operation": "retry_job",
+            "caller_chain": [
+              {
+                "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+                "function": "guarded",
+                "line": 106
+              },
+              {
+                "file": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_rgbd_lease_handoff.py",
+                "function": "_handoff",
+                "line": 29
+              },
+              {
+                "file": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_rgbd_lease_handoff.py",
+                "function": "race",
+                "line": 573
+              }
+            ],
+            "repository_database_path": "/tmp/bigsmall-r424-lease-05/test_stale_retry_snapshot_cann0/lease.db",
+            "caller": {
+              "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+              "function": "guarded",
+              "line": 106
+            },
+            "requested_writer": "update_status_cas",
+            "exception": {
+              "type": "OperationalLeaseError",
+              "message": "nested public mutation is not a registered same-job subordinate"
+            }
+          }
+        ]
+      }
+    ],
+    "boundary": "未放宽allowlist，未证明合法边界的交接/取消/重试竞争整体正确。"
+  },
+  "H3": {
+    "status": "CONFIRMED_FOR_OBSERVED_PATH",
+    "stage": "lease-03",
+    "root": "expire父writer仍在真实事务内，refresh_before_cas用不同连接向同独占新DB写；父在回调返回前不能提交，形成测试自身锁等待。",
+    "proof": [
+      {
+        "event": "exception",
+        "monotonic_ns": 230570408583566,
+        "pid": 52,
+        "thread_id": 140079052779648,
+        "function": "refresh_before_cas",
+        "file": "/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_rgbd_lease_handoff.py",
+        "line": 500,
+        "connection_present": true,
+        "in_transaction": true,
+        "owner_operation": "expire_leases",
+        "caller_chain": [
+          {
+            "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+            "function": "expire_leases",
+            "line": 986
+          },
+          {
+            "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+            "function": "_dispatch_writer",
+            "line": 2105
+          },
+          {
+            "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+            "function": "_writer_call",
+            "line": 2071
+          }
+        ],
+        "repository_database_path": "/tmp/bigsmall-r424-lease-03/test_expiry_scan_rechecks_curr0/lease.db",
+        "caller": {
+          "file": "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+          "function": "expire_leases",
+          "line": 986
+        },
+        "exception": {
+          "type": "OperationalError",
+          "message": "database is locked"
+        },
+        "second_connection_is_distinct": true,
+        "second_connection_in_transaction": true
+      }
+    ],
+    "boundary": "实际BEGIN IMMEDIATE与原有SQLite等待未改；不是调大timeout或取消锁的依据。"
+  },
+  "next_repair_scope": "另Astra轮重建合法序列化边界上的竞态/握手测试，覆盖正向竞争与真实非法嵌套拒绝，不修改生产授权来迁就测试。",
+  "not_claimed": [
+    "5项转绿",
+    "产品租约/并发整体正确",
+    "新全量失败率",
+    "正式研究或实机放行"
+  ]
+}
