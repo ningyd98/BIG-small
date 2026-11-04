@@ -1,0 +1,159 @@
+{
+  "schema": "r422-r423.fresh-final-review.v1",
+  "created_utc": "2026-11-04T03:42:07.149329+00:00",
+  "reviewer_model": "gpt-6-astra",
+  "role": "fresh Senior Code Reviewer; not implementer",
+  "base": "f63e271f56a361b43d84be5538f73efe6afce226",
+  "head": "f63e271f56a361b43d84be5538f73efe6afce226",
+  "scope": "Uncommitted R422 two helper changes, one new contract test file, bounded saved validation and R423 administrative preservation; one combined review.",
+  "strengths": [
+    {
+      "location": "tests/test_visual_worker_execution.py:24; src/cloud_edge_robot_arm/vision/evaluation.py:70",
+      "detail": "只有SOFTWARE_ONLY注释和_local_mode=False；生产严格type认证保持，原fake-owner两个参数节点仍拒绝。监督模块直接复用episode，未复制或赋予替身owner资格。"
+    },
+    {
+      "location": "tests/test_visual_worker_test_contracts.py:17; src/cloud_edge_robot_arm/vision/execution.py:693",
+      "detail": "真实recapture/check_active重装runtime持有预算后拒绝过期deadline，断言无claim/capture/completion；另一个真实消费者测试用local时间陷阱及budget_payload/capture顺序，避免只验证flag常量。"
+    },
+    {
+      "location": "tests/test_rgbd_closed_loop.py:392; tests/test_visual_worker_test_contracts.py:47; src/cloud_edge_robot_arm/vision/execution.py:1372",
+      "detail": "只接受completion关键字，未知关键字仍TypeError；原-4.0速度/1.5上限和真实shield不变。新增执行测试确认None转发、唯一dispatch、SKILL_RETURN后真实SAFETY_POSTCHECK REJECT。"
+    },
+    {
+      "location": "tests/test_visual_worker_supervision_execution.py:295; tests/test_legacy_reference_mode_compatibility.py:10",
+      "detail": "精确GREEN覆盖真实Memory/SQLite仓库、取消后拒绝、未知action、默认模式、伪造观测、UTC租约撤销及未知mode；这些均限定为软件证据。"
+    },
+    {
+      "location": "R422/validation-summary.json; R422/final-integrity.json",
+      "detail": "原22节点19完整函数AST（含装饰器和参数化）保留；各原节点可映射R413原longrepr、此次RED与GREEN。72stage原始事件、JUnit、spec/pins、退出及清理记录一致，未用跳过/xfail/重复节点换绿。"
+    },
+    {
+      "location": "R423/local-preservation-manifest.json; R423/step-report.md:7",
+      "detail": "16份create-only副本与16原树的持久化before/copy/after可核对，459文件/17,266,800 bytes及16条symlink保持；56项明确ABSENT_OBSERVED并无target。报告保留local-only及非自包含边界。"
+    }
+  ],
+  "findings": {
+    "critical": [],
+    "important": [],
+    "minor": []
+  },
+  "evidence": {
+    "frozen_review_inputs": 23,
+    "frozen_review_inputs_all_bytes_sha256_match_at_start_and_end": true,
+    "input_manifest": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round422-runtime-spy-recapture-test-contracts-20261104/review/input-manifest.json",
+      "bytes": 6168,
+      "sha256": "7b53d04ae45c55d6223919a7ca76e91334b2b3314e310cfb8375c786c651eba2"
+    },
+    "baseline_sources": 1310,
+    "unchanged_baseline_sources": 1308,
+    "production_src_unchanged": 406,
+    "exact_existing_helper_edits_only": true,
+    "new_test_files": 1,
+    "original_nodes": 22,
+    "original_distinct_function_asts_unchanged": 19,
+    "unchanged_r422_plan_input_pins": 40,
+    "r423_plan_input_pins": 11,
+    "saved_stage_proof_pins_independently_matched": 504,
+    "saved_red": {
+      "nodes": 25,
+      "missing_mode": 23,
+      "completion_keyword": 2,
+      "setup_teardown_pass": true
+    },
+    "saved_green": {
+      "unique_nodes": 47,
+      "pure": 37,
+      "native_software": 10,
+      "passed_phases": 141,
+      "junit_failures": 0,
+      "junit_errors": 0,
+      "junit_skips": 0,
+      "junit_seconds": 70.18
+    },
+    "all_72_saved_stages": {
+      "exact_job_spec_mapping": true,
+      "one_started_per_stage": true,
+      "phase_outcomes_match": true,
+      "finished_and_reaped": true,
+      "precleanup_exit_codes_match": true,
+      "signals_errors_drift_owned_residue_empty": true,
+      "baseline_plus_new_test_source_pins_match_phase": true
+    },
+    "preservation_independently_checked": {
+      "copied_trees": 16,
+      "absent_sources_and_targets": 56,
+      "regular_files": 459,
+      "bytes": 17266800,
+      "symlinks_text_checked_without_dereference": 16,
+      "current_source_and_copy_identity_content_match_saved_inventories": true
+    },
+    "reviewer_test_runs": 0,
+    "reviewer_sql_calls": 0,
+    "reviewer_network_calls": 0,
+    "reviewer_git_writes": 0,
+    "dirty_gitlinks_entered": false,
+    "static_check_basis": "Read existing local-style/results.json and matching validation-summary; reviewer did not rerun Ruff or tests.",
+    "whole_tree_history_limit": "72 validation whole-tree pre/post comparisons are executor assertions, not persisted per-tree before digests; do not claim independent historical reconstruction beyond saved 504 pins.",
+    "incidental_read_only_command_errors": [
+      "Initial python alias unavailable; hash/AST audit used project absolute .venv/bin/python afterwards (R423 stdlib audit /usr/bin/python3).",
+      "One rg request named an absent guessed helper file; actual import tests.test_operational_windows was then read. Neither error ran tests or changed frozen inputs."
+    ]
+  },
+  "declined_to_judge": [
+    {
+      "id": "D1",
+      "behavior": "全4751/full5580、P0重新验证及其它历史失败是否已解决",
+      "reason": "本轮授权为25 RED + 47 GREEN精确节点零重试；未运行全suite或P0，不能从本轮PASS减算历史35FAIL/1INCOMPLETE。"
+    },
+    {
+      "id": "D2",
+      "behavior": "真实模型、相机、机器人、控制器与正式研究验收",
+      "reason": "本次仅软件替身契约及真实软件仓库/owner路径，未调用实体或外部模型；不改变已有实体gate。"
+    },
+    {
+      "id": "D3",
+      "behavior": "local temporal owner全部权限、非None effect completion及跨进程/并发租约整体正确性",
+      "reason": "本次生产源码不变；检查的是False选择的durable分支、None回调和限定反例。没有新的此类运行证据，后续租约根因仍须独立Astra计划。"
+    },
+    {
+      "id": "D4",
+      "behavior": "API返回时进程内FD零泄漏及长期性能/稳定性",
+      "reason": "保存证据证明stage自然退出、owned回收及无信号；不能推出API返回时资源审计或持续运行性质。"
+    },
+    {
+      "id": "D5",
+      "behavior": "R423复制前后72个validation整树的独立历史逐字复算",
+      "reason": "整树before摘要只存在于当时行政命令内存，现存清单只持久化72项比较通过结论。独立复核已覆盖早于R423冻结的504个关键stage文件及16树before/copy/after；其余全树历史依据执行者当时assert与exit0记录，不冒充独立持久化证明。"
+    },
+    {
+      "id": "D6",
+      "behavior": "56个basetemp在完整历史上从未创建、以及副本自包含可移植性",
+      "reason": "仅能确认目前ABSENT_OBSERVED与无target；16条绝对symlink保持原文本且仍可能依赖源路径。"
+    },
+    {
+      "id": "D7",
+      "behavior": "最终Git选择清单、提交推送完成与三端SHA一致，main合并批准",
+      "reason": "审查时尚未提交，HEAD仍为f63e271f56a361b43d84be5538f73efe6afce226，index无已暂存差异；由root后续按精确allowlist执行并核对，审查不执行网络或Git写入。"
+    }
+  ],
+  "assessment": {
+    "verdict": "NO_BLOCKER_FOR_SCOPED_RESEARCH_BRANCH_DELIVERY",
+    "blocks_selective_delivery": false,
+    "main_merge_approval": false,
+    "research_or_physical_acceptance": false,
+    "git_delivery_complete": false,
+    "reason": "Actual two-helper patch and three consumer tests match R422; persisted raw evidence supports the bounded saved outcomes. R423 copies and absence statements are supported within the explicit history/portability limits. Final selection and SHA receipts remain root work.",
+    "declined_items_require_root_ruling": true
+  },
+  "recommendations": [
+    "Root must rule on each D1-D7 boundary and preserve it in the final delivery record.",
+    "Use only R422 plan.json exact code/document/stage allowlists plus R423 four explicit documents; do not stage stdout/stderr/full DB/raw/copy manifest or local Git receipts.",
+    "Record normal research-branch commit/push and matching local/upstream/exactremote SHA; keep original failures and plans frozen."
+  ],
+  "executor_supplement": {
+    "source": "Parent message during review, 2026-11-04",
+    "claim": "R423 actual administrative inline command used validation_before in memory then asserted every stage tree equal; command chunk8dc984, exit0, elapsed0.332s. No persisted whole-tree baseline exists.",
+    "reviewer_basis": "Supplement corroborates the stated limitation; not independently reexecuted or treated as a persisted per-tree digest."
+  }
+}

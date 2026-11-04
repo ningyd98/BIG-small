@@ -389,7 +389,7 @@ def _safety_gate_run(overspeed_phase):
         return StepExecutionResult("test", "move", "MOVE_ABOVE", 1, True, None, None, 1, now)
 
     run.executor = SimpleNamespace(execute_attempt=execute)
-    run.recapture = lambda: run.observation
+    run.recapture = lambda *, completion=None: run.observation
     return run, contract, dispatched
 
 

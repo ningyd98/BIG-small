@@ -23,6 +23,8 @@ class RuntimeSpy:
 
     def __init__(self, calls):
         self.calls = calls
+        # SOFTWARE_ONLY：沿用非local的durable编排预算，不认证worker所有权。
+        self._local_mode = False
         self.episode_id = "software-runtime-episode"
         self.is_adopted = False
         self.bootstrap = SimpleNamespace(planning_source_usable=True, digest=lambda: "a" * 64)
