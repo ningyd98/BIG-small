@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import threading
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from copy import deepcopy
@@ -13,7 +14,7 @@ from importlib.util import find_spec
 from pathlib import Path
 from time import monotonic_ns
 from types import MappingProxyType
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 import numpy as np
@@ -162,13 +163,40 @@ class BackendOperationBoundary:
         object.__setattr__(self, "result", _operation_detach(self.result))
 
 
-def _observed_operation(kind: str):
-    def decorate(function):
+@dataclass(frozen=True, slots=True)
+class ExecutionGuardBoundaryV1:
+    """Synchronous execution checkpoint; a description, not admission authority."""
+
+    kind: str
+    phase: str
+    episode_id: str
+    physics_step: int
+    operation_id: int | None
+
+
+def _guarded_step(function: Callable[..., Any]) -> Callable[..., Any]:
+    @wraps(function)
+    def guarded(self: MuJoCoPhysicsBackend, *args: Any, **kwargs: Any) -> Any:
+        self._require_not_in_observer_callback()
+        with self._execution_failure_scope():
+            self._check_execution_guard("RETURN", "BEFORE")
+            result = function(self, *args, **kwargs)
+            self._check_execution_guard("RETURN", "AFTER")
+            return result
+
+    return guarded
+
+
+def _observed_operation(kind: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def decorate(function: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(function)
-        def observed(self, *args, **kwargs):
-            if self._operation_observer is None:
-                return function(self, *args, **kwargs)
+        def observed(self: MuJoCoPhysicsBackend, *args: Any, **kwargs: Any) -> Any:
             self._require_not_in_observer_callback()
+            safe = function.__name__ in {"hold_current_joints", "_emergency_stop_observed"} or (
+                function.__name__ == "_apply_control"
+                and getattr(self._guard_stop_context, "control_active", False)
+            )
+            checked = kind in {"COMMAND", "CONTROL", "PHYSICS"} and not safe
             requested = args[0] if args else next(iter(kwargs.values()), None)
             parameters: dict[str, Any] = {}
             if kind == "COMMAND":
@@ -181,9 +209,29 @@ def _observed_operation(kind: str):
                 parameters["command_type"] = names[function.__name__]
             if requested is not None:
                 parameters["requested"] = requested
-            with self._operation_source(kind, parameters) as source:
-                result = function(self, *args, **kwargs)
-                source["returned"] = result
+            with self._execution_failure_scope(safe=safe):
+                if self._operation_observer is None:
+                    if checked:
+                        self._check_execution_guard(kind, "BEFORE")
+                    elif not safe:
+                        self._raise_guard_observer_failure()
+                    result = function(self, *args, **kwargs)
+                    if checked:
+                        self._check_execution_guard(kind, "AFTER")
+                else:
+                    with self._operation_source(kind, parameters) as source:
+                        if checked:
+                            self._check_execution_guard(kind, "BEFORE")
+                        elif not safe:
+                            self._raise_guard_observer_failure()
+                        result = function(self, *args, **kwargs)
+                        source["returned"] = result
+                        if checked:
+                            self._check_execution_guard(kind, "AFTER")
+                if checked:
+                    self._check_execution_guard("RETURN", "AFTER")
+                elif not safe:
+                    self._raise_guard_observer_failure()
                 return result
 
         return observed
@@ -228,6 +276,139 @@ class MuJoCoPhysicsBackend:
         self._operation_ledger: list[Mapping[str, Any]] = []
         self._operation_observer_failures: list[Mapping[str, Any]] = []
         self._operation_observer_overhead_ns = 0
+        self._execution_guard: Callable[[ExecutionGuardBoundaryV1], None] | None = None
+        self._execution_guard_used = False
+        self._execution_guard_closed = False
+        self._execution_guard_thread: int | None = None
+        self._in_execution_guard_callback = False
+        self._guard_stop_context = threading.local()
+        self._guard_observer_failure: BaseException | None = None
+        self._execution_guard_events: list[dict[str, Any]] = []
+
+    @property
+    def execution_guard_events(self) -> tuple[Mapping[str, Any], ...]:
+        return tuple(_operation_detach(row) for row in self._execution_guard_events)
+
+    @contextmanager
+    def enforce_execution_guard(
+        self, callback: Callable[[ExecutionGuardBoundaryV1], None]
+    ) -> Iterator[None]:
+        """Install one synchronous guard for this backend's final execution session."""
+        self._require_not_in_observer_callback()
+        self._require_loaded()
+        if self._execution_guard_used:
+            raise RuntimeError("execution guard session already used or closed")
+        if not self._episode_id or not callable(callback):
+            raise ValueError("reset episode and callable execution guard required")
+        if getattr(callback, "bound_backend", self) is not self:
+            raise RuntimeError("execution guard belongs to another backend")
+        self._execution_guard_used = True
+        self._execution_guard_thread = threading.get_ident()
+        self._execution_guard = callback
+        try:
+            yield
+        except BaseException as error:
+            self._close_execution_guard(error)
+            raise
+        else:
+            self._close_execution_guard(None)
+        finally:
+            self._execution_guard = None
+
+    @contextmanager
+    def _execution_failure_scope(self, *, safe: bool = False) -> Iterator[None]:
+        try:
+            yield
+        except BaseException as error:
+            if self._execution_guard_used and not safe:
+                self._close_execution_guard(error)
+            raise
+
+    def _remember_guard_observer_failure(self, error: BaseException) -> None:
+        if (
+            self._execution_guard is not None
+            and not self._execution_guard_closed
+            and self._guard_observer_failure is None
+        ):
+            self._guard_observer_failure = error
+
+    def _raise_guard_observer_failure(self) -> None:
+        if self._guard_observer_failure is not None and not self._execution_guard_closed:
+            raise self._guard_observer_failure
+
+    def _guard_failure_record(self, error: BaseException) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "kind": "FAILURE",
+            "physics_step": self._total_physics_steps,
+            "error_type": type(error).__name__,
+            "error": _operation_error_text(error),
+        }
+        try:
+            row["physics_state"] = self.current_physics_observation()
+            row["command_records"] = self.command_records
+        except BaseException as snapshot_error:
+            row["snapshot_error_type"] = type(snapshot_error).__name__
+            row["snapshot_error"] = _operation_error_text(snapshot_error)
+        return row
+
+    def _close_execution_guard(self, primary: BaseException | None) -> None:
+        if self._execution_guard_closed:
+            return
+        self._execution_guard_closed = True
+        row = (
+            self._guard_failure_record(primary)
+            if primary is not None
+            else {"kind": "CLOSED", "physics_step": self._total_physics_steps}
+        )
+        if len(self._execution_guard_events) < 1024:
+            self._execution_guard_events.append(row)
+        else:
+            self._execution_guard_events[-1]["closure"] = row
+        try:
+            self.emergency_stop()
+        except BaseException as stop_error:
+            row["stop_error_type"] = type(stop_error).__name__
+            row["stop_error"] = _operation_error_text(stop_error)
+            if primary is None:
+                raise
+
+    def _check_execution_guard(self, kind: str, phase: str) -> None:
+        if not self._execution_guard_used:
+            return
+        if self._execution_guard_closed or self._execution_guard is None:
+            raise RuntimeError("execution guard session is closed")
+        if threading.get_ident() != self._execution_guard_thread:
+            raise RuntimeError("execution guard belongs to another thread")
+        if len(self._execution_guard_events) >= 1023:
+            raise RuntimeError("execution guard event limit exceeded")
+        boundary = ExecutionGuardBoundaryV1(
+            kind,
+            phase,
+            self._episode_id or "",
+            self._total_physics_steps,
+            self._operation_sequence if self._operation_observer is not None else None,
+        )
+        row: dict[str, Any] = asdict(boundary)
+        row["sequence"] = len(self._execution_guard_events) + 1
+        self._execution_guard_events.append(row)
+        self._in_execution_guard_callback = True
+        try:
+            self._execution_guard(boundary)
+            self._in_execution_guard_callback = False
+            self._raise_guard_observer_failure()
+            row["outcome"] = "ALLOWED"
+        except BaseException as error:
+            row.update(outcome="REJECTED", error_type=type(error).__name__)
+            row["error"] = _operation_error_text(error)
+            raise
+        finally:
+            self._in_execution_guard_callback = False
+
+    def _require_guard_lifecycle_mutable(self) -> None:
+        if self._execution_guard_used:
+            error = RuntimeError("guarded backend lifecycle cannot be reset or reinitialized")
+            self._close_execution_guard(error)
+            raise error
 
     @property
     def operation_ledger(self) -> tuple[Mapping[str, Any], ...]:
@@ -251,6 +432,8 @@ class MuJoCoPhysicsBackend:
         The new allocation/failure ledger persists after closing this context.
         """
         self._require_not_in_observer_callback()
+        if self._execution_guard_closed:
+            raise RuntimeError("execution guard session is closed")
         self._require_loaded()
         if self._operation_observer is not None:
             raise RuntimeError("an operation boundary observer is already active")
@@ -327,15 +510,15 @@ class MuJoCoPhysicsBackend:
         try:
             event = BackendOperationBoundary(
                 operation_id,
-                kind,
-                phase,
+                cast(Literal["RESET", "CONTROL", "PHYSICS", "COMMAND", "CAPTURE"], kind),
+                cast(Literal["BEGIN", "END"], phase),
                 self._episode_id,
                 self._total_physics_steps,
                 self.get_sim_time() if self._data is not None else None,
                 parameters,
                 result,
-                row["error_type"],
-                row["error"],
+                cast(str | None, row["error_type"]),
+                cast(str | None, row["error"]),
             )
             self._in_observer_callback = True
             if callback is not None:
@@ -350,6 +533,7 @@ class MuJoCoPhysicsBackend:
                     }
                 )
             )
+            self._remember_guard_observer_failure(observer_error)
         finally:
             self._in_observer_callback = False
             self._operation_observer_overhead_ns += monotonic_ns() - started
@@ -379,6 +563,7 @@ class MuJoCoPhysicsBackend:
                         }
                     )
                 )
+                self._remember_guard_observer_failure(source_error)
         self._emit_operation_source(number, kind, "BEGIN", parameters, None, None)
         error: BaseException | None = None
         try:
@@ -405,6 +590,7 @@ class MuJoCoPhysicsBackend:
                         }
                     )
                 )
+                self._remember_guard_observer_failure(source_error)
             self._emit_operation_source(number, kind, "END", parameters, result, error)
 
     @property
@@ -451,6 +637,7 @@ class MuJoCoPhysicsBackend:
         model_xml: str | None = None,
     ) -> None:
         self._require_not_in_observer_callback()
+        self._require_guard_lifecycle_mutable()
         if find_spec("mujoco") is None:
             raise RuntimeError(
                 "MuJoCo is not installed. Install with python -m pip install -e '.[sim-mujoco]'"
@@ -518,6 +705,7 @@ class MuJoCoPhysicsBackend:
     @_observed_operation("RESET")
     def reset(self, scenario: PhysicalScenarioConfig) -> None:
         self._require_not_in_observer_callback()
+        self._require_guard_lifecycle_mutable()
         self._require_loaded()
         assert self._mujoco is not None and self._model is not None and self._data is not None
         self._scenario = scenario
@@ -551,6 +739,7 @@ class MuJoCoPhysicsBackend:
         self._mujoco.mj_forward(self._model, self._data)
         self._update_sensor_frame()
 
+    @_guarded_step
     def step(self, steps: int = 1) -> SimulationStepResult:
         self._require_not_in_observer_callback()
         self._require_loaded()
@@ -580,17 +769,15 @@ class MuJoCoPhysicsBackend:
                 # Emergency stop blocks new commands but actively holds joints.
                 self._apply_control()
                 self._emit_actuator_observation()
-                self._mujoco.mj_step(self._model, self._data)
+                self._advance_unobserved_physics_step()
                 executed += 1
-                self._total_physics_steps += 1
             self._last_contacts = self._read_contacts()
         else:
             for _ in range(steps):
                 self._apply_control()
                 self._emit_actuator_observation()
-                self._mujoco.mj_step(self._model, self._data)
+                self._advance_unobserved_physics_step()
                 executed += 1
-                self._total_physics_steps += 1
                 self._last_contacts = self._read_contacts()
                 snapshot = self._build_physics_observation(self._last_contacts)
                 self._in_observer_callback = True
@@ -609,15 +796,23 @@ class MuJoCoPhysicsBackend:
             sensor_frame=self._sensor_frame,
         )
 
-    @_observed_operation("PHYSICS")
-    def _advance_observed_physics_step(self) -> None:
+    def _advance_unobserved_physics_step(self) -> None:
+        self._require_not_in_observer_callback()
         assert self._mujoco is not None and self._model is not None and self._data is not None
+        self._check_execution_guard("PHYSICS", "BEFORE")
         self._mujoco.mj_step(self._model, self._data)
         self._total_physics_steps += 1
+        self._check_execution_guard("PHYSICS", "AFTER")
+
+    @_observed_operation("PHYSICS")
+    def _advance_observed_physics_step(self) -> None:
+        self._advance_unobserved_physics_step()
         self._last_contacts = self._read_contacts()
 
     def shutdown(self) -> None:
         self._require_not_in_observer_callback()
+        if self._execution_guard_used:
+            self._close_execution_guard(None)
         self._step_observer = None
         self._actuator_observer = None
         if self._camera is not None:
@@ -671,6 +866,8 @@ class MuJoCoPhysicsBackend:
     ) -> Iterator[None]:
         """Observe every mj_step for one episode; never retain a step history."""
         self._require_not_in_observer_callback()
+        if self._execution_guard_closed:
+            raise RuntimeError("execution guard session is closed")
         self._require_loaded()
         if self._episode_id is None:
             raise RuntimeError("MuJoCo scenario is not reset")
@@ -692,6 +889,8 @@ class MuJoCoPhysicsBackend:
     ) -> Iterator[None]:
         """旁路读取每次真实mj_step之前的控制值，不持有逐步历史。"""
         self._require_not_in_observer_callback()
+        if self._execution_guard_closed:
+            raise RuntimeError("execution guard session is closed")
         self._require_loaded()
         if self._episode_id is None:
             raise RuntimeError("MuJoCo scenario is not reset")
@@ -813,19 +1012,30 @@ class MuJoCoPhysicsBackend:
 
     def emergency_stop(self) -> None:
         self._require_not_in_observer_callback()
+        if self._execution_guard_used:
+            self._execution_guard_closed = True
         self.hold_current_joints()
         if self._operation_observer is not None:
             self._emergency_stop_observed()
             return
         self._estop_engaged = True
         self._record_command("emergency_stop", accepted=True, reason="")
-        self._apply_control()
+        self._apply_stop_control()
+
+    def _apply_stop_control(self) -> None:
+        """Exempt only this thread's internal CONTROL call, never commands or physics."""
+        previous = getattr(self._guard_stop_context, "control_active", False)
+        self._guard_stop_context.control_active = True
+        try:
+            self._apply_control()
+        finally:
+            self._guard_stop_context.control_active = previous
 
     @_observed_operation("COMMAND")
     def _emergency_stop_observed(self) -> None:
         self._estop_engaged = True
         self._record_command("emergency_stop", accepted=True, reason="")
-        self._apply_control()
+        self._apply_stop_control()
 
     @_observed_operation("COMMAND")
     def hold_current_joints(self) -> None:
@@ -845,6 +1055,8 @@ class MuJoCoPhysicsBackend:
 
     def inject_fault(self, fault: PhysicalFault) -> None:
         self._require_not_in_observer_callback()
+        if fault.fault_type != PhysicalFaultType.EMERGENCY_STOP:
+            self._require_guard_lifecycle_mutable()
         if fault.fault_type == PhysicalFaultType.EMERGENCY_STOP:
             self.emergency_stop()
         elif fault.fault_type == PhysicalFaultType.OBJECT_SLIP:
@@ -885,6 +1097,8 @@ class MuJoCoPhysicsBackend:
             raise RuntimeError("MuJoCo backend is not initialized")
 
     def _require_not_in_observer_callback(self) -> None:
+        if self._in_execution_guard_callback:
+            raise RuntimeError("execution guard callback cannot mutate or step the backend")
         if self._in_observer_callback:
             raise RuntimeError("observer callback cannot mutate or step the backend")
 

@@ -1,0 +1,89 @@
+{
+  "schema_version": "astra.fresh-code-review.v1",
+  "reviewer": {
+    "model": "gpt-6-astra",
+    "actual_delegated_agent": true,
+    "task": "astra_r435_fresh_review"
+  },
+  "date": "2026-11-06",
+  "base_head": "9ce1972fa8bd9858fb48c15145b5b82d5a4bf953",
+  "scope": "R435 uncommitted implementation after the two R436 validation-only edits",
+  "mode": "read-only static review; no tests, physics, model calls, or child agents",
+  "input_pins": [
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+      "bytes": 58059,
+      "sha256": "50424549559f396bda483d6010be69ca08f434363cc51390e45894b0a52a4260"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/guarded_execution_v1.py",
+      "bytes": 12576,
+      "sha256": "f7810297bae01b74fc55f4fea21b9aa2bc1abd9fd58aca51eb64c06412cf8a5e"
+    },
+    {
+      "path": "tests/test_mujoco_execution_guard_v1.py",
+      "bytes": 10087,
+      "sha256": "9ac7ae791f53ed4a7d7c2b2f0a529a046e9743ba424c5ead062bf3a05be0179a"
+    },
+    {
+      "path": "tests/test_guarded_execution_v1.py",
+      "bytes": 4866,
+      "sha256": "004d5119b562b07fa6179f41e712de3510bad915832f65684232350cec98dbe0"
+    }
+  ],
+  "critical": [],
+  "important": [
+    {
+      "id": "R435-F1",
+      "severity": "Important",
+      "priority": 1,
+      "file": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+      "start": 352,
+      "end": 363,
+      "title": "Safety-stop bypass admits foreign-thread commands before estop is engaged",
+      "evidence": "_check_execution_guard returns for every non-PHYSICS kind whenever _guard_stop_depth is nonzero, before closed and thread checks. emergency_stop increments this shared depth before hold_current_joints and sets estop only afterwards.",
+      "reproduction": "Thread A enters safety stop after guard rejection; pause its hold_current_joints before return. Thread B calls apply_gripper_command(open=False). Its COMMAND BEFORE/AFTER and RETURN checks all bypass, estop is still false, and ctrl[7:9] changes with an accepted gripper record. Resume A: joint HOLD does not undo that gripper effect. A Thread/Event software fixture can make this schedule deterministic.",
+      "impact": "An already rejected/closed guarded session accepts a new actuator command from the wrong thread during its stop path.",
+      "fix": "Restrict bypass to the exact internal synchronous CONTROL call of the active stopping thread; reject ordinary COMMAND, step/PHYSICS and unrelated RETURN checks before any effect. Preserve permitted STOP/HOLD and avoid making safety stop depend on the failing ordinary guard."
+    },
+    {
+      "id": "R435-F2",
+      "severity": "Important",
+      "priority": 1,
+      "file": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+      "start": 499,
+      "end": 517,
+      "title": "An operation observer failure alone does not close the guarded session",
+      "evidence": "_emit_operation_source catches BaseException and only appends _operation_observer_failures; _check_execution_guard does not consume that failure and normal observer return is indistinguishable from failure to the decorated effect.",
+      "reproduction": "Install a guard which permits every boundary and an operation observer which raises a sentinel exception on COMMAND BEGIN. apply_joint_targets changes the target and returns successfully; step(2) can advance two steps. Repeat for CONTROL/PHYSICS BEGIN and END: none closes the active session solely because the observer failed.",
+      "impact": "Missing or failed source recording does not stop guarded execution, contrary to R435 Review Focus 3 and diagnostic fail-stop requirements. The existing test combines an observer failure with a guard rejection, so it does not test this independent cause.",
+      "fix": "For active guarded sessions, retain the first original observer/source failure and fail closed at the pre-effect or post-observer checkpoint, outside callback reentry state. Preserve existing unguarded passive-observer semantics and ensure observer failures during STOP cannot block STOP or replace an earlier primary."
+    },
+    {
+      "id": "R435-F3",
+      "severity": "Important",
+      "priority": 2,
+      "file": "src/cloud_edge_robot_arm/research/guarded_execution_v1.py",
+      "start": 278,
+      "end": 315,
+      "title": "Diagnostic PASS ignores guard-retained stop and snapshot failures",
+      "evidence": "Expected expired COMMAND catches TimeoutError at lines 244-249. _close_execution_guard preserves a stop failure as stop_error_type/stop_error in execution_guard_events and a snapshot failure as snapshot_error. The diagnostic serializes these events but computes status only from local primary/secondary, without merging retained failures.",
+      "reproduction": "Make the first safety-stop CONTROL call fail after estop is set; retain the original deadline TimeoutError. Let the explicit later STOP succeed. The expected refusal list and two-step count remain correct, operation_observer_failures may remain empty, and status becomes PASS even though guard-events contains the unexpected stop failure. The snapshot_error variant is similarly omitted.",
+      "impact": "The result claims diagnostic success despite a recorded unexpected safety-stop/snapshot failure; the separate secondary_errors summary is incomplete.",
+      "fix": "Add a pure diagnostic failure-merge helper and feed it actual retained guard-event failures before status is calculated. Preserve the expected deadline refusal as expected, but mark any retained stop/snapshot failure FAIL and include typed/staged secondary details. Unit-test with genuine software-backend-generated guard events; no extra actual diagnostic is needed."
+    }
+  ],
+  "minor": [],
+  "declined_to_judge": [
+    "Complete full-H producer, worker/lease/hard-stop ownership and native three-consumer admission: explicitly outside R435; UNKNOWN/UNAVAILABLE/NOT_PROVEN must remain.",
+    "Hard preemption of a blocking mj_step or elimination of the final Python instruction gap after a check: explicitly not promised; this review checks pre/post behavior and retained completed effects.",
+    "Malicious in-process reflection or replacement of private backend/guard fields: explicitly outside the isolation contract. The thread-bypass finding uses ordinary public commands, not reflection.",
+    "Actual MuJoCo/BOOTTIME success, environment readiness, final runner execution and formal research acceptance: no actual diagnostic has run at review time and reviewer was prohibited from running tests or physics. Parent must supply fresh evidence.",
+    "Known R435 RuntimeError-vs-TimeoutError test failures and four historical mypy narrowings: handled by actual-Astra R436; not counted again as new findings. R436 focused 2 PASS is parent-reported, not independently rerun.",
+    "Application-level completeness of the future raw package, native calibration and physical grasp/lift outcomes: not outputs of the fixed two-step diagnostic."
+  ],
+  "assessment": {
+    "ready_to_merge": "No",
+    "reason": "Three confirmed static control-flow defects require the single R437 fix pass and fresh validation; real diagnostic remains unrun."
+  }
+}
