@@ -385,6 +385,18 @@ class OpenCVTargetTracker:
         return {name: {**envelope, "value": None, "measured_values": {}} for name in _CONDITIONS}
 
     def _binding_reason(self, observation: RGBDObservation) -> str | None:
+        evaluated_at = datetime.now(UTC)
+        self._last_binding_evaluated_at = evaluated_at
+        return self._binding_reason_at(observation, evaluated_at)
+
+    @property
+    def last_binding_evaluated_at(self) -> datetime:
+        """UTC actually read by the most recent binding check; never caller supplied."""
+        return self._last_binding_evaluated_at
+
+    def _binding_reason_at(
+        self, observation: RGBDObservation, evaluated_at: datetime
+    ) -> str | None:
         reference = self._reference
         for field in (
             "episode_id",
@@ -411,7 +423,7 @@ class OpenCVTargetTracker:
             and aligned_axis.all()
         ):
             return "camera_orientation_not_supported"
-        age = (datetime.now(UTC) - observation.captured_at).total_seconds()
+        age = (evaluated_at - observation.captured_at).total_seconds()
         if age < -0.05 or age > 5.0:
             return "capture_time_not_fresh"
         return None

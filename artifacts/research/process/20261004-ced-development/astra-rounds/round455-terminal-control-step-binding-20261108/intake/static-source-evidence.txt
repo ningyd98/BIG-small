@@ -1,0 +1,230 @@
+# src/cloud_edge_robot_arm/research/native_source_effect_graph.py
+62:     fingers = _vector(reset["initial_controller_targets"]["fingers_m"], 2, "initial fingers")
+63:     _same(arm, _vector(states[0]["joint_positions_rad"], 7, "reset joints"), "initial arm target")
+64:     _same(fingers, [0.039, 0.039], "initial finger target")
+65:     controls = raw["control_sources"]
+66:     commands = raw["commands"]
+67:     n = raw["total_physics_steps"]
+68:     _need(type(n) is int and n >= 1 and set(states) == set(range(n + 1)), "physical denominator")
+69:     _need(len(controls) == n + 1 <= 12961, "one original CONTROL per physics plus STOP")
+70:     indexed = {r["interval_id"]: r for r in controls}
+71:     _need(len(indexed) == len(controls), "duplicate original CONTROL")
+72:     used = []
+73:     for row in raw["physics"]:
+74:         number = row["physics_step"]
+75:         control = indexed[row["control_interval_id"]]
+76:         _same(row["control_payload"], control["control_state"], "physics CONTROL payload")
+77:         _interval(intervals[control["interval_id"]], "CONTROL_APPLY", number - 1, number - 1)
+78:         _need(control["physics_step"] == number - 1, "physics CONTROL current step")
+79:         _need(
+80:             _op(row["control_interval_id"]) < _op(row["physics_interval_id"]),
+81:             "CONTROL must precede PHYSICS",
+82:         )
+83:         used.append(row["control_interval_id"])
+84:     _need(len(set(used)) == n, "reused CONTROL")
+85:     _need(
+86:         [c["command_seq"] for c in commands] == list(range(1, len(commands) + 1)),
+87:         "command sequence",
+88:     )
+89:     timeline = [(_op(c["interval_id"]), "COMMAND", c) for c in commands]
+185:                 fingers = [0.039, 0.039] if value["target_open"] else [0.0, 0.0]
+186:             else:
+187:                 _need(value["reason"] == "", "STOP reason")
+188:                 stopped = True
+189:         else:
+190:             step = row["physics_step"]
+191:             _need(step in states and row["episode_id"] == episode, "CONTROL identity")
+192:             _need(operation == _op(row["interval_id"]), "CONTROL operation identity")
+193:             _interval(intervals[row["interval_id"]], "CONTROL_APPLY", step, step)
+194:             while pending and pending[0][0] <= step:
+195:                 _, arm = pending.pop(0)
+196:             value = row["control_state"]
+197:             _need(
+198:                 value["episode_id"] == episode and value["physics_step"] == step + 1,
+199:                 "CONTROL target step identity",
+200:             )
+201:             _need(
+202:                 math.isclose(value["sim_time_s"], states[step]["sim_time_s"], abs_tol=1e-9),
+203:                 "CONTROL current time",
+204:             )
+205:             _same(
+206:                 _vector(value["applied_joint_targets_rad"], 7, "CONTROL arm"),
+207:                 arm,
+208:                 "applied arm target replay",
+209:             )
+210:             _same(
+211:                 _vector(value["finger_control_targets_m"], 2, "CONTROL fingers"),
+212:                 fingers,
+213:                 "applied gripper target replay",
+214:             )
+215:             current = _vector(value["pre_joint_positions_rad"], 7, "CONTROL pre joints")
+216:             _same(
+217:                 current,
+218:                 _vector(states[step]["joint_positions_rad"], 7, "state joints"),
+219:                 "CONTROL previous physical joints",
+220:             )
+221:             biases = _vector(value["pre_gravity_bias_nm"], 7, "bias")
+222:             gains = _vector(value["actuator_gains"], 7, "gain")
+223:             outputs = _vector(value["control_rad"], 7, "control output")
+224:             ranges = value["actuator_ctrl_ranges"]
+345:         len(tail) == 2
+346:         and [c["command_payload"]["type"] for c in tail]
+347:         == ["hold_current_joints", "emergency_stop"],
+348:         "real hold then STOP required",
+349:     )
+350:     hold, stop = (_op(c["interval_id"]) for c in tail)
+351:     terminal_control = max(events)
+352:     _need(
+353:         (hold, stop, terminal_control) == (len(events) - 2, len(events) - 1, len(events))
+354:         and events[terminal_control]["kind"] == "CONTROL",
+355:         "final STOP internal CONTROL",
+356:     )
+357:     _need(tail[0]["parent_interval_id"] == tail[1]["parent_interval_id"], "termination parent")
+358:     for row in tail:
+359:         _interval(intervals[row["parent_interval_id"]], "TERMINATION", n, n)
+360:         _need(
+361:             row["owner_action_span_id"] is None
+362:             and row["command_payload"]["accepted"] is True
+363:             and row["command_payload"]["physics_step"] == n,
+364:             "termination command source",
+365:         )
+366:     extra = set(c["interval_id"] for c in raw["control_sources"]) - {
+367:         r["control_interval_id"] for r in raw["physics"]
+368:     }
+369:     _need(extra == {f"operation-{terminal_control}"}, "unmatched STOP CONTROL")
+370:     ledger = raw["backend_operation_ledger"]
+371:     stack: list[int] = []
+372:     seen: set[tuple[int, str]] = set()
+373:     children: dict[int, list[int]] = {}
+374:     begun: list[int] = []
+452:         emit(kind, phase, step, number, events[number]["bracket"]["upper_ns"], hi)
+453: 
+454:     in_step = False
+455:     sampled: list[int] = []
+456:     for number, event in events.items():
+457:         kind, start, end = event["kind"], event["begin_step"], event["end_step"]
+458:         if number in {1, 2, hold, stop, terminal_control}:
+459:             continue
+460:         if kind == "COMMAND":
+461:             _need(not in_step, "command inside backend step call")
+462:             # Safe explicit hold has no ordinary guard, as in the original backend.
+463:             if commands[number]["command_payload"]["type"] == "hold_current_joints":
+464:                 continue
+465:             _need(commands[number]["command_payload"]["type"] != "emergency_stop", "early STOP")
+# src/cloud_edge_robot_arm/simulation/mujoco/backend.py
+978:     def _build_actuator_observation(self) -> ActuatorStepObservation:
+979:         assert self._data is not None and self._model is not None and self._episode_id
+980:         return ActuatorStepObservation(
+981:             episode_id=self._episode_id,
+982:             physics_step=self._total_physics_steps + 1,
+983:             sim_time_s=float(self._data.time),
+984:             applied_joint_targets_rad=tuple(float(v) for v in self._target_positions),
+985:             pre_joint_positions_rad=tuple(float(v) for v in self._data.qpos[:7]),
+986:             pre_gravity_bias_nm=tuple(float(v) for v in self._data.qfrc_bias[:7]),
+987:             control_rad=tuple(float(v) for v in self._data.ctrl[:7]),
+988:             finger_control_targets_m=tuple(float(v) for v in self._data.ctrl[7:9]),
+989:             actuator_gains=tuple(float(v) for v in self._model.actuator_gainprm[:7, 0]),
+990:             actuator_ctrl_ranges=tuple(
+991:                 (float(v[0]), float(v[1])) for v in self._model.actuator_ctrlrange[:7]
+992:             ),
+993:         )
+1070:     def emergency_stop(self) -> None:
+1071:         self._require_not_in_observer_callback()
+1072:         if self._execution_guard_used:
+1073:             self._execution_guard_closed = True
+1074:         self.hold_current_joints()
+1075:         if self._operation_observer is not None:
+1076:             self._emergency_stop_observed()
+1077:             return
+1078:         self._estop_engaged = True
+1079:         self._record_command("emergency_stop", accepted=True, reason="")
+1080:         self._apply_stop_control()
+1081: 
+1082:     def _apply_stop_control(self) -> None:
+1083:         """Exempt only this thread's internal CONTROL call, never commands or physics."""
+1084:         previous = getattr(self._guard_stop_context, "control_active", False)
+1085:         self._guard_stop_context.control_active = True
+1086:         try:
+1087:             self._apply_control()
+1088:         finally:
+1089:             self._guard_stop_context.control_active = previous
+1090: 
+1091:     @_observed_operation("COMMAND")
+1092:     def _emergency_stop_observed(self) -> None:
+1093:         self._estop_engaged = True
+1094:         self._record_command("emergency_stop", accepted=True, reason="")
+1095:         self._apply_stop_control()
+1096: 
+# tests/native_collection_source_graph.py
+139:     recorder, backend, capture, owner, _ = source_recorder(root)
+140:     geometry = geometry_registration()
+141:     install_original_shape_camera(backend, geometry)
+142:     install_software_reset_engine(backend)
+143:     backend._episode_id = None
+144:     backend._actuator_delay_steps = 2
+145:     origin = owner.begin_event("SOFTWARE_ONLY")
+146:     owner.mark_event(origin)
+147:     started = owner.end_event(origin)
+148:     checks = []
+149:     lease_id = "SOFTWARE_ONLY-lease"
+150:     live = SimpleNamespace(backend=backend, recorder=recorder, failures=[], progress={})
+151: 
+152:     def guard(checkpoint):
+153:         checks.append(
+154:             dict(
+155:                 checkpoint=detached(checkpoint),
+156:                 step=backend.total_physics_steps,
+157:                 current=detached(owner.read_current(after=origin)),
+158:                 lease_id=lease_id,
+159:             )
+160:         )
+161: 
+162:     try:
+163:         with capture, recorder:
+164:             backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=0))
+165:             recorder.require_clean_reset()
+166:             with _collection_guard(live, guard, 1024):
+167:                 with backend.capture_each_physics_step(max_captures=16):
+168:                     with recorder.purpose("SETTLE"):
+169:                         backend.apply_joint_targets(JointCommand(positions=[4.0] * 7))
+170:                         backend.apply_gripper_command(GripperCommand(open=False))
+171:                         backend.step(3)
+172:                         backend.apply_joint_targets(JointCommand(positions=[0.4] * 7))
+173:                     with recorder.purpose("HOLD"):
+174:                         backend.hold_current_joints()
+175:                     with recorder.purpose("SETTLE"):
+176:                         backend.step(3)
+177:                         recorder.capture()
+178:                         backend.step(1)
+179:             assert not recorder.failures and not recorder._audit_failures
+180:             assert not backend.operation_observer_failures and not live.failures
+181:             recorder._write_original("active-checks.json", checks)
+182:             recorder._write_original(
+183:                 "software-effect-context.json",
+184:                 dict(
+185:                     evidence_scope="SOFTWARE_ONLY",
+186:                     domain=detached(owner.domain),
+187:                     deadline=started.lower_ns + 100 * 10**9,
+188:                     lease_id=lease_id,
+189:                 ),
+190:             )
+191:             recorder.freeze()
+192:     finally:
+193:         owner.close()
+194:     return dict(
+195:         geometry=geometry,
+196:         settings=dict(raw_bytes=2**30),
+197:         source_hashes=dict(recorder.source_hashes),
+198:     )
+199: 
+200: 
+201: def effect_audit(root, protocol):
+202:     audit = _Audit(protocol, {}, root)
+203:     audit.inventory()
+204:     audit.physics()
+205:     context = audit.read("software-effect-context.json")
+206:     assert context["evidence_scope"] == "SOFTWARE_ONLY"
+207:     audit.domain, audit.deadline = context["domain"], context["deadline"]
+208:     audit.identity = SimpleNamespace(owner_identity=SimpleNamespace(lease_id=context["lease_id"]))
+209:     audit.operations()
+210:     return audit

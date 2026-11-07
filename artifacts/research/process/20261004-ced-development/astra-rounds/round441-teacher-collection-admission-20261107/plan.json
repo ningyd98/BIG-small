@@ -1,0 +1,236 @@
+{
+  "round": 441,
+  "planner_model": "gpt-6-astra",
+  "status": "PLAN_ONLY",
+  "input_pins": [
+    {
+      "path": "src/cloud_edge_robot_arm/vision/tracking.py",
+      "bytes": 34560,
+      "sha256": "11642e2d65b6f69f70d08a6ab6d1f134070adce6d695e0eaa0c05e811c360d4c"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/marker_association.py",
+      "bytes": 28147,
+      "sha256": "3fb8c53681b5140c121f45c4d378fbe6b3b5ba5d7daee09fef696cf38bf8238a"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "bytes": 26889,
+      "sha256": "de95ed7cdf6b960e00598cde4b4a157ba7276040cd9d60980b5348b063ff359b"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/edge/evidence/conditions.py",
+      "bytes": 12574,
+      "sha256": "cb46973249c6bc122b45c33bdcf5ba92a3caa84682f174d9f3dff84f47dc3f39"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/execution.py",
+      "bytes": 104819,
+      "sha256": "69f2c1b7dabc0106697eb656bff67da331d4b5386433ae62b9f4f9ff094189f0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/owner_registration.py",
+      "bytes": 49121,
+      "sha256": "bc3b8eab7d3059a40edc81453b15d37777f4d6c4f12ac59344c316636041ff80"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round91-native-full-action-support-20261007/design.md",
+      "bytes": 16413,
+      "sha256": "44ca18c156d901b49d3d88908379658fc62181d42ae02ef926963d57025b8229"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round439-full-execution-independent-calibration-20261107/plan.md",
+      "bytes": 29326,
+      "sha256": "22acfd3aa2b219078a0ee03eb511bcf38dfe69cc09217e328234ad2c84f44ca5"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round439-full-execution-independent-calibration-20261107/plan.json",
+      "bytes": 23158,
+      "sha256": "c9c889038d114577f5c43d60696581a5c1a323d268e63222be89613331cc539c"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round440-collection-asset-registration-20261107/plan.md",
+      "bytes": 7723,
+      "sha256": "2f503f71368057f1470aff9d1def98c72913b2261f24934044d4650c930c0f85"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round440-collection-asset-registration-20261107/plan.json",
+      "bytes": 9624,
+      "sha256": "741b5e946a1b26bf3a21427832f13119899d3feadc826649a1546f10522f8d8c"
+    }
+  ],
+  "scope": "Only R439 new collector modules/config/tests; no old source edits",
+  "admission_schema": "teacher.collection.admission.v1",
+  "completion_criteria": [
+    "object_placed",
+    "placement_stable"
+  ],
+  "original_conditions": "compile_worker_original_plan canonical _PRE/_POST, complete unchanged",
+  "allowed_unknown_rows": [
+    {
+      "id": "TR_PRE_DEPTH",
+      "phases": [
+        "PRE"
+      ],
+      "skills": [
+        "MOVE_ABOVE",
+        "APPROACH",
+        "GRASP"
+      ],
+      "conditions": [
+        "target_reachable"
+      ],
+      "fact_reasons_exact": [
+        "calibrated_depth_error_bound_missing"
+      ],
+      "verdict_reason_exact": "visual_fact_not_boolean",
+      "additional": "stationary_support is True"
+    },
+    {
+      "id": "LIFT_POST_DEPTH",
+      "phases": [
+        "POST"
+      ],
+      "skills": [
+        "LIFT"
+      ],
+      "conditions": [
+        "object_lifted",
+        "object_stable"
+      ],
+      "fact_reasons_exact": [
+        "calibrated_depth_error_bound_missing"
+      ],
+      "verdict_reason_exact": "visual_fact_not_boolean",
+      "additional": "gripper_holding and tcp_at_resolved_target PASS; complete H"
+    },
+    {
+      "id": "LIFT_STABILITY_UNSUPPORTED",
+      "phases": [
+        "POST"
+      ],
+      "skills": [
+        "LIFT"
+      ],
+      "conditions": [
+        "object_stable"
+      ],
+      "fact_reason_set_exact": [
+        "inter_frame_motion_not_bounded",
+        "quarter_turn_symmetry_unresolved"
+      ],
+      "verdict_reason_exact": "visual_fact_not_boolean"
+    },
+    {
+      "id": "LIFT_HELD_STRUCTURAL",
+      "phases": [
+        "POST"
+      ],
+      "skills": [
+        "LIFT"
+      ],
+      "conditions": [
+        "object_held"
+      ],
+      "fact": "structurally absent in exact pinned tracker; not caller-deleted",
+      "verdict_reasons": [
+        "visual_fact_missing_or_untrusted_source"
+      ],
+      "optional_composite_reason": "robot_state_condition_satisfied",
+      "additional": "gripper_holding PASS"
+    },
+    {
+      "id": "RELEASE_PRE_DEPTH",
+      "phases": [
+        "PRE"
+      ],
+      "skills": [
+        "RELEASE"
+      ],
+      "conditions": [
+        "object_inside_target_region"
+      ],
+      "fact_reasons_exact": [
+        "calibrated_depth_error_bound_missing"
+      ],
+      "verdict_reason_exact": "visual_fact_not_boolean",
+      "additional": "same-assignment successful full PLACE, holding PASS, current full geometry, nominal position check"
+    },
+    {
+      "id": "TERMINAL_DEPTH",
+      "phases": [
+        "POST",
+        "TERMINAL"
+      ],
+      "skills": [
+        "RETREAT"
+      ],
+      "conditions": [
+        "object_inside_target_region",
+        "placement_stable"
+      ],
+      "fact_reasons_exact": [
+        "calibrated_depth_error_bound_missing"
+      ],
+      "verdict_reason_exact": "visual_fact_not_boolean",
+      "additional": "last action only; no further motion"
+    },
+    {
+      "id": "TERMINAL_STABILITY",
+      "phases": [
+        "POST",
+        "TERMINAL"
+      ],
+      "skills": [
+        "RETREAT"
+      ],
+      "conditions": [
+        "placement_stable"
+      ],
+      "fact_reason_set_exact": [
+        "inter_frame_motion_not_bounded",
+        "quarter_turn_symmetry_unresolved"
+      ],
+      "verdict_reason_exact": "visual_fact_not_boolean"
+    },
+    {
+      "id": "TERMINAL_PLACED_COMPOSITE",
+      "phases": [
+        "POST",
+        "TERMINAL"
+      ],
+      "skills": [
+        "RETREAT"
+      ],
+      "conditions": [
+        "object_placed"
+      ],
+      "recursive": "object_inside_target_region UNKNOWN exact missing depth; gripper_released PASS",
+      "verdict_reason_set_exact": [
+        "visual_fact_not_boolean",
+        "robot_state_condition_satisfied"
+      ],
+      "additional": "preserve composite UNKNOWN"
+    }
+  ],
+  "unknown_not_pass": true,
+  "allow_any_fail": false,
+  "allow_public_flags": false,
+  "truth_control_allowed": false,
+  "retained_terminal_status": "COLLECTION_COMPLETE_WITH_UNRESOLVED_EFFECTS",
+  "native_qualification": "UNKNOWN",
+  "qualified_group_score_when_required_effect_unknown": null,
+  "qualified_group_score_semantics": "positive infinity; diagnostic G/U/L/M/C not qualification",
+  "actual_runs_added": 0,
+  "test_stage_runs_added": 0,
+  "repeat_prior_red": false,
+  "inherit_runtime_budget": "R439 unchanged plus R440 selected marked asset",
+  "new_tests": "augment existing unrun T2 GREEN/T3 GREEN files; no separate stages",
+  "planner_executed": {
+    "product_edits": 0,
+    "tests": 0,
+    "physics": 0,
+    "render": 0
+  },
+  "self_review_complete": true
+}

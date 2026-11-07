@@ -1,0 +1,92 @@
+--- R454 frozen test
++++ current approved RED test
+@@ -1,4 +1,6 @@
+ """Source failure/effect accounting regressions; only SOFTWARE_ONLY engines."""
++
++from dataclasses import replace
+ 
+ import pytest
+ 
+@@ -12,6 +14,82 @@
+ )
+ from tests.test_native_collection_authority import application, source_recorder
+ from tests.test_visual_raw_recorder_v3 import software_backend
++
++
++def test_reset_conversion_failure_vetoes_first_step_and_keeps_original(tmp_path, monkeypatch):
++    from cloud_edge_robot_arm.simulation.mujoco import backend as backend_module
++    from cloud_edge_robot_arm.vision import top_grasp
++
++    backend = software_backend()
++    install_software_reset_engine(backend)
++    calls, checked = [], []
++    original_error = "RGB size must equal width * height * 3"
++
++    def initialize(config):
++        backend._config = config
++        install_original_shape_camera(backend, geometry_registration())
++        capture = backend._camera._capture
++
++        def malformed_rgb(*args, **kwargs):
++            frame, ids, labels, hashes = capture(*args, **kwargs)
++            return replace(frame, rgb=frame.rgb[:-1]), ids, labels, hashes
++
++        backend._camera._capture = malformed_rgb
++
++    reset = backend.reset
++
++    def record_reset(scenario):
++        calls.append("reset")
++        reset(scenario)
++
++    def guard(*args, **kwargs):
++        calls.append("guard")
++        raise RuntimeError("SOFTWARE_ONLY guard sentinel after malformed reset")
++
++    def forbidden(*args, **kwargs):
++        calls.append("forbidden_step_or_sampler")
++        raise AssertionError("conversion failure reached physical entry")
++
++    require_clean_reset = NativeFullHorizonRecorder.require_clean_reset
++
++    def observe_original_conversion(self):
++        assert not self.failures and not self._audit_failures
++        assert not backend.operation_observer_failures
++        capture = self.operational_events[1]
++        assert capture["kind"] == "CAPTURE" and capture["error_type"] is None
++        interval = self._operations[capture["operation_id"]]["row"]
++        assert interval["disposition"] == "ABORTED" and original_error in interval["error"]
++        source = load_json(self.directory / self.frame_sources[capture["acquisition_id"]])
++        assert source["frame"]["observation_payload"] is None
++        assert self.render_accounting["exact_passes"] == 2
++        checked.append(True)
++        return require_clean_reset(self)
++
++    monkeypatch.setattr(backend, "initialize", initialize)
++    monkeypatch.setattr(backend, "reset", record_reset)
++    monkeypatch.setattr(backend, "enforce_execution_guard", guard)
++    monkeypatch.setattr(backend, "capture_each_physics_step", forbidden)
++    monkeypatch.setattr(backend, "step", forbidden)
++    monkeypatch.setattr(backend_module, "MuJoCoPhysicsBackend", lambda: backend)
++    monkeypatch.setattr(top_grasp, "matches_calibrated_gripper", lambda *_args: True)
++    monkeypatch.setattr(NativeFullHorizonRecorder, "require_clean_reset", observe_original_conversion)
++    app = application(tmp_path)
++    with pytest.raises(RuntimeError):
++        app.execute_once()
++    result = load_json(app.output / "collection-result.json")
++    raw = load_json(app.output / "originals/partial-originals.json")
++    assert checked == [True]
++    assert result["status"] == "COLLECTION_PARTIAL" and result["physics_steps"] == 0
++    assert result["owner_closure"]["completed"]
++    assert result["render_passes"] == result["render_passes_lower_bound"] == 2
++    assert result["render_count_status"] == "EXACT"
++    acquisition = [row for row in raw["intervals"] if row["kind"] == "ACQUISITION"]
++    assert len(acquisition) == 1 and acquisition[0]["disposition"] == "ABORTED"
++    assert original_error in acquisition[0]["error"]
++    source = load_json(app.output / "originals" / next(iter(raw["frame_sources"].values())))
++    assert source["frame"]["observation_payload"] is None
++    assert calls == ["reset"]
++    assert "reset source" in result["worker_snapshot"]["job"]["error_message"]
+ 
+ 
+ def test_reset_source_failure_vetoes_first_step_and_keeps_partial(tmp_path, monkeypatch):

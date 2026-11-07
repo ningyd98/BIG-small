@@ -1,0 +1,139 @@
+{
+  "round": 442,
+  "kind": "ADDITIVE_PLAN_CORRECTION",
+  "planner_model": "gpt-6-astra",
+  "supersedes": "all successful frames must have width*height instances",
+  "input_pins": [
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+      "bytes": 62321,
+      "sha256": "498efa2b2947d70cce8e311aa57a77fbcb50a978db592f44cba8d0ac2f5aa7e0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/camera.py",
+      "bytes": 7566,
+      "sha256": "d85aa6eda7c9f658f2e3bb550c44b3462ebd65e290d5c7d9b79fa30639136e2f"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round442-collection-raw-identity-20261107/plan.md",
+      "bytes": 9304,
+      "sha256": "d523e897d8f12ae6fc42fdee4364709eca2e48c468a0a71416a5e3ef57f55614"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round442-collection-raw-identity-20261107/plan.json",
+      "bytes": 5511,
+      "sha256": "8f00c27422059c1ac70236e47b994a7778b9e038a2bc8bdafd60e9bd98b4eb09"
+    }
+  ],
+  "original_static_evidence": [
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+      "line": 1394,
+      "lines": [
+        "    def _capture_cached_observed(",
+        "        self,",
+        "    ) -> tuple[SensorFrame, tuple[int, ...], dict[int, str], tuple[str, ...]]:",
+        "        if self._camera is None:",
+        "            assert self._config is not None",
+        "            self._camera = MuJoCoRGBDCamera(",
+        "                self._mujoco,",
+        "                self._model,",
+        "                width=self._config.camera_width,",
+        "                height=self._config.camera_height,",
+        "            )",
+        "        return self._camera._capture(",
+        "            self._data,",
+        "            rng=self._rng,",
+        "            noise_std_m=self._sensor_noise_std_m,",
+        "            scene_id=self._scenario.scenario_id if self._scenario else None,",
+        "            episode_id=self._episode_id,",
+        "            include_instances=False,",
+        "        )",
+        "",
+        "    def _record_command(",
+        "        self, command_type: str, *, accepted: bool, reason: str, **details: object",
+        "    ) -> None:",
+        "        self._command_records.append("
+      ]
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+      "line": 362,
+      "lines": [
+        "    def _capture_completed_physics_step(self) -> None:",
+        "        if not self._step_capture_active:",
+        "            return",
+        "        self._check_step_capture()",
+        "        # Allocate before rendering so a partial/failed acquisition consumes its slot.",
+        "        self._step_capture_count += 1",
+        "        self._check_execution_guard(\"CAPTURE\", \"BEFORE\")",
+        "        self.capture_sensor_frame_with_instances()",
+        "        self._check_execution_guard(\"CAPTURE\", \"AFTER\")",
+        "",
+        "    @contextmanager",
+        "    def _execution_failure_scope(self, *, safe: bool = False) -> Iterator[None]:",
+        "        try:",
+        "            yield",
+        "        except BaseException as error:",
+        "            if self._execution_guard_used and not safe:",
+        "                self._close_execution_guard(error)",
+        "            raise",
+        "",
+        "    def _remember_guard_observer_failure(self, error: BaseException) -> None:",
+        "        if (",
+        "            self._execution_guard is not None",
+        "            and not self._execution_guard_closed",
+        "            and self._guard_observer_failure is None"
+      ]
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/camera.py",
+      "line": 125,
+      "lines": [
+        "        instance_ids: tuple[int, ...] = ()",
+        "        instance_labels: dict[int, str] = {}",
+        "        if include_instances:",
+        "            self._renderer.enable_segmentation_rendering()",
+        "            segmentation = self._renderer.render().copy()",
+        "            self._renderer.disable_segmentation_rendering()",
+        "            pass_hashes.append(self._physics_state_hash(data))",
+        "            if pass_hashes[-1] != initial_hash:",
+        "                raise RuntimeError(\"physics state changed during instance render\")",
+        "            check_calibration()",
+        "            geom_pixels = np.where(",
+        "                segmentation[:, :, 1] == int(self._mujoco.mjtObj.mjOBJ_GEOM),",
+        "                segmentation[:, :, 0],",
+        "                -1,",
+        "            )",
+        "            instance_ids = tuple(int(value) for value in geom_pixels.ravel())",
+        "            for geom_id in set(instance_ids) - {-1}:",
+        "                name = self._mujoco.mj_id2name(",
+        "                    self._model,",
+        "                    self._mujoco.mjtObj.mjOBJ_GEOM,",
+        "                    geom_id,",
+        "                )",
+        "                instance_labels[geom_id] = str(name or f\"geom_{geom_id}\")",
+        "        valid = np.isfinite(depth) & (depth > 0) & (depth < 10.0)"
+      ]
+    }
+  ],
+  "capture_classes": {
+    "REGISTERED_PER_PHYSICS_STEP": {
+      "passes": 3,
+      "instances": "width*height"
+    },
+    "REGISTERED_ACTION_BOUNDARY": {
+      "passes": 3,
+      "instances": "width*height"
+    },
+    "IMPLICIT_SENSOR_CACHE_UPDATE": {
+      "passes": 2,
+      "instances": "actual empty tuple and labels; requested=false, not missing"
+    }
+  },
+  "classification": "actual private capture context and source counter/order, never count alone",
+  "raw_and_geometry_denominator": "all allocated frames including implicit; no omission",
+  "new_runs": 0,
+  "product_edits": 0,
+  "original_plan_overwritten": false
+}

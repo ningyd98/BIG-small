@@ -1,0 +1,70 @@
+--- before/src/cloud_edge_robot_arm/research/native_source_effect_graph.py
++++ after/src/cloud_edge_robot_arm/research/native_source_effect_graph.py
+@@ -82,6 +82,12 @@
+         )
+         used.append(row["control_interval_id"])
+     _need(len(set(used)) == n, "reused CONTROL")
++    extra = set(indexed) - set(used)
++    _need(len(extra) == 1, "unique terminal CONTROL required")
++    terminal = indexed[next(iter(extra))]
++    _need(terminal["physics_step"] == n, "terminal CONTROL current step")
++    _interval(intervals[terminal["interval_id"]], "CONTROL_APPLY", n, n)
++    _need(terminal["control_state"]["physics_step"] == n + 1, "terminal CONTROL target step")
+     _need(
+         [c["command_seq"] for c in commands] == list(range(1, len(commands) + 1)),
+         "command sequence",
+--- before/tests/test_native_effect_graph.py
++++ after/tests/test_native_effect_graph.py
+@@ -81,6 +81,52 @@
+     assert audit.render_accounting() == audit.raw["render_passes_observed"]
+ 
+ 
++def test_terminal_stop_control_binds_final_physical_state(tmp_path):
++    root, protocol, audit = fixture(tmp_path)
++    raw = audit.raw
++    n = raw["total_physics_steps"]
++    used = {row["control_interval_id"] for row in raw["physics"]}
++    extra = [row for row in raw["control_sources"] if row["interval_id"] not in used]
++    assert n == 7 and len(extra) == 1
++    terminal = extra[0]
++    assert raw["commands"][-1]["command_payload"]["type"] == "emergency_stop"
++    assert raw["commands"][-1]["command_payload"]["physics_step"] == n
++    assert terminal["physics_step"] == n and terminal["control_state"]["physics_step"] == n + 1
++    assert terminal["control_state"]["sim_time_s"] == audit.states[n]["sim_time_s"]
++    assert (
++        terminal["control_state"]["pre_joint_positions_rad"]
++        == audit.states[n]["joint_positions_rad"]
++    )
++    assert not audit.source_ok and not audit.horizon_ok
++    original = (root / "originals/partial-originals.json").read_bytes()
++    target = tmp_path / "terminal-rewind"
++    shutil.copytree(root / "originals", target / "originals")
++    path = target / "originals/partial-originals.json"
++    changed = load_json(path)
++    control = next(
++        row for row in changed["control_sources"] if row["operation_id"] == terminal["operation_id"]
++    )
++    control["physics_step"] = n - 1
++    control["control_state"]["physics_step"] = n
++    control["control_state"]["sim_time_s"] = audit.states[n - 1]["sim_time_s"]
++    for row in changed["operational_events"]:
++        if row["operation_id"] == terminal["operation_id"]:
++            row["begin_step"] = row["end_step"] = n - 1
++    for row in changed["backend_operation_ledger"]:
++        if row["operation_id"] == terminal["operation_id"]:
++            row["physics_step"] = n - 1
++    for row in changed["intervals"]:
++        if row["interval_id"] == terminal["interval_id"]:
++            row["start_step"] = row["end_step"] = n - 1
++            row["start_sim_time_s"] = row["end_sim_time_s"] = audit.states[n - 1]["sim_time_s"]
++    write_software_json(path, changed)
++    reseal_software_inventory(target / "originals")
++    assert (root / "originals/partial-originals.json").read_bytes() == original
++    with pytest.raises(ValueError, match="terminal CONTROL current step"):
++        effect_audit(target, protocol)
++    assert (root / "originals/partial-originals.json").read_bytes() == original
++
++
+ def test_command_target_delay_clip_gripper_and_hold_replay(tmp_path):
+     root, protocol, _ = fixture(tmp_path)
+     variants = {

@@ -123,7 +123,11 @@ class SimulationWorker:
             from cloud_edge_robot_arm.vision.worker_owner import _identity_string
 
             _identity_string(visual_robot_id)
-        if operational_time_mode not in {"UTC_LEGACY_VETO", "OPERATIONAL_LEASE_FOUNDATION_V1", "LOCAL_TEMPORAL_PUBLICATION_V1"}:
+        if operational_time_mode not in {
+            "UTC_LEGACY_VETO",
+            "OPERATIONAL_LEASE_FOUNDATION_V1",
+            "LOCAL_TEMPORAL_PUBLICATION_V1",
+        }:
             raise ValueError("unsupported operational time mode")
         self.operational_time_mode = operational_time_mode
         self._frozen_operational_time_mode = operational_time_mode
@@ -142,6 +146,7 @@ class SimulationWorker:
         self._heartbeat_failed = threading.Event()
         self._active_task_origin: tuple[str, float, datetime] | None = None
         self._native_clock_prefix_application: object | None = None
+        self._native_collection_application: object | None = None
 
     def poll_once(self) -> bool:
         from cloud_edge_robot_arm.simulation_runtime.operational_lease import (
@@ -162,7 +167,10 @@ class SimulationWorker:
         stop_heartbeat = threading.Event()
         first_heartbeat = threading.Event()
         with ExitStack() as stack:
-            if self._frozen_operational_time_mode in {"OPERATIONAL_LEASE_FOUNDATION_V1", "LOCAL_TEMPORAL_PUBLICATION_V1"}:
+            if self._frozen_operational_time_mode in {
+                "OPERATIONAL_LEASE_FOUNDATION_V1",
+                "LOCAL_TEMPORAL_PUBLICATION_V1",
+            }:
                 session = _open_worker_lease_session(self)
                 self._operational_lease_session = session
                 stack.enter_context(_worker_lease_scope(session))
@@ -464,6 +472,7 @@ class SimulationWorker:
                 raise CancelledByOperator("cancelled during publication")
             if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
                 from cloud_edge_robot_arm.vision.operational_windows import _owner_for_worker
+
                 _owner_for_worker(self)._remaining_app_seconds()
             elif (time.monotonic() - start_monotonic) >= job.timeout_seconds:
                 raise TimedOut("original task timeout during publication")
@@ -902,6 +911,17 @@ class SimulationWorker:
     def _run_visual_closed_loop(
         self, job: SimulationJobRecord, draft: ExperimentDraft, *, start_monotonic: float
     ) -> tuple[dict[str, Any], list[TimelineEvent], list[SimulationMetric]]:
+        collection_application = getattr(self, "_native_collection_application", None)
+        if collection_application is not None:
+            from cloud_edge_robot_arm.research.native_collection_application import (
+                NativeCollectionApplication,
+            )
+
+            if type(collection_application) is not NativeCollectionApplication:
+                raise TypeError("exact configured collection application required")
+            return collection_application.run_from_worker(
+                self, job, start_monotonic=start_monotonic
+            )
         operational_application = getattr(self, "_operational_prefix_application", None)
         if operational_application is not None:
             from cloud_edge_robot_arm.research.operational_prefix_v1 import (
@@ -1037,11 +1057,18 @@ class SimulationWorker:
             )
             # This first concrete re-read precedes all backend initialization.
             if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
-                if not self._owns_artifact_publication(job_repository.get_job(job.job_id), job.lease_id):
+                if not self._owns_artifact_publication(
+                    job_repository.get_job(job.job_id), job.lease_id
+                ):
                     raise RuntimeError("original local startup authority unavailable")
             else:
-                read_visual_worker_lease(job_repository, job_id=job.job_id, run_id=job.run_id,
-                                         worker_id=self.worker_id, lease_id=job.lease_id)
+                read_visual_worker_lease(
+                    job_repository,
+                    job_id=job.job_id,
+                    run_id=job.run_id,
+                    worker_id=self.worker_id,
+                    lease_id=job.lease_id,
+                )
             binding.validate(planner)
             runtime_source = WorkerRuntimeSource(
                 job_repository=job_repository,
@@ -1066,11 +1093,18 @@ class SimulationWorker:
             if binding is not None:
                 assert source_hashes is not None
                 if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
-                    if not self._owns_artifact_publication(job_repository.get_job(job.job_id), job.lease_id):
+                    if not self._owns_artifact_publication(
+                        job_repository.get_job(job.job_id), job.lease_id
+                    ):
                         raise RuntimeError("original local setup authority unavailable")
                 else:
-                    read_visual_worker_lease(job_repository, job_id=job.job_id, run_id=job.run_id,
-                                             worker_id=self.worker_id, lease_id=job.lease_id)
+                    read_visual_worker_lease(
+                        job_repository,
+                        job_id=job.job_id,
+                        run_id=job.run_id,
+                        worker_id=self.worker_id,
+                        lease_id=job.lease_id,
+                    )
                 pin_worker_source_inventory(
                     binding.root, source_hashes, required_paths=required_sources
                 )
@@ -1157,9 +1191,13 @@ class SimulationWorker:
                     ExecutionPolicy(
                         instruction=draft.user_instruction,
                         model_snapshot_hash=snapshot.digest(),
-                        timeout_s=(worker_runtime.remaining_app_seconds()
-                                   if worker_runtime is not None and worker_runtime._local_mode
-                                   else max(0.001, job.timeout_seconds - (time.monotonic() - start_monotonic))),
+                        timeout_s=(
+                            worker_runtime.remaining_app_seconds()
+                            if worker_runtime is not None and worker_runtime._local_mode
+                            else max(
+                                0.001, job.timeout_seconds - (time.monotonic() - start_monotonic)
+                            )
+                        ),
                         cancelled=lambda: self._active_job_cancelled(job),
                         output_dir=run_dir / "visual_episode",
                         **policy_arguments,
@@ -1579,19 +1617,34 @@ class SimulationWorker:
         if job.lease_id != lease_id or job.worker_id != self.worker_id:
             return False
         if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
-            from cloud_edge_robot_arm.vision.operational_windows import _OWNERS
-            from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseError
             from cloud_edge_robot_arm.research.operational_time_v1 import OperationalTimeError
+            from cloud_edge_robot_arm.simulation_runtime.operational_lease import (
+                OperationalLeaseError,
+            )
+            from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+                SQLiteSimulationJobRepository,
+            )
+            from cloud_edge_robot_arm.vision.operational_windows import _OWNERS
 
             try:
+                repository = self.repository
+                session = self._operational_lease_session
+                if not isinstance(repository, SQLiteSimulationJobRepository) or session is None:
+                    raise OperationalLeaseError(
+                        "actual SQLite repository and operational session required"
+                    )
                 owner = _OWNERS.get(self)
                 if owner is not None:
                     owner._check_app_live(require_origin=owner.task_origin is not None)
-                with self.repository._local_read_scope(
-                    self._operational_lease_session, job_id=job.job_id, purpose="worker-read",
-                    operation_sha256=hashlib.sha256((job.job_id + ":worker-read").encode()).hexdigest(),
+                with repository._local_read_scope(
+                    session,
+                    job_id=job.job_id,
+                    purpose="worker-read",
+                    operation_sha256=hashlib.sha256(
+                        (job.job_id + ":worker-read").encode()
+                    ).hexdigest(),
                 ) as view:
-                    return self._operational_lease_session.evaluate_locked(view).status == "VALID"
+                    return session.evaluate_locked(view).status == "VALID"
             except (OperationalLeaseError, OperationalTimeError, ValueError):
                 return False
         lease = next(
@@ -1729,9 +1782,12 @@ class SimulationWorker:
 
         if self._frozen_operational_time_mode == "LOCAL_TEMPORAL_PUBLICATION_V1":
             current = self.repository.get_job(original.job_id)
-            return (current.cancel_requested or current.status != RuntimeJobStatus.RUNNING
-                    or self._heartbeat_failed.is_set()
-                    or not self._owns_artifact_publication(current, original.lease_id))
+            return (
+                current.cancel_requested
+                or current.status != RuntimeJobStatus.RUNNING
+                or self._heartbeat_failed.is_set()
+                or not self._owns_artifact_publication(current, original.lease_id)
+            )
         try:
             current = self.repository.get_job(original.job_id)
             if current.cancel_requested or current.status in {

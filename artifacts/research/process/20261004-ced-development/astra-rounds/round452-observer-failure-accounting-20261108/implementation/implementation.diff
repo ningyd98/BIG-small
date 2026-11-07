@@ -1,0 +1,503 @@
+--- before/src/cloud_edge_robot_arm/research/native_collection_application.py
++++ after/src/cloud_edge_robot_arm/research/native_collection_application.py
+@@ -1138,6 +1138,7 @@
+         phase = "preflight"
+         physics_steps = None
+         render_passes = None
++        render_accounting: dict[str, Any] | None = None
+         try:
+             self.check_active()
+             check_sources(self.protocol["source_hashes"])
+@@ -1184,6 +1185,7 @@
+             live.progress["recorder_entered"] = True
+             phase = "collection_body"
+             live.backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=job.seed))
++            recorder.require_clean_reset()
+             with _collection_guard(live, self._guard, self.policy["guard_event_limit"]):
+                 with live.backend.capture_each_physics_step(
+                     max_captures=self.protocol["physical_budget"]
+@@ -1339,7 +1341,10 @@
+             if live.progress.get("backend_initialized"):
+                 try:
+                     physics_steps = live.backend.total_physics_steps
+-                    render_passes = recorder.render_passes if recorder is not None else None
++                    render_accounting = recorder.render_accounting if recorder is not None else None
++                    render_passes = (
++                        render_accounting["exact_passes"] if render_accounting is not None else None
++                    )
+                     for event in live.backend.execution_guard_events:
+                         for key in ("stop_error", "snapshot_error"):
+                             if key in event:
+@@ -1366,6 +1371,20 @@
+                 completed_action_count=len(live.completed),
+                 physics_steps=physics_steps,
+                 render_passes=render_passes,
++                render_passes_lower_bound=(
++                    render_accounting["known_completed_passes"] if render_accounting else 0
++                ),
++                render_count_status=(
++                    render_accounting["status"]
++                    if render_accounting
++                    else "EXACT" if render_passes == 0 else "UNAVAILABLE"
++                ),
++                render_accounting=render_accounting,
++                render_count_provenance=(
++                    "CAPTURE_END_RETURNED_PASSES_BEFORE_SHUTDOWN"
++                    if render_accounting
++                    else "NOT_STARTED" if render_passes == 0 else "UNAVAILABLE"
++                ),
+                 count_provenance="BEFORE_SHUTDOWN"
+                 if live.progress.get("backend_initialized")
+                 else "UNAVAILABLE"
+--- before/src/cloud_edge_robot_arm/research/native_full_horizon_recorder.py
++++ after/src/cloud_edge_robot_arm/research/native_full_horizon_recorder.py
+@@ -49,11 +49,114 @@
+         self.decisions: list[dict[str, Any]] = []
+         self.failures: list[dict[str, str]] = []
+         self.bytes_written = self.render_passes = 0
++        # R439's registered explicit + implicit capture budget, including failures.
++        self._render_attempt_limit = 12976 + 12962
++        self._render_attempts: dict[int, dict[str, Any]] = {}
++        self._render_overflow_count = 0
++        self._first_unrecorded_capture: int | None = None
+         self._published = False
+         self._sample_slot = 0
+         self._capture_roles: dict[int, dict[str, Any]] = {}
+         self.grounding_sources: dict[int, dict[str, str]] = {}
+         self.shield_config_source: dict[str, str] | None = None
++
++    @property
++    def render_accounting(self) -> dict[str, Any]:
++        attempts = list(self._render_attempts.values())
++        unknown = [row["operation_id"] for row in attempts if not row["complete_return"]]
++        if self._first_unrecorded_capture is not None:
++            unknown.append(self._first_unrecorded_capture)
++        exact = not unknown and not self._render_overflow_count
++        return dict(
++            schema_version="native.render.accounting.v1",
++            known_completed_passes=self.render_passes,
++            exact_passes=self.render_passes if exact else None,
++            status="EXACT" if exact else "LOWER_BOUND" if self.render_passes else "UNAVAILABLE",
++            attempt_count=len(attempts) + self._render_overflow_count,
++            unknown_operation_ids=unknown,
++            unrecorded_attempt_count=self._render_overflow_count,
++            attempts=_plain(attempts),
++            provenance="CAPTURE_END_RETURNED_PASSES_BEFORE_PERSISTENCE",
++        )
++
++    def _begin_render_attempt(self, event: BackendOperationBoundary) -> None:
++        if event.operation_id in self._render_attempts:
++            raise RuntimeError("duplicate capture BEGIN")
++        if len(self._render_attempts) >= self._render_attempt_limit:
++            self._render_overflow_count += 1
++            if self._first_unrecorded_capture is None:
++                self._first_unrecorded_capture = event.operation_id
++            raise RuntimeError("registered capture accounting budget exhausted")
++        scheduled = (
++            self.backend._step_capture_active
++            and self.backend._step_capture_count == self._sample_slot + 1
++        )
++        self._render_attempts[event.operation_id] = dict(
++            operation_id=event.operation_id,
++            expected_pass_count=3 if self._explicit_capture or scheduled else 2,
++            returned_pass_count=None,
++            end_seen=False,
++            complete_return=False,
++            result_source="PENDING_CAPTURE",
++        )
++
++    def _end_render_attempt(self, event: BackendOperationBoundary) -> None:
++        attempt = self._render_attempts.get(event.operation_id)
++        if attempt is None:
++            raise RuntimeError("capture END without accounting allocation")
++        if attempt["end_seen"]:
++            raise RuntimeError("duplicate capture END")
++        attempt["end_seen"] = True
++        hashes = (event.result or {}).get("pass_state_hashes")
++        if isinstance(hashes, (list, tuple)) and all(isinstance(v, str) for v in hashes):
++            attempt["returned_pass_count"] = len(hashes)
++            self.render_passes += len(hashes)
++            attempt["complete_return"] = (
++                event.error_type is None and len(hashes) == attempt["expected_pass_count"]
++            )
++        attempt["result_source"] = (
++            "CAPTURE_END_RETURNED_PASSES"
++            if attempt["complete_return"]
++            else "CAPTURE_END_WITHOUT_COMPLETE_RETURN"
++        )
++
++    def require_clean_reset(self) -> None:
++        """Veto retained RESET source failures before entering the first-step guard."""
++        self._require_open()
++        if self.failures or self._audit_failures or self.backend.operation_observer_failures:
++            raise RuntimeError("reset source has retained observer or audit failure")
++        metadata, result = self._reset_metadata, self._reset_result
++        operations = self.operational_events
++        if (
++            self._reset_count != 1
++            or not metadata
++            or not result
++            or self.backend.total_physics_steps != 0
++            or self._pending
++            or [row["kind"] for row in operations] != ["RESET", "CAPTURE"]
++            or any(row["error_type"] or row["bracket"] is None for row in operations)
++            or result["physics_state"]["episode_id"] != self.backend._episode_id
++            or result["physics_state"]["physics_step"] != 0
++            or metadata["config"] != _plain(self.backend._config)
++            or metadata["scenario"] != _plain(self.backend._scenario)
++            or metadata["asset_hash"] != self._current_asset_hash()
++        ):
++            raise RuntimeError("reset source is incomplete or inconsistent")
++        capture = operations[1]
++        aid = capture["acquisition_id"]
++        if (
++            self._allocated_frames != [aid]
++            or set(self.frame_sources) != {aid}
++            or aid not in self.capture_receipts
++            or self._capture_roles[capture["operation_id"]]["role"]
++            != "IMPLICIT_SENSOR_CACHE_UPDATE"
++            or self.render_accounting["exact_passes"] != 2
++        ):
++            raise RuntimeError("reset source lacks its complete two-pass acquisition")
++        for name, expected in self.inventory.items():
++            raw = (self.directory / name).read_bytes()
++            if len(raw) != expected["bytes"] or hashlib.sha256(raw).hexdigest() != expected["sha256"]:
++                raise RuntimeError("reset source original changed before first step")
+ 
+     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+         try:
+@@ -222,6 +325,12 @@
+     def _on_boundary(self, event: BackendOperationBoundary) -> None:
+         row: dict[str, Any] | None = None
+         try:
++            if event.kind == "CAPTURE":
++                if event.phase == "BEGIN":
++                    self._begin_render_attempt(event)
++                else:
++                    # Count returned effects before pop, spooling or owner callbacks can fail.
++                    self._end_render_attempt(event)
+             if event.phase == "BEGIN":
+                 row = dict(
+                     sequence=len(self.operational_events) + 1,
+@@ -278,7 +387,6 @@
+             aid = row["acquisition_id"]
+             if aid is not None:
+                 self.capture_receipts[aid] = (token, bracket)
+-                self.render_passes += len(event.result.get("pass_state_hashes", ()))
+         except BaseException as error:
+             if row is not None:
+                 row.update(error_type=type(error).__name__, error=_error(error))
+@@ -387,6 +495,7 @@
+                 failures=self.failures,
+                 guard_events=self.backend.execution_guard_events,
+                 render_passes_observed=self.render_passes,
++                render_accounting=self.render_accounting,
+                 capture_source_roles=self._capture_roles,
+                 source_hashes=self.source_hashes,
+                 legacy_utc_mapping="UNAVAILABLE",
+--- before/src/cloud_edge_robot_arm/research/native_full_horizon_originals.py
++++ after/src/cloud_edge_robot_arm/research/native_full_horizon_originals.py
+@@ -614,7 +614,44 @@
+                 self.boundary_observations[aid] = observation
+         return observation, metadata, state
+ 
++    def render_accounting(self) -> int:
++        accounting = self.raw.get("render_accounting", {})
++        _require(
++            accounting.get("schema_version") == "native.render.accounting.v1"
++            and accounting.get("status") == "EXACT"
++            and not accounting.get("unknown_operation_ids")
++            and accounting.get("unrecorded_attempt_count") == 0,
++            "render accounting is unavailable or only a lower bound",
++        )
++        attempts = accounting["attempts"]
++        roles = self.raw["capture_source_roles"]
++        _require(
++            len(attempts) == accounting["attempt_count"] == len(roles) <= 12976 + 12962
++            and len({row["operation_id"] for row in attempts}) == len(attempts),
++            "render attempt denominator differs",
++        )
++        count = 0
++        for row in attempts:
++            source = roles[str(row["operation_id"])]
++            expected = 2 if source["role"] == "IMPLICIT_SENSOR_CACHE_UPDATE" else 3
++            _require(
++                row["end_seen"] is True
++                and row["complete_return"] is True
++                and row["returned_pass_count"] == row["expected_pass_count"] == expected
++                and row["result_source"] == "CAPTURE_END_RETURNED_PASSES",
++                "render attempt lacks complete returned passes",
++            )
++            count += expected
++        _require(
++            count == accounting["known_completed_passes"] == accounting["exact_passes"]
++            and count == self.raw["render_passes_observed"]
++            and accounting["provenance"] == "CAPTURE_END_RETURNED_PASSES_BEFORE_PERSISTENCE",
++            "render pass accounting differs",
++        )
++        return count
++
+     def geometry(self) -> None:
++        render_count = self.render_accounting()
+         assigned = self.raw["allocated_frames"]
+         _require(
+             len(set(assigned)) == len(assigned) and set(assigned) == set(self.raw["frame_sources"]),
+@@ -688,7 +725,7 @@
+         _require(
+             3 * (roles["REGISTERED_ACTION_BOUNDARY"] + roles["REGISTERED_PER_PHYSICS_STEP"])
+             + 2 * roles["IMPLICIT_SENSOR_CACHE_UPDATE"]
+-            == self.raw["render_passes_observed"],
++            == render_count,
+             "actual render count mismatch",
+         )
+         _require(not failures, "allocated geometry incomplete:" + ";".join(failures[:12]))
+@@ -1060,10 +1097,20 @@
+             result["physics_steps"] == self.raw["total_physics_steps"] == body["physics_steps"],
+             "final physics count differs",
+         )
+-        _require(
+-            result["render_passes"] == self.raw["render_passes_observed"],
+-            "final render count differs",
+-        )
++        count = self.render_accounting()
++        for receipt in (result, body):
++            _require(
++                receipt["render_count_status"] == "EXACT"
++                and receipt["render_passes"] == receipt["render_passes_lower_bound"] == count
++                and receipt["render_count_provenance"]
++                == "CAPTURE_END_RETURNED_PASSES_BEFORE_SHUTDOWN",
++                "final render count differs",
++            )
++            _same(
++                receipt["render_accounting"],
++                self.raw["render_accounting"],
++                "render accounting changed across lifecycle",
++            )
+ 
+     def registration_bootstraps(self) -> tuple[Any, Any]:
+         timeline = self.read("registration-timeline.json")
+--- before/tests/test_native_observer_failures.py
++++ after/tests/test_native_observer_failures.py
+@@ -0,0 +1,184 @@
++"""Source failure/effect accounting regressions; only SOFTWARE_ONLY engines."""
++
++import pytest
++
++from cloud_edge_robot_arm.research.native_calibration_collection import load_json
++from cloud_edge_robot_arm.research.native_collection_grounding import geometry_registration
++from cloud_edge_robot_arm.research.native_full_horizon_originals import _Audit
++from cloud_edge_robot_arm.research.native_full_horizon_recorder import NativeFullHorizonRecorder
++from tests.native_collection_source_graph import (
++    install_original_shape_camera,
++    install_software_reset_engine,
++)
++from tests.test_native_collection_authority import application, source_recorder
++from tests.test_visual_raw_recorder_v3 import software_backend
++
++
++def test_reset_source_failure_vetoes_first_step_and_keeps_partial(tmp_path, monkeypatch):
++    assert callable(getattr(NativeFullHorizonRecorder, "require_clean_reset", None)), (
++        "R452 reset source veto missing"
++    )
++    from cloud_edge_robot_arm.simulation.mujoco import backend as backend_module
++    from cloud_edge_robot_arm.vision import top_grasp
++
++    for case in ("write", "observer", "audit", "camera", "clean"):
++        with monkeypatch.context() as patch:
++            backend = software_backend()
++            install_software_reset_engine(backend)
++            calls = []
++
++            def initialize(config, backend=backend, case=case):
++                backend._config = config
++                install_original_shape_camera(backend, geometry_registration())
++                if case == "camera":
++
++                    def broken_camera(*_args, **_kwargs):
++                        raise RuntimeError("SOFTWARE_ONLY reset camera failed")
++
++                    backend._camera._capture = broken_camera
++
++            reset = backend.reset
++
++            def record_reset(scenario, calls=calls, reset=reset):
++                calls.append("reset")
++                reset(scenario)
++
++            def guard(*args, calls=calls, **kwargs):
++                calls.append("guard")
++                raise RuntimeError("SOFTWARE_ONLY stop after clean reset")
++
++            def forbidden(*args, calls=calls, **kwargs):
++                calls.append("forbidden_step_or_sampler")
++                raise AssertionError("source failure reached physical entry")
++
++            patch.setattr(backend, "initialize", initialize)
++            patch.setattr(backend, "reset", record_reset)
++            patch.setattr(backend, "enforce_execution_guard", guard)
++            patch.setattr(backend, "capture_each_physics_step", forbidden)
++            patch.setattr(backend, "step", forbidden)
++            patch.setattr(backend_module, "MuJoCoPhysicsBackend", lambda backend=backend: backend)
++            patch.setattr(top_grasp, "matches_calibrated_gripper", lambda *_args: True)
++            write = NativeFullHorizonRecorder._write_blob
++            boundary = NativeFullHorizonRecorder._on_boundary
++            injected = []
++
++            def fail_once(self, name, raw, case=case, injected=injected, write=write):
++                if case == "write" and name.startswith("frames/") and not injected:
++                    injected.append(case)
++                    raise OSError("SOFTWARE_ONLY reset original write failed")
++                return write(self, name, raw)
++
++            def observed(self, event, case=case, injected=injected, boundary=boundary):
++                boundary(self, event)
++                if event.kind == "CAPTURE" and event.phase == "END" and not injected:
++                    if case == "observer":
++                        injected.append(case)
++                        raise OSError("SOFTWARE_ONLY reset observer failed")
++                    if case == "audit":
++                        injected.append(case)
++                        self._audit_failures.append("SOFTWARE_ONLY reset audit failed")
++
++            patch.setattr(NativeFullHorizonRecorder, "_write_blob", fail_once)
++            patch.setattr(NativeFullHorizonRecorder, "_on_boundary", observed)
++            app = application(tmp_path / case)
++            with pytest.raises(RuntimeError):
++                app.execute_once()
++            result = load_json(app.output / "collection-result.json")
++            raw = load_json(app.output / "originals/partial-originals.json")
++            assert result["status"] == "COLLECTION_PARTIAL" and result["physics_steps"] == 0
++            if case == "camera":
++                assert result["render_passes"] is None
++                assert result["render_passes_lower_bound"] == 0
++                assert result["render_count_status"] == "UNAVAILABLE"
++            else:
++                assert result["render_passes"] == result["render_passes_lower_bound"] == 2
++                assert result["render_count_status"] == "EXACT"
++            assert result["owner_closure"]["completed"] and result["failures"]
++            assert not result["progress"].get("guard_entered")
++            assert calls == (["reset", "guard"] if case == "clean" else ["reset"])
++            if case != "clean":
++                assert raw["failures"] or raw["audit_failures"] or raw["observer_failures"]
++                error = result["worker_snapshot"]["job"]["error_message"]
++                assert ("reset camera failed" if case == "camera" else "reset source") in error
++                assert any(
++                    "SOFTWARE_ONLY reset" in str(raw[key])
++                    for key in ("failures", "audit_failures", "observer_failures")
++                )
++
++
++def test_returned_render_passes_survive_original_write_failure(tmp_path, monkeypatch):
++    assert hasattr(NativeFullHorizonRecorder, "render_accounting"), (
++        "R452 returned pass accounting missing"
++    )
++    recorder, backend, capture, owner, _ = source_recorder(tmp_path)
++    install_original_shape_camera(backend, geometry_registration())
++    events = []
++    boundary = recorder._on_boundary
++
++    def observed(event):
++        events.append(event)
++        boundary(event)
++
++    monkeypatch.setattr(recorder, "_on_boundary", observed)
++    try:
++        with capture, recorder:
++            backend._capture_cached_observed()
++            recorder.capture()
++            assert recorder.render_accounting["exact_passes"] == 5
++            write = recorder._write_blob
++
++            def fail_blob(name, raw):
++                if name.endswith("rgb.png"):
++                    raise OSError("SOFTWARE_ONLY returned-frame spool failed")
++                return write(name, raw)
++
++            monkeypatch.setattr(recorder, "_write_blob", fail_blob)
++            recorder.capture()  # Backend retains observer failure; render already returned.
++            assert recorder.failures and backend.operation_observer_failures
++            accounting = recorder.render_accounting
++            assert accounting["known_completed_passes"] == accounting["exact_passes"] == 8
++            assert accounting["status"] == "EXACT" and accounting["attempt_count"] == 3
++            with pytest.raises(RuntimeError, match="duplicate capture END"):
++                recorder._on_boundary(events[-1])
++            assert recorder.render_accounting == accounting
++            monkeypatch.setattr(recorder, "_write_blob", write)
++            recorder.freeze()
++            raw = load_json(recorder.directory / "partial-originals.json")
++            assert raw["render_accounting"] == accounting and raw["failures"]
++    finally:
++        owner.close()
++
++
++def test_midcapture_failure_retains_lower_bound_not_exact_zero(tmp_path, monkeypatch):
++    assert hasattr(NativeFullHorizonRecorder, "render_accounting"), (
++        "R452 unknown pass accounting missing"
++    )
++    recorder, backend, capture, owner, _ = source_recorder(tmp_path)
++    geometry = geometry_registration()
++    install_original_shape_camera(backend, geometry)
++
++    def partial_camera(*_args, **_kwargs):
++        raise RuntimeError("SOFTWARE_ONLY camera failed before complete return")
++
++    try:
++        with capture, recorder:
++            backend._capture_cached_observed()
++            recorder.capture()
++            monkeypatch.setattr(backend._camera, "capture_with_instances", partial_camera)
++            with pytest.raises(RuntimeError, match="camera failed"):
++                recorder.capture()
++            accounting = recorder.render_accounting
++            assert accounting["exact_passes"] is None
++            assert accounting["known_completed_passes"] == 5
++            assert accounting["status"] == "LOWER_BOUND"
++            assert len(accounting["unknown_operation_ids"]) == 1
++            assert accounting["attempts"][-1]["returned_pass_count"] is None
++            recorder.freeze()
++            audit = _Audit(dict(geometry=geometry), {}, tmp_path)
++            audit.raw = load_json(recorder.directory / "partial-originals.json")
++            assert audit.raw["render_accounting"] == accounting
++            with pytest.raises(ValueError, match="only a lower bound"):
++                audit.render_accounting()
++            assert not audit.source_ok and not audit.horizon_ok
++    finally:
++        owner.close()
+--- before/tests/native_collection_source_graph.py
++++ after/tests/native_collection_source_graph.py
+@@ -18,6 +18,7 @@
+ from cloud_edge_robot_arm.research.native_full_horizon_originals import _Audit
+ from cloud_edge_robot_arm.simulation.models import SensorFrame
+ from cloud_edge_robot_arm.simulation.mujoco.camera import MuJoCoRGBDCamera
++from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+ from tests.test_native_collection_authority import source_recorder
+ 
+ 
+@@ -50,7 +51,26 @@
+         labels = {7: "software_geometry"} if include_instances else {}
+         return frame, ids, labels, (state_hash,) * (3 if include_instances else 2)
+ 
+-    backend._camera = SimpleNamespace(capture_with_instances=render, _capture=render)
++    backend._camera = SimpleNamespace(capture_with_instances=render, _capture=render, close=lambda: None)
++
++
++def install_software_reset_engine(backend):
++    """Substitute engine/model storage only; retain the real RESET wrapper and body."""
++    joints = {"joint1": 0, "finger_left_joint": 7, "finger_right_joint": 8}
++    backend._model.joint = lambda name: SimpleNamespace(id=joints[name], qposadr=[joints[name]])
++    backend._model.jnt_qposadr = list(range(9))
++
++    def reset_data(_model, data):
++        data.time = 0.0
++        for name in ("qpos", "qvel", "act", "ctrl"):
++            getattr(data, name)[:] = 0
++
++    backend._mujoco.mj_resetData = reset_data
++    backend._mujoco.mj_forward = lambda *_args: None
++    backend._set_free_body_pose = lambda *_args: None
++    backend._set_body_mass = lambda *_args: None
++    backend._set_geom_friction = lambda *_args: None
++    backend._update_sensor_frame = MuJoCoPhysicsBackend._update_sensor_frame.__get__(backend)
+ 
+ 
+ def recorded_frame_graph(root):

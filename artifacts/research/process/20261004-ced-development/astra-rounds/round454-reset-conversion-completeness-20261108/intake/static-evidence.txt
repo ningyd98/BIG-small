@@ -1,0 +1,244 @@
+# src/cloud_edge_robot_arm/research/native_full_horizon_recorder.py
+124:     def require_clean_reset(self) -> None:
+125:         """Veto retained RESET source failures before entering the first-step guard."""
+126:         self._require_open()
+127:         if self.failures or self._audit_failures or self.backend.operation_observer_failures:
+128:             raise RuntimeError("reset source has retained observer or audit failure")
+129:         metadata, result = self._reset_metadata, self._reset_result
+130:         operations = self.operational_events
+131:         if (
+132:             self._reset_count != 1
+133:             or not metadata
+134:             or not result
+135:             or self.backend.total_physics_steps != 0
+136:             or self._pending
+137:             or [row["kind"] for row in operations] != ["RESET", "CAPTURE"]
+138:             or any(row["error_type"] or row["bracket"] is None for row in operations)
+139:             or result["physics_state"]["episode_id"] != self.backend._episode_id
+140:             or result["physics_state"]["physics_step"] != 0
+141:             or metadata["config"] != _plain(self.backend._config)
+142:             or metadata["scenario"] != _plain(self.backend._scenario)
+143:             or metadata["asset_hash"] != self._current_asset_hash()
+144:         ):
+145:             raise RuntimeError("reset source is incomplete or inconsistent")
+146:         capture = operations[1]
+147:         aid = capture["acquisition_id"]
+148:         if (
+149:             self._allocated_frames != [aid]
+150:             or set(self.frame_sources) != {aid}
+151:             or aid not in self.capture_receipts
+152:             or self._capture_roles[capture["operation_id"]]["role"]
+153:             != "IMPLICIT_SENSOR_CACHE_UPDATE"
+154:             or self.render_accounting["exact_passes"] != 2
+155:         ):
+156:             raise RuntimeError("reset source lacks its complete two-pass acquisition")
+157:         for name, expected in self.inventory.items():
+158:             raw = (self.directory / name).read_bytes()
+159:             if (
+160:                 len(raw) != expected["bytes"]
+161:                 or hashlib.sha256(raw).hexdigest() != expected["sha256"]
+162:             ):
+163:                 raise RuntimeError("reset source original changed before first step")
+164: 
+165:     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+166:         try:
+167:             self._observer_context.__exit__(exc_type, exc, traceback)
+168:         finally:
+169:             self._open = False
+170: 
+275:         frame = self._frames[-1]
+276:         aid = frame["acquisition_id"]
+277:         payload = frame["observation_payload"]
+278:         aux = self._frame_aux[aid]
+279:         hashes = {}
+280:         encoded = {}
+281:         string_hashes = {}
+282:         if payload is not None:
+283:             for field, filename in ENCODED_FIELDS.items():
+284:                 value = payload.get(field)
+285:                 if value is not None:
+286:                     name = f"frames/{aid}/{filename}"
+287:                     raw = base64.b64decode(value, validate=True)
+288:                     hashes[name] = self._write_blob(name, raw)
+289:                     if base64.b64encode(raw).decode() != value:
+290:                         self._write_blob(f"frames/{aid}/{field}.original", value.encode())
+291:                         raise ValueError("noncanonical encoded field retained but not qualified")
+292:                     encoded[field] = name
+293:                     string_hashes[field] = hashlib.sha256(value.encode()).hexdigest()
+294:         ids = aux.get("instance_ids", ())
+295:         name = f"frames/{aid}/instances.i32"
+296:         hashes[name] = self._write_blob(name, struct.pack(f"<{len(ids)}i", *ids))
+297:         frame["file_hashes"] = hashes
+298:         # The complete metadata and lossless encoded-field map reconstruct exactly
+299:         # the RawV3 frame. Keep only small identity metadata in the live join table.
+300:         metadata = _plain(frame)
+301:         if payload is not None:
+302:             metadata["observation_payload"] = {
+303:                 key: value for key, value in payload.items() if key not in encoded
+304:             }
+305:         source = f"frames/{aid}/source-frame.json"
+306:         self._write_original(
+307:             source,
+308:             dict(
+309:                 frame=metadata,
+310:                 encoded_fields=encoded,
+311:                 capture_source=self._capture_roles[event.operation_id],
+312:                 encoded_string_sha256=string_hashes,
+313:                 observation_payload_sha256=digest(payload),
+314:                 instance_labels=aux.get("instance_labels", {}),
+315:                 instance_count=len(ids),
+316:                 instance_ids_present="instance_ids" in (event.result or {}),
+317:                 instance_labels_present="instance_labels" in (event.result or {}),
+318:                 instances_available=bool(ids),
+319:                 pass_count=len(frame["pass_state_hashes"]),
+320:             ),
+321:         )
+322:         self.frame_sources[aid] = source
+323:         if payload is not None:
+324:             frame["observation_payload"] = {
+325:                 key: payload[key] for key in ("observation_id", "checksum_sha256")
+326:             }
+327:         del self._frame_aux[aid]
+328: 
+329:     def _on_boundary(self, event: BackendOperationBoundary) -> None:
+330:         row: dict[str, Any] | None = None
+331:         try:
+332:             if event.kind == "CONTROL" and event.phase == "END" and event.error_type is None:
+333:                 if event.operation_id in self.control_sources or len(self.control_sources) >= 12961:
+334:                     raise RuntimeError("duplicate or over-budget original CONTROL")
+335:                 if event.result is None or "control_state" not in event.result:
+336:                     raise RuntimeError("original CONTROL result unavailable")
+337:                 self.control_sources[event.operation_id] = dict(
+338:                     operation_id=event.operation_id,
+# src/cloud_edge_robot_arm/vision/raw_recorder_v3.py
+505:                 _KINDS[event.kind],
+506:                 event.physics_step,
+507:                 event.sim_time_s or 0.0,
+508:             )
+509:             return
+510:         operation = self._operations.get(event.operation_id)
+511:         if operation is None or operation["row"] is None:
+512:             return
+513:         row = operation["row"]
+514:         self._close_interval(
+515:             row, f"{event.error_type}: {event.error}" if event.error_type else None
+516:         )
+517:         result = event.result or {}
+518:         if event.kind == "CONTROL" and "control_state" in result:
+519:             payload = _plain(result["control_state"])
+520:             self._controls[payload["physics_step"]] = (row["interval_id"], payload)
+565:     def _record_frame(self, event: BackendOperationBoundary, operation: dict[str, Any]) -> None:
+566:         result = event.result or {}
+567:         self._frame_aux[operation["acquisition_id"]] = {
+568:             "instance_ids": tuple(result.get("instance_ids", ())),
+569:             "instance_labels": _plain(result.get("instance_labels", {})),
+570:         }
+571:         observation = None
+572:         if result.get("sensor_frame") is not None:
+573:             try:
+574:                 observation = observation_from_sensor_frame(
+575:                     _sensor_frame(result["sensor_frame"]), source="mujoco_camera"
+576:                 ).model_dump(mode="json")
+577:             except BaseException as source_error:
+578:                 operation["row"].update(disposition="ABORTED", error=_error(source_error))
+579:         camera_state = operation["parameters"].get("camera_state")
+580:         physics = operation["parameters"].get("physics_state")
+581:         self._frames.append(
+582:             dict(
+583:                 record_seq=self._next_seq(),
+584:                 acquisition_id=operation["acquisition_id"],
+585:                 interval_id=operation["row"]["interval_id"],
+586:                 observation_payload=observation,
+587:                 camera_state_payload=_plain(camera_state) if camera_state else None,
+588:                 joined_physics_observation_hash=_digest(physics) if physics else None,
+589:                 pass_state_hashes=tuple(result.get("pass_state_hashes", ())),
+590:                 file_hashes={},
+591:                 input_role=operation["input_role"],
+592:                 source_acquisition_id=None,
+593:                 transform_payload=None,
+594:                 transform_source_hashes={},
+595:             )
+596:         )
+597:         if observation is not None and operation["input_role"] == "ONLINE":
+598:             self._last_online_id = operation["acquisition_id"]
+599:             span = operation["action"] or self._last_returned_span
+600:             if span is not None:
+601:                 self._add_join(
+602:                     span,
+603:                     self._frames[-1],
+604:                     "DURING_ACTION" if operation["action"] else "AFTER_RETURN",
+605:                 )
+606:                 if operation["action"] is None:
+607:                     self._last_returned_span = None
+608: 
+609:     def capture(self) -> RGBDObservation:
+610:         self._require_open()
+611:         if self._explicit_capture:
+612:             raise RuntimeError("nested acquisition forbidden")
+613:         transform = getattr(self.capture_session, "transform_observation", None)
+614:         self._explicit_capture = True
+615:         self._derived_capture = callable(transform)
+# src/cloud_edge_robot_arm/vision/observations.py
+215: def observation_from_sensor_frame(frame: SensorFrame, *, source: str) -> RGBDObservation:
+216:     if not frame.rgb or not frame.depth or not frame.intrinsics or not frame.camera_to_world:
+217:         raise ValueError("RGBD_CAMERA_DATA_MISSING")
+218:     if frame.captured_at is None:
+219:         raise ValueError("captured_at must record sensor acquisition time")
+220:     if (
+221:         type(frame.width) is not int
+222:         or type(frame.height) is not int
+223:         or not 1 <= frame.width <= 1280
+224:         or not 1 <= frame.height <= 720
+225:     ):
+226:         raise ValueError("RGB-D dimensions must be integers within 1280 x 720")
+227:     pixel_count = frame.width * frame.height
+228:     if len(frame.rgb) != pixel_count * 3:
+229:         raise ValueError("RGB size must equal width * height * 3")
+230:     if len(frame.depth) != pixel_count:
+231:         raise ValueError("depth size must equal width * height")
+232:     image = Image.frombytes("RGB", (frame.width, frame.height), frame.rgb)
+233:     output = io.BytesIO()
+234:     image.save(output, format="PNG")
+235:     return RGBDObservation.model_validate(
+236:         {
+237:             "frame_id": frame.frame_id,
+238:             "captured_at": frame.captured_at,
+239:             "sim_time_s": frame.sim_time_s,
+240:             "width": frame.width,
+# src/cloud_edge_robot_arm/research/native_collection_application.py
+1170:             live.progress["capture_entered"] = True
+1171:             recorder = NativeFullHorizonRecorder(
+1172:                 live.backend,
+1173:                 live.capture,
+1174:                 live.executor,
+1175:                 directory=live.output / "originals",
+1176:                 source_root=ROOT,
+1177:                 source_hashes=self.protocol["source_hashes"],
+1178:                 application=self,
+1179:                 owner=live.owner,
+1180:                 _token=recorder_issuer,
+1181:             )
+1182:             live.recorder = recorder
+1183:             phase = "recorder_entry"
+1184:             recorder.__enter__()
+1185:             live.progress["recorder_entered"] = True
+1186:             phase = "collection_body"
+1187:             live.backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=job.seed))
+1188:             recorder.require_clean_reset()
+1189:             with _collection_guard(live, self._guard, self.policy["guard_event_limit"]):
+1190:                 with live.backend.capture_each_physics_step(
+1191:                     max_captures=self.protocol["physical_budget"]
+1192:                 ):
+1193:                     with recorder.purpose("SETTLE"):
+1194:                         live.backend.step(120)
+1195:                     observation = recorder.capture()
+1196:                     live.tracker, live.grounding_evidence = _record_bootstrap_tracker(
+1197:                         live,
+1198:                         observation,
+1199:                         self.protocol,
+1200:                         purpose="BOOTSTRAP_B",
+1201:                         name="tracker-clock/bootstrap.json",
+1202:                         consume_capture=self._consume_capture,
+1203:                     )
+1204:                     current_job = live.repository.get_job(job.job_id)
+1205:                     lease = read_visual_worker_lease(

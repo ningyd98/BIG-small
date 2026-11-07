@@ -284,6 +284,12 @@ class MuJoCoPhysicsBackend:
         self._guard_stop_context = threading.local()
         self._guard_observer_failure: BaseException | None = None
         self._execution_guard_events: list[dict[str, Any]] = []
+        self._execution_guard_event_limit = 1024
+        self._step_capture_used = False
+        self._step_capture_active = False
+        self._step_capture_limit = 0
+        self._step_capture_count = 0
+        self._step_capture_observer: Callable[[BackendOperationBoundary], None] | None = None
 
     @property
     def execution_guard_events(self) -> tuple[Mapping[str, Any], ...]:
@@ -291,11 +297,13 @@ class MuJoCoPhysicsBackend:
 
     @contextmanager
     def enforce_execution_guard(
-        self, callback: Callable[[ExecutionGuardBoundaryV1], None]
+        self, callback: Callable[[ExecutionGuardBoundaryV1], None], *, event_limit: int = 1024
     ) -> Iterator[None]:
         """Install one synchronous guard for this backend's final execution session."""
         self._require_not_in_observer_callback()
         self._require_loaded()
+        if type(event_limit) is not int or not 1024 <= event_limit <= 500_000:
+            raise ValueError("exact guard event limit in [1024, 500000] required")
         if self._execution_guard_used:
             raise RuntimeError("execution guard session already used or closed")
         if not self._episode_id or not callable(callback):
@@ -303,6 +311,7 @@ class MuJoCoPhysicsBackend:
         if getattr(callback, "bound_backend", self) is not self:
             raise RuntimeError("execution guard belongs to another backend")
         self._execution_guard_used = True
+        self._execution_guard_event_limit = event_limit
         self._execution_guard_thread = threading.get_ident()
         self._execution_guard = callback
         try:
@@ -314,6 +323,51 @@ class MuJoCoPhysicsBackend:
             self._close_execution_guard(None)
         finally:
             self._execution_guard = None
+
+    @contextmanager
+    def capture_each_physics_step(self, *, max_captures: int) -> Iterator[None]:
+        """One owner-thread sampler; render after each effect, never advance physics."""
+        self._require_not_in_observer_callback()
+        self._require_loaded()
+        if type(max_captures) is not int or not 1 <= max_captures <= 32768:
+            raise ValueError("exact per-step capture limit in [1, 32768] required")
+        if (
+            self._step_capture_used
+            or self._execution_guard is None
+            or self._execution_guard_closed
+            or threading.get_ident() != self._execution_guard_thread
+            or self._operation_observer is None
+        ):
+            raise RuntimeError("unused sampler, active owner-thread guard and recorder required")
+        self._step_capture_used = self._step_capture_active = True
+        self._step_capture_limit = max_captures
+        self._step_capture_observer = self._operation_observer
+        try:
+            with self._execution_failure_scope():
+                yield
+        finally:
+            self._step_capture_active = False
+
+    def _check_step_capture(self) -> None:
+        if not self._step_capture_active:
+            return
+        if (
+            self._operation_observer is not self._step_capture_observer
+            or threading.get_ident() != self._execution_guard_thread
+        ):
+            raise RuntimeError("original per-step recorder or owner thread changed")
+        if self._step_capture_count >= self._step_capture_limit:
+            raise RuntimeError("registered per-step capture limit exhausted")
+
+    def _capture_completed_physics_step(self) -> None:
+        if not self._step_capture_active:
+            return
+        self._check_step_capture()
+        # Allocate before rendering so a partial/failed acquisition consumes its slot.
+        self._step_capture_count += 1
+        self._check_execution_guard("CAPTURE", "BEFORE")
+        self.capture_sensor_frame_with_instances()
+        self._check_execution_guard("CAPTURE", "AFTER")
 
     @contextmanager
     def _execution_failure_scope(self, *, safe: bool = False) -> Iterator[None]:
@@ -360,7 +414,7 @@ class MuJoCoPhysicsBackend:
             if primary is not None
             else {"kind": "CLOSED", "physics_step": self._total_physics_steps}
         )
-        if len(self._execution_guard_events) < 1024:
+        if len(self._execution_guard_events) < self._execution_guard_event_limit:
             self._execution_guard_events.append(row)
         else:
             self._execution_guard_events[-1]["closure"] = row
@@ -379,7 +433,7 @@ class MuJoCoPhysicsBackend:
             raise RuntimeError("execution guard session is closed")
         if threading.get_ident() != self._execution_guard_thread:
             raise RuntimeError("execution guard belongs to another thread")
-        if len(self._execution_guard_events) >= 1023:
+        if len(self._execution_guard_events) >= self._execution_guard_event_limit - 1:
             raise RuntimeError("execution guard event limit exceeded")
         boundary = ExecutionGuardBoundaryV1(
             kind,
@@ -743,6 +797,7 @@ class MuJoCoPhysicsBackend:
     def step(self, steps: int = 1) -> SimulationStepResult:
         self._require_not_in_observer_callback()
         self._require_loaded()
+        self._check_step_capture()
         assert self._mujoco is not None and self._model is not None and self._data is not None
         if steps < 1:
             raise ValueError("steps must be positive")
@@ -750,6 +805,7 @@ class MuJoCoPhysicsBackend:
         executed = 0
         if self._operation_observer is not None:
             for _ in range(steps):
+                self._check_step_capture()
                 self._apply_control()
                 self._emit_actuator_observation()
                 self._advance_observed_physics_step()
@@ -764,6 +820,7 @@ class MuJoCoPhysicsBackend:
                         raise
                     finally:
                         self._in_observer_callback = False
+                self._capture_completed_physics_step()
         elif observer is None:
             for _ in range(steps):
                 # Emergency stop blocks new commands but actively holds joints.

@@ -1,0 +1,1000 @@
+--- before/src/cloud_edge_robot_arm/research/native_full_horizon_originals.py
++++ after/src/cloud_edge_robot_arm/research/native_full_horizon_originals.py
+@@ -61,6 +61,10 @@
+     original_rgbd_fingerprint,
+     reconstruct_truth_endpoint,
+ )
++from cloud_edge_robot_arm.research.native_source_effect_graph import (
++    validate_native_command_controls,
++    validate_native_source_effect_graph,
++)
+ from cloud_edge_robot_arm.research.raw_episode_v3 import (
+     ActionFrameJoinV3,
+     ClockDescriptorV3,
+@@ -479,6 +483,12 @@
+             commands == list(range(1, len(commands) + 1)), "missing or reordered original command"
+         )
+         self.fingerprints.add("episode:" + self.states[0]["episode_id"])
++        validate_native_command_controls(
++            raw,
++            self.intervals,
++            self.states,
++            expected_delay_steps=0 if self.identity is not None else None,
++        )
+ 
+     def operations(self) -> None:
+         rows = self.raw["operational_events"]
+@@ -516,6 +526,16 @@
+             and guards[-1]["kind"] == "CLOSED"
+             and not any("error" in r or "stop_error" in r for r in guards),
+             "source guard failed or did not close",
++        )
++        validate_native_source_effect_graph(
++            self.raw,
++            self.intervals,
++            self.states,
++            {aid: self.read(name) for aid, name in self.raw["frame_sources"].items()},
++            self.read("active-checks.json"),
++            domain=self.domain,
++            deadline=self.deadline,
++            lease_id=self.identity.owner_identity.lease_id,
+         )
+ 
+     def frame(self, aid: str) -> tuple[Any, Any, Any]:
+--- before/src/cloud_edge_robot_arm/research/native_full_horizon_recorder.py
++++ after/src/cloud_edge_robot_arm/research/native_full_horizon_recorder.py
+@@ -54,6 +54,7 @@
+         self._render_attempts: dict[int, dict[str, Any]] = {}
+         self._render_overflow_count = 0
+         self._first_unrecorded_capture: int | None = None
++        self.control_sources: dict[int, dict[str, Any]] = {}
+         self._published = False
+         self._sample_slot = 0
+         self._capture_roles: dict[int, dict[str, Any]] = {}
+@@ -155,7 +156,10 @@
+             raise RuntimeError("reset source lacks its complete two-pass acquisition")
+         for name, expected in self.inventory.items():
+             raw = (self.directory / name).read_bytes()
+-            if len(raw) != expected["bytes"] or hashlib.sha256(raw).hexdigest() != expected["sha256"]:
++            if (
++                len(raw) != expected["bytes"]
++                or hashlib.sha256(raw).hexdigest() != expected["sha256"]
++            ):
+                 raise RuntimeError("reset source original changed before first step")
+ 
+     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+@@ -325,6 +329,18 @@
+     def _on_boundary(self, event: BackendOperationBoundary) -> None:
+         row: dict[str, Any] | None = None
+         try:
++            if event.kind == "CONTROL" and event.phase == "END" and event.error_type is None:
++                if event.operation_id in self.control_sources or len(self.control_sources) >= 12961:
++                    raise RuntimeError("duplicate or over-budget original CONTROL")
++                if event.result is None or "control_state" not in event.result:
++                    raise RuntimeError("original CONTROL result unavailable")
++                self.control_sources[event.operation_id] = dict(
++                    operation_id=event.operation_id,
++                    interval_id=f"operation-{event.operation_id}",
++                    episode_id=event.episode_id,
++                    physics_step=event.physics_step,
++                    control_state=_plain(event.result["control_state"]),
++                )
+             if event.kind == "CAPTURE":
+                 if event.phase == "BEGIN":
+                     self._begin_render_attempt(event)
+@@ -477,6 +493,7 @@
+                 intervals=self._intervals,
+                 physics=self._physics,
+                 commands=self._commands,
++                control_sources=list(self.control_sources.values()),
+                 actions=self._actions,
+                 joins=self._joins,
+                 frame_sources=self.frame_sources,
+--- before/src/cloud_edge_robot_arm/research/native_source_effect_graph.py
++++ after/src/cloud_edge_robot_arm/research/native_source_effect_graph.py
+@@ -0,0 +1,548 @@
++"""Pure source/effect reconstruction; no backend, execution or qualification authority."""
++
++from __future__ import annotations
++
++import math
++from typing import Any
++
++from cloud_edge_robot_arm.research.native_calibration_collection import canonical, detached
++
++
++def _need(value: Any, reason: str) -> None:
++    if not value:
++        raise ValueError("source effect graph: " + reason)
++
++
++def _same(left: Any, right: Any, reason: str) -> None:
++    _need(canonical(detached(left)) == canonical(detached(right)), reason)
++
++
++def _vector(value: Any, size: int, name: str) -> list[float]:
++    _need(isinstance(value, (list, tuple)) and len(value) == size, name + " dimension")
++    _need(all(type(v) in (float, int) and math.isfinite(v) for v in value), name + " finite")
++    return [float(v) for v in value]
++
++
++def _op(interval: str) -> int:
++    prefix, number = interval.split("-", 1)
++    _need(prefix == "operation" and number.isdecimal(), "operation interval identity")
++    return int(number)
++
++
++def _interval(row: dict[str, Any], kind: str, start: int, end: int) -> None:
++    _need(
++        row["kind"] == kind
++        and row["start_step"] == start
++        and row["end_step"] == end
++        and row["disposition"] == "COMPLETE"
++        and row["error"] is None,
++        "interval kind/step/completion",
++    )
++
++
++def validate_native_command_controls(
++    raw: dict[str, Any],
++    intervals: dict[str, Any],
++    states: dict[int, Any],
++    *,
++    expected_delay_steps: int | None = None,
++) -> None:
++    """Replay every command and original CONTROL, including final nonphysics STOP control."""
++    reset = raw["reset"]
++    delay = reset["actuator_delay_steps"]
++    _need(type(delay) is int and delay >= 0, "actuator delay")
++    if expected_delay_steps is not None:
++        _need(delay == expected_delay_steps, "unregistered actuator delay")
++    _need(
++        reset["physics_dt_s"] == raw["reset_metadata"]["config"]["physics_dt_s"] == 1 / 240,
++        "reset time grid",
++    )
++    episode = states[0]["episode_id"]
++    arm = _vector(reset["initial_controller_targets"]["joints_rad"], 7, "initial arm")
++    fingers = _vector(reset["initial_controller_targets"]["fingers_m"], 2, "initial fingers")
++    _same(arm, _vector(states[0]["joint_positions_rad"], 7, "reset joints"), "initial arm target")
++    _same(fingers, [0.039, 0.039], "initial finger target")
++    controls = raw["control_sources"]
++    commands = raw["commands"]
++    n = raw["total_physics_steps"]
++    _need(type(n) is int and n >= 1 and set(states) == set(range(n + 1)), "physical denominator")
++    _need(len(controls) == n + 1 <= 12961, "one original CONTROL per physics plus STOP")
++    indexed = {r["interval_id"]: r for r in controls}
++    _need(len(indexed) == len(controls), "duplicate original CONTROL")
++    used = []
++    for row in raw["physics"]:
++        number = row["physics_step"]
++        control = indexed[row["control_interval_id"]]
++        _same(row["control_payload"], control["control_state"], "physics CONTROL payload")
++        _interval(intervals[control["interval_id"]], "CONTROL_APPLY", number - 1, number - 1)
++        _need(control["physics_step"] == number - 1, "physics CONTROL current step")
++        _need(
++            _op(row["control_interval_id"]) < _op(row["physics_interval_id"]),
++            "CONTROL must precede PHYSICS",
++        )
++        used.append(row["control_interval_id"])
++    _need(len(set(used)) == n, "reused CONTROL")
++    _need(
++        [c["command_seq"] for c in commands] == list(range(1, len(commands) + 1)),
++        "command sequence",
++    )
++    timeline = [(_op(c["interval_id"]), "COMMAND", c) for c in commands]
++    timeline += [(c["operation_id"], "CONTROL", c) for c in controls]
++    _need(len({row[0] for row in timeline}) == len(timeline), "effect operation reused")
++    pending: list[tuple[int, list[float]]] = []
++    actions = {row["span_id"]: row for row in raw["actions"]}
++    stopped = False
++    for operation, kind, row in sorted(timeline):
++        if kind == "COMMAND":
++            value = row["command_payload"]
++            step = value["physics_step"]
++            _need(step in states and value["episode_id"] == episode, "command identity")
++            _need(value["command_seq"] == row["command_seq"], "command payload sequence")
++            _need(
++                math.isclose(value["sim_time_s"], states[step]["sim_time_s"], abs_tol=1e-9),
++                "command current time",
++            )
++            _interval(intervals[row["interval_id"]], "COMMAND", step, step)
++            parent = intervals[row["parent_interval_id"]]
++            _need(parent["start_step"] <= step <= parent["end_step"], "command parent range")
++            child = intervals[row["interval_id"]]
++            _need(
++                parent["start"][3] <= child["start"][1] and child["end"][3] <= parent["end"][1],
++                "command parent containment",
++            )
++            action = row["owner_action_span_id"]
++            if action is not None:
++                _need(
++                    action in actions
++                    and actions[action]["interval_id"] == row["parent_interval_id"]
++                    and parent["kind"] == "EXECUTOR_ATTEMPT"
++                    and actions[action]["command_seq_start"]
++                    <= row["command_seq"]
++                    < actions[action]["command_seq_end"],
++                    "command action parent",
++                )
++            else:
++                _need(
++                    parent["kind"] in {"SETTLE", "WAIT", "VERIFY_ADVANCE", "HOLD", "TERMINATION"},
++                    "command purpose parent",
++                )
++            command = value["type"]
++            _need(
++                command in {"joint_target", "gripper", "hold_current_joints", "emergency_stop"},
++                "unknown command",
++            )
++            _need(
++                type(value["accepted"]) is bool and type(value["after_emergency_stop"]) is bool,
++                "command boolean flags",
++            )
++            _need(
++                value["after_emergency_stop"] == (stopped and command != "emergency_stop"),
++                "command stop flag",
++            )
++            accepted = value["accepted"]
++            _need(
++                accepted == (not stopped or command in {"hold_current_joints", "emergency_stop"}),
++                "command acceptance/stop latch",
++            )
++            effect = step + 1 + (delay if command == "joint_target" else 0)
++            _need(
++                row["effective_from_step"] == (effect if accepted else None),
++                "command effective step",
++            )
++            if not accepted:
++                _need(value["reason"] == "emergency_stop", "rejected command reason")
++                continue
++            if command == "joint_target":
++                _need(parent["kind"] != "HOLD", "new joint target inside HOLD")
++                requested = _vector(value["target_positions_rad"], 7, "joint request")
++                clipped = [max(-2.8, min(2.8, v)) for v in requested]
++                _same(
++                    _vector(value["applied_target_positions_rad"], 7, "joint applied"),
++                    clipped,
++                    "joint clipping",
++                )
++                _need(
++                    value["reason"]
++                    == (f"queued_until_physics_step={step + delay}" if delay else ""),
++                    "joint queue availability",
++                )
++                if delay:
++                    pending.append((step + delay, clipped))
++                else:
++                    arm = clipped
++            elif command == "hold_current_joints":
++                arm = _vector(states[step]["joint_positions_rad"], 7, "hold measured joints")
++                _same(value["target_positions_rad"], arm, "hold target must be measured")
++                _same(value["applied_target_positions_rad"], arm, "hold applied target")
++                _need(value["reason"] == "motion_terminated", "hold reason")
++                pending.clear()
++            elif command == "gripper":
++                _need(
++                    parent["kind"] != "HOLD" and type(value["target_open"]) is bool,
++                    "gripper target/parent",
++                )
++                _need(value["reason"] == "", "gripper reason")
++                fingers = [0.039, 0.039] if value["target_open"] else [0.0, 0.0]
++            else:
++                _need(value["reason"] == "", "STOP reason")
++                stopped = True
++        else:
++            step = row["physics_step"]
++            _need(step in states and row["episode_id"] == episode, "CONTROL identity")
++            _need(operation == _op(row["interval_id"]), "CONTROL operation identity")
++            _interval(intervals[row["interval_id"]], "CONTROL_APPLY", step, step)
++            while pending and pending[0][0] <= step:
++                _, arm = pending.pop(0)
++            value = row["control_state"]
++            _need(
++                value["episode_id"] == episode and value["physics_step"] == step + 1,
++                "CONTROL target step identity",
++            )
++            _need(
++                math.isclose(value["sim_time_s"], states[step]["sim_time_s"], abs_tol=1e-9),
++                "CONTROL current time",
++            )
++            _same(
++                _vector(value["applied_joint_targets_rad"], 7, "CONTROL arm"),
++                arm,
++                "applied arm target replay",
++            )
++            _same(
++                _vector(value["finger_control_targets_m"], 2, "CONTROL fingers"),
++                fingers,
++                "applied gripper target replay",
++            )
++            current = _vector(value["pre_joint_positions_rad"], 7, "CONTROL pre joints")
++            _same(
++                current,
++                _vector(states[step]["joint_positions_rad"], 7, "state joints"),
++                "CONTROL previous physical joints",
++            )
++            biases = _vector(value["pre_gravity_bias_nm"], 7, "bias")
++            gains = _vector(value["actuator_gains"], 7, "gain")
++            outputs = _vector(value["control_rad"], 7, "control output")
++            ranges = value["actuator_ctrl_ranges"]
++            _need(len(ranges) == 7, "control range dimension")
++            for i in range(7):
++                lo, hi = _vector(ranges[i], 2, "actuator range")
++                _need(lo < hi and gains[i] > 0, "actuator gain/range")
++                expected = min(
++                    hi,
++                    max(
++                        lo,
++                        current[i]
++                        + min(0.1, max(-0.1, arm[i] - current[i]))
++                        + biases[i] / gains[i],
++                    ),
++                )
++                _need(
++                    math.isclose(outputs[i], expected, rel_tol=0, abs_tol=1e-9), "control equation"
++                )
++    _need(stopped, "missing STOP command")
++
++
++def validate_native_source_effect_graph(
++    raw: dict[str, Any],
++    intervals: dict[str, Any],
++    states: dict[int, Any],
++    frame_metadata: dict[str, Any],
++    active_checks: list[Any],
++    *,
++    domain: Any,
++    deadline: int,
++    lease_id: str,
++) -> dict[str, Any]:
++    """Match required effects, exact backend guard grammar and the real safe termination."""
++    validate_native_command_controls(raw, intervals, states)
++    rows = raw["operational_events"]
++    events = {r["operation_id"]: r for r in rows}
++    _need([r["operation_id"] for r in rows] == list(range(1, len(rows) + 1)), "operation IDs")
++    _need([r["sequence"] for r in rows] == list(range(1, len(rows) + 1)), "operation sequence")
++    n, episode = raw["total_physics_steps"], states[0]["episode_id"]
++    _need(raw["reset_count"] == 1, "one RESET required")
++    expected: dict[int, tuple[str, int, int]] = {1: ("RESET", 0, 0)}
++
++    def add(number: int, kind: str, start: int, end: int) -> None:
++        _need(number not in expected, "primary effect operation reused")
++        expected[number] = (kind, start, end)
++
++    for row in raw["control_sources"]:
++        add(row["operation_id"], "CONTROL", row["physics_step"], row["physics_step"])
++    for row in raw["physics"]:
++        add(
++            _op(row["physics_interval_id"]), "PHYSICS", row["physics_step"] - 1, row["physics_step"]
++        )
++    commands = {_op(c["interval_id"]): c for c in raw["commands"]}
++    _need(len(commands) == len(raw["commands"]), "command operation duplicate")
++    for number, row in commands.items():
++        step = row["command_payload"]["physics_step"]
++        add(number, "COMMAND", step, step)
++    allocated = raw["allocated_frames"]
++    _need(
++        len(set(allocated)) == len(allocated)
++        and set(allocated) == set(raw["frame_sources"]) == set(frame_metadata),
++        "allocated frame coverage",
++    )
++    roles = raw["capture_source_roles"]
++    _need(len(roles) == len(allocated), "capture role coverage")
++    for aid, metadata in frame_metadata.items():
++        frame, source = metadata["frame"], metadata["capture_source"]
++        number, step = source["operation_id"], source["physics_step"]
++        _need(
++            frame["acquisition_id"] == aid and _op(frame["interval_id"]) == number,
++            "capture primary identity",
++        )
++        _need(frame["source_acquisition_id"] is None, "transformed capture")
++        _same(source, roles[str(number)], "capture role original")
++        _need(
++            source["role"]
++            in {
++                "IMPLICIT_SENSOR_CACHE_UPDATE",
++                "REGISTERED_PER_PHYSICS_STEP",
++                "REGISTERED_ACTION_BOUNDARY",
++            },
++            "capture role",
++        )
++        add(number, "CAPTURE", step, step)
++        _need(events[number]["acquisition_id"] == aid, "capture allocation operation")
++    _need(set(expected) == set(events), "required primary operation coverage")
++    kinds = {
++        "CONTROL": "CONTROL_APPLY",
++        "PHYSICS": "PHYSICS_STEP",
++        "COMMAND": "COMMAND",
++        "CAPTURE": "ACQUISITION",
++    }
++    operation_intervals = {key for key, row in intervals.items() if row["kind"] in kinds.values()}
++    _need(
++        operation_intervals == {f"operation-{i}" for i in expected if i != 1},
++        "operation interval coverage",
++    )
++    for number, (kind, start, end) in expected.items():
++        event = events[number]
++        _need(
++            (event["kind"], event["begin_step"], event["end_step"]) == (kind, start, end),
++            "operation effect kind/step",
++        )
++        _need(event["error_type"] is None and event["error"] is None, "failed operation")
++        _need(
++            event["episode_id"] == episode or number == 1 and event["episode_id"] is None,
++            "operation episode",
++        )
++        if number != 1:
++            _interval(intervals[f"operation-{number}"], kinds[kind], start, end)
++        bracket = event["bracket"]
++        _same(bracket["domain"], domain, "operation clock domain")
++        _same(bracket["event_identity"], event["token"], "operation event token")
++        _need(
++            type(bracket["lower_ns"]) is int
++            and type(bracket["upper_ns"]) is int
++            and 0 <= bracket["lower_ns"] <= bracket["upper_ns"] < deadline,
++            "operation deadline",
++        )
++
++    tail = raw["commands"][-2:]
++    _need(
++        len(tail) == 2
++        and [c["command_payload"]["type"] for c in tail]
++        == ["hold_current_joints", "emergency_stop"],
++        "real hold then STOP required",
++    )
++    hold, stop = (_op(c["interval_id"]) for c in tail)
++    terminal_control = max(events)
++    _need(
++        (hold, stop, terminal_control) == (len(events) - 2, len(events) - 1, len(events))
++        and events[terminal_control]["kind"] == "CONTROL",
++        "final STOP internal CONTROL",
++    )
++    _need(tail[0]["parent_interval_id"] == tail[1]["parent_interval_id"], "termination parent")
++    for row in tail:
++        _interval(intervals[row["parent_interval_id"]], "TERMINATION", n, n)
++        _need(
++            row["owner_action_span_id"] is None
++            and row["command_payload"]["accepted"] is True
++            and row["command_payload"]["physics_step"] == n,
++            "termination command source",
++        )
++    extra = set(c["interval_id"] for c in raw["control_sources"]) - {
++        r["control_interval_id"] for r in raw["physics"]
++    }
++    _need(extra == {f"operation-{terminal_control}"}, "unmatched STOP CONTROL")
++    ledger = raw["backend_operation_ledger"]
++    stack: list[int] = []
++    seen: set[tuple[int, str]] = set()
++    children: dict[int, list[int]] = {}
++    begun: list[int] = []
++    last_boundary = 0
++    for row in ledger:
++        number, phase = row["operation_id"], row["phase"]
++        _need(
++            number in events and phase in {"BEGIN", "END"} and (number, phase) not in seen,
++            "ledger operation duplicate/orphan",
++        )
++        seen.add((number, phase))
++        event = events[number]
++        boundary = event["bracket"]["lower_ns" if phase == "BEGIN" else "upper_ns"]
++        _need(boundary >= last_boundary, "ledger original clock order")
++        last_boundary = boundary
++        _need(
++            row["kind"] == event["kind"] and row["error_type"] is None and row["error"] is None,
++            "ledger effect/error",
++        )
++        _need(
++            row["physics_step"] == event["begin_step" if phase == "BEGIN" else "end_step"],
++            "ledger physical step",
++        )
++        _need(
++            row["episode_id"] == (event["episode_id"] if phase == "BEGIN" else episode),
++            "ledger episode",
++        )
++        if phase == "BEGIN":
++            begun.append(number)
++            if stack:
++                parent = stack[-1]
++                children.setdefault(parent, []).append(number)
++                _need(
++                    events[parent]["bracket"]["lower_ns"] <= event["bracket"]["lower_ns"]
++                    and event["bracket"]["upper_ns"] <= events[parent]["bracket"]["upper_ns"],
++                    "nested operation clock order",
++                )
++            stack.append(number)
++        else:
++            _need(bool(stack) and stack.pop() == number, "operation nesting/closure")
++    _need(
++        not stack and seen == {(number, phase) for number in events for phase in ("BEGIN", "END")},
++        "ledger required coverage",
++    )
++    _need(begun == list(events), "ledger BEGIN order")
++    _same(
++        children, {1: [2], stop: [terminal_control]}, "only RESET capture and STOP control may nest"
++    )
++    _need(
++        roles["2"]["role"] == "IMPLICIT_SENSOR_CACHE_UPDATE" and roles["2"]["physics_step"] == 0,
++        "RESET implicit acquisition",
++    )
++
++    # Emit the exact source grammar, preserving duplicate PHYSICS checkpoints.
++    checkpoints: list[tuple[dict[str, Any], int, int]] = []
++    prefix_end: dict[int, int] = {0: 0}
++    for number, event in events.items():
++        prefix_end[number] = max(prefix_end[number - 1], event["bracket"]["upper_ns"])
++
++    def emit(kind: str, phase: str, step: int, number: int, lo: int, hi: int) -> None:
++        checkpoints.append(
++            (
++                dict(
++                    kind=kind,
++                    phase=phase,
++                    episode_id=episode,
++                    physics_step=step,
++                    operation_id=number,
++                ),
++                lo,
++                hi,
++            )
++        )
++
++    def inside(kind: str, phase: str, step: int, number: int) -> None:
++        bracket = events[number]["bracket"]
++        emit(kind, phase, step, number, bracket["lower_ns"], bracket["upper_ns"])
++
++    def after(kind: str, phase: str, step: int, number: int) -> None:
++        hi = events[number + 1]["bracket"]["lower_ns"] if number + 1 in events else deadline
++        emit(kind, phase, step, number, events[number]["bracket"]["upper_ns"], hi)
++
++    in_step = False
++    sampled: list[int] = []
++    for number, event in events.items():
++        kind, start, end = event["kind"], event["begin_step"], event["end_step"]
++        if number in {1, 2, hold, stop, terminal_control}:
++            continue
++        if kind == "COMMAND":
++            _need(not in_step, "command inside backend step call")
++            # Safe explicit hold has no ordinary guard, as in the original backend.
++            if commands[number]["command_payload"]["type"] == "hold_current_joints":
++                continue
++            _need(commands[number]["command_payload"]["type"] != "emergency_stop", "early STOP")
++            inside(kind, "BEFORE", start, number)
++            inside(kind, "AFTER", end, number)
++            after("RETURN", "AFTER", end, number)
++        elif kind == "CONTROL":
++            if not in_step:
++                emit(
++                    "RETURN",
++                    "BEFORE",
++                    start,
++                    number - 1,
++                    prefix_end[number - 1],
++                    event["bracket"]["lower_ns"],
++                )
++                in_step = True
++            _need(events[number + 1]["kind"] == "PHYSICS", "CONTROL lacks following PHYSICS")
++            inside(kind, "BEFORE", start, number)
++            inside(kind, "AFTER", end, number)
++            after("RETURN", "AFTER", end, number)
++        elif kind == "PHYSICS":
++            _need(in_step and events[number - 1]["kind"] == "CONTROL", "PHYSICS grouping")
++            for _ in range(2):
++                inside(kind, "BEFORE", start, number)
++            for _ in range(2):
++                inside(kind, "AFTER", end, number)
++            after("RETURN", "AFTER", end, number)
++            _need(
++                roles[str(number + 1)]["role"] == "REGISTERED_PER_PHYSICS_STEP",
++                "PHYSICS sampler missing",
++            )
++        else:
++            role = roles[str(number)]
++            if role["role"] == "REGISTERED_PER_PHYSICS_STEP":
++                _need(
++                    in_step
++                    and events[number - 1]["kind"] == "PHYSICS"
++                    and role["sample_slot"] == end,
++                    "per-step capture slot",
++                )
++                after("CAPTURE", "BEFORE", end, number - 1)
++                after("CAPTURE", "AFTER", end, number)
++                sampled.append(end)
++            elif role["role"] == "IMPLICIT_SENSOR_CACHE_UPDATE":
++                _need(in_step, "implicit step tail without step")
++                after("RETURN", "AFTER", end, number)
++                in_step = False
++            else:
++                _need(not in_step, "boundary capture inside step")
++    _need(not in_step and sampled == list(range(1, n + 1)), "complete sampler/step schedule")
++    guards = raw["guard_events"]
++    _need(guards and guards[-1] == {"kind": "CLOSED", "physics_step": n}, "normal guard close")
++    _need(
++        len(guards) - 1 == len(active_checks) == len(checkpoints) > 0, "guard/active-check coverage"
++    )
++    previous = 0
++    for index, (guard, check, expected_check) in enumerate(
++        zip(guards[:-1], active_checks, checkpoints, strict=True), 1
++    ):
++        checkpoint, lo, hi = expected_check
++        _same(guard, dict(checkpoint, sequence=index, outcome="ALLOWED"), "guard exact schedule")
++        _same(check["checkpoint"], checkpoint, "active checkpoint")
++        _need(
++            check["step"] == checkpoint["physics_step"] and check["lease_id"] == lease_id,
++            "active owner/step",
++        )
++        current = check["current"]
++        _same(current["domain"], domain, "active clock domain")
++        lower, upper = current["lower_ns"], current["upper_ns"]
++        _need(
++            type(lower) is int
++            and type(upper) is int
++            and max(previous, lo) <= lower <= upper <= hi
++            and upper < deadline,
++            "guard operational timing/order",
++        )
++        previous = upper
++    return dict(
++        evidence_scope="READ_ONLY_SOURCE_EFFECT_GRAPH",
++        physics_steps=n,
++        control_count=len(raw["control_sources"]),
++        legacy_utc_mapping="UNAVAILABLE",
++        native_qualification="UNKNOWN",
++        execution_admitted=False,
++    )
+--- before/tests/native_collection_source_graph.py
++++ after/tests/native_collection_source_graph.py
+@@ -14,11 +14,17 @@
+     digest,
+     load_json,
+ )
++from cloud_edge_robot_arm.research.native_collection_application import _collection_guard
+ from cloud_edge_robot_arm.research.native_collection_grounding import geometry_registration
+ from cloud_edge_robot_arm.research.native_full_horizon_originals import _Audit
+-from cloud_edge_robot_arm.simulation.models import SensorFrame
++from cloud_edge_robot_arm.simulation.models import (
++    GripperCommand,
++    JointCommand,
++    PhysicalScenarioConfig,
++    SensorFrame,
++)
++from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+ from cloud_edge_robot_arm.simulation.mujoco.camera import MuJoCoRGBDCamera
+-from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+ from tests.test_native_collection_authority import source_recorder
+ 
+ 
+@@ -51,7 +57,9 @@
+         labels = {7: "software_geometry"} if include_instances else {}
+         return frame, ids, labels, (state_hash,) * (3 if include_instances else 2)
+ 
+-    backend._camera = SimpleNamespace(capture_with_instances=render, _capture=render, close=lambda: None)
++    backend._camera = SimpleNamespace(
++        capture_with_instances=render, _capture=render, close=lambda: None
++    )
+ 
+ 
+ def install_software_reset_engine(backend):
+@@ -124,3 +132,79 @@
+     manifest["original_bytes"] = sum(row["bytes"] for row in manifest["files"].values())
+     manifest["inventory_sha256"] = digest(manifest["files"])
+     write_software_json(directory / "inventory.json", manifest)
++
++
++def recorded_effect_graph(root):
++    """Short real dispatch/guard graph; only engine and camera are SOFTWARE_ONLY."""
++    recorder, backend, capture, owner, _ = source_recorder(root)
++    geometry = geometry_registration()
++    install_original_shape_camera(backend, geometry)
++    install_software_reset_engine(backend)
++    backend._episode_id = None
++    backend._actuator_delay_steps = 2
++    origin = owner.begin_event("SOFTWARE_ONLY")
++    owner.mark_event(origin)
++    started = owner.end_event(origin)
++    checks = []
++    lease_id = "SOFTWARE_ONLY-lease"
++    live = SimpleNamespace(backend=backend, recorder=recorder, failures=[], progress={})
++
++    def guard(checkpoint):
++        checks.append(
++            dict(
++                checkpoint=detached(checkpoint),
++                step=backend.total_physics_steps,
++                current=detached(owner.read_current(after=origin)),
++                lease_id=lease_id,
++            )
++        )
++
++    try:
++        with capture, recorder:
++            backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=0))
++            recorder.require_clean_reset()
++            with _collection_guard(live, guard, 1024):
++                with backend.capture_each_physics_step(max_captures=16):
++                    with recorder.purpose("SETTLE"):
++                        backend.apply_joint_targets(JointCommand(positions=[4.0] * 7))
++                        backend.apply_gripper_command(GripperCommand(open=False))
++                        backend.step(3)
++                        backend.apply_joint_targets(JointCommand(positions=[0.4] * 7))
++                    with recorder.purpose("HOLD"):
++                        backend.hold_current_joints()
++                    with recorder.purpose("SETTLE"):
++                        backend.step(3)
++                        recorder.capture()
++                        backend.step(1)
++            assert not recorder.failures and not recorder._audit_failures
++            assert not backend.operation_observer_failures and not live.failures
++            recorder._write_original("active-checks.json", checks)
++            recorder._write_original(
++                "software-effect-context.json",
++                dict(
++                    evidence_scope="SOFTWARE_ONLY",
++                    domain=detached(owner.domain),
++                    deadline=started.lower_ns + 100 * 10**9,
++                    lease_id=lease_id,
++                ),
++            )
++            recorder.freeze()
++    finally:
++        owner.close()
++    return dict(
++        geometry=geometry,
++        settings=dict(raw_bytes=2**30),
++        source_hashes=dict(recorder.source_hashes),
++    )
++
++
++def effect_audit(root, protocol):
++    audit = _Audit(protocol, {}, root)
++    audit.inventory()
++    audit.physics()
++    context = audit.read("software-effect-context.json")
++    assert context["evidence_scope"] == "SOFTWARE_ONLY"
++    audit.domain, audit.deadline = context["domain"], context["deadline"]
++    audit.identity = SimpleNamespace(owner_identity=SimpleNamespace(lease_id=context["lease_id"]))
++    audit.operations()
++    return audit
+--- before/tests/test_native_effect_graph.py
++++ after/tests/test_native_effect_graph.py
+@@ -0,0 +1,219 @@
++"""Cross-original semantic validation of recorder-produced SOFTWARE_ONLY graphs."""
++
++import shutil
++from importlib import import_module, util
++
++import pytest
++
++from cloud_edge_robot_arm.research.native_calibration_collection import load_json
++from tests.native_collection_source_graph import (
++    effect_audit,
++    recorded_effect_graph,
++    reseal_software_inventory,
++    write_software_json,
++)
++
++
++def graph_api():
++    name = "cloud_edge_robot_arm.research.native_source_effect_graph"
++    module = import_module(name) if util.find_spec(name) else None
++    assert callable(getattr(module, "validate_native_source_effect_graph", None)), (
++        "R453 source effect graph kernel missing"
++    )
++    return module
++
++
++def fixture(tmp_path):
++    graph_api()
++    root = tmp_path / "original"
++    protocol = recorded_effect_graph(root)
++    audit = effect_audit(root, protocol)
++    assert audit.raw["legacy_utc_mapping"] == "UNAVAILABLE" and not audit.source_ok
++    return root, protocol, audit
++
++
++def rejected(root, protocol, name, mutation):
++    original = (root / "originals/partial-originals.json").read_bytes()
++    target = root.parent / name
++    shutil.copytree(root / "originals", target / "originals")
++    path = target / "originals/partial-originals.json"
++    raw = load_json(path)
++    checks = load_json(target / "originals/active-checks.json")
++    mutation(raw, checks, target / "originals")
++    write_software_json(path, raw)
++    write_software_json(target / "originals/active-checks.json", checks)
++    reseal_software_inventory(target / "originals")
++    with pytest.raises((ValueError, KeyError), match=None):
++        effect_audit(target, protocol)
++    assert (root / "originals/partial-originals.json").read_bytes() == original
++
++
++def changed_control(raw, number, target):
++    row = raw["physics"][number - 1]
++    source = next(
++        c for c in raw["control_sources"] if c["interval_id"] == row["control_interval_id"]
++    )
++    for value in (row["control_payload"], source["control_state"]):
++        value["applied_joint_targets_rad"] = list(target)
++        value["control_rad"] = [
++            min(
++                bounds[1],
++                max(bounds[0], current + min(0.1, max(-0.1, desired - current)) + bias / gain),
++            )
++            for desired, current, bias, gain, bounds in zip(
++                target,
++                value["pre_joint_positions_rad"],
++                value["pre_gravity_bias_nm"],
++                value["actuator_gains"],
++                value["actuator_ctrl_ranges"],
++                strict=True,
++            )
++        ]
++
++
++def test_recorded_complete_effect_graph_preserves_legacy_unknown(tmp_path):
++    _, _, audit = fixture(tmp_path)
++    assert len(audit.raw["physics"]) == 7 and len(audit.raw["control_sources"]) == 8
++    assert audit.raw["reset"]["actuator_delay_steps"] == 2
++    assert audit.raw["control_sources"][-1]["control_state"]["physics_step"] == 8
++    assert audit.raw["total_physics_steps"] == 7
++    assert not audit.source_ok and not audit.horizon_ok and not audit.geometry_ok
++    assert audit.render_accounting() == audit.raw["render_passes_observed"]
++
++
++def test_command_target_delay_clip_gripper_and_hold_replay(tmp_path):
++    root, protocol, _ = fixture(tmp_path)
++    variants = {
++        "initial": lambda r, c, d: r["reset"]["initial_controller_targets"][
++            "joints_rad"
++        ].__setitem__(0, 0.0),
++        "clip": lambda r, c, d: r["commands"][0]["command_payload"][
++            "applied_target_positions_rad"
++        ].__setitem__(0, 4.0),
++        "effective": lambda r, c, d: r["commands"][0].__setitem__("effective_from_step", 1),
++        "queue": lambda r, c, d: r["commands"][0]["command_payload"].__setitem__(
++            "reason", "queued_until_physics_step=3"
++        ),
++        "delay": lambda r, c, d: r["reset"].__setitem__("actuator_delay_steps", 1),
++        "gripper": lambda r, c, d: r["commands"][1]["command_payload"].__setitem__(
++            "target_open", True
++        ),
++        "hold": lambda r, c, d: r["commands"][3]["command_payload"][
++            "target_positions_rad"
++        ].__setitem__(0, 0.4),
++        "uncleared-queue": lambda r, c, d: changed_control(r, 6, [0.4] * 7),
++        "self-consistent-control": lambda r, c, d: changed_control(r, 5, [0.5] * 7),
++        "terminal-effective": lambda r, c, d: r["commands"][-1].__setitem__(
++            "effective_from_step", None
++        ),
++    }
++    for name, mutation in variants.items():
++        rejected(root, protocol, name, mutation)
++
++
++def test_paired_missing_operations_do_not_hide_required_effects(tmp_path):
++    root, protocol, _ = fixture(tmp_path)
++    for kind in ("CONTROL", "PHYSICS", "COMMAND", "CAPTURE"):
++
++        def remove(raw, checks, directory, kind=kind):
++            number = next(r["operation_id"] for r in raw["operational_events"] if r["kind"] == kind)
++            raw["operational_events"] = [
++                r for r in raw["operational_events"] if r["operation_id"] != number
++            ]
++            for index, row in enumerate(raw["operational_events"], 1):
++                row["sequence"] = index
++            raw["backend_operation_ledger"] = [
++                r for r in raw["backend_operation_ledger"] if r["operation_id"] != number
++            ]
++
++        rejected(root, protocol, "paired-" + kind, remove)
++
++    def remove_primary_control(raw, checks, directory):
++        number = raw["control_sources"].pop(0)["operation_id"]
++        raw["operational_events"] = [
++            r for r in raw["operational_events"] if r["operation_id"] != number
++        ]
++        raw["backend_operation_ledger"] = [
++            r for r in raw["backend_operation_ledger"] if r["operation_id"] != number
++        ]
++
++    rejected(root, protocol, "missing-primary-control", remove_primary_control)
++
++
++def test_guard_schedule_active_checks_and_real_stop_are_required(tmp_path):
++    root, protocol, _ = fixture(tmp_path)
++    variants = {
++        "only-closed": lambda r, c, d: r.__setitem__("guard_events", r["guard_events"][-1:]),
++        "empty-checks": lambda r, c, d: c.clear(),
++        "missing-check": lambda r, c, d: c.pop(0),
++        "false-phase": lambda r, c, d: r["guard_events"][0].__setitem__("phase", "AFTER"),
++        "false-step": lambda r, c, d: c[0].__setitem__("step", 1),
++        "missing-hold": lambda r, c, d: r["commands"].pop(-2),
++        "missing-stop": lambda r, c, d: r["commands"].pop(),
++        "missing-stop-control": lambda r, c, d: r["control_sources"].pop(),
++        "stop-order": lambda r, c, d: r["commands"].__setitem__(
++            slice(-2, None), list(reversed(r["commands"][-2:]))
++        ),
++        "after-stop-effect": lambda r, c, d: r["control_sources"].append(
++            dict(r["control_sources"][-1])
++        ),
++    }
++    for name, mutation in variants.items():
++        rejected(root, protocol, name, mutation)
++    for kind in ("PHYSICS", "RETURN", "CAPTURE"):
++
++        def missing_guard(raw, checks, directory, kind=kind):
++            index = next(i for i, row in enumerate(raw["guard_events"]) if row["kind"] == kind)
++            raw["guard_events"].pop(index)
++            checks.pop(index)
++            for i, row in enumerate(raw["guard_events"][:-1], 1):
++                row["sequence"] = i
++
++        rejected(root, protocol, "missing-guard-" + kind, missing_guard)
++
++    def duplicate_physics(raw, checks, directory):
++        index = next(i for i, row in enumerate(raw["guard_events"]) if row["kind"] == "PHYSICS")
++        raw["guard_events"].insert(index, dict(raw["guard_events"][index]))
++        checks.insert(index, dict(checks[index]))
++        for i, row in enumerate(raw["guard_events"][:-1], 1):
++            row["sequence"] = i
++
++    rejected(root, protocol, "duplicate-physics-guard", duplicate_physics)
++
++
++def test_effect_graph_identity_order_and_control_joins_are_exact(tmp_path):
++    root, protocol, _ = fixture(tmp_path)
++    variants = {
++        "cross-episode": lambda r, c, d: r["control_sources"][0].__setitem__(
++            "episode_id", "foreign"
++        ),
++        "cross-step": lambda r, c, d: r["physics"][1].__setitem__(
++            "control_interval_id", r["physics"][0]["control_interval_id"]
++        ),
++        "late-control": lambda r, c, d: r["control_sources"][0].__setitem__("operation_id", 999),
++        "unclosed": lambda r, c, d: r["backend_operation_ledger"].pop(),
++        "nesting": lambda r, c, d: r["backend_operation_ledger"].__setitem__(
++            slice(0, 2), list(reversed(r["backend_operation_ledger"][:2]))
++        ),
++        "orphan-frame": lambda r, c, d: r["allocated_frames"].append("foreign"),
++        "orphan-role": lambda r, c, d: r["capture_source_roles"].__setitem__(
++            "999", dict(next(iter(r["capture_source_roles"].values())))
++        ),
++        "command-parent": lambda r, c, d: r["commands"][0].__setitem__(
++            "parent_interval_id", r["commands"][-1]["parent_interval_id"]
++        ),
++        "command-sequence": lambda r, c, d: r["commands"][0]["command_payload"].__setitem__(
++            "command_seq", 4
++        ),
++        "terminal-count": lambda r, c, d: r.__setitem__("total_physics_steps", 8),
++    }
++    for name, mutation in variants.items():
++        rejected(root, protocol, name, mutation)
++
++    def wrong_metadata(raw, checks, directory):
++        name = next(iter(raw["frame_sources"].values()))
++        metadata = load_json(directory / name)
++        metadata["capture_source"]["physics_step"] = 7
++        write_software_json(directory / name, metadata)
++
++    rejected(root, protocol, "orphan-metadata", wrong_metadata)
+--- before/src/cloud_edge_robot_arm/research/native_collection_application.py
++++ after/src/cloud_edge_robot_arm/research/native_collection_application.py
+@@ -1377,13 +1377,17 @@
+                 render_count_status=(
+                     render_accounting["status"]
+                     if render_accounting
+-                    else "EXACT" if render_passes == 0 else "UNAVAILABLE"
++                    else "EXACT"
++                    if render_passes == 0
++                    else "UNAVAILABLE"
+                 ),
+                 render_accounting=render_accounting,
+                 render_count_provenance=(
+                     "CAPTURE_END_RETURNED_PASSES_BEFORE_SHUTDOWN"
+                     if render_accounting
+-                    else "NOT_STARTED" if render_passes == 0 else "UNAVAILABLE"
++                    else "NOT_STARTED"
++                    if render_passes == 0
++                    else "UNAVAILABLE"
+                 ),
+                 count_provenance="BEFORE_SHUTDOWN"
+                 if live.progress.get("backend_initialized")
