@@ -1,0 +1,173 @@
+"""RGB-D top-grasp calibration for upright boxes and the current MJCF gripper."""
+
+from __future__ import annotations
+
+import math
+from types import MappingProxyType
+from typing import Any
+
+from cloud_edge_robot_arm.vision.observations import RGBDObservation
+
+# The trusted research caller must verify this asset and the upright rigid-box
+# scene family before selecting mujoco_upright_box_v1. No online truth is read.
+CALIBRATED_ASSET_SHA256 = "182fb2bc068ba44de394622f819ae444eb7fbe51df5c5311591a8abb97bf6a08"
+CURRENT_GRASP_PROFILE = "mujoco_upright_box_v2"
+GRASP_CALIBRATION_ASSETS = MappingProxyType({
+    "mujoco_upright_box_v1": CALIBRATED_ASSET_SHA256,
+    "mujoco_upright_box_v2": "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2",
+})
+
+
+def calibration_asset_sha256(profile: object) -> str | None:
+    """Return an explicitly registered asset, never silently upgrade old profiles."""
+    return GRASP_CALIBRATION_ASSETS.get(profile) if isinstance(profile, str) else None
+
+
+def matches_calibrated_gripper(model: Any, profile: object) -> bool:
+    """Check compiled robot geometry, including dataset XML extensions, without object truth."""
+    import mujoco
+
+    if calibration_asset_sha256(profile) is None or model is None:
+        return False
+    finger_y = 0.04 if profile == "mujoco_upright_box_v1" else 0.009
+
+    def same(actual: Any, expected: tuple[float, ...]) -> bool:
+        return len(actual) == len(expected) and all(
+            math.isclose(float(a), b, rel_tol=0.0, abs_tol=1e-9)
+            for a, b in zip(actual, expected, strict=True)
+        )
+
+    def identity_rotation(actual: Any) -> bool:
+        return same(actual, (1.0, 0.0, 0.0, 0.0)) or same(actual, (-1.0, 0.0, 0.0, 0.0))
+
+    try:
+        hand_body = int(model.geom_bodyid[model.geom("hand").id])
+        tcp = model.site("tcp")
+        if (
+            int(model.site_bodyid[tcp.id]) != hand_body
+            or not same(tcp.pos, (0.105, 0.0, 0.0))
+            or not identity_rotation(tcp.quat)
+        ):
+            return False
+        for name, joint_name, sign in (
+            ("left_finger", "finger_left_joint", 1.0),
+            ("right_finger", "finger_right_joint", -1.0),
+        ):
+            body, geom = model.body(name), model.geom(f"{name}_geom")
+            joint = model.joint(joint_name)
+            if (
+                int(model.body_parentid[body.id]) != hand_body
+                or int(model.geom_bodyid[geom.id]) != body.id
+                or int(model.jnt_bodyid[joint.id]) != body.id
+                or int(model.jnt_type[joint.id]) != mujoco.mjtJoint.mjJNT_SLIDE
+                or not bool(model.jnt_limited[joint.id])
+                or not math.isclose(
+                    float(model.qpos0[int(model.jnt_qposadr[joint.id])]), 0.0,
+                    rel_tol=0.0, abs_tol=1e-9,
+                )
+                or int(model.body_jntnum[body.id]) != 1
+                or int(model.geom_type[geom.id]) != mujoco.mjtGeom.mjGEOM_BOX
+                or not same(body.pos, (0.075, sign * finger_y, 0.0))
+                or not identity_rotation(body.quat)
+                or not same(geom.pos, (0.025, 0.0, 0.0))
+                or not identity_rotation(geom.quat)
+                or not same(geom.size, (0.035, 0.008, 0.028))
+                or not same(joint.axis, (0.0, sign, 0.0))
+                or not same(joint.range, (0.0, 0.04))
+            ):
+                return False
+    except (AttributeError, KeyError, IndexError, TypeError, ValueError):
+        return False
+    return True
+
+_MIN_OBJECT_HEIGHT_M = 0.05
+_MAX_OBJECT_HEIGHT_M = 0.10
+# Compensate float32 depth rounding near 2 m (e.g. 2 - float32(1.9)).
+# This is 0.1 micrometre, not a tolerance for physical size or sensor noise.
+_HEIGHT_REPRESENTATION_TOLERANCE_M = 1e-7
+_MAX_TOP_PATCH_Z_SPAN_M = 0.008
+_TCP_ABOVE_ESTIMATED_CENTER_M = 0.01
+# scene.xml: finger body x .075 + geom x .025 + half-length .035
+# minus TCP x .105. The calibrated top-down orientation points local +x down.
+_FINGERTIP_BELOW_TCP_M = 0.03
+_MIN_FINGERTIP_CLEARANCE_M = 0.002
+
+
+def resolve_top_grasp(
+    observation: RGBDObservation, pixel: tuple[int, int], support_z: float,
+) -> dict[str, object]:
+    """Resolve a calibrated TCP from a visible top center and measured support.
+
+    This is restricted to a rigid upright box resting on the supplied local
+    horizontal support and the current MJCF gripper in its top-down orientation.
+    The center is a geometric estimate, never a scene/instance lookup. A flat
+    3x3 patch alone cannot establish the object's shape, material or orientation;
+    the caller must keep the stated scope. Unsupported measurements fail closed.
+    """
+    if type(support_z) not in {int, float} or not math.isfinite(support_z):
+        raise ValueError("top grasp requires a finite metric support height")
+    if (
+        not isinstance(pixel, (tuple, list)) or len(pixel) != 2
+        or any(type(value) is not int for value in pixel)
+    ):
+        raise ValueError("top grasp pixel must contain two integers")
+    u, v = pixel
+    if not (1 <= u < observation.width - 1 and 1 <= v < observation.height - 1):
+        raise ValueError("top grasp pixel needs a complete interior 3x3 patch")
+
+    depths = observation.depth_values()
+    fx, fy, cx, cy = observation.intrinsics
+    transform = observation.camera_to_world
+    patch_heights: list[float] = []
+    for y in range(v - 1, v + 2):
+        for x in range(u - 1, u + 2):
+            depth = depths[y * observation.width + x]
+            if not math.isfinite(depth) or depth <= 0:
+                raise ValueError("top grasp patch contains invalid metric depth")
+            world_z = (
+                transform[8] * (x - cx) * depth / fx
+                + transform[9] * (y - cy) * depth / fy
+                + transform[10] * depth + transform[11]
+            )
+            if not math.isfinite(world_z):
+                raise ValueError("top grasp patch contains nonfinite world depth")
+            patch_heights.append(world_z)
+    z_span = max(patch_heights) - min(patch_heights)
+    if z_span > _MAX_TOP_PATCH_Z_SPAN_M:
+        raise ValueError("top grasp patch is not flat within calibrated world-z variation")
+
+    top = observation.world_point((u, v))
+    if not all(math.isfinite(value) for value in (top.x, top.y, top.z)):
+        raise ValueError("top grasp surface position must be finite")
+    height = top.z - support_z
+    if not (
+        _MIN_OBJECT_HEIGHT_M - _HEIGHT_REPRESENTATION_TOLERANCE_M
+        <= height
+        <= _MAX_OBJECT_HEIGHT_M + _HEIGHT_REPRESENTATION_TOLERANCE_M
+    ):
+        raise ValueError("estimated object height is outside calibrated 0.05..0.10 m range")
+
+    center_z = top.z - height / 2
+    tcp_z = center_z + _TCP_ABOVE_ESTIMATED_CENTER_M
+    fingertip_clearance = tcp_z - _FINGERTIP_BELOW_TCP_M - support_z
+    if fingertip_clearance < _MIN_FINGERTIP_CLEARANCE_M:
+        raise ValueError("calibrated fingertip clearance above support is below 0.002 m")
+
+    return {
+        "top_grasp_offset_status": "CALIBRATED_RGBD_TOP_GRASP_V1",
+        "top_grasp_offset_from_surface_m": tcp_z - top.z,
+        "resolved_top_grasp_tcp": {"x": top.x, "y": top.y, "z": tcp_z},
+        "estimated_object_height_m": height,
+        "estimated_object_center": {"x": top.x, "y": top.y, "z": center_z},
+        "estimated_object_center_semantics": "RGBD_GEOMETRIC_ESTIMATE_NOT_GROUND_TRUTH",
+        "grasp_geometry_assumption": (
+            "upright rigid box resting on measured horizontal support; selected pixel "
+            "is its visible top center; current MJCF gripper in top-down orientation"
+        ),
+        "top_grasp_support_height_m": support_z,
+        "top_patch_world_z_span_m": z_span,
+        "estimated_fingertip_clearance_m": fingertip_clearance,
+        "minimum_fingertip_clearance_m": _MIN_FINGERTIP_CLEARANCE_M,
+        "fingertip_below_tcp_m": _FINGERTIP_BELOW_TCP_M,
+        "calibrated_object_height_range_m": [_MIN_OBJECT_HEIGHT_M, _MAX_OBJECT_HEIGHT_M],
+    }
