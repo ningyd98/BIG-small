@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from concurrent.futures import Future
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from cloud_edge_robot_arm.dashboard.models import (
@@ -29,18 +31,55 @@ class EvidenceIndexError:
     error: str
 
 
+EvidenceSnapshot = tuple[list[EvidenceIndexRecord], list[EvidenceIndexError]]
+
+
 class EvidenceIndex:
     def __init__(self, root: Path, *, max_bytes: int = 2_000_000) -> None:
         self.root = root
         self.max_bytes = max_bytes
-        self._records: dict[str, EvidenceIndexRecord] = {}
-        self.errors: list[EvidenceIndexError] = []
+        self._snapshot: EvidenceSnapshot = ([], [])
+        self._refresh_lock = Lock()
+        self._inflight: Future[EvidenceSnapshot] | None = None
+
+    @property
+    def errors(self) -> list[EvidenceIndexError]:
+        return list(self._snapshot[1])
 
     def refresh(self) -> list[EvidenceIndexRecord]:
-        self._records.clear()
-        self.errors.clear()
+        return self.refresh_snapshot()[0]
+
+    def refresh_snapshot(self) -> EvidenceSnapshot:
+        """Share an in-flight scan and publish records/errors only when complete.
+
+        Sequential calls still scan for new evidence; this is not a stale cache.
+        """
+        with self._refresh_lock:
+            future = self._inflight
+            owner = future is None
+            if future is None:
+                future = Future()
+                self._inflight = future
+        if owner:
+            try:
+                snapshot = self._scan()
+            except BaseException as exc:
+                with self._refresh_lock:
+                    future.set_exception(exc)
+                    self._inflight = None
+                raise
+            with self._refresh_lock:
+                self._snapshot = snapshot
+                future.set_result(snapshot)
+                self._inflight = None
+        records, errors = future.result()
+        return list(records), list(errors)
+
+    def _scan(self) -> EvidenceSnapshot:
+        records: dict[str, EvidenceIndexRecord] = {}
+        errors: list[EvidenceIndexError] = []
         if not self.root.exists():
-            return []
+            return [], []
         for path in sorted(self.root.rglob("*")):
             if not path.is_file() or path.suffix not in ALLOWED_EXTENSIONS:
                 continue
@@ -54,12 +93,12 @@ class EvidenceIndex:
             except OSError:
                 continue
             try:
-                record = self._record_for(path)
+                record = self._record_for(path, errors)
             except Exception as exc:  # pragma: no cover - defensive evidence path
-                self.errors.append(EvidenceIndexError(path=relative_path, error=str(exc)))
+                errors.append(EvidenceIndexError(path=relative_path, error=str(exc)))
                 continue
-            self._records[record.evidence_id] = record
-        return list(self._records.values())
+            records[record.evidence_id] = record
+        return list(records.values()), errors
 
     def resolve_user_path(self, relative_path: str) -> Path:
         candidate = Path(relative_path)
@@ -82,18 +121,16 @@ class EvidenceIndex:
             content = path.read_text(encoding="utf-8", errors="replace")
         return EvidenceDetailResponse(record=record, content=redact(content))
 
-    def _record_for(self, path: Path) -> EvidenceIndexRecord:
+    def _record_for(self, path: Path, errors: list[EvidenceIndexError]) -> EvidenceIndexRecord:
         relative_path = path.relative_to(self.root).as_posix()
         evidence_id = hashlib.sha256(relative_path.encode("utf-8")).hexdigest()[:16]
         payload = _load_jsonish(path) if path.suffix in {".json", ".jsonl"} else {}
         if isinstance(payload, dict) and "parse_error" in payload:
-            self.errors.append(
-                EvidenceIndexError(relative_path, str(payload.get("parse_error", "")))
-            )
+            errors.append(EvidenceIndexError(relative_path, str(payload.get("parse_error", ""))))
         if isinstance(payload, list):
             for item in payload:
                 if isinstance(item, dict) and "parse_error" in item:
-                    self.errors.append(
+                    errors.append(
                         EvidenceIndexError(relative_path, str(item.get("parse_error", "")))
                     )
                     break

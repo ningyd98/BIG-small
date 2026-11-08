@@ -13,6 +13,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from cloud_edge_robot_arm.dashboard.models import (
     AcceptanceLevelSnapshot,
@@ -63,13 +64,13 @@ async def capabilities(request: Request) -> CapabilitiesResponse:
 @router.get("/summary", response_model=DashboardSummary)
 async def summary(request: Request) -> DashboardSummary:
     enforce_dashboard_access(request)
-    return _service(request).summary()
+    return await run_in_threadpool(_service(request).summary)
 
 
 @router.get("/runtime", response_model=RuntimeSnapshot)
 async def runtime(request: Request) -> RuntimeSnapshot:
     enforce_dashboard_access(request)
-    return _service(request).runtime()
+    return await run_in_threadpool(_service(request).runtime)
 
 
 @router.get("/safety", response_model=SafetyGateSnapshot)
@@ -104,7 +105,7 @@ async def evidence(
     offset: int = Query(default=0, ge=0),
 ) -> EvidenceListResponse:
     enforce_dashboard_access(request)
-    records = _service(request).evidence_index.refresh()
+    records = await run_in_threadpool(_service(request).evidence_index.refresh)
     records = _filter_evidence(records, phase=phase, status=status, backend=backend)
     reverse = order == "desc"
     records = sorted(records, key=lambda record: str(getattr(record, sort)), reverse=reverse)
@@ -115,9 +116,9 @@ async def evidence(
 async def evidence_errors(request: Request) -> EvidenceParseErrorResponse:
     enforce_dashboard_access(request)
     index = _service(request).evidence_index
-    index.refresh()
+    _, errors = await run_in_threadpool(index.refresh_snapshot)
     return EvidenceParseErrorResponse(
-        errors=[EvidenceIndexErrorRecord(path=item.path, error=item.error) for item in index.errors]
+        errors=[EvidenceIndexErrorRecord(path=item.path, error=item.error) for item in errors]
     )
 
 
@@ -127,7 +128,7 @@ async def evidence_detail(request: Request, evidence_id: str) -> EvidenceDetailR
     if ".." in evidence_id or "/" in evidence_id or "\\" in evidence_id:
         raise HTTPException(status_code=400, detail="invalid_evidence_id")
     try:
-        return _service(request).evidence_index.get_detail(evidence_id)
+        return await run_in_threadpool(_service(request).evidence_index.get_detail, evidence_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="evidence_not_found") from exc
 
@@ -138,7 +139,7 @@ async def evidence_download(request: Request, evidence_id: str) -> object:
     if ".." in evidence_id or "/" in evidence_id or "\\" in evidence_id:
         raise HTTPException(status_code=400, detail="invalid_evidence_id")
     service = _service(request)
-    records = service.evidence_index.refresh()
+    records = await run_in_threadpool(service.evidence_index.refresh)
     record = next((item for item in records if item.evidence_id == evidence_id), None)
     if record is None:
         raise HTTPException(status_code=404, detail="evidence_not_found")
@@ -152,8 +153,9 @@ async def evidence_compare(
 ) -> object:
     enforce_dashboard_access(request)
     try:
-        left = _service(request).evidence_index.get_detail(left_evidence_id)
-        right = _service(request).evidence_index.get_detail(right_evidence_id)
+        index = _service(request).evidence_index
+        left = await run_in_threadpool(index.get_detail, left_evidence_id)
+        right = await run_in_threadpool(index.get_detail, right_evidence_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="evidence_not_found") from exc
     return {

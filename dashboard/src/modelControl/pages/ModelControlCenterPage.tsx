@@ -51,6 +51,11 @@ type ProfileForm = {
 };
 
 export function ModelControlCenterPage() {
+  const [profileForm] = Form.useForm<ProfileForm>();
+  const [saveNotice, setSaveNotice] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
   const capabilities = useModelCapabilities();
   const profiles = useModelProfiles();
   const runtime = usePlannerRuntime();
@@ -72,10 +77,23 @@ export function ModelControlCenterPage() {
   const [lastTest, setLastTest] = useState<ModelTestResult | null>(null);
 
   const handleCreateProfile = async (values: ProfileForm) => {
-    await createProfile.mutateAsync({
-      ...values,
-      api_key: values.api_key || undefined,
-    });
+    setSaveNotice(null);
+    try {
+      const saved = await createProfile.mutateAsync({
+        ...values,
+        api_key: values.api_key || undefined,
+      });
+      profileForm.setFieldValue("api_key", "");
+      setSaveNotice({
+        type: "success",
+        text: `配置已保存：${saved.display_name}。API Key 仅在当前服务运行期间有效，服务重启后需重新录入。`,
+      });
+    } catch {
+      setSaveNotice({
+        type: "error",
+        text: "保存失败，输入已保留。请检查后台连接及接口地址后重试。",
+      });
+    }
   };
 
   return (
@@ -88,21 +106,30 @@ export function ModelControlCenterPage() {
         type="info"
         title="Planner dry-run 只生成规划合同预览，dispatch=false，hardware_execution=false。"
       />
+      {(profiles.isError || runtime.isError) && (
+        <Alert
+          showIcon
+          type="error"
+          title="模型配置加载失败，请检查后台连接后刷新。"
+        />
+      )}
 
       <div className="simulation-workbench-grid">
         <Card title="当前 Planner" size="small">
           <Descriptions size="small" column={1}>
             <Descriptions.Item label="Provider">
-              <Tag color="blue">{runtime.data?.active_provider ?? "MOCK"}</Tag>
+              <Tag color="blue">
+                {runtime.data?.active_provider ?? "待加载"}
+              </Tag>
             </Descriptions.Item>
             <Descriptions.Item label="Model">
-              {runtime.data?.active_model ?? "mock"}
+              {runtime.data?.active_model ?? "待加载"}
             </Descriptions.Item>
             <Descriptions.Item label="Health">
-              {runtime.data?.health ?? "READY"}
+              {runtime.data?.health ?? "待确认"}
             </Descriptions.Item>
             <Descriptions.Item label="Config version">
-              {runtime.data?.config_version ?? 0}
+              {runtime.data?.config_version ?? "—"}
             </Descriptions.Item>
           </Descriptions>
           <Button
@@ -117,7 +144,13 @@ export function ModelControlCenterPage() {
         <Card title="Ollama 本地运行时" size="small">
           <Space orientation="vertical" style={{ width: "100%" }}>
             <Tag color={ollamaStatus.data?.reachable ? "green" : "red"}>
-              {ollamaStatus.data?.reachable ? "READY" : "BLOCKED"}
+              {ollamaStatus.isPending
+                ? "加载中"
+                : ollamaStatus.isError
+                  ? "状态获取失败"
+                  : ollamaStatus.data?.reachable
+                    ? "READY"
+                    : "BLOCKED"}
             </Tag>
             <Typography.Text>
               Version: {ollamaStatus.data?.version || "unavailable"}
@@ -139,7 +172,14 @@ export function ModelControlCenterPage() {
       </div>
 
       <Card title="Provider Profiles" size="small">
+        {createProfile.isPending && (
+          <Alert showIcon type="info" title="正在保存，请等待后台确认…" />
+        )}
+        {saveNotice && (
+          <Alert showIcon type={saveNotice.type} title={saveNotice.text} />
+        )}
         <Form<ProfileForm>
+          form={profileForm}
           layout="inline"
           initialValues={{
             provider_kind: "RULE_BASED",
@@ -185,6 +225,7 @@ export function ModelControlCenterPage() {
           size="small"
           rowKey="profile_id"
           dataSource={profiles.data ?? []}
+          loading={profiles.isPending}
           pagination={false}
           columns={[
             { title: "名称", dataIndex: "display_name" },

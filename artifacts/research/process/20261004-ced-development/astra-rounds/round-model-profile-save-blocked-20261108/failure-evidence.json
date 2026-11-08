@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-11-08T12:18:11.662322+00:00",
+  "parent_reported_original_failure": [
+    "User: API Key 页面“保存不上阿”。http://127.0.0.1:5173/models 数据默认/No data，Planner MOCK，Ollama BLOCKED，浏览器console无error。",
+    "并行 urllib GET 127.0.0.1:8000/api/v1/model-control/profiles 和 127.0.0.1:5173/api/v1/model-control/profiles 均 TimeoutError，约8.04秒；127.0.0.1:11434/api/version HTTP200，0.031秒。",
+    "此前profile测试请求总耗时约55秒，provider latency727ms，HTTP401；不将401解释为保存失败，也不承诺外部鉴权成功。",
+    "后台159949监听8000，非reload；前端159968监听5173。后台NO_PROXY含localhost,127.0.0.1。"
+  ],
+  "direct_read_only_observations": [
+    {
+      "command": "ps -o pid,ppid,stat,wchan:40,etime,pcpu,comm -p 159949,159968",
+      "output": "159949 159902 Rl+ - 13:42 105 python; 159968 159967 Sl+ ep_poll 13:42 0.1 node"
+    },
+    {
+      "command": "ps -L -p 159949 -o pid,tid,stat,pcpu,wchan:32,comm",
+      "output_excerpt": "159949 159949 Rl+ 95.2 - python; 159949 186766 Sl+ 15.8 futex_do_wait python; remaining sampled threads near 0 CPU"
+    },
+    {
+      "command": "20 /proc/159949/fd readlink samples spaced 0.05s; no file content read",
+      "output": "open_artifact_paths: 1; /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/green-cpu-fixtures/test_recovery_wall_event_episo4/canonical/allocations/recovery-0002-attempt-1.json"
+    },
+    {
+      "command": "read /proc/sys/kernel/yama/ptrace_scope",
+      "output": "1; no debugger attached"
+    },
+    {
+      "command": "source inspection",
+      "output": "App.tsx invokes useDashboardSummary globally; queries.ts refetchInterval=5000; async dashboard.summary calls synchronous service.summary; service.summary calls evidence_index.refresh; refresh sorted(root.rglob(\"*\")) and parses eligible files, mutating shared _records/errors throughout scan."
+    },
+    {
+      "command": "source inspection",
+      "output": "ModelControlCenterPage.handleCreateProfile awaits mutateAsync without catch or success UI. Loading/missing query data rendered as MOCK/READY, BLOCKED, and empty profiles. This explains misleading visible states but is not proof of provider outage."
+    }
+  ],
+  "diagnostic_command_limitations": [
+    "Initial source path cloud/api/model_control.py did not exist; corrected to src/cloud_edge_robot_arm/cloud/api/model_control.py.",
+    "System python command unavailable; read-only FD probe executed with python3. No product/runtime failure inferred."
+  ],
+  "secret_handling": "No key values, request bodies, process environment values, or database content read or recorded.",
+  "conclusion_confidence": "High confidence synchronous evidence scan on ASGI event loop causes API starvation; runtime CPU plus open artifact FD corroborate exact source path. No Python stack sample; do not claim one."
+}

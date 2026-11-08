@@ -1,0 +1,799 @@
+FFFFFFFFF                                                                [100%]
+=================================== FAILURES ===================================
+_____ test_profile_save_completes_while_evidence_scan_is_blocked[summary] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-0/test_profile_save_completes_wh0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e2eb94b890>
+endpoint = 'summary'
+
+    @pytest.mark.parametrize("endpoint", [
+        "summary", "runtime", "evidence", "evidence-errors",
+        "evidence/{id}", "evidence/{id}/download", "evidence/{id}/compare/{id}",
+    ])
+    def test_profile_save_completes_while_evidence_scan_is_blocked(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoint: str,
+    ) -> None:
+        monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+        monkeypatch.setenv("MODEL_CONTROL_DB", str(tmp_path / "models.db"))
+        root = tmp_path / "artifacts"
+        root.mkdir()
+        (root / "example.json").write_text("{}")
+        app = FastAPI()
+        app.include_router(dashboard_router)
+        app.include_router(model_router)
+        service = DashboardService(artifact_root=root)
+        app.state.dashboard_service = service
+        started, release = threading.Event(), threading.Event()
+        original = service.evidence_index._record_for
+    
+        def blocked_record(*args, **kwargs):
+            started.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+    
+        monkeypatch.setattr(service.evidence_index, "_record_for", blocked_record)
+        evidence_id = hashlib.sha256(b"example.json").hexdigest()[:16]
+    
+        async def exercise() -> None:
+            transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                watchdog = threading.Timer(2, release.set)
+                watchdog.start()
+                scan = asyncio.create_task(client.get(
+                    "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+                ))
+                try:
+                    assert await asyncio.to_thread(started.wait, 3)
+                    saved = await client.post("/api/v1/model-control/profiles", json={
+                        "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                        "model_name": "rule-based",
+                    })
+                    listed = await client.get("/api/v1/model-control/profiles")
+                    completed_during_scan = not release.is_set()
+                finally:
+                    release.set()
+                    watchdog.cancel()
+                    scan_response = await scan
+                assert scan_response.status_code == 200
+                assert saved.status_code == 201
+                assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+                assert completed_during_scan, "profile save/list waited for the evidence scan"
+    
+>       asyncio.run(exercise())
+
+tests/test_dashboard_scan_responsiveness.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            watchdog = threading.Timer(2, release.set)
+            watchdog.start()
+            scan = asyncio.create_task(client.get(
+                "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+            ))
+            try:
+                assert await asyncio.to_thread(started.wait, 3)
+                saved = await client.post("/api/v1/model-control/profiles", json={
+                    "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                    "model_name": "rule-based",
+                })
+                listed = await client.get("/api/v1/model-control/profiles")
+                completed_during_scan = not release.is_set()
+            finally:
+                release.set()
+                watchdog.cancel()
+                scan_response = await scan
+            assert scan_response.status_code == 200
+            assert saved.status_code == 201
+            assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+>           assert completed_during_scan, "profile save/list waited for the evidence scan"
+E           AssertionError: profile save/list waited for the evidence scan
+E           assert False
+
+tests/test_dashboard_scan_responsiveness.py:72: AssertionError
+_____ test_profile_save_completes_while_evidence_scan_is_blocked[runtime] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-0/test_profile_save_completes_wh1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e2eb9fd100>
+endpoint = 'runtime'
+
+    @pytest.mark.parametrize("endpoint", [
+        "summary", "runtime", "evidence", "evidence-errors",
+        "evidence/{id}", "evidence/{id}/download", "evidence/{id}/compare/{id}",
+    ])
+    def test_profile_save_completes_while_evidence_scan_is_blocked(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoint: str,
+    ) -> None:
+        monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+        monkeypatch.setenv("MODEL_CONTROL_DB", str(tmp_path / "models.db"))
+        root = tmp_path / "artifacts"
+        root.mkdir()
+        (root / "example.json").write_text("{}")
+        app = FastAPI()
+        app.include_router(dashboard_router)
+        app.include_router(model_router)
+        service = DashboardService(artifact_root=root)
+        app.state.dashboard_service = service
+        started, release = threading.Event(), threading.Event()
+        original = service.evidence_index._record_for
+    
+        def blocked_record(*args, **kwargs):
+            started.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+    
+        monkeypatch.setattr(service.evidence_index, "_record_for", blocked_record)
+        evidence_id = hashlib.sha256(b"example.json").hexdigest()[:16]
+    
+        async def exercise() -> None:
+            transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                watchdog = threading.Timer(2, release.set)
+                watchdog.start()
+                scan = asyncio.create_task(client.get(
+                    "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+                ))
+                try:
+                    assert await asyncio.to_thread(started.wait, 3)
+                    saved = await client.post("/api/v1/model-control/profiles", json={
+                        "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                        "model_name": "rule-based",
+                    })
+                    listed = await client.get("/api/v1/model-control/profiles")
+                    completed_during_scan = not release.is_set()
+                finally:
+                    release.set()
+                    watchdog.cancel()
+                    scan_response = await scan
+                assert scan_response.status_code == 200
+                assert saved.status_code == 201
+                assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+                assert completed_during_scan, "profile save/list waited for the evidence scan"
+    
+>       asyncio.run(exercise())
+
+tests/test_dashboard_scan_responsiveness.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            watchdog = threading.Timer(2, release.set)
+            watchdog.start()
+            scan = asyncio.create_task(client.get(
+                "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+            ))
+            try:
+                assert await asyncio.to_thread(started.wait, 3)
+                saved = await client.post("/api/v1/model-control/profiles", json={
+                    "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                    "model_name": "rule-based",
+                })
+                listed = await client.get("/api/v1/model-control/profiles")
+                completed_during_scan = not release.is_set()
+            finally:
+                release.set()
+                watchdog.cancel()
+                scan_response = await scan
+            assert scan_response.status_code == 200
+            assert saved.status_code == 201
+            assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+>           assert completed_during_scan, "profile save/list waited for the evidence scan"
+E           AssertionError: profile save/list waited for the evidence scan
+E           assert False
+
+tests/test_dashboard_scan_responsiveness.py:72: AssertionError
+_____ test_profile_save_completes_while_evidence_scan_is_blocked[evidence] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-0/test_profile_save_completes_wh2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e2eb9de990>
+endpoint = 'evidence'
+
+    @pytest.mark.parametrize("endpoint", [
+        "summary", "runtime", "evidence", "evidence-errors",
+        "evidence/{id}", "evidence/{id}/download", "evidence/{id}/compare/{id}",
+    ])
+    def test_profile_save_completes_while_evidence_scan_is_blocked(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoint: str,
+    ) -> None:
+        monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+        monkeypatch.setenv("MODEL_CONTROL_DB", str(tmp_path / "models.db"))
+        root = tmp_path / "artifacts"
+        root.mkdir()
+        (root / "example.json").write_text("{}")
+        app = FastAPI()
+        app.include_router(dashboard_router)
+        app.include_router(model_router)
+        service = DashboardService(artifact_root=root)
+        app.state.dashboard_service = service
+        started, release = threading.Event(), threading.Event()
+        original = service.evidence_index._record_for
+    
+        def blocked_record(*args, **kwargs):
+            started.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+    
+        monkeypatch.setattr(service.evidence_index, "_record_for", blocked_record)
+        evidence_id = hashlib.sha256(b"example.json").hexdigest()[:16]
+    
+        async def exercise() -> None:
+            transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                watchdog = threading.Timer(2, release.set)
+                watchdog.start()
+                scan = asyncio.create_task(client.get(
+                    "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+                ))
+                try:
+                    assert await asyncio.to_thread(started.wait, 3)
+                    saved = await client.post("/api/v1/model-control/profiles", json={
+                        "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                        "model_name": "rule-based",
+                    })
+                    listed = await client.get("/api/v1/model-control/profiles")
+                    completed_during_scan = not release.is_set()
+                finally:
+                    release.set()
+                    watchdog.cancel()
+                    scan_response = await scan
+                assert scan_response.status_code == 200
+                assert saved.status_code == 201
+                assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+                assert completed_during_scan, "profile save/list waited for the evidence scan"
+    
+>       asyncio.run(exercise())
+
+tests/test_dashboard_scan_responsiveness.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            watchdog = threading.Timer(2, release.set)
+            watchdog.start()
+            scan = asyncio.create_task(client.get(
+                "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+            ))
+            try:
+                assert await asyncio.to_thread(started.wait, 3)
+                saved = await client.post("/api/v1/model-control/profiles", json={
+                    "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                    "model_name": "rule-based",
+                })
+                listed = await client.get("/api/v1/model-control/profiles")
+                completed_during_scan = not release.is_set()
+            finally:
+                release.set()
+                watchdog.cancel()
+                scan_response = await scan
+            assert scan_response.status_code == 200
+            assert saved.status_code == 201
+            assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+>           assert completed_during_scan, "profile save/list waited for the evidence scan"
+E           AssertionError: profile save/list waited for the evidence scan
+E           assert False
+
+tests/test_dashboard_scan_responsiveness.py:72: AssertionError
+_ test_profile_save_completes_while_evidence_scan_is_blocked[evidence-errors] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-0/test_profile_save_completes_wh3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e2c2d54200>
+endpoint = 'evidence-errors'
+
+    @pytest.mark.parametrize("endpoint", [
+        "summary", "runtime", "evidence", "evidence-errors",
+        "evidence/{id}", "evidence/{id}/download", "evidence/{id}/compare/{id}",
+    ])
+    def test_profile_save_completes_while_evidence_scan_is_blocked(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoint: str,
+    ) -> None:
+        monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+        monkeypatch.setenv("MODEL_CONTROL_DB", str(tmp_path / "models.db"))
+        root = tmp_path / "artifacts"
+        root.mkdir()
+        (root / "example.json").write_text("{}")
+        app = FastAPI()
+        app.include_router(dashboard_router)
+        app.include_router(model_router)
+        service = DashboardService(artifact_root=root)
+        app.state.dashboard_service = service
+        started, release = threading.Event(), threading.Event()
+        original = service.evidence_index._record_for
+    
+        def blocked_record(*args, **kwargs):
+            started.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+    
+        monkeypatch.setattr(service.evidence_index, "_record_for", blocked_record)
+        evidence_id = hashlib.sha256(b"example.json").hexdigest()[:16]
+    
+        async def exercise() -> None:
+            transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                watchdog = threading.Timer(2, release.set)
+                watchdog.start()
+                scan = asyncio.create_task(client.get(
+                    "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+                ))
+                try:
+                    assert await asyncio.to_thread(started.wait, 3)
+                    saved = await client.post("/api/v1/model-control/profiles", json={
+                        "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                        "model_name": "rule-based",
+                    })
+                    listed = await client.get("/api/v1/model-control/profiles")
+                    completed_during_scan = not release.is_set()
+                finally:
+                    release.set()
+                    watchdog.cancel()
+                    scan_response = await scan
+                assert scan_response.status_code == 200
+                assert saved.status_code == 201
+                assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+                assert completed_during_scan, "profile save/list waited for the evidence scan"
+    
+>       asyncio.run(exercise())
+
+tests/test_dashboard_scan_responsiveness.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            watchdog = threading.Timer(2, release.set)
+            watchdog.start()
+            scan = asyncio.create_task(client.get(
+                "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+            ))
+            try:
+                assert await asyncio.to_thread(started.wait, 3)
+                saved = await client.post("/api/v1/model-control/profiles", json={
+                    "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                    "model_name": "rule-based",
+                })
+                listed = await client.get("/api/v1/model-control/profiles")
+                completed_during_scan = not release.is_set()
+            finally:
+                release.set()
+                watchdog.cancel()
+                scan_response = await scan
+            assert scan_response.status_code == 200
+            assert saved.status_code == 201
+            assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+>           assert completed_during_scan, "profile save/list waited for the evidence scan"
+E           AssertionError: profile save/list waited for the evidence scan
+E           assert False
+
+tests/test_dashboard_scan_responsiveness.py:72: AssertionError
+__ test_profile_save_completes_while_evidence_scan_is_blocked[evidence/{id}] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-0/test_profile_save_completes_wh4')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e2c2d85430>
+endpoint = 'evidence/{id}'
+
+    @pytest.mark.parametrize("endpoint", [
+        "summary", "runtime", "evidence", "evidence-errors",
+        "evidence/{id}", "evidence/{id}/download", "evidence/{id}/compare/{id}",
+    ])
+    def test_profile_save_completes_while_evidence_scan_is_blocked(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoint: str,
+    ) -> None:
+        monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+        monkeypatch.setenv("MODEL_CONTROL_DB", str(tmp_path / "models.db"))
+        root = tmp_path / "artifacts"
+        root.mkdir()
+        (root / "example.json").write_text("{}")
+        app = FastAPI()
+        app.include_router(dashboard_router)
+        app.include_router(model_router)
+        service = DashboardService(artifact_root=root)
+        app.state.dashboard_service = service
+        started, release = threading.Event(), threading.Event()
+        original = service.evidence_index._record_for
+    
+        def blocked_record(*args, **kwargs):
+            started.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+    
+        monkeypatch.setattr(service.evidence_index, "_record_for", blocked_record)
+        evidence_id = hashlib.sha256(b"example.json").hexdigest()[:16]
+    
+        async def exercise() -> None:
+            transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                watchdog = threading.Timer(2, release.set)
+                watchdog.start()
+                scan = asyncio.create_task(client.get(
+                    "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+                ))
+                try:
+                    assert await asyncio.to_thread(started.wait, 3)
+                    saved = await client.post("/api/v1/model-control/profiles", json={
+                        "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                        "model_name": "rule-based",
+                    })
+                    listed = await client.get("/api/v1/model-control/profiles")
+                    completed_during_scan = not release.is_set()
+                finally:
+                    release.set()
+                    watchdog.cancel()
+                    scan_response = await scan
+                assert scan_response.status_code == 200
+                assert saved.status_code == 201
+                assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+                assert completed_during_scan, "profile save/list waited for the evidence scan"
+    
+>       asyncio.run(exercise())
+
+tests/test_dashboard_scan_responsiveness.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            watchdog = threading.Timer(2, release.set)
+            watchdog.start()
+            scan = asyncio.create_task(client.get(
+                "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+            ))
+            try:
+                assert await asyncio.to_thread(started.wait, 3)
+                saved = await client.post("/api/v1/model-control/profiles", json={
+                    "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                    "model_name": "rule-based",
+                })
+                listed = await client.get("/api/v1/model-control/profiles")
+                completed_during_scan = not release.is_set()
+            finally:
+                release.set()
+                watchdog.cancel()
+                scan_response = await scan
+            assert scan_response.status_code == 200
+            assert saved.status_code == 201
+            assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+>           assert completed_during_scan, "profile save/list waited for the evidence scan"
+E           AssertionError: profile save/list waited for the evidence scan
+E           assert False
+
+tests/test_dashboard_scan_responsiveness.py:72: AssertionError
+_ test_profile_save_completes_while_evidence_scan_is_blocked[evidence/{id}/download] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-0/test_profile_save_completes_wh5')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e2c2420860>
+endpoint = 'evidence/{id}/download'
+
+    @pytest.mark.parametrize("endpoint", [
+        "summary", "runtime", "evidence", "evidence-errors",
+        "evidence/{id}", "evidence/{id}/download", "evidence/{id}/compare/{id}",
+    ])
+    def test_profile_save_completes_while_evidence_scan_is_blocked(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoint: str,
+    ) -> None:
+        monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+        monkeypatch.setenv("MODEL_CONTROL_DB", str(tmp_path / "models.db"))
+        root = tmp_path / "artifacts"
+        root.mkdir()
+        (root / "example.json").write_text("{}")
+        app = FastAPI()
+        app.include_router(dashboard_router)
+        app.include_router(model_router)
+        service = DashboardService(artifact_root=root)
+        app.state.dashboard_service = service
+        started, release = threading.Event(), threading.Event()
+        original = service.evidence_index._record_for
+    
+        def blocked_record(*args, **kwargs):
+            started.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+    
+        monkeypatch.setattr(service.evidence_index, "_record_for", blocked_record)
+        evidence_id = hashlib.sha256(b"example.json").hexdigest()[:16]
+    
+        async def exercise() -> None:
+            transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                watchdog = threading.Timer(2, release.set)
+                watchdog.start()
+                scan = asyncio.create_task(client.get(
+                    "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+                ))
+                try:
+                    assert await asyncio.to_thread(started.wait, 3)
+                    saved = await client.post("/api/v1/model-control/profiles", json={
+                        "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                        "model_name": "rule-based",
+                    })
+                    listed = await client.get("/api/v1/model-control/profiles")
+                    completed_during_scan = not release.is_set()
+                finally:
+                    release.set()
+                    watchdog.cancel()
+                    scan_response = await scan
+                assert scan_response.status_code == 200
+                assert saved.status_code == 201
+                assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+                assert completed_during_scan, "profile save/list waited for the evidence scan"
+    
+>       asyncio.run(exercise())
+
+tests/test_dashboard_scan_responsiveness.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            watchdog = threading.Timer(2, release.set)
+            watchdog.start()
+            scan = asyncio.create_task(client.get(
+                "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+            ))
+            try:
+                assert await asyncio.to_thread(started.wait, 3)
+                saved = await client.post("/api/v1/model-control/profiles", json={
+                    "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                    "model_name": "rule-based",
+                })
+                listed = await client.get("/api/v1/model-control/profiles")
+                completed_during_scan = not release.is_set()
+            finally:
+                release.set()
+                watchdog.cancel()
+                scan_response = await scan
+            assert scan_response.status_code == 200
+            assert saved.status_code == 201
+            assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+>           assert completed_during_scan, "profile save/list waited for the evidence scan"
+E           AssertionError: profile save/list waited for the evidence scan
+E           assert False
+
+tests/test_dashboard_scan_responsiveness.py:72: AssertionError
+_ test_profile_save_completes_while_evidence_scan_is_blocked[evidence/{id}/compare/{id}] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-0/test_profile_save_completes_wh6')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e2c246be00>
+endpoint = 'evidence/{id}/compare/{id}'
+
+    @pytest.mark.parametrize("endpoint", [
+        "summary", "runtime", "evidence", "evidence-errors",
+        "evidence/{id}", "evidence/{id}/download", "evidence/{id}/compare/{id}",
+    ])
+    def test_profile_save_completes_while_evidence_scan_is_blocked(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, endpoint: str,
+    ) -> None:
+        monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+        monkeypatch.setenv("MODEL_CONTROL_DB", str(tmp_path / "models.db"))
+        root = tmp_path / "artifacts"
+        root.mkdir()
+        (root / "example.json").write_text("{}")
+        app = FastAPI()
+        app.include_router(dashboard_router)
+        app.include_router(model_router)
+        service = DashboardService(artifact_root=root)
+        app.state.dashboard_service = service
+        started, release = threading.Event(), threading.Event()
+        original = service.evidence_index._record_for
+    
+        def blocked_record(*args, **kwargs):
+            started.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+    
+        monkeypatch.setattr(service.evidence_index, "_record_for", blocked_record)
+        evidence_id = hashlib.sha256(b"example.json").hexdigest()[:16]
+    
+        async def exercise() -> None:
+            transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                watchdog = threading.Timer(2, release.set)
+                watchdog.start()
+                scan = asyncio.create_task(client.get(
+                    "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+                ))
+                try:
+                    assert await asyncio.to_thread(started.wait, 3)
+                    saved = await client.post("/api/v1/model-control/profiles", json={
+                        "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                        "model_name": "rule-based",
+                    })
+                    listed = await client.get("/api/v1/model-control/profiles")
+                    completed_during_scan = not release.is_set()
+                finally:
+                    release.set()
+                    watchdog.cancel()
+                    scan_response = await scan
+                assert scan_response.status_code == 200
+                assert saved.status_code == 201
+                assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+                assert completed_during_scan, "profile save/list waited for the evidence scan"
+    
+>       asyncio.run(exercise())
+
+tests/test_dashboard_scan_responsiveness.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            watchdog = threading.Timer(2, release.set)
+            watchdog.start()
+            scan = asyncio.create_task(client.get(
+                "/api/v1/dashboard/" + endpoint.format(id=evidence_id)
+            ))
+            try:
+                assert await asyncio.to_thread(started.wait, 3)
+                saved = await client.post("/api/v1/model-control/profiles", json={
+                    "display_name": "isolated-save-test", "provider_kind": "RULE_BASED",
+                    "model_name": "rule-based",
+                })
+                listed = await client.get("/api/v1/model-control/profiles")
+                completed_during_scan = not release.is_set()
+            finally:
+                release.set()
+                watchdog.cancel()
+                scan_response = await scan
+            assert scan_response.status_code == 200
+            assert saved.status_code == 201
+            assert listed.json()[0]["profile_id"] == saved.json()["profile_id"]
+>           assert completed_during_scan, "profile save/list waited for the evidence scan"
+E           AssertionError: profile save/list waited for the evidence scan
+E           assert False
+
+tests/test_dashboard_scan_responsiveness.py:72: AssertionError
+_____ test_concurrent_refreshes_share_scan_and_next_refresh_sees_new_file ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-0/test_concurrent_refreshes_shar0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e2c2332ba0>
+
+    def test_concurrent_refreshes_share_scan_and_next_refresh_sees_new_file(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        (tmp_path / "first.json").write_text("{}")
+        index = EvidenceIndex(tmp_path)
+        original = index._record_for
+        entered, release = threading.Event(), threading.Event()
+        calls = []
+    
+        def blocked_record(*args, **kwargs):
+            calls.append(args[0].name)
+            entered.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+    
+        monkeypatch.setattr(index, "_record_for", blocked_record)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(index.refresh)
+            assert entered.wait(2)
+            second = pool.submit(index.refresh)
+            timer = threading.Timer(0.2, release.set)
+            timer.start()
+            try:
+                left, right = first.result(timeout=3), second.result(timeout=3)
+            finally:
+                release.set()
+                timer.cancel()
+>       assert calls == ["first.json"], "concurrent refresh repeated the full scan"
+E       AssertionError: concurrent refresh repeated the full scan
+E       assert ['first.json', 'first.json'] == ['first.json']
+E         
+E         Left contains one more item: 'first.json'
+E         Use -v to get more diff
+
+tests/test_dashboard_scan_responsiveness.py:104: AssertionError
+____________ test_inflight_scan_preserves_completed_error_snapshot _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-0/test_inflight_scan_preserves_c0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e2c2333110>
+
+    def test_inflight_scan_preserves_completed_error_snapshot(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        (tmp_path / "broken.json").write_text("{")
+        index = EvidenceIndex(tmp_path)
+        index.refresh()
+        previous_errors = list(index.errors)
+        entered, release = threading.Event(), threading.Event()
+        original = index._record_for
+    
+        def blocked_record(*args, **kwargs):
+            entered.set()
+            release.wait(3)
+            return original(*args, **kwargs)
+    
+        monkeypatch.setattr(index, "_record_for", blocked_record)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(index.refresh)
+            try:
+                assert entered.wait(2)
+>               assert index.errors == previous_errors
+E               AssertionError: assert [] == [EvidenceInde... 2 (char 1)')]
+E                 
+E                 Right contains one more item: EvidenceIndexError(path='broken.json', error='Expecting property name enclosed in double quotes: line 1 column 2 (char 1)')
+E                 Use -v to get more diff
+
+tests/test_dashboard_scan_responsiveness.py:130: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_dashboard_scan_responsiveness.py::test_profile_save_completes_while_evidence_scan_is_blocked[summary]
+FAILED tests/test_dashboard_scan_responsiveness.py::test_profile_save_completes_while_evidence_scan_is_blocked[runtime]
+FAILED tests/test_dashboard_scan_responsiveness.py::test_profile_save_completes_while_evidence_scan_is_blocked[evidence]
+FAILED tests/test_dashboard_scan_responsiveness.py::test_profile_save_completes_while_evidence_scan_is_blocked[evidence-errors]
+FAILED tests/test_dashboard_scan_responsiveness.py::test_profile_save_completes_while_evidence_scan_is_blocked[evidence/{id}]
+FAILED tests/test_dashboard_scan_responsiveness.py::test_profile_save_completes_while_evidence_scan_is_blocked[evidence/{id}/download]
+FAILED tests/test_dashboard_scan_responsiveness.py::test_profile_save_completes_while_evidence_scan_is_blocked[evidence/{id}/compare/{id}]
+FAILED tests/test_dashboard_scan_responsiveness.py::test_concurrent_refreshes_share_scan_and_next_refresh_sees_new_file
+FAILED tests/test_dashboard_scan_responsiveness.py::test_inflight_scan_preserves_completed_error_snapshot
+9 failed in 16.22s

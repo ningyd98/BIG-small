@@ -1,0 +1,119 @@
+{
+  "planner_model": "gpt-6-astra",
+  "round": "round-model-save-raw-log-delivery-20261108",
+  "created_at": "2026-11-08T12:37:05.033165+00:00",
+  "status": "PLAN_READY",
+  "problem": "完整 git diff --cached --check 因归档原始测试日志 trailing whitespace / EOF空行返回2；产品代码验证已通过，此为交付分类检查失败。",
+  "original_failure": {
+    "command": "git diff --cached --check",
+    "exit_code": 2,
+    "stdout": "original-staged-check.stdout.log",
+    "stderr": "original-staged-check.stderr.log"
+  },
+  "inputs": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/backend-green.log",
+      "sha256": "b1b73ab814bc818ab8b74f0a1bc9c67f42ed529d0e7a12ab61a7eb21d486c5ed",
+      "bytes": 632
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/backend-red.log",
+      "sha256": "f79262ec2c6fa4201f42ef556a46e821923ad1d61399ec735839e7311b1c9ff0",
+      "bytes": 39242
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/frontend-build.log",
+      "sha256": "4e7091aca47655942b8e3a10f2104b07163c54af7c2072fb0d3a139d242dd279",
+      "bytes": 3437
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/frontend-green.log",
+      "sha256": "0dcbce2f14def86a7a67e59a82ed692502007ef0836c4399d8f671549d3a894f",
+      "bytes": 779
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/frontend-red.log",
+      "sha256": "ccd30aeb5bf13f2504f6ca05d4a493bcc2954a49fc904a4da7adcc535c8fb260",
+      "bytes": 32756
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/frontend-suite.log",
+      "sha256": "609b90a8376e27c149f62b13894ccbf522650cf26d6e747600105ce6b333c4aa",
+      "bytes": 732
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/implementation-report.json",
+      "sha256": "cb10aa6e09723f06fd0afa80be77e8afdb4dceef5eec40241350d767b7579cb4",
+      "bytes": 1184
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/plan.json",
+      "sha256": "f0201177ecbf370cfa412195b6c985b20272ae59656caecacf563119489d9ae1",
+      "bytes": 9806
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/plan.md",
+      "sha256": "13af4f4df776fa87bc18557f7db845ae24e399919768382d9a9459cd80558db1",
+      "bytes": 7064
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/ready-for-key.png",
+      "sha256": "be7d51554663b9d3e579482144f8e2967bb91e7d581db82aecc3013fc5bdd70c",
+      "bytes": 84529
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/save-success.png",
+      "sha256": "883a2ea6ada95cec97b096bb6ec38c4e72d128bf2379a1b38441479316ed9d27",
+      "bytes": 84281
+    }
+  ],
+  "root_cause": "把必须冻结原始字节的工具输出与手写代码/文本混用whitespace gate；不是产品回归。",
+  "scope": [
+    "仅交付分类验证、SHA256清单、计划/结果记录、精确路径Git交付",
+    "原始日志及PNG冻结字节，不strip/format/重写",
+    "无产品代码修改，不重跑已通过测试，不操作运行进程/凭据/数据库"
+  ],
+  "steps": [
+    "复核本计划输入SHA256；保留完整staged check失败原始stdout/stderr。",
+    "将21个既有精确staged文件及本轮文件明确分类：代码/测试/手写计划报告文本；原始日志；PNG二进制。",
+    "对代码、测试、手写计划报告单独运行git diff --cached --check -- <精确文本路径>，要求exit0；不把原始日志输出错误冒充代码失败。",
+    "生成日志和PNG SHA256清单，逐个比较git show :<path>原始blob与filesystem bytes完全一致；新增原始失败输出也按原始日志分类。",
+    "仅明确路径stage/commit两轮交付；检查无意外文件，推送研发分支并核对HEAD、upstream和远端分支SHA相同。"
+  ],
+  "preconditions": [
+    "现有产品/行为测试通过且未发生产品修改：父代理报告后端37、前端45、typecheck/build通过；真实POST201=0.0104s和网页保存通过。",
+    "保留已有21个暂存文件与历史；不得git add -A或清理未跟踪文件。"
+  ],
+  "acceptance": [
+    "手写文本 scoped whitespace check通过",
+    "冻结日志与PNG stage blob/filesystem SHA256一致",
+    "提交路径与清单一致，推送后三处SHA一致"
+  ],
+  "boundaries": [
+    "此轮仅研发交付验证，不新增真实运行或正式研究验收声明",
+    "如发生新的产品变化或不属于原始日志的检查失败，暂停相关变更并再交Astra"
+  ],
+  "initial_staged_paths": [
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/backend-green.log",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/backend-red.log",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/failure-evidence.json",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/frontend-build.log",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/frontend-green.log",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/frontend-red.log",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/frontend-suite.log",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/implementation-report.json",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/live-verification.json",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/plan.json",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/plan.md",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/ready-for-key.png",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/restart.json",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/save-success.png",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/stage-summary.md",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-model-profile-save-blocked-20261108/step-report.json",
+    "dashboard/src/modelControl/pages/ModelControlCenterPage.test.tsx",
+    "dashboard/src/modelControl/pages/ModelControlCenterPage.tsx",
+    "src/cloud_edge_robot_arm/cloud/api/dashboard.py",
+    "src/cloud_edge_robot_arm/dashboard/evidence_index.py",
+    "tests/test_dashboard_scan_responsiveness.py"
+  ]
+}
