@@ -1,0 +1,29 @@
+--- run_profiles.py
++++ run_profiles_r487.py
+@@ -19,7 +19,7 @@
+ os.environ["TRITON_CACHE_DIR"] = str(TASK_ROOT / "datasets/model-cache/zdtaichu5-9b-fp8-round473/jit-round486/triton")
+ os.environ["TORCHINDUCTOR_CACHE_DIR"] = str(TASK_ROOT / "datasets/model-cache/zdtaichu5-9b-fp8-round473/jit-round486/inductor")
+ 
+-from experiment import BASELINE, CACHE, HERE, RAW, ROOT, base_versions, check_sources, kernel_bindings, mode_features, read, save
++from experiment_r487 import BASELINE, CACHE, HERE, RAW, ROOT, base_versions, check_sources, kernel_bindings, mode_features, read, save
+ from r478_adapter import EMBEDDER, R478, prepare
+ 
+ 
+@@ -30,7 +30,7 @@
+ def run(profile):
+     if profile not in {"base", "fla"}:
+         raise ValueError("unknown runtime profile")
+-    raw = RAW / ("run-" + profile)
++    raw = RAW / ("run-" + profile + "-r487")
+     raw.mkdir(parents=True, exist_ok=False)
+     state = {"profile": profile, "status": "STARTED", "created_at": datetime.now(UTC).isoformat(),
+              "pid": os.getpid(), "actual_requests": [], "requests_started": 0,
+@@ -247,7 +247,7 @@
+             del model
+         state["finished_at"] = datetime.now(UTC).isoformat()
+         save(raw / "run-result.json", state)
+-        save(HERE / ("run-" + profile + ".json"), state)
++        save(HERE / ("run-" + profile + "-r487.json"), state)
+         lock.close()
+         print("RUN_RESULT", state["status"], len(state["actual_requests"]), flush=True)
+ 

@@ -1,0 +1,41 @@
+# R489 Astra可选计划：隔离Python headers恢复微型JIT就绪
+
+实际规划者：`gpt-6-astra`；仅规划。已冻结只读apt/sysconfig与原始FLA失败，没有下载/解包/安装或CUDA执行。
+
+## 原始失败与待验证根因
+
+旧FLA processor预检的图像/函数选择PASS不能证明CUDA就绪。原stderr有cuda_utils.c: Python.h缺失及FLA hardware fallback CPU警告，当前B禁止运行。Astra只读核实：系统Python3.12.3/GCC13.3、SOABI cpython-312-x86_64-linux-gnu、include /usr/include/python3.12；libpython3.12-stdlib及libpython3.12t64均已装3.12.3-1ubuntu0.17而dev包未装。固定apt metadata显示同版本dev包可提供匹配头文件。假设隔离匹配headers可让现有GCC/Triton构建微型cuda_utils；未验证前不声称ABI/JIT可用。
+
+## 范围
+
+仅R489计划/下载与header清单/小就绪probe/新processor gate和必要artifact选择器，ignored cache下独立header树与JIT cache。不apt install、不执行package maintainer脚本、不修改/usr或任何系统文件、不装编译器/nvcc、不开causal-conv、不改Torch/Triton/base68/官方源码/权重/量化。原FLA失败原样保留，R488 A优先；仅CPU下载/检查可与A并行，任何CUDA/FLA import/driver探针必须A进程终止并释放GPU后。
+
+## 固定下载
+
+固定包libpython3.12-dev=3.12.3-1ubuntu0.17 amd64，路径pool/main/p/python3.12/libpython3.12-dev_3.12.3-1ubuntu0.17_amd64.deb，size5683746，SHA256 c123ddab7763e45199e21b4ac8545e705f20a0315b9ada4c236b52fb088c4e16。此包来源/expected hash依据已冻结本机apt metadata，与当前已安装同版本stdlib/t64匹配。新增仅此单文件上限6MiB的下载额度，不扩展原wheel清单。先落download protocol，再经已有严格直连enp7s0/AliDNS223.5.5.5+223.6.6.6/TLS/trust_env=False传输；精确allowlist仅security.ubuntu.com、cn.archive.ubuntu.com，使用HTTPS https://security.ubuntu.com/ubuntu/加固定路径，允许同文件cn.archive HTTPS一次有限镜像fallback，逐跳域检查、不降HTTP或代理。bytes/SHA不符即停，不从别版/第三站替换。
+
+## 隔离提取与环境
+
+先以dpkg-deb只读列archive元数据/文件，确认Package/Version/Architecture及路径无绝对路径穿越/越界symlink；只dpkg-deb --extract至新独立ignored cache目录，不安装、不执行control脚本。保存deb+完整提取文件清单/SHA及链接目标，解包含的静态库/工具不执行、不加入链接路径；仅使用头文件。检查Python.h、patchlevel.h与pyconfig.h真实位置/版本和ABI，确保Python3.12.3 amd64一致。
+子进程env仅新增显式CPATH包含独立树的usr/include/python3.12与usr/include/x86_64-linux-gnu/python3.12；若包内pyconfig shim使用带multiarch相对前缀，则可追加该独立树usr/include，按实际include解析记录，禁止伪造或补丁header。不改sysconfig、不建立系统symlink、不设置指向包静态库的LIBRARY_PATH。干净B env/cache cwd与既有overlay一致，TRITON_CACHE_DIR和TMPDIR仅本轮独立cache。记录GCC真实路径/版本和header SHA，package链接只可解析在隔离树或既有系统标准库范围内。
+
+## A结束后的真实就绪门槛
+
+A完成并释放锁/GPU后，核对base68版本及实际模块来源未变，取得同共享GPU锁且满足原准入，无并行CUDA。新进程进行一次小型非模型probe：初始化triton.runtime.driver.active，target.backend必须cuda、arch89且真实device properties可读；导入FLA检查get_available_device()==cuda、device_platform/device_name为cuda及IS_NVIDIA真，get_multiprocessor_count和max_shared_mem来自真实设备而非fallback 1/-1。保存所有stdout/stderr、warning、返回值、编译耗时及cache源码/产物hash；任何Python.h/链接/CPU fallback警告否决门槛，不用警告过滤制造通过。
+允许已有工具链编译tiny cuda_utils及一个<=4096元素的小Triton CUDA数值probe，与Torch CPU参考比对并同步；这不是模型加载或model.generate，不增加模型请求数。固定probe和源码SHA，记录其driver/JIT预热成本，B模型首次推理须注明发生在driver readiness之后，不能将预检成本隐去声称无预热冷启动。probe结束释放CUDA上下文和共享锁。使用新processor-fla-r489.*完成真实同图ON/OFF processor与原输入一致性验证，并记录已核实的FLA CUDA分支；保存独立readiness.json汇总，两者都PASS才有资格B。
+
+## B恢复条件
+
+R489在B就绪方面替代R488当前B_BLOCKED门槛，仅当新readiness及processor全部PASS、证据hash与当次CPATH/headers/overlay一致、A已完成、剩余预算足够时，明确允许剩余B一次load/8个原顺序请求。原R488失败门槛文件不改；若现runner写死旧processor路径，仅复制新run_profiles_r489.py并替换显式gate路径及child env/唯一raw-result名，模型/输入/8顺序/参数不变，diff留证。实际B每次仍保持248FP8/GPU/原BF16层、FLA-only且causal-conv fallback，不宣称完整fast path。
+
+## 预算与负门槛
+
+准备及验证总工作上限8分钟，硬截止仍14:39UTC（从R486约13:09起90分钟，不重置）；A等待占总90分钟，不能因GPU占用并发probe。可先完成CPU准备，若A结束后已无充足8分钟/后续B请求时间，则B_NOT_RUN_BUDGET，优先完成A结论。每下载请求60秒/最多两次短重试且总额受8分钟限制；tiny probe<=120秒，小probe只一次，无版本探索。下载/TLS/提取/ABI不匹配、缺其他headers、链接或JIT失败、仍CPU fallback均是预期负门槛，停止并B_NOT_RUN，不再追加依赖/换包/源码补丁。总load上限仍4（历史2+A1+B最多1），总生成仍16，load600秒/请求180秒/无offload不变。
+
+## 验收与交付
+
+软件通过要求固定deb及完整headers provenance、ABI一致、base68不变；硬件就绪必须真实Triton+FLA CUDA且小probe数值通过，不能被processor输入PASS替代。B模型与质量仍按R486独立实际验证、质量优先，无raw清洗，正式验收NOT_PERFORMED。记录准备和tiny JIT成本。交付在父8b4a88bde7de996a44a119115dc2f735bdad5807上明确追加R486-R489四目录artifact，保留原失败；header/deb/JIT/模型raw留ignored cache，只提交可审核清单/报告，不碰共享checkout/index及无关service.py改动，正常push与三SHA。
+
+## 输入SHA
+
+完整path/bytes/SHA256见plan.json input_sha256，含AGENTS、R486/R488计划、已安装Triton/FLA相关实现、冻结apt/sysconfig输出与原FLA失败；执行前逐项复核。

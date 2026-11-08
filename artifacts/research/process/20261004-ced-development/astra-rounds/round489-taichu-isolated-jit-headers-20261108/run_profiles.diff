@@ -1,0 +1,53 @@
+--- run_profiles_r488.py
++++ run_profiles_r489.py
+@@ -16,10 +16,10 @@
+ from pathlib import Path
+ 
+ TASK_ROOT = Path(__file__).resolve().parents[7]
+-os.environ["TRITON_CACHE_DIR"] = str(TASK_ROOT / "datasets/model-cache/zdtaichu5-9b-fp8-round473/jit-round486/triton")
+-os.environ["TORCHINDUCTOR_CACHE_DIR"] = str(TASK_ROOT / "datasets/model-cache/zdtaichu5-9b-fp8-round473/jit-round486/inductor")
+-
+-from experiment_r488 import BASELINE, CACHE, HERE, RAW, ROOT, base_versions, check_sources, kernel_bindings, mode_features, read, save
++os.environ["TRITON_CACHE_DIR"] = str(TASK_ROOT / "datasets/model-cache/zdtaichu5-9b-fp8-round473/jit-round489/triton")
++os.environ["TORCHINDUCTOR_CACHE_DIR"] = str(TASK_ROOT / "datasets/model-cache/zdtaichu5-9b-fp8-round473/jit-round489/inductor")
++
++from experiment_r489 import BASELINE, CACHE, HERE, RAW, ROOT, base_versions, check_sources, kernel_bindings, mode_features, read, save
+ from r478_adapter import EMBEDDER, R478, prepare
+ 
+ 
+@@ -28,9 +28,9 @@
+ 
+ 
+ def run(profile):
+-    if profile not in {"base", "fla"}:
++    if profile != "fla":
+         raise ValueError("unknown runtime profile")
+-    raw = RAW / ("run-" + profile + "-r488")
++    raw = RAW / ("run-" + profile + "-r489")
+     raw.mkdir(parents=True, exist_ok=False)
+     state = {"profile": profile, "status": "STARTED", "created_at": datetime.now(UTC).isoformat(),
+              "pid": os.getpid(), "actual_requests": [], "requests_started": 0,
+@@ -54,7 +54,13 @@
+         signature = [weight.stat().st_size, weight.stat().st_mtime_ns, weight.stat().st_ctime_ns]
+         if weight_gate["status"] != "PASS" or signature != weight_gate["stat_signature"]:
+             raise ValueError("fixed weight byte verification no longer applies")
+-        processor_gate = read(HERE / ("processor-" + profile + ".json"))
++        r489 = HERE.parent / "round489-taichu-isolated-jit-headers-20261108"
++        readiness = read(r489 / "readiness.json")
++        if readiness["status"] != "PASS" or os.environ.get("CPATH") != readiness["CPATH"]:
++            raise ValueError("R489 isolated header/kernel readiness gate failed")
++        if hashlib.sha256((r489 / "header-manifest.json").read_bytes()).hexdigest() != readiness["header_manifest_sha256"]:
++            raise ValueError("R489 header manifest drift")
++        processor_gate = read(HERE / ("processor-" + profile + "-r489.json"))
+         if processor_gate["status"] != "PASS":
+             raise ValueError("full paired-image processor gate failed")
+         state["base_68"] = base_versions()
+@@ -253,7 +259,7 @@
+         state["finished_at"] = datetime.now(UTC).isoformat()
+         from evidence_codec_r488 import finalize_evidence
+         recorded = finalize_evidence(state, [raw / "run-result.json",
+-            HERE / ("run-" + profile + "-r488.json")], raw, primary_text)
++            HERE / ("run-" + profile + "-r489.json")], raw, primary_text)
+         lock.close()
+         print("RUN_RESULT", state["status"] if recorded else "EVIDENCE_WRITE_FAILED",
+               len(state["actual_requests"]), flush=True)
