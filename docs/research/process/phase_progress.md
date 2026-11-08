@@ -1,5 +1,7 @@
 # 阶段进度
 
+**2026-11-09 云端 RGB-D 真实复测资源准入（R495–R497）：** Key已加密固化且完成跨进程恢复，现有三个配置与激活版本2仍与R494完全一致。修正两处运行前证据检查后，真实复测在GPU互斥锁准入处停止：锁由独立太初实验PID1583468持有。未抢占/终止其他实验；本轮规划POST=0、后端重启=0、付费门仍false，无渲染/物理/硬件动作。六项字节路径检查通过，产品源码及此前108项软件验证状态不变；R469仍NOT_RUN，真实RGB-D结果待资源释放后的新准入。见[本轮记录](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round495-persisted-sol-real-rgbd-retest-20261108/step-report.md)。
+
 **2026-11-08 真实密钥跨进程恢复（R493–R494）：** 用户在现有配置保存密钥后，已确认加密存储实际存在。一次受控SIGTERM的30秒退出观察超时，原失败完整保留；旧进程随后正常退出。按Astra R494在确认端口空闲后仅启动一个新后端，实际Key自动恢复，三个配置、激活项及版本2完整保留，原前端不变。user_key_persisted=true、persisted_key_survives_restart=true，无需重录；未读取或导出密钥值。源码不变，前108项软件验证沿用；付费门仍false，尚未进行provider/规划/渲染/硬件调用，R469仍NOT_RUN。见[恢复与验证报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round494-key-restart-shutdown-timeout-20261108/step-report.md)。
 
 **2026-11-08 密钥持久化（R489–R493）：** 已实现本机私有目录的 Fernet 加密保存、数据库路径独立命名空间和现有配置的仅密钥更新入口；重启后按实际存储显示状态。最终56项密钥后端、39项相邻回归及13项前端测试通过，类型、Ruff和密钥扫描通过，两轮独审无确认问题；原失败及日志字节完整归档。后端已受控切换，三个配置、当前Sol激活项与原前端保留，ENCRYPTED_FILE能力上线。当前为 ready_for_one_time_key_entry：旧内存Key未迁移，需用户在现有配置保存一次后再重启验证真实Key恢复；user_key_persisted=false，付费调用仍关闭，未进行模型/渲染/硬件调用，R469仍NOT_RUN。见[本轮部署报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round493-persistent-key-live-transition-20261108/step-report.md)及[最终软件证据](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round492-persistent-key-service-transition-20261108/software-report.json)。

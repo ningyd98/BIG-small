@@ -1,0 +1,13 @@
+# R495 persisted-key RGB-D integration admission
+
+**Outcome: WAITING_RESOURCE, zero planner POSTs, zero backend restarts.** This is resource admission evidence, not a real-provider RGB-D pass. The sole planned request remains unconsumed. R469 nominal remains NOT_RUN.
+
+Actual Astra R495 authorized one controlled paid-enabled/EGL backend replacement followed by one RGB-D planning POST. Before any such action, its nonblocking exclusive `cache/research/.r468-r469-gpu.lock` acquisition failed. Kernel lock evidence identifies UID1000 python PID1583468/start9578793, cwd in the independent Taichu round473 model workspace. No foreign process, service or lock was modified. Earlier read-only GPU/service facts were contextual; admission under the lock did not occur.
+
+The resource-blocked runner created only its private ignored empty cache and local/canonical operational receipts. Neither cache attempted.json nor canonical execution-start.json exists. It returned before metadata freeze, signal, launch, capture or model POST. A separate final read-only health/profile/runtime/capabilities snapshot matches the full R494 filtered metadata exactly. Existing healthy backend1506084/start9497458 and Vite159968/start8153269 still own loopback8000/5173. Paid gate remains false and EGL transition was not applied.
+
+The active encrypted key is still present, config_version2, with all three profiles unchanged. R494's earlier fresh-process proof remains valid: user_key_persisted=true and persisted_key_survives_restart=true. No further key entry is needed. No secret value, vault bytes, environment dump or database payload was read/exported by this work.
+
+Two pre-runtime guard failures are preserved separately. R496 admits only the exact previously reviewed artifact/report commit progression; R497 fixes Git's quoted non-ASCII path output through supported --stdin -z byte comparison. Both retain the original R495 budget and inputs. The byte guard passed the actual ignored Chinese path, actual nonignored path rejection and four malformed-result rejection cases. The corrected operational runner reached the resource guard. No product, test, dependency or Git ignore-rule edit occurred.
+
+The offline response classifier is retained explicitly as NOT EXECUTED: no response exists. No provider/vision/physics/hardware success, tokens or costs are inferred. Any future resumption needs fresh resource/process admission and a new named operational receipt/cache while preserving this blocked result and the single unconsumed request bound. Do not rerun this one-use runner by deleting its cache or receipts.

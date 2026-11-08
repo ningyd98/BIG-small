@@ -1,0 +1,3 @@
+# R497 byte-safe ignored-path guard
+
+Original runner/log bytes were preserved before editing. Ordinary Git check-ignore returned success with a C-quoted octal-escaped Chinese path; text equality falsely rejected it. Actual Astra validated the supported --stdin -z form. Only that operational guard changed; the exact diff is retained. Isolated tests accepted the actual ignored absolute path, rejected nonignored AGENTS.md and rejected rc128, wrongpath, missingNUL and extra records: six checks passed. No operational main, cache creation, API, signal or launch ran during guard validation. R495/R496 plans, product and ignore rules remained unchanged. The later R495 resource admission stopped on a busy foreign lock before any runtime transition or model request.
