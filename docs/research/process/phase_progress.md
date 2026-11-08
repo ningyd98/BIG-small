@@ -1,5 +1,7 @@
 # 阶段进度
 
+**2026-11-09 已保存 Sol 密钥真实 RGB-D 复测通过（R498）：** 太初实验释放资源后，按Astra新计划在GPU锁内重新准入。原后端一次SIGTERM约26.88秒正常退出，仅启动一个新后端；相同加密Key自动恢复，三个配置及激活版本2不变，原前端保留。唯一一次真实RGB-D规划POST返回HTTP200，耗时3.418661秒，49/49项场景、标定、视觉决策和任务契约校验通过，结果PLANNED_INTEGRATION；识别red cube并生成完整取放技能序列。GPU锁已释放，正常UI后端保持paid=true/EGL，模型页面验收HTTP200。无额外模型探测/重试/回退、无物理步进/下发/硬件动作；token/费用等不可观测量保留null，R469仍NOT_RUN。产品源码不变，既有软件测试记录与本次真实证据分别保留。见[本轮报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round498-persisted-sol-real-rgbd-resume-20261109/step-report.md)。 差异证据按[R499](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round499-r498-diff-evidence-delivery-20261109/step-report.md)无损归档，最终交付以该轮清单为准。
+
 **2026-11-09 云端 RGB-D 真实复测资源准入（R495–R497）：** Key已加密固化且完成跨进程恢复，现有三个配置与激活版本2仍与R494完全一致。修正两处运行前证据检查后，真实复测在GPU互斥锁准入处停止：锁由独立太初实验PID1583468持有。未抢占/终止其他实验；本轮规划POST=0、后端重启=0、付费门仍false，无渲染/物理/硬件动作。六项字节路径检查通过，产品源码及此前108项软件验证状态不变；R469仍NOT_RUN，真实RGB-D结果待资源释放后的新准入。见[本轮记录](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round495-persisted-sol-real-rgbd-retest-20261108/step-report.md)。
 
 **2026-11-08 真实密钥跨进程恢复（R493–R494）：** 用户在现有配置保存密钥后，已确认加密存储实际存在。一次受控SIGTERM的30秒退出观察超时，原失败完整保留；旧进程随后正常退出。按Astra R494在确认端口空闲后仅启动一个新后端，实际Key自动恢复，三个配置、激活项及版本2完整保留，原前端不变。user_key_persisted=true、persisted_key_survives_restart=true，无需重录；未读取或导出密钥值。源码不变，前108项软件验证沿用；付费门仍false，尚未进行provider/规划/渲染/硬件调用，R469仍NOT_RUN。见[恢复与验证报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round494-key-restart-shutdown-timeout-20261108/step-report.md)。
