@@ -1,0 +1,360 @@
+R461 original static evidence; read-only inspection, no failing command/test executed.
+
+FILE src/cloud_edge_robot_arm/research/freeze_evidence.py:90-114
+90: def _model_evidence(settings: Mapping[str, Any]) -> dict[str, Any]:
+91:     """Rebuild the adapter's model snapshot from recorded effective settings."""
+92:     return {
+93:         name: settings[name]
+94:         for name in (
+95:             "provider",
+96:             "model",
+97:             "endpoint_hash",
+98:             "weight_digest",
+99:             "quantization",
+100:             "image_size",
+101:             "generation_parameters",
+102:             "timeout_s",
+103:             "coordinate_system",
+104:             "grasp_profile",
+105:         )
+106:     }
+107: 
+108: 
+109: def _model_evidence_hash(settings: Mapping[str, Any]) -> str:
+110:     return hashlib.sha256(
+111:         json.dumps(_model_evidence(settings), sort_keys=True).encode()
+112:     ).hexdigest()
+113: 
+114: 
+
+FILE src/cloud_edge_robot_arm/research/freeze_evidence.py:207-237
+207:                 coordinate_system=settings["coordinate_system"],
+208:                 decision_schema=VisualDecision.model_json_schema(),
+209:             )
+210:             from cloud_edge_robot_arm.vision.planner import compatible_messages
+211: 
+212:             expected_body = {
+213:                 "model": settings["model"],
+214:                 "messages": compatible_messages(messages),
+215:                 "temperature": settings["generation_parameters"]["temperature"],
+216:                 "max_tokens": settings["generation_parameters"]["num_predict"],
+217:                 "response_format": {"type": "json_object"},
+218:             }
+219:             if body != expected_body:
+220:                 raise ValueError("actual wire does not bind the frozen frame/prompt/settings")
+221:             offline = RGBDPlannerAdapter(
+222:                 base_url="http://127.0.0.1:11434",
+223:                 model=cloud.model_id,
+224:                 provider="openai_compatible",
+225:             )
+226:             draft = offline._ground_response(
+227:                 request,
+228:                 response,
+229:                 0,
+230:                 frame.observation,
+231:                 messages,
+232:                 tuple(settings["image_size"]),
+233:                 settings["coordinate_system"],
+234:                 settings["grasp_profile"],
+235:             )
+236:             evidence = draft.observation_evidence or {}
+237:             target_hit, target_check = _pixel_hit(
+
+FILE src/cloud_edge_robot_arm/research/freeze_evidence.py:550-596
+550:             or context.task_instruction != instruction
+551:         ):
+552:             raise ValueError("supervision typed context differs from its registered frame/task")
+553:         captured: list[list[dict[str, Any]]] = []
+554: 
+555:         class _Compiled(Exception):
+556:             pass
+557: 
+558:         class _MessageCompiler(RGBDPlannerAdapter):
+559:             def _request_visual(
+560:                 self, messages: list[dict[str, Any]], decision_schema: dict[str, Any]
+561:             ) -> dict[str, Any]:
+562:                 captured.append(messages)
+563:                 raise _Compiled
+564: 
+565:         # This endpoint is unused: the compiler stops before transport/parsing.
+566:         snapshot = ModelConfigSnapshot(
+567:             provider="openai_compatible",
+568:             endpoint="http://127.0.0.1:11434",
+569:             model=settings["model"],
+570:             weight_digest=settings["weight_digest"],
+571:             quantization=settings["quantization"],
+572:             image_size=tuple(settings["image_size"]),
+573:             generation_parameters=settings["generation_parameters"],
+574:             timeout_s=settings["timeout_s"],
+575:             coordinate_system=settings["coordinate_system"],
+576:             grasp_profile=settings["grasp_profile"],
+577:         )
+578:         compiler = _MessageCompiler(model=settings["model"], model_snapshot=snapshot)
+579:         try:
+580:             compiler.supervise(observation, context)
+581:         except _Compiled:
+582:             pass
+583:         if len(captured) != 1:
+584:             raise ValueError("production supervision message compilation did not complete")
+585:         messages = captured[0]
+586:     else:
+587:         raise ValueError("unsupported B0 request role")
+588:     return {
+589:         "model": settings["model"],
+590:         "messages": compatible_messages(messages),
+591:         "temperature": settings["generation_parameters"]["temperature"],
+592:         "max_tokens": settings["generation_parameters"]["num_predict"],
+593:         "response_format": {"type": "json_object"},
+594:     }
+595: 
+596: 
+
+FILE src/cloud_edge_robot_arm/research/freeze_evidence.py:720-760
+720:                 raise ValueError("registered model images must be base64 strings")
+721:             blobs.extend(encoded)
+722:         images = tuple(hashlib.sha256(base64.b64decode(image)).hexdigest() for image in blobs)
+723:         image_pairs.setdefault(images, []).append(observation)
+724:     wire = read_json(_inside(case, "wire-index.json"))
+725:     costs = read_json(_inside(case, "costs.json"))
+726:     requests = [RequestCost.model_validate(value) for value in costs["requests"]]
+727:     sent = [r for r in requests if r.sent_at is not None]
+728:     joined = _join_b0_cost_wire(case, requests, wire, _model_evidence_hash(settings))
+729:     for entry, cost in joined:
+730:         request_raw, _ = _case_wire_payloads(case, entry)
+731:         body = json.loads(request_raw)
+732:         summary = summarize_role_request(body)
+733:         if hashlib.sha256(request_raw).hexdigest() != entry["request_sha256"] or (
+734:             summary["model"] != settings["model"]
+735:             or tuple(summary["image_sha256"]) not in image_pairs
+736:             or body["temperature"] != settings["generation_parameters"]["temperature"]
+737:             or body["max_tokens"] != settings["generation_parameters"]["num_predict"]
+738:             or body["response_format"] != {"type": "json_object"}
+739:         ):
+740:             raise ValueError("actual model wire differs from frozen model/current RGB-D")
+741:         matched = False
+742:         for observation in image_pairs[tuple(summary["image_sha256"])]:
+743:             try:
+744:                 _verify_b0_request_body(
+745:                     body, cost.model_role, observation, policy["instruction"], settings
+746:                 )
+747:             except ValueError:
+748:                 continue
+749:             matched = True
+750:             break
+751:         if not matched:
+752:             raise ValueError("B0 original complete role-specific request does not reproduce")
+753:     if sum(e["serialized_sent_bytes"] for e in wire) != sum(
+754:         r.serialized_sent_bytes for r in sent
+755:     ) or (
+756:         sum(e["serialized_received_bytes"] for e in wire)
+757:         != sum(r.serialized_received_bytes for r in sent)
+758:         or costs["summary"]["cloud_model_requests"] != len(sent)
+759:         or costs["summary"]["application_bytes"]
+760:         != sum(r.serialized_sent_bytes + r.serialized_received_bytes for r in sent)
+
+FILE src/cloud_edge_robot_arm/vision/planner.py:199-222
+199:         self.chat_path = chat_path
+200:         self._validate_sol_identity()
+201: 
+202:     def _validate_sol_identity(self) -> None:
+203:         snapshot = self.model_snapshot
+204:         if (
+205:             snapshot is not None
+206:             and snapshot.model == SOL_MODEL
+207:             and (self.model_name != snapshot.model or self.provider != snapshot.provider)
+208:         ):
+209:             raise ValueError("Sol adapter identity differs from its frozen snapshot")
+210:         validate_sol_route(self.provider, self.model_name, self.base_url, self.chat_path)
+211: 
+212:     @classmethod
+213:     def from_environment(cls) -> RGBDPlannerAdapter:
+214:         from cloud_edge_robot_arm.vision.defaults import DEFAULT_FROZEN_DIR
+215:         from cloud_edge_robot_arm.vision.frozen_model import load_frozen_planner
+216: 
+217:         frozen = os.environ.get("BIGSMALL_VLM_FROZEN_DIR")
+218:         if frozen:
+219:             return load_frozen_planner(Path(frozen))
+220:         if frozen is None and not any(
+221:             name in os.environ
+222:             for name in (
+
+FILE scripts/probe_rgbd_roles.py:450-480
+450:             from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+451:             from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+452: 
+453:             simulator = SimulatorConfig(
+454:                 camera_width=320,
+455:                 camera_height=240,
+456:                 render_rgb=True,
+457:                 render_depth=True,
+458:                 domain_randomization=False,
+459:                 seed=config["probe"]["seed"],
+460:             )
+461:             report["transport"] = "REAL_HTTP"
+462:             with MuJoCoCaptureSession(simulator) as session:
+463:                 for index in range(config["probe"]["warm_runs"] + 1):
+464:                     frame = session.capture_with_instances()
+465:                     synchronized = len(frame.pass_state_hashes) == 3 and (
+466:                         set(frame.pass_state_hashes) == {frame.physics_state_hash}
+467:                     )
+468:                     report["source"] = frame.observation.source
+469:                     report["capture"] = {
+470:                         "synchronized": synchronized
+471:                         and (index == 0 or report["capture"]["synchronized"]),
+472:                         "image_size": [320, 240],
+473:                     }
+474:                     if not synchronized:
+475:                         raise ValueError("capture passes are not synchronized")
+476:                     request = InitialPlanningRequest(
+477:                         request_id=f"cloud-role-probe-{index:02d}",
+478:                         user_instruction=config["probe"]["instruction"],
+479:                         scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
+480:                         observation=frame.observation,
+
+FILE scripts/probe_rgbd_roles.py:530-550
+530:     from cloud_edge_robot_arm.vision.messages import build_visual_messages
+531:     from cloud_edge_robot_arm.vision.model_resolver import compatible_chat_generation
+532:     from cloud_edge_robot_arm.vision.planner import VisualDecision, compatible_messages
+533: 
+534:     directory = output / f"attempt-{index:02d}"
+535:     directory.mkdir()
+536:     save_captured_frame(frame, directory)
+537:     settings = dict(request_settings or cloud_request_settings(planner))
+538:     messages = build_visual_messages(
+539:         request.user_instruction,
+540:         frame.observation,
+541:         image_size=tuple(settings["image_size"]),
+542:         coordinate_system=settings["coordinate_system"],
+543:         decision_schema=VisualDecision.model_json_schema(),
+544:     )
+545:     expected = summarize_role_request(
+546:         {
+547:             "model": settings["model"],
+548:             "messages": compatible_messages(messages),
+549:             **compatible_chat_generation(settings["model"], settings["generation_parameters"]),
+550:             "response_format": {"type": "json_object"},
+
+FILE src/cloud_edge_robot_arm/research/native_calibration_collection.py:150-220
+150:         rows.append(
+151:             dict(
+152:                 skill=skill,
+153:                 original_timeout_ms=duration,
+154:                 recipe=recipe,
+155:                 horizon=asdict(final),
+156:                 tail_basis=asdict(initial),
+157:             )
+158:         )
+159:     return rows
+160: 
+161: 
+162: def _protocol(config: Path) -> dict[str, Any]:
+163:     from cloud_edge_robot_arm.research.native_collection_grounding import (
+164:         geometry_registration,
+165:         release_reference_registration,
+166:     )
+167: 
+168:     settings = load_json(config)  # The fixed file uses the JSON subset of YAML.
+169:     expected = load_json(ROOT / CONFIG)
+170:     if digest(expected) != "5752ed89e2b05e5265695298f9478813b01cd8ad4e6cde577f52287cfa2e2346":
+171:         raise ValueError("fixed policy bytes changed")
+172:     if canonical(settings) != canonical(expected) or (
+173:         settings["model_path"] != MARKED_ASSET
+174:         or settings["marked_asset_sha256"] != MARKED_SHA
+175:         or settings["grasp_profile_base_asset_sha256"] != BASE_SHA
+176:     ):
+177:         raise ValueError("fixed registered collection policy required")
+178:     geometry = geometry_registration()
+179:     sources = source_inventory()
+180:     horizons = action_horizons()
+181:     physics = settings["settle_steps"] + sum(row["horizon"]["total_steps"] for row in horizons)
+182:     if physics != 12960 or physics > 32768:
+183:         raise ValueError("registered physics budget changed")
+184:     # Every step() consumes >=1 S step, hence its cached RGB/depth refresh count
+185:     # is bounded by total S steps. initialize/reset each add at most one refresh.
+186:     # Explicit per-step and 16 boundary frames each use RGB/depth/instance passes.
+187:     implicit = physics + 2
+188:     explicit = physics + 16
+189:     return dict(
+190:         schema_version="native.calibration.operational.v2",
+191:         settings=settings,
+192:         config_sha256=hashlib.sha256(regular(config).read_bytes()).hexdigest(),
+193:         source_hashes=sources,
+194:         source_generation=digest(sources),
+195:         geometry=geometry,
+196:         release_reference=release_reference_registration(sources, geometry),
+197:         role=dict(
+198:             schema_version="native.teacher.collection.role.v1",
+199:             scope="TEACHER_COLLECTION",
+200:             instruction="Move the red block to the green region.",
+201:             object_id="object",
+202:             target_region_id="target_region",
+203:             provider=None,
+204:             model=None,
+205:             model_requests=0,
+206:         ),
+207:         actions=horizons,
+208:         physical_budget=physics,
+209:         explicit_acquisition_budget=explicit,
+210:         implicit_capture_budget=implicit,
+211:         render_pass_budget=3 * explicit + 2 * implicit,
+212:         sampling=dict(max_gap_sim_s=0.005, per_physics_step=True, noise_schedule="FULL_H_V1"),
+213:         native_qualification="UNKNOWN",
+214:         future_wall_bound=None,
+215:         admission=dict(
+216:             version=ADMISSION_VERSION,
+217:             rows=list(ADMISSION_ROWS),
+218:             online_effect_status="UNKNOWN",
+219:             execution_admitted=False,
+220:             required_unknown_group_score=None,
+
+FILE src/cloud_edge_robot_arm/research/native_collection_application.py:122-145
+122:         or live.worker.repository is not live.repository
+123:         or app.output != live.output
+124:         or live.worker._native_collection_application is not app
+125:         or live.worker.planner_factory is not None
+126:         or live.worker.visual_role_binding is not None
+127:         or getattr(live.worker, "_operational_prefix_application", None) is not None
+128:         or live.worker._native_clock_prefix_application is not None
+129:     ):
+130:         raise RuntimeError("collection lifecycle, thread or exclusive worker identity changed")
+131:     return live
+132: 
+133: 
+134: def _job_basis(job: Any) -> bytes:
+135:     return canonical(
+136:         {
+137:             name: getattr(job, name)
+138:             for name in (
+139:                 "job_id",
+140:                 "run_id",
+141:                 "backend",
+142:                 "scenario_id",
+143:                 "control_mode",
+144:                 "seed",
+145:                 "draft",
+
+FILE src/cloud_edge_robot_arm/research/native_collection_application.py:123-146
+123:         or app.output != live.output
+124:         or live.worker._native_collection_application is not app
+125:         or live.worker.planner_factory is not None
+126:         or live.worker.visual_role_binding is not None
+127:         or getattr(live.worker, "_operational_prefix_application", None) is not None
+128:         or live.worker._native_clock_prefix_application is not None
+129:     ):
+130:         raise RuntimeError("collection lifecycle, thread or exclusive worker identity changed")
+131:     return live
+132: 
+133: 
+134: def _job_basis(job: Any) -> bytes:
+135:     return canonical(
+136:         {
+137:             name: getattr(job, name)
+138:             for name in (
+139:                 "job_id",
+140:                 "run_id",
+141:                 "backend",
+142:                 "scenario_id",
+143:                 "control_mode",
+144:                 "seed",
+145:                 "draft",
+146:                 "timeout_seconds",
