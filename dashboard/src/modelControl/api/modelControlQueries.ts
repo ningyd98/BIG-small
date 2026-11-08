@@ -5,6 +5,7 @@
 // 模型列表和下载任务都以后端状态为准，mutation 成功后主动失效相关缓存，避免
 // 页面显示旧的 active planner 或误把未安装模型显示为可用。
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 import { modelControlApi } from "./modelControlApi";
 
@@ -69,7 +70,8 @@ export function useModelDownloads() {
 
 export function useCreateModelProfile() {
   const queryClient = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
+    gcTime: 0,
     mutationFn: modelControlApi.createProfile,
     onSuccess: () => {
       // 新建 profile 后只刷新非敏感 profile 列表；secret 明文不会被缓存。
@@ -78,6 +80,40 @@ export function useCreateModelProfile() {
       });
     },
   });
+  useForgetSettledCredentials(mutation);
+  return mutation;
+}
+
+export function useUpdateModelProfileSecret() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    gcTime: 0,
+    mutationFn: modelControlApi.updateProfileSecret,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: modelControlKeys.profiles }),
+        queryClient.invalidateQueries({ queryKey: modelControlKeys.runtime }),
+      ]);
+    },
+  });
+  useForgetSettledCredentials(mutation);
+  return mutation;
+}
+
+function useForgetSettledCredentials({
+  isSuccess,
+  isError,
+  reset,
+}: {
+  isSuccess: boolean;
+  isError: boolean;
+  reset: () => void;
+}) {
+  // Detach the observer after settlement so gcTime=0 removes secret arguments.
+  // Failed input is retained only by the open password form for a retry.
+  useEffect(() => {
+    if (isSuccess || isError) reset();
+  }, [isSuccess, isError, reset]);
 }
 
 export function useActivateModelProfile() {

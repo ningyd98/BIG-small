@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+from pathlib import Path
 from typing import Protocol
 
 from cloud_edge_robot_arm.model_control.models import SecretStoreKind
+
+
+class SecretStoreError(ValueError):
+    """Public failures carry no paths, OS errors or credential contents."""
+
+    def __init__(self) -> None:
+        super().__init__("model_secret_store_unavailable")
 
 
 class SecretStore(Protocol):
@@ -56,3 +66,32 @@ class InMemorySecretStore:
         """检查进程内是否存在 secret。"""
 
         return profile_id in self._secrets
+
+
+def create_secret_store(database_path: Path) -> SecretStore:
+    """Use stable private user data, with a separate namespace for each DB path."""
+
+    mode = os.environ.get("MODEL_CONTROL_SECRET_STORE", "ENCRYPTED_FILE")
+    if mode == SecretStoreKind.SESSION_ONLY:
+        return InMemorySecretStore()
+    if mode != SecretStoreKind.ENCRYPTED_FILE:
+        raise SecretStoreError() from None
+    from cloud_edge_robot_arm.model_control.encrypted_secret_store import EncryptedFileSecretStore
+
+    override = os.environ.get("MODEL_CONTROL_SECRET_DIR")
+    if override is not None:
+        directory = Path(override)
+    else:
+        try:
+            configured_base = os.environ.get("XDG_DATA_HOME", "")
+            data_base = (
+                Path(configured_base) if configured_base else Path.home() / ".local" / "share"
+            )
+            if not data_base.is_absolute():
+                raise SecretStoreError()
+            database_identity = os.path.abspath(os.fspath(database_path)).encode("utf-8")
+            namespace = hashlib.sha256(database_identity).hexdigest()
+            directory = data_base / "BIGsmall" / "model-control-secrets" / namespace
+        except (OSError, ValueError, RuntimeError):
+            raise SecretStoreError() from None
+    return EncryptedFileSecretStore(directory)

@@ -30,7 +30,7 @@ from cloud_edge_robot_arm.model_control.models import (
     SecretStoreKind,
 )
 from cloud_edge_robot_arm.model_control.providers.ollama import OllamaHttpClient, OllamaTransport
-from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
+from cloud_edge_robot_arm.model_control.secret_store import create_secret_store
 from cloud_edge_robot_arm.model_control.service import ModelControlService
 from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
 
@@ -106,7 +106,7 @@ class PlannerDryRunRequest(BaseModel):
 async def capabilities() -> ModelCapabilitiesResponse:
     return ModelCapabilitiesResponse(
         supported_provider_kinds=[kind for kind in PlannerProviderKind],
-        secret_store_modes=[SecretStoreKind.SESSION_ONLY],
+        secret_store_modes=[SecretStoreKind.ENCRYPTED_FILE, SecretStoreKind.SESSION_ONLY],
     )
 
 
@@ -310,7 +310,7 @@ def _service(request: HTTPConnection) -> ModelControlService:
     database_path = Path(os.environ.get("MODEL_CONTROL_DB", "data/model_control.db"))
     service = ModelControlService(
         repository=SQLiteModelProfileRepository(database_path),
-        secret_store=InMemorySecretStore(),
+        secret_store=create_secret_store(database_path),
     )
     request.app.state.model_control_service = service
     return service

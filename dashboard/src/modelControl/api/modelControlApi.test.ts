@@ -4,6 +4,46 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { modelControlApi } from "./modelControlApi";
 
 describe("modelControlApi", () => {
+  it("updates only the key on an encoded existing profile id", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ profile_id: "existing/id" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await modelControlApi.updateProfileSecret({
+      profileId: "existing/id",
+      apiKey: "r489-fictional-frontend-value",
+    });
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      "/api/v1/model-control/profiles/existing%2Fid",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ api_key: "r489-fictional-frontend-value" }),
+      }),
+    );
+  });
+  it("does not retain a credential echoed in failed write responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("r489-fictional-echoed-credential", { status: 500 }),
+      ),
+    );
+    await expect(
+      modelControlApi.updateProfileSecret({
+        profileId: "existing",
+        apiKey: "r489-fictional-echoed-credential",
+      }),
+    ).rejects.toThrow(/^model_profile_save_failed$/);
+    await expect(
+      modelControlApi.createProfile({
+        display_name: "test",
+        provider_kind: "MOCK",
+        model_name: "mock",
+        api_key: "r489-fictional-echoed-credential",
+      }),
+    ).rejects.toThrow(/^model_profile_save_failed$/);
+  });
   beforeEach(() => {
     localStorage.clear();
   });

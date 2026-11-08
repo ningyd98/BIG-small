@@ -6,6 +6,7 @@ import {
   Descriptions,
   Form,
   Input,
+  Modal,
   Progress,
   Select,
   Space,
@@ -32,6 +33,7 @@ import {
   useSmallModelCatalog,
   useStartModelDownload,
   useTestModelProfile,
+  useUpdateModelProfileSecret,
 } from "../api/modelControlQueries";
 import type {
   LocalModel,
@@ -50,8 +52,23 @@ type ProfileForm = {
   api_key?: string;
 };
 
+function secretSaveMessage(profile: ModelProviderProfile) {
+  if (!profile.secret_present) return "未配置 API Key";
+  if (profile.secret_store_kind === "ENCRYPTED_FILE") {
+    return "密钥已加密保存在本机，服务重启后可继续使用";
+  }
+  if (profile.secret_store_kind === "SESSION_ONLY") {
+    return "API Key 仅在当前服务运行期间有效，服务重启后需重新录入";
+  }
+  return "已配置 API Key";
+}
+
 export function ModelControlCenterPage() {
   const [profileForm] = Form.useForm<ProfileForm>();
+  const [secretForm] = Form.useForm<{ api_key: string }>();
+  const [secretProfile, setSecretProfile] =
+    useState<ModelProviderProfile | null>(null);
+  const [secretError, setSecretError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<{
     type: "success" | "error";
     text: string;
@@ -64,6 +81,7 @@ export function ModelControlCenterPage() {
   const catalog = useSmallModelCatalog();
   const downloads = useModelDownloads();
   const createProfile = useCreateModelProfile();
+  const updateSecret = useUpdateModelProfileSecret();
   const activateProfile = useActivateModelProfile();
   const testProfile = useTestModelProfile();
   const reloadRuntime = useReloadPlannerRuntime();
@@ -86,13 +104,38 @@ export function ModelControlCenterPage() {
       profileForm.setFieldValue("api_key", "");
       setSaveNotice({
         type: "success",
-        text: `配置已保存：${saved.display_name}。API Key 仅在当前服务运行期间有效，服务重启后需重新录入。`,
+        text: `配置已保存：${saved.display_name}。${secretSaveMessage(saved)}。`,
       });
     } catch {
       setSaveNotice({
         type: "error",
         text: "保存失败，输入已保留。请检查后台连接及接口地址后重试。",
       });
+    }
+  };
+
+  const closeSecretModal = () => {
+    secretForm.resetFields();
+    setSecretError(null);
+    setSecretProfile(null);
+  };
+
+  const handleSaveSecret = async ({ api_key }: { api_key: string }) => {
+    if (!secretProfile || updateSecret.isPending) return;
+    setSecretError(null);
+    try {
+      const saved = await updateSecret.mutateAsync({
+        profileId: secretProfile.profile_id,
+        apiKey: api_key,
+      });
+      secretForm.setFieldValue("api_key", "");
+      setSaveNotice({
+        type: "success",
+        text: `密钥已保存：${saved.display_name}。${secretSaveMessage(saved)}。`,
+      });
+      closeSecretModal();
+    } catch {
+      setSecretError("保存失败，输入已保留。请检查后台连接后重试。");
     }
   };
 
@@ -180,6 +223,7 @@ export function ModelControlCenterPage() {
         )}
         <Form<ProfileForm>
           form={profileForm}
+          clearOnDestroy
           layout="inline"
           initialValues={{
             provider_kind: "RULE_BASED",
@@ -211,7 +255,10 @@ export function ModelControlCenterPage() {
             <Input placeholder="Model" />
           </Form.Item>
           <Form.Item name="api_key">
-            <Input.Password placeholder="API key，不回显已有值" />
+            <Input.Password
+              autoComplete="new-password"
+              placeholder="API key，不回显已有值"
+            />
           </Form.Item>
           <Button
             htmlType="submit"
@@ -233,12 +280,28 @@ export function ModelControlCenterPage() {
             { title: "Model", dataIndex: "model_name" },
             {
               title: "Secret",
-              render: (_, row) => (row.secret_present ? "已配置" : "无"),
+              render: (_, row) =>
+                !row.secret_present
+                  ? "未配置 API Key"
+                  : row.secret_store_kind === "ENCRYPTED_FILE"
+                    ? "已加密保存（重启可用）"
+                    : row.secret_store_kind === "SESSION_ONLY"
+                      ? "已配置（仅本次运行）"
+                      : "已配置 API Key",
             },
             {
               title: "操作",
               render: (_, row) => (
                 <Space>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setSecretError(null);
+                      setSecretProfile(row);
+                    }}
+                  >
+                    保存/更新密钥
+                  </Button>
                   <Button
                     size="small"
                     onClick={() =>
@@ -261,6 +324,46 @@ export function ModelControlCenterPage() {
             },
           ]}
         />
+        <Modal
+          title="保存/更新密钥"
+          open={secretProfile !== null}
+          destroyOnHidden
+          onCancel={closeSecretModal}
+          onOk={() => secretForm.submit()}
+          okText="保存密钥"
+          cancelText="取消"
+          confirmLoading={updateSecret.isPending}
+          okButtonProps={{ disabled: updateSecret.isPending }}
+          cancelButtonProps={{
+            disabled: updateSecret.isPending,
+            autoInsertSpace: false,
+          }}
+          closable={!updateSecret.isPending}
+          mask={{ closable: !updateSecret.isPending }}
+        >
+          <Typography.Paragraph>
+            {secretProfile?.display_name}
+          </Typography.Paragraph>
+          {secretError && <Alert showIcon type="error" title={secretError} />}
+          <Form
+            form={secretForm}
+            preserve={false}
+            clearOnDestroy
+            onFinish={handleSaveSecret}
+          >
+            <Form.Item
+              name="api_key"
+              rules={[
+                { required: true, whitespace: true, message: "请输入 API Key" },
+              ]}
+            >
+              <Input.Password
+                autoComplete="new-password"
+                placeholder="输入 API Key，仅用于保存"
+              />
+            </Form.Item>
+          </Form>
+        </Modal>
         {lastTest && (
           <Alert
             showIcon

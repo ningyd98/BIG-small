@@ -84,7 +84,7 @@ class ModelControlService:
         )
         if api_key:
             self.secret_store.set_secret(profile.profile_id, api_key)
-        return self.repository.create_profile(profile)
+        return self._with_active_flag(self.repository.create_profile(profile))
 
     def update_profile(
         self,
@@ -129,7 +129,7 @@ class ModelControlService:
             else:
                 self.secret_store.delete_secret(profile_id)
                 updated = updated.model_copy(update={"secret_present": False})
-        return self.repository.update_profile(updated)
+        return self._with_active_flag(self.repository.update_profile(updated))
 
     def get_profile(self, profile_id: str) -> ModelProviderProfile:
         """读取 profile 并标记是否为当前 active。"""
@@ -146,8 +146,8 @@ class ModelControlService:
 
         if self.repository.get_active_profile_id() == profile_id:
             raise ValueError("active_profile_delete_rejected")
-        self.repository.delete_profile(profile_id)
         self.secret_store.delete_secret(profile_id)
+        self.repository.delete_profile(profile_id)
 
     def activate_profile(
         self, profile_id: str, *, expected_config_version: int | None = None
@@ -548,7 +548,12 @@ class ModelControlService:
 
     def _with_active_flag(self, profile: ModelProviderProfile) -> ModelProviderProfile:
         return profile.model_copy(
-            update={"active": self.repository.get_active_profile_id() == profile.profile_id}
+            update={
+                "active": self.repository.get_active_profile_id() == profile.profile_id,
+                "secret_present": self.secret_store.has_secret(profile.profile_id),
+                "secret_store_kind": self.secret_store.kind,
+                "api_key": None,
+            }
         )
 
     def _test_openai_compatible(

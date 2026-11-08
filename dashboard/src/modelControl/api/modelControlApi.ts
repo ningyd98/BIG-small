@@ -9,13 +9,18 @@ async function readJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function writeJson<T>(path: string, body: unknown): Promise<T> {
+async function writeJson<T>(
+  path: string,
+  body: unknown,
+  method: "POST" | "PATCH" = "POST",
+  safeError?: string,
+): Promise<T> {
   const response = await fetch(`${API_PREFIX}${path}`, {
-    method: "POST",
+    method,
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw new Error(safeError ?? (await response.text()));
   return (await response.json()) as T;
 }
 
@@ -117,7 +122,26 @@ export const modelControlApi = {
     chat_completions_path?: string;
     model_name: string;
     api_key?: string;
-  }) => writeJson<ModelProviderProfile>("/profiles", body),
+  }) =>
+    writeJson<ModelProviderProfile>(
+      "/profiles",
+      body,
+      "POST",
+      "model_profile_save_failed",
+    ),
+  updateProfileSecret: ({
+    profileId,
+    apiKey,
+  }: {
+    profileId: string;
+    apiKey: string;
+  }) =>
+    writeJson<ModelProviderProfile>(
+      `/profiles/${encodeURIComponent(profileId)}`,
+      { api_key: apiKey },
+      "PATCH",
+      "model_profile_save_failed",
+    ),
   activateProfile: (profileId: string) =>
     writeJson<PlannerRuntimeStatus>(`/profiles/${profileId}/activate`, {}),
   testProfile: (profileId: string) =>

@@ -1,5 +1,7 @@
 # 阶段进度
 
+**2026-11-08 密钥持久化（R489–R493）：** 已实现本机私有目录的 Fernet 加密保存、数据库路径独立命名空间和现有配置的仅密钥更新入口；重启后按实际存储显示状态。最终56项密钥后端、39项相邻回归及13项前端测试通过，类型、Ruff和密钥扫描通过，两轮独审无确认问题；原失败及日志字节完整归档。后端已受控切换，三个配置、当前Sol激活项与原前端保留，ENCRYPTED_FILE能力上线。当前为 ready_for_one_time_key_entry：旧内存Key未迁移，需用户在现有配置保存一次后再重启验证真实Key恢复；user_key_persisted=false，付费调用仍关闭，未进行模型/渲染/硬件调用，R469仍NOT_RUN。见[本轮部署报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round493-persistent-key-live-transition-20261108/step-report.md)及[最终软件证据](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round492-persistent-key-service-transition-20261108/software-report.json)。
+
 **2026-11-08 云端配置接续（R486–R488）：** 页面新密钥配置已激活；唯一真实 RGB-D dry-run 因服务付费开关未启用而返回 PLANNER_FAILED，无合同或派发，未重试。已修复保存配置的归一化坐标及 v2 抓取校准接入，并按独审将自动校准限定于经过实际默认场景资产哈希检查的内部采集路径；通用输入观测仍拒绝未经证明的校准。最终新增18项、相邻74项CPU测试通过，静态检查通过；保留所有旧RED及原字节输出。运行中的服务仍是旧代码且密钥仅在内存，部署后须通过页面重录密钥并启用付费门，再另行冻结真实测试。旧R469未运行、输入已随service修改过期；nominal/native/物理/正式研究验收不升级。见[本轮步骤与阶段报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round486-sol-saved-session-continuation-20261108/step-report.md)。
 
 第62步：OC2首轮完整CPU GREEN为57通过/4失败/61项；reset/capture失败原件序列化与缺文件、export/catalog环境终态断言需Astra67计划。RW1首轮GREEN为81通过/1失败/82项，畸形来源负例后的fixture别名污染待Astra68。两者源码/原日志/全失败分母已冻结，未修、未重跑、未静态/旧回归/独审；两份Astra计划已请求，此快照尚未交付。OC2原77仅批准差异、RW1其余35静止；真实prefix/source-positive与恢复0002仍0。第60步保存帧全时域观察结果保持，native/九组/G1/INITIAL/METHOD/FINAL未验收；主线T12/18、T13并行、边缘后置，本地公开载荷仍待批准。 [第62步报告](../../../artifacts/research/process/20261004-ced-development/report-step62.md)。
