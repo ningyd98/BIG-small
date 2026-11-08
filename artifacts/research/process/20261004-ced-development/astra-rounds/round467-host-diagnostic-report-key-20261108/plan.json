@@ -1,0 +1,132 @@
+{
+  "round": "round467-host-diagnostic-report-key-20261108",
+  "planner": {
+    "model": "gpt-6-astra",
+    "task": "astra_real_preflight",
+    "date": "2026-11-08",
+    "repair_executed": false
+  },
+  "status": "PLAN_FROZEN_NOT_IMPLEMENTED",
+  "problem": {
+    "command_scope": "stdlib postprocessing of already saved exec-result.json; no diagnostic/workload rerun",
+    "returncode": 1,
+    "raw_output": "Traceback (most recent call last):\n  File \"<stdin>\", line 5, in <module>\nStopIteration\n",
+    "failed_expression": "next(json.loads(line)['result'] for line in out.splitlines() if '\"result\"' in json.loads(line))",
+    "product_changed": false,
+    "actual_workload_counters": {
+      "api": 0,
+      "physics": 0,
+      "render": 0
+    }
+  },
+  "root_cause": "The parsed JSON object has key result, not the literal quoted string \"result\". The wrong membership predicate excludes the valid saved result and exhausts next(). This is ROOT stdlib report postprocessing only; host diagnostic itself completed rc0.",
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round466-current-sol-and-teacher-real-runtime-20261108/plan.md",
+      "bytes": 7012,
+      "sha256": "67ed8f1377cce4ab626ba4bfedf83fcfa767e6d0d901382aa6f04d88667918c5"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round466-current-sol-and-teacher-real-runtime-20261108/plan.json",
+      "bytes": 12618,
+      "sha256": "0c813e30760be654e34c8ae21a42563453ba803a0dda698125519695182248a0"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round466-current-sol-and-teacher-real-runtime-20261108/intake/resource-observation.json",
+      "bytes": 1210,
+      "sha256": "cc2ac8bb9d23ccdf0d0808570c84e95a260b08881c3717a104b5545dbd2eeb70"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round466-current-sol-and-teacher-real-runtime-20261108/implementation/host-gpu-diagnostic/reporting-failure.json",
+      "bytes": 463,
+      "sha256": "d3029faf9cdcbb28ba3008250a6b58299b443f2c707d7b50c1e32d31fd32a408"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round466-current-sol-and-teacher-real-runtime-20261108/implementation/host-gpu-diagnostic/exec-result.json",
+      "bytes": 3947,
+      "sha256": "6f1e3506fa1591c6029c936a9c0fd8ae99ea32e55358bf46877500e0ff10b919"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round466-current-sol-and-teacher-real-runtime-20261108/implementation/host-gpu-diagnostic/tool-output.jsonl",
+      "bytes": 3449,
+      "sha256": "8e2917f41a2ccc9bed34ef5d82fc5d1b30ad42e8b686d783392baebd81213265"
+    }
+  ],
+  "exact_repair": {
+    "minimal_predicate": "\"result\" in json.loads(line)",
+    "preferred_parse_once_block": "rows = [json.loads(line) for line in out.splitlines() if line.strip()]\nassert all(isinstance(row, dict) for row in rows)\nresults = [row[\"result\"] for row in rows if \"result\" in row]\nassert len(results) == 1, \"expected exactly one saved diagnostic result\"\nresult = results[0]",
+    "source": "out = json.loads(exec_result_path.read_text())[\"output\"]",
+    "interpreter": ".venv/bin/python",
+    "runner_creation": false
+  },
+  "scope": [
+    "ROOT postprocesses only saved R466 exec-result.json and tool-output.jsonl; stdlib only.",
+    "Decode exactly three commands raw stdout/stderr from base64 with validate=True into new non-overwriting files.",
+    "Write R466 implementation/step-report.md and step-report.json plus R467 implementation/step-report.md and step-report.json; save local postprocessing receipt/hash evidence."
+  ],
+  "allowed_new_outputs": [
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round466-current-sol-and-teacher-real-runtime-20261108/implementation/host-gpu-diagnostic/decoded/*",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round466-current-sol-and-teacher-real-runtime-20261108/implementation/step-report.md",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round466-current-sol-and-teacher-real-runtime-20261108/implementation/step-report.json",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round467-host-diagnostic-report-key-20261108/implementation/*"
+  ],
+  "preconditions": [
+    "Rehash every input and preserve all bytes; stop for mismatch.",
+    "Check requested outputs do not exist; if existing, compare rather than overwrite and stop for unplanned conflict.",
+    "Use .venv/bin/python; no product imports, subprocesses, diagnostics, runtime services or tests."
+  ],
+  "validation": [
+    "Assert saved outer exit_code == 0; out.encode(\"utf-8\") equals tool-output.jsonl bytes.",
+    "Parse once using exact block; require exactly one result and exactly three command rows; result.commands equals those rows in original order.",
+    "Require labels gpu, compute, qwen_service exactly once, rc0, expected R466 argv and empty decoded stderr.",
+    "Strict base64-decode each stdout/stderr; require decoded bytes equal original text UTF-8 bytes; write raw bytes, read back and compare SHA/length.",
+    "Parse saved GPU CSV: index0, NVIDIA GeForce RTX 4070 Ti SUPER, total16376 used513 free15431 MiB; preserve values verbatim. Do not require used+free==total or rewrite reported accounting.",
+    "Require compute raw empty, compute_pid_count0, ownership_complete true; Qwen loaded/inactive/dead, MainPID=ControlPID=0.",
+    "Rehash original inputs unchanged after report generation; read reports back as JSON/text; record per-output SHA and exact counters."
+  ],
+  "observed_resource_snapshot": {
+    "utc": "2026-11-08T07:00:01.082347+00:00",
+    "gpu": "NVIDIA GeForce RTX 4070 Ti SUPER",
+    "memory_mib": {
+      "total": 16376,
+      "used": 513,
+      "free": 15431
+    },
+    "compute_processes": 0,
+    "qwen": "loaded/inactive/dead MainPID=0 ControlPID=0",
+    "classification_after_validation": "RESOURCE_CLEAR_AT_SNAPSHOT",
+    "limits": "Historical snapshot only, no future exclusive reservation; host success supports context-dependent access without proving exact sandbox mechanism."
+  },
+  "root_steps": [
+    "S0 Revalidate inputs and destination nonexistence.",
+    "S1 Apply exact JSON key correction in one bounded stdlib postprocessing invocation; decode and validate saved data, write reports.",
+    "S2 Verify unchanged original hashes and report/decoded-file consistency, preserving reporting-failure.json and original restricted rc9.",
+    "S3 Record R467 implementation status and R466 diagnostic snapshot separately; next actual Astra task freezes fresh P1/P2 sources, commands and budgets."
+  ],
+  "budget": {
+    "postprocessing_invocations": 1,
+    "verification_passes": 1,
+    "wall_limit_s": 60,
+    "diagnostic_reruns": 0,
+    "software_tests": 0,
+    "product_imports": 0,
+    "api": 0,
+    "physics": 0,
+    "render": 0,
+    "model_startups": 0,
+    "service_mutations": 0
+  },
+  "acceptance_boundary": {
+    "accepted_when": "Reports faithfully reproduce and link existing successful host observation while retaining original restricted rc9 and StopIteration history.",
+    "full_workflow": "NOT_RUN",
+    "native": "UNKNOWN",
+    "formal": "NOT_ACCEPTED",
+    "new_runtime_authorization": false
+  },
+  "stop_rule": "Any mismatch, malformed result, output conflict, or unexpected postprocessing failure is preserved and goes to actual Astra before further repair/retry. Do not rerun diagnostic or start workloads."
+}
