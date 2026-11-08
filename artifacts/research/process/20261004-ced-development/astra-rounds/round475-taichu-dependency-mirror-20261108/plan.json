@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "round": "round475-taichu-dependency-mirror-20261108",
+  "planner_model": "gpt-6-astra",
+  "created_at": "2026-11-08T07:59:08.770466+00:00",
+  "status": "PLAN_GENERATED_NOT_EXECUTED",
+  "input_sha256": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/plan.json",
+      "bytes": 26464,
+      "sha256": "71e03d28e83b29c5b024b4e79edef57d914f6d3ec39f64faf84dce005af43573"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/implementation/resolve_runtime_b.py",
+      "bytes": 1946,
+      "sha256": "934b052f23b5ed51c25854a1ba026da8fe3cdc4bdb1f9c56ec96a2443e789714"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/implementation/install_runtime_b.py",
+      "bytes": 8062,
+      "sha256": "e96fe1d1768699c127b95e609db663f2658b3b086e27b83779f3de71cada08ea"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/tuna-mirror-discovery.json",
+      "bytes": 1051,
+      "sha256": "e0d69289be800b00809c6ba0ec23bea876cc2b27b3c8422288a123bbb8801ee3"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round475-taichu-dependency-mirror-20261108/diagnostic/context.json",
+      "bytes": 1321,
+      "sha256": "e974c4d173fe2215468b9cccf8cb9b68630a7eef99f99c04af43e137d3d95b25"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round475-taichu-dependency-mirror-20261108/diagnostic/runtime-b-resolver.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round475-taichu-dependency-mirror-20261108/diagnostic/runtime-b-resolver.stdout",
+      "bytes": 9968,
+      "sha256": "b8ac19738cf918f6e6d2d5fd44938a56815a8db7aab69d29a2d9d802f2aad12a"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round475-taichu-dependency-mirror-20261108/diagnostic/termination.json",
+      "bytes": 156,
+      "sha256": "988534f2006ef7e4e004931c67ba1a158170d7597dcb9256f348a64ddc08415e"
+    }
+  ],
+  "problem_and_evidence": "pip24 --dry-run 在生成report前完整下载wheel；原始stdout/stderr和context显示915,622,781-byte Torch wheel仅传5,611,520 bytes，速率不足。ROOT仅终止自有resolver PID112466，termination.json记录该行为（父任务报告rc143）；尚无B安装。TUNA HEAD证据为200/同size，只证明可获取，不代表已验证内容SHA或吞吐。",
+  "root_cause": "把dry-run误认为纯metadata解析；上游大wheel传输瓶颈使原依赖40分钟预算有耗尽风险。问题是发现/下载流程和传输源，不改变版本、FP8候选或量化要求。",
+  "scope": "仅在R475或R473本轮artifact脚本添加镜像解析/下载及下载前固定机制，保存原脚本hash/副本和新增报告，继续独立runtime-b。R473计划、旧失败日志及源/模型字节不改。保留torch2.10.0、torchvision0.25.0、Transformers5.22.2、CT0.20.1及已锁直接依赖；传递依赖依原声明解析。禁止系统修改、原venv写入、源码构建或大型编译。",
+  "implementation": "先复核本计划输入SHA，记录依赖阶段最初开始时间、累计耗时和40分钟预算剩余值（不重置）。新增精确policy允许pypi.tuna.tsinghua.edu.cn、mirrors.tuna.tsinghua.edu.cn；保留pypi.org/files.pythonhosted.org用于官方JSON和已允许源。全部HTTPS/TLS验证、enp7s0、AliDNS223.5.5.5/223.6.6.6、逐跳allowlist、无代理/默认网络。镜像index改为https://pypi.tuna.tsinghua.edu.cn/simple，不把HEAD/镜像etag当上游SHA。\n允许实际pip resolver进行wheel发现和下载但不安装/执行。必须在每个wheel响应body开始取字节之前设置artifact级下载门：从wheel filename解析name/version，用严格直连取得官方PyPI该版本JSON，保存原始JSON和hash，确认唯一对应filename、上游size/SHA、兼容平台；先追加并落盘不可覆盖的discovery-manifest条目，再准许镜像wheel传输。依赖候选可由resolver动态发现，不要求事先知道全闭包，但每个候选均须先pin后下载；未固定文件、非wheel及sdist一律拒绝。若无法可靠插入此门，禁止让原pip直接下载未固定body；改为逐包读取固定wheel的METADATA并离线解析闭包，不能豁免先pin规则。\n下载门同时把真实wheel字节保存到独立wheelhouse-b-discovery，结束核对bytes/SHA，再允许resolver读取其metadata；保证pip临时目录清理不会丢掉已验证缓存。保存每个候选（含最终未选中者）的记录，不执行wheel代码。最终resolver报告保存为新文件，逐条对官方JSON、预先discovery pins、实际cache hash及package metadata复核，生成最终锁定manifest；从已验证cache复制/移动最终选中wheel入wheelhouse，避免二次大下载。镜像URL不能继续触发installer中仅允许files.pythonhosted.org的旧断言；根据精确allowlist验证transfer URL，同时保持独立canonical upstream URL与官方SHA。不得简单取消来源校验。\n最终仅以已核验wheelhouse执行--no-index离线安装；若--no-deps必须显式安装resolver闭包全部wheel并pip check。保留原件、argv、运行报告、freeze、模块来源和新路径B的schema/FP8 loader验证，随后按R473真实双图协议继续。",
+  "validation": "预下载gate以真实一个wheel/现有已固定wheel记录证明pin时间早于body开始时间，实际SHA等于上游SHA；检查全部候选均有先pin记录、最终报告无缺项/重复冲突、相同版本未替换。只做本轮script语法及实际流程检查，不增加产品测试。package依赖check/import通过仅允许继续，不称模型双图通过。",
+  "budget_stop_and_acceptance": "原40分钟依赖预算和R473总3小时均不重置；原下载已花时间计入，镜像失败或估计无法在剩余预算内完成即STOP_BUDGET/BLOCKED_NETWORK，不换版本/无界重试。最多原计划4并发、每网络请求60秒及3次网络瞬断重试；只终止本轮自有PID，保留partial/失败。新metadata无法提供唯一官方SHA、pin不一致、镜像hash不一致即停止；不得缓存污染或继续安装。此轮通过只说明依赖获取流程恢复、完整性和隔离安装达标；真实FP8加载、两图与质量仍按R473分别验收。新的非本轮根因另交Astra。"
+}

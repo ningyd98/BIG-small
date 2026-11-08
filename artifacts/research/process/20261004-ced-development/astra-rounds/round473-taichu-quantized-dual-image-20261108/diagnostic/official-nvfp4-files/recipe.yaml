@@ -1,0 +1,94 @@
+default_stage:
+  default_modifiers:
+    IMatrixGatherer:
+      targets: ['re:.*layers\.(?:0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27)\.mlp\.(?:gate|up|down)_proj$']
+      ignore: ['re:.*mtp.*', 're:.*visual.*', 're:.*vision.*', 're:.*linear_attn\.(in_proj_a|in_proj_b)$']
+      weight_observer: imatrix_mse
+    QuantizationModifier:
+      config_groups:
+        fp8_group:
+          targets: ['re:.*self_attn\.(q|k|v|o)_proj$', 're:.*linear_attn\.(in_proj_qkv|in_proj_z|out_proj)$',
+            're:.*lm_head$', 're:.*layers\.(?:28|29|30|31)\.mlp\.(?:gate|up|down)_proj$']
+          weights:
+            num_bits: 8
+            type: float
+            symmetric: true
+            group_size: null
+            strategy: channel
+            block_structure: null
+            dynamic: false
+            actorder: null
+            scale_dtype: null
+            zp_dtype: null
+            observer: memoryless_minmax
+            observer_kwargs: {}
+          input_activations:
+            num_bits: 8
+            type: float
+            symmetric: true
+            group_size: null
+            strategy: token
+            block_structure: null
+            dynamic: true
+            actorder: null
+            scale_dtype: null
+            zp_dtype: null
+            observer: null
+            observer_kwargs: {}
+          output_activations: null
+          format: null
+      targets: [Linear]
+      ignore: ['re:.*mtp.*', 're:.*visual.*', 're:.*vision.*', 're:.*linear_attn\.(in_proj_a|in_proj_b)$']
+      kv_cache_scheme:
+        num_bits: 8
+        type: float
+        symmetric: true
+        group_size: null
+        strategy: tensor
+        block_structure: null
+        dynamic: false
+        actorder: null
+        scale_dtype: null
+        zp_dtype: null
+        observer: static_minmax
+        observer_kwargs: {}
+      bypass_divisibility_checks: false
+    GPTQModifier:
+      config_groups:
+        nvfp4_group:
+          targets: ['re:.*layers\.(?:0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27)\.mlp\.(?:gate|up|down)_proj$']
+          weights:
+            num_bits: 4
+            type: float
+            symmetric: true
+            group_size: 16
+            strategy: tensor_group
+            block_structure: null
+            dynamic: false
+            actorder: static
+            scale_dtype: torch.float8_e4m3fn
+            zp_dtype: null
+            observer: imatrix_mse
+            observer_kwargs: {}
+          input_activations:
+            num_bits: 4
+            type: float
+            symmetric: true
+            group_size: 16
+            strategy: tensor_group
+            block_structure: null
+            dynamic: local
+            actorder: null
+            scale_dtype: torch.float8_e4m3fn
+            zp_dtype: null
+            observer: static_minmax
+            observer_kwargs: {}
+          output_activations: null
+          format: null
+      targets: [Linear]
+      ignore: ['re:.*mtp.*', 're:.*visual.*', 're:.*vision.*', 're:.*linear_attn\.(in_proj_a|in_proj_b)$']
+      bypass_divisibility_checks: false
+      block_size: 128
+      dampening_frac: 0.01
+      actorder: static
+      offload_hessians: false

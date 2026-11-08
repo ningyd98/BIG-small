@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "round": "round478-taichu-loader-api-scope-20261108",
+  "planner_model": "gpt-6-astra",
+  "created_at": "2026-11-08T08:14:17.332385+00:00",
+  "status": "PLAN_GENERATED_NOT_EXECUTED",
+  "input_sha256": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/plan.json",
+      "bytes": 26464,
+      "sha256": "71e03d28e83b29c5b024b4e79edef57d914f6d3ec39f64faf84dce005af43573"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/implementation/run_fp8_pair.py",
+      "bytes": 9942,
+      "sha256": "7c07476fb3361835c230c4db9a7f0ce12c2a2bb62ed1e67e0667c708ae1a73a5"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/config.json",
+      "bytes": 20034,
+      "sha256": "c258436197e414386dcc5d581eaace541362c59082d8c8ca761209d8cc9a105a"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/modeling.py",
+      "bytes": 50552,
+      "sha256": "b3f46b9f1635663778eb30bff8b90c474d45b3186f469367df058a5f6a7117fa"
+    },
+    {
+      "path": ".venv-taichu-round473/runtime-b/lib/python3.12/site-packages/transformers/integrations/compressed_tensors.py",
+      "bytes": 17457,
+      "sha256": "5e9a43e77d66ed30fae763cb10484dc16ce6e6683d2b7fc93718a139676b8349"
+    },
+    {
+      "path": ".venv-taichu-round473/runtime-b/lib/python3.12/site-packages/transformers/modeling_utils.py",
+      "bytes": 274983,
+      "sha256": "251aaae7733affbb7cdb5aa05a84157c46cac02518d868898cd6d6282cc14571"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round478-taichu-loader-api-scope-20261108/diagnostic/checkpoint-header-readout.json",
+      "bytes": 16062,
+      "sha256": "e4580494e336aa5f0670aafe4a96e96c09a1f6179ebff100b60761b7f8dd6f63"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round478-taichu-loader-api-scope-20261108/diagnostic/context.json",
+      "bytes": 2199,
+      "sha256": "fe4e4d5ada12e36ae51d787aa31f5410b0d5d24d46b95291d36b0b14ed74f54a"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round478-taichu-loader-api-scope-20261108/diagnostic/model-run-b-result.json",
+      "bytes": 2374,
+      "sha256": "58cdfef9f8c041bd7563dbd920fe4a570c85586da1878fa908b9947f04b268c4"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round478-taichu-loader-api-scope-20261108/diagnostic/model-run-b.stderr",
+      "bytes": 2117,
+      "sha256": "f88f9dca2f798c8df851d8ada1ae9e9e13dec4e7fc6102c9157bb8e4475a54fd"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round478-taichu-loader-api-scope-20261108/diagnostic/model-run-b.stdout",
+      "bytes": 1655,
+      "sha256": "2041638949bb2a319f2439cf87d6245da1094da31d06ea15091913c6d77fb4dc"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round478-taichu-loader-api-scope-20261108/diagnostic/run_fp8_pair.before.py",
+      "bytes": 9942,
+      "sha256": "7c07476fb3361835c230c4db9a7f0ce12c2a2bb62ed1e67e0667c708ae1a73a5"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round478-taichu-loader-api-scope-20261108/diagnostic/transformers-compressed-integration.py",
+      "bytes": 17457,
+      "sha256": "5e9a43e77d66ed30fae763cb10484dc16ce6e6683d2b7fc93718a139676b8349"
+    }
+  ],
+  "problem_evidence": "首次真实B加载读1066 tensors后finalize报list|set TypeError，actual_requests为空、requests_started=0；stderr另报vision_model.radio_model.model.patch_generator.embedder.weight_scale MISSING。checkpoint-header-readout证明embedder.weight为BF16[1280,768]、无scale，共248个FP8 weight；未发生OOM。原失败和runner副本已保留。",
+  "root_cause_hypotheses": "官方模型类_ignore unexpected元数据为list，新Transformers集合并集接口需要set；第二项是class-name Linear匹配加isinstance(nn.Linear)选中了checkpoint未量化的Linear子类。前者可保持pattern集合不变转换类型；后者需由真实FP8 weight/scale与meta模块集合逐项证明，不能以隐藏missing解决。",
+  "scope": "仅新增本轮artifact适配器或复制run_fp8_pair.py为新runner，运行进程内对官方model_class metadata及AutoConfig深拷贝应用窄适配；输出新model-run-b-r478目录、独立result，并让evaluator显式读取该新result。不得覆盖旧run/result或修改模型/config/safetensors、第三方磁盘源码、原计划、产品代码、量化数值或权重；不新增ignore pattern、不放行随机初始化。",
+  "implementation": "先复核本计划输入SHA、R473权重manifest及完整权重SHA（12,672,885,688 bytes，c2b70d4aeaa499e4bc4a267332b0338cdfca685de448338ea5014fc3eaf0a07a），验证header摘要。只读读取官方model_class，在本进程把_keys_to_ignore_on_load_unexpected的list转set，保存原类型/内容和转换后排序内容，断言pattern集合完全相等；原为其他类型按实际验证，不改missing-ignore，不新增regex。退出恢复类属性，磁盘源码不动。\n从真实safetensors header中dtype为FP8的*.weight派生module全名；每个需存在对应weight_scale且shape满足官方channel量化语义，核对248个唯一名称，无多余FP8参数/无scale层。对AutoConfig作deepcopy，只将原group_0.targets由Linear改为248个re:^加re.escape(module_name)加$的锚定regex；按实际compressed-tensors regex语法验证。其余config、ignore、weights/activations、dtype、use_optimized_inference、dequantize设置保持不变，保存前后canonical JSON及精确diff（只许targets路径变化），将此公开标为artifact内存兼容适配。\n使用不加载权重的meta skeleton、真实同版本replacement函数验证替换模块集合与checkpoint FP8 module集合完全相等，保存before/after module class和target mapping；特别检查BF16 embedder原class未换、不会创建weight_scale，FP8 scales形状可被原官方转换消费。meta阶段不得凭meta dtype声称读到了真实BF16值；BF16依据header，实际加载后另验证dtype。若集合不相等或不支持精确regex即停止，不用调整更多配置迁就。\n通过meta门槛后清洁B环境、cache cwd、现有共享GPU锁执行一次新加载；记录output_loading_info和完整raw日志，missing_keys必须为0，mismatched/error必须为空，不允许ignore_mismatched_sizes或补零/随机初始化；unexpected keys原样记录并逐项对应既有官方pattern，不能新增隐藏项。实际248个FP8模块权重dtype/scale及embedder原class/BF16逐项验证。通过才执行同一冻结RGB/depth四次真实生成，输入/prompt/参数/processor证据按R473；第一次标first inference after corrected reload，不能称机器冷启动或未曾加载的冷启动。evaluator只按显式新result路径判分，保留旧失败为历史。",
+  "validation": "软件证据包括pattern集合不变、config diff仅targets、248个完整一一对应替换、零missing/mismatch及原文件SHA前后不变。真实运行包括加载、四次生成、双图processor证据、raw response、时延/显存和逐次JSON/定位质量；软件通过不代替真实运行。保留适配前失败、适配源码hash和完整选择依据，使结论明确是官方权重经本轮内存兼容适配的实测结果，不声称官方默认即开即用。",
+  "limits_acceptance": "继续原总3小时、不重置预算；加载<=600秒、每请求<=180秒、GPU准入free>=14000MiB且无其他compute进程、沿用共享锁、只GPU无offload。缺scale/集合不符/新的missing或随机初始化立即停；若需重写权重、新量化、第三方磁盘补丁或新根因，保留原始证据再交Astra。仅关闭本轮PID并释放锁/GPU。最终分别报告软件验证、真实模型运行、固定S01质量及正式验收NOT_PERFORMED；运行失败不回填成功。"
+}

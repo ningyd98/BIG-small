@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "round": "round483-taichu-scoring-static-check-import-20261108",
+  "planner_model": "gpt-6-astra",
+  "created_at": "2026-11-08T08:38:08.412142+00:00",
+  "status": "PLAN_GENERATED_NOT_EXECUTED",
+  "input_sha256": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round482-taichu-offline-scoring-snapshot-20261108/plan.json",
+      "bytes": 13289,
+      "sha256": "98f39a18994fad905cfb4058c748c084f663ec9c9a5fd730908928732702a236"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/implementation/evaluate_pair_v2.py",
+      "bytes": 9318,
+      "sha256": "8d96b8865209349aeb44fe6e20a1dbd6abd783c8b0df67a10485881c349edd15"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round483-taichu-scoring-static-check-import-20261108/diagnostic/context.json",
+      "bytes": 962,
+      "sha256": "8447667a98ee1c618b0a6d9df2e24efc514a46205d02ce8ff7750025b5a5bd47"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round483-taichu-scoring-static-check-import-20261108/diagnostic/evaluate_pair_v2.before.py",
+      "bytes": 9318,
+      "sha256": "8d96b8865209349aeb44fe6e20a1dbd6abd783c8b0df67a10485881c349edd15"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round483-taichu-scoring-static-check-import-20261108/diagnostic/failure.stderr",
+      "bytes": 144,
+      "sha256": "03d494aa8a219100b2148a43ceac3acc278fb213dd89d76a1a8cc9b63848eab2"
+    }
+  ],
+  "problem_root_cause": "外层一次性静态helper漏import ast，在ast.walk(ast.parse(s))处NameError；context记录helper仅导入Path/json/hashlib/py_compile。v2已包含ast import且py_compile先前成功，尚无离线评分/模型调用。根因是外层验证工具导入遗漏，不是v2或产品缺陷。",
+  "scope_and_action": "只新增独立只读verifier（可一次性命令，源码及命令入证据），显式import ast及所用模块；不修改v2、产品、R482计划、模型、提示词、raw或输入。先复核本轮固定输入和R482 input_sha256全部path/bytes/SHA及重复路径；读取当前v2并与before副本hash一致，使用compile(source,filename,\"exec\")做不执行/无pycache的语法校验，ast.parse并检查实际调用及import。确认不存在网络/模型生成/模型加载/硬件路径，允许R482规定的严格解析与_ground_response调用；AST属性名扫描仅为有限辅助，结合实际源码审查，不冒称完备安全证明。",
+  "validation_acceptance": "另存verifier源码/argv、stdout/stderr/rc、逐项hash检查与AST/源码审查摘要；验证成功且v2 SHA不变后继续R482原授权一次离线评分，唯一新输出，所有质量负结果如实保存。静态检查通过不等于评分通过或模型质量通过。不得为了检查通过删调用、改输入hash或重写v2。",
+  "preconditions_limits": "仅本地读和R483证据写；限3分钟并计入原预算，不联网、不加载权重、不推理、不硬件。若发现不同根因/漂移/真实禁用调用，保存异常并暂停相关工作，另交Astra；保留原NameError与全部历史日志。"
+}

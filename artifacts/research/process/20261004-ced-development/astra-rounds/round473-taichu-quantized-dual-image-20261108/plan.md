@@ -1,0 +1,102 @@
+# Round 473 Astra 计划：ZDTaichu5.0-9B 官方 FP8 兼容性与真实双图测试
+
+实际规划者：`gpt-6-astra`。状态：计划已生成，未执行模型测试。用户已授权此研究 spike，常规步骤无需再次确认。
+
+快速路径：复核输入 → 复用官方 metadata/小源码 → 冻结权重清单并启动下载，同时隔离测试 compressed-tensors0.13.0 + 只读 torch2.6/Transformers5.7 → 不适配时按已规划分支升级隔离0.20.1/torch2.10 → 原样加载官方FP8 → S01双图一冷三热 → 保存成功/负结果并交付。
+
+## 问题、原始证据与假设
+
+用户要求：先做 ZDTaichu5.0-9B 量化版本的兼容性和双图测试。本轮是限定研究 spike，不是生产模型替换。原始失败保留在 diagnostic/initial-context.json：default 上下文 nvidia-smi rc=9、设备仅 nvidia-caps。diagnostic/host-context.json 显示宿主 require_escalated 同一工具 rc=0；RTX 4070 Ti SUPER、16376 MiB、CC 8.9、driver 595.99.02，已用 558 MiB，无 compute 进程；.venv-minicpm 的 Torch 2.6.0+cu124 CUDA 可用。因此根因是沙箱设备可见性，不是驱动故障，不修驱动、不尝试绕过访问控制。
+父任务调查报告：现有 Transformers 4.48.3 / 5.7.0，Torch 2.6.0、bnb 0.45.2；官方 FP8 仓库 TaichuAI/ZDTaichu5.0-9B-FP8 约 12.7 GB、compressed-tensors FP8_DYNAMIC，官方普通 Transformers 建议 5.3.0/Torch2.10.0/torchvision0.25.0，另有专用 vLLM fork。规划期间 ROOT 已补齐下文列出的官方 metadata 与小型源码；这些材料支持候选选择，尚不构成实际加载兼容结论。
+待验证假设：官方 FP8 的架构、processor 和 compressed-tensors loader 可在 Ada CC8.9 原样消费量化权重；两张 RGB/depth 图片可分别进入 processor 并生成响应。反假设包括 custom architecture 缺少注册、压缩格式/算子不支持、本地依赖不满足、16 GiB 加载或推理 OOM、模型不接受双图。权重大小不等于运行峰值，能加载不等于双图有效，也不等于定位正确。
+规划定稿前已核读 ROOT 新增原始 metadata、11个小型官方源码和 PyPI metadata。FP8 核心文件 revision 为 bc77dd791da3c27de68c96a5eb44ced02b83b8a7（README 的文件 revision 不同，以逐文件清单为准），权重为 12,672,885,688 bytes / SHA256 c2b70d4aeaa499e4bc4a267332b0338cdfca685de448338ea5014fc3eaf0a07a。config 确认 float-quantized、channel weights + token dynamic activations，压缩状态 compressed、schema 0.16.0、131个忽略层。官方资料已核验，运行兼容性仍待实际测试。现有官方小源码可直接复用而无需重复下载。
+
+## 限定修改范围及明确不做
+
+只允许本轮目录中新建计划、脚本、协议、原始诊断、步骤报告、证据清单和阶段总结；忽略目录 datasets/model-cache/zdtaichu5-9b-fp8-round473/（权重及依赖 wheel 子目录）和独立 .venv-taichu-round473/。已有 src、scripts、下载工具、MuJoCo、planner 只读复用；不改 .venv、.venv-vlm、.venv-minicpm、pyproject、锁文件、生产默认、冻结模型、控制器或硬件配置。保留嵌套 worktree、现有修改和历史失败。缓存/venv 必须经 git check-ignore 确认；若未忽略，使用已有被忽略的独立父目录，不为本轮改全局 Git 配置或删除其他文件。
+本轮唯一权重候选为官方 FP8。NVFP4、BF16 原件现场 bnb4bit、全量解压 BF16/FP16、其他量化、CPU/disk offload、不同模型均不在授权实现范围；若 FP8 不可行，报告负结果并另交 Astra 规划，而非静默换精度。FP8 checkpoint 中官方保留的非量化层和运行时浮点 activation 可按官方设计使用，必须记录；不得把整个权重去量化并称为 FP8 推理。不编译大型 vLLM，不补丁第三方内核/模型源码，不修驱动，不运行真实机械臂或全闭环，不声明正式研究验收。
+独立运行环境可使用全新 venv 或本轮独立 target/site-packages，明确只读借用 .venv-minicpm 的 torch2.6/Transformers5.7 等包；新增包只写独立目录，保存 sys.path 与模块 __file__ 来源，禁止 pip 意外写入原 venv。
+
+## 阶段 0：实施前复核及上下文
+
+运行前复算计划文件和本计划所有输入/原始证据 SHA256，记录 git HEAD、branch、git status --short 和嵌套 worktree 状态。输入漂移或源文件更改则暂停相关步骤；不因 unrelated artifact 新提交机械阻断，但必须记录 HEAD 差异且证明输入 SHA 未变。复核宿主 GPU、compute 进程、内存、磁盘、enp7s0 物理接口、AliDNS、TLS；需要设备/网络访问的命令使用平台支持的 require_escalated，保留审批和 rc。没有权限时记录 BLOCKED_EXECUTION_CONTEXT，不走隐式代理/默认网卡。
+运行条件：至少 50 GiB 持续剩余磁盘，预计完整缓存/依赖/临时段峰值另预留 60 GiB；可用 RAM >=40 GiB，GPU free >=14000 MiB 且没有其他 compute 任务。临时显存占用不足时最多复查一次，不终止他人进程。已知 GPU default rc9 是计划内负门槛；宿主正常后继续。
+
+## 阶段 1：先取 metadata，分阶段冻结来源
+
+使用只读 network.py 的 create_direct_transport，trust_env=False、enp7s0、DNS 223.5.5.5/223.6.6.6、TLS 验证和逐跳精确 allowlist；初始只允许 modelscope.cn、cdn-lfs-cn-1.modelscope.cn。先抓官方 ModelScope 仓库 metadata/listing 的原始响应与 headers，记录请求 URL、时间、状态、最终 URL、本地 SHA256。metadata 是信任根发现阶段，不要求预知自身 hash；但此时禁止执行远端代码和下载权重。确认所有权与仓库名称，固定不可变 revision/commit，解析每个源文件、配置、tokenizer、processor、权重 shard/index 的 path、bytes、SHA256。禁止 main/master/latest 浮动路径用于后续取文件；拒绝路径穿越、空 hash、缺失大小、未列举的代码或 shard。
+落盘 metadata-freeze.json（metadata 自身 hash、revision、官方来源、网络策略）及 source-manifest.json，先冻结再取小文件，逐个大小及 SHA256 校验后仅静态阅读 README、config、quantization_config、auto_map、processing.py、configuration/modeling 及 tokenizer。源码只从清单获取；缺失依赖源码必须先加入同 revision、带 hash 的 manifest 补充文件，再取、再读，不覆盖旧清单。不得提前 trust_remote_code。
+如镜像未给出不可变 revision 或 SHA，先做官方只读 metadata 查证，仍无可核验 SHA 则 BLOCKED_PROVENANCE；不能用下载后自行计算的 hash 冒充预期 hash。若出现新的官方 CDN 域名，先保留重定向原始响应、核验官方域归属，在新 policy evidence 中冻结精确 host 后重试一次，不放开通配符、代理或系统 DNS。
+此后生成 weight-manifest.json，列齐所有需要的权重/索引文件、大小、SHA256、repo/revision、总字节数和 cache path；实施前重新核对 config/index 与清单一致。metadata/source 阶段完成不代表已经开始或通过模型兼容性测试。
+已存在的 metadata-readout、modelscope-FP8-metadata.raw.json 和 official-small-file-manifest.json 完成初始取证，执行者核对 SHA 后直接复用。允许先下载总计<=30MiB代码/config/tokenizer（含约20MiB tokenizer.json）以做包级 schema/processor 预检；源文件的逐文件 revision/hash 按该官方 metadata 固定，不要求所有文件 revision 字符串相同，但必须属于被固定的 listing。
+
+## 阶段 2：框架门槛、依赖锁定和隔离安装
+
+先做最小隔离预检，优先只读借用现有 torch2.6.0+cu124 和 Transformers5.7.0，再向独立 target/venv 安装 compressed-tensors 0.13.0 及缺失的小依赖。已核读 PyPI 0.13.0 声明 torch>=1.7、transformers无版本上限，故声明约束允许此组合；官方模型源码最低 Transformers5.3，Torch2.10推荐值不是本轮强制门槛。所有实际模块来源、sys.path、版本和package metadata必须记录，并确认无原venv修改。
+本阶段预先允许两个候选分支 A=compressed-tensors0.13.0+既有torch2.6/Transformers5.7；B=compressed-tensors0.20.1+隔离torch>=2.10及相配torchvision/Transformers。0.20.1已知要求torch>=2.10，不能 --no-deps 忽略约束；0.14.0要求Transformers<5因此排除。先冻结依赖metadata、wheel URL/size/SHA及运行选择，再安装A。用官方完整quantization_config构造QuantizationConfig、检查schema 0.16.0字段未被静默丢弃、Transformers quantizer导入、run_compressed=True实际支持、量化层创建/API与官方architecture/processor导入。小型合成张量仅用于算子预检，记录synthetic不得算真实双图通过。
+A出现schema、API或依赖版本不兼容属于预先计划的候选淘汰，保留原始错误，可直接按B的完整依赖约束安装隔离运行；不必为已声明候选比较再次请求Astra。A与B最多各一次完整包级预检，不删除官方schema字段，不修改第三方实现，不使用不存在的use_optimized_inference参数。若A通过则无需大包升级，B通过则继续B；两者均不支持则明确BLOCKED_FORMAT_RUNTIME/DEPENDENCY_INCOMPATIBLE。包级通过不等于全权重兼容，CC8.9实际加载/算子执行仍是阶段3的门槛。
+runtime-decision.json保存architecture入口、processor多图调用、量化loader、选定候选及被淘汰候选证据。官方vLLM仅可在存在对应固定fork revision且匹配CUDA/Python的预编译wheel时作为只读可行性补充；本轮不编译vLLM，也不因HF加载失败自动开始第三条实现路线。格式最终不支持则双图NOT_RUN，不更换权重或量化。
+所有新增直接和传递依赖冻结版本、URL、size、上游SHA256，保存resolver报告、requirements-lock、最终pip freeze及pip check；已有只读依赖记录版本/来源和关键quantizer源码hash。小型Python包如必须来自官方固定commit，先冻结源码SHA并静态审查，不使用浮动git install。依赖metadata和wheel同样使用严格直连；pypi.org、files.pythonhosted.org、download.pytorch.org先在dependency-policy.json登记精确host和用途，不使用隐式pip网络/代理。先校验wheel再 --no-index --find-links安装；不执行sdist构建，不绕过依赖约束。若不同包带来计划外异常仅可完成证据记录，不补丁第三方/产品代码。
+
+## 阶段 3：下载、审查、加载兼容性
+
+阶段1来源/全权重清单核验通过后，可以在阶段2包级预检并行下载这唯一官方FP8权重，以减少总等待；实际加载必须等待阶段2依赖/量化API门槛通过。按冻结 weight manifest 下载；参考只读 download_internvl.py/range_download.py，range 必须验证 206、Content-Range、Content-Length、最终 bytes+SHA256。允许本轮 artifact wrapper 复用工具，最多四个并行连接/worker，断点段及失败保留，权重不入 Git。HEAD hash 与 manifest 不一致即停止该文件；不覆盖已验证文件或忽略校验。每个待执行的模型源码文件必须与 source-manifest 相符、静态检查完成；随后以本地路径、local_files_only=True 和离线 HF 环境执行，trust_remote_code 仅用于审查并固定的本地官方源码。禁止加载时自动补下载。
+加载一次，保存原始 stdout/stderr/traceback、rc、模型 config、量化配置、设备映射、关键量化层类型/权重 dtype/scale、可用 kernel、GPU 进程及 torch 显存峰值。必须证明真实压缩量化层被消费；若 loader 自动去量化为全模型浮点、静默 CPU offload 或忽略 quantization_config，结果不是 FP8 兼容通过。加载 OOM 或不支持格式即结束本轮推理路径，释放仅本轮进程，不靠缩换模型/改量化继续。
+不进行虚拟图 warmup；第一次真实 S01 请求即冷请求。模型 load 时间单列，冷推理时间与包含 load 的端到端时间均保存。若框架必需启动自检/预热，明确保存该事实，将首次请求标记 first_request_after_runtime_warmup，不能把它冒称完全冷启动。
+compressed-tensors执行中按其官方实现临时反量化单层参与计算可作为该checkpoint的实际运行方式记录，不得宣称已证实原生FP8 Tensor Core加速；验收重点是保留官方压缩权重和量化语义，而非强制某未经证明的内核。禁止全模型永久转浮点/删量化配置以规避兼容门槛。
+
+## 阶段 4：真实固定 S01 双图 1 冷 3 热
+
+使用 MuJoCoCaptureSession + SimulatorConfig(camera_width=320,camera_height=240,render_rgb=True,render_depth=True,domain_randomization=False,seed=0)，S01_NORMAL_STATIC，指令“把图中的红色方块放到绿色方形目标区域。”。离线抓取真实仿真同步 RGB、depth、instance，保留 pass_state_hashes 三者一致且等于 physics_state_hash、校准、episode/source、尺寸、原图和 raw depth。全部四次使用同一冻结帧，明确静态重复验证、不增加场景样本量。oracle/instances 仅用于结果判分，不进入 prompt。
+复用 build_visual_messages 和 VisualDecision schema，固定 RGB 第一张、对齐可视化 depth 第二张；保存两份不同 PNG bytes+SHA256、尺寸、提示词全文/hash、schema/hash、coordinate_system（使用已有 normalized_1000 协议）及 depth 编码范围。按官方 processor 的真实多图 API 转换消息，禁止拼图代替双图、漏传第二张、用图名代替内容。推理调用现场记录 processor 输入列表及顺序/图 hash、模板生成文本、image token/图格信息、输出张量 key/shape/dtype，必要的输入 token ids 与张量摘要；按官方 processor 语义证明输出表示两张图。切片/patch 数不能冒充 image_count。记录 resize/crop 规则，processor内部缩放保留与 320x240 坐标空间的映射。
+artifact 脚本可直接调用模型并把真实输出交给现有 RGBDPlannerAdapter._ground_response / VisualDecision，按现有 probe._pixel_hit 和坐标转换做离线 target/destination 检验；也可本轮本地临时 bridge，但不得修改产品 provider。固定 seed=0、do_sample=False、max_new_tokens=512、num_beams=1；输入上下文上限 8192，超过则报告，不静默截图/截 prompt。温度/think 参数仅按模型支持传入；实际 generation config 必须保存，不虚构参数。无真实 streaming 计时则 TTFT=NOT_MEASURED。
+一进程同一模型执行四次：first-cold、warm1、warm2、warm3；每次保存逐字 raw response（含特殊/思考文本时原样留存）、token ids/count、解析结果及原始错误、grounding/target_hit/destination_hit、完整 timing（processor、generation、end-to-end）、torch allocated/reserved 峰值和200ms nvidia-smi采样。JSON或定位失败仍完成其余预注册重复，不自动重试输出、不调整提示词、不修答案。OOM/进程异常/超时立即停后续并标 NOT_RUN。三次热样本只报告观测列表和描述统计，不作稳定 p95 SLA 推断。
+
+## 验证与验收边界
+
+开发验证：本轮脚本编译/静态检查、manifest 完整性、SHA复核、依赖 import/pip check、protocol 校验、报告数据与 raw 对照。无需跑无关全库测试；禁止用 mock/fake inference 作为真实通过。
+兼容性按层记录 provenance、dependencies、compressed_load、processor_two_distinct_images、four_requests_completed。量化兼容 PASS 要求实际加载官方压缩 FP8、两图处理被证据验证且真实生成；完整四次完成单列 PASS。negative gate 是完成一次限定调查的有效结论，但不能称“兼容通过”或“双图通过”。任何未执行项必须 NOT_RUN，格式支持只能证据范围内下结论。
+质量单列各次 strict JSON/schema parsed、grounded、target_hit、destination_hit；四次全通过才称“固定 S01 小样本通过”。失败和模型拒答均如实计数，不能只挑最好一次；两图进入 processor 不证明模型理解 depth。没有输入消融不宣称模型利用 depth 的因果证据。
+真实运行指本机实测的量化模型+MuJoCo双图；不是实机机器人运行，也不是跨场景/held-out质量、鲁棒性或正式研究验收。最终报告必须分别列软件验证、真实执行、质量检查、正式验收=NOT_PERFORMED。无通过门槛时也交付原始失败、实际到达阶段、未运行项和后续需要的下一轮 Astra 范围。
+
+## 预算、预期负门槛、停止与清理
+
+总墙钟预算 <=3小时；metadata/source静态调查 <=15分钟、依赖解析/下载/安装 <=40分钟、权重下载 <=90分钟、加载 <=10分钟、每次推理 <=180秒。受总预算约束优先停止；执行工具使用可轮询后台进程保持沟通，不以单次长阻塞隐藏进度。小文件请求 timeout60秒/最多3次（网络瞬断），range沿用最多4次/128MiB段；不无限重试，网络确认不可用即 BLOCKED_NETWORK。源代码小文件阶段总下载上限100MiB，权重总量<=16GiB、依赖wheel<=12GiB；超过预算是 STOP_BUDGET，需要记录并另规划扩容，不静默放大。
+计划内预期负门槛：BLOCKED_EXECUTION_CONTEXT、BLOCKED_NETWORK、BLOCKED_PROVENANCE、BLOCKED_FORMAT_RUNTIME、DEPENDENCY_INCOMPATIBLE、INSUFFICIENT_RESOURCES、LOAD_OOM、INFERENCE_OOM、TIMEOUT、PROCESSOR_REJECTS_TWO_IMAGES、MODEL_OUTPUT_INVALID_JSON、GROUNDING_MISS。保留触发前置条件、原始异常、rc和到达阶段，停止相关路径/按阶段4规则完成不受影响重复，不自动进入无限修复轮。
+出现与上述诊断不同的新根因、需要修改产品/下载器/第三方代码、权重或方案切换、提高预算、发生不可解释 input/source 漂移时暂停相关修复，再交 Astra 下一轮。证据记录与总结可继续。artifact 脚本的计划外失败也先保存原始错误，不先修后补计划。
+仅关闭本轮创建的 PID/服务，finally释放GPU、结束采样、保存终止时间并复查compute进程；不杀其他任务。保留失败partial与cache，报告占用；除可重建本轮临时内存/进程外，不以清理日志/原始字节制造通过。
+
+## 交付与 Git
+
+每阶段写 step-XX-report.json/md（命令、输入SHA、环境、start/end、rc、原始输出路径及hash、结果、未运行项）。本轮生成 compatibility-report.json/md、dual-image-results.json、summary.md、evidence-manifest.json；summary 汇总软件/本机真实执行/正式验收边界、原始失败、缓存位置/缺项与结论。完整raw按既有边界留本地；进入Git的精简摘要不能冒充完整远端复现包。追踪原始小型失败日志、清单、脚本和结果；权重、wheel、venv、凭据、完整批量raw/数据库不提交。
+执行者验证 git diff --check、计划/协议/输入hash、报告链接存在性；明确 git add 本轮已验证可交付路径，保留其他修改；按用户既定研发分支提交和推送，不改分支历史。push后用本地 HEAD、上游与远端 ls-remote SHA 三方一致证明；无法推送则保留本地 commit 与原始失败，如实报告。该 Git 交付不会把 negative gate 改写为模型通过。
+
+## 输入及原始证据 SHA256
+
+|路径|SHA256|
+|---|---|
+|`AGENTS.md`|`8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649`|
+|`docs/superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md`|`f42eac090def66ea17c76a6edb9f4c0cdc1cc6b9a881b2269bc7e84b3ff94392`|
+|`scripts/probe_rgbd_model.py`|`a6d8f61e6c278a2b06ae9a6abdcbb9d17dcee73666aa6735ee6ad0a6653dab94`|
+|`src/cloud_edge_robot_arm/vision/messages.py`|`f60868e4db77ac103d94d2b18b769612ae19b54bed60f79fbfe5a2846c5e30a3`|
+|`src/cloud_edge_robot_arm/vision/capture.py`|`f8121afbed70cb1ed8fa182c0b5595c54e12b88989c591878ac9987d8fe7ec7b`|
+|`src/cloud_edge_robot_arm/vision/planner.py`|`cc632036242004480e85ae6977cfa4e662ac512b71cd3303c38a0510c7c0b1c5`|
+|`src/cloud_edge_robot_arm/datasets/external/network.py`|`d5c078fdeb7145f8714cbc30ff0add20b207a1aaed079b697d675614aac84997`|
+|`artifacts/research/process/20261004-t7-larger-vlm-candidates/internvl_screen.py`|`99d852fa55bce54dfa17b5ed0b9894fa751533d34909807fbaf06c2f9c31a960`|
+|`artifacts/research/process/20261004-t7-larger-vlm-candidates/internvl_bridge.py`|`3fd5267a963fdbf69a9b008fa81012cea5aad8ff4f48c743810bc0b7b3e35c11`|
+|`artifacts/research/process/20261004-t7-larger-vlm-candidates/download_internvl.py`|`09c25ca7aef826e1e5dc0daf771ccf612b602b337799fc1cd5e72ac400cd6123`|
+|`artifacts/research/process/20261004-t7-larger-vlm-candidates/range_download.py`|`2565aa3eb9bd192933c63418cea5276c18822ecb7aca91168bde23009334d266`|
+|`artifacts/research/process/20261004-t7-larger-vlm-candidates/qwen8-normalized.json`|`3e35c537a23a0382e9fe9a16bca489ba0896ee7cdea637b902a6b18f756e8f01`|
+|`pyproject.toml`|`b2bf5c4042d568eaf9def415ae7b2f08f0fa541a01f970b7e68e6d950035bb6c`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/initial-context.json`|`92bf043a87c298ec0db3a36e544ffc937efcccad578935d92f64ddbbe1faf800`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/host-context.json`|`5175ef99d59e8c8d583f3af4215acc1bc98db91010798eb03751d89bfb98c623`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/compressed-tensors-0.12.2-pypi.raw.json`|`82de787e00993bda90303cfc570d741bce25f927cf429ad9a4e9c7e466ade9aa`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/compressed-tensors-0.13.0-pypi.raw.json`|`045794586616e3d89c08047d545e5ba427b3ab19a3c9baf7e11a235c06416b6b`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/compressed-tensors-0.14.0-pypi.raw.json`|`95a7c6646e551fae3e6ef6e09d408a1a315f2392b053a15dfe43f5209f5d69ee`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/compressed-tensors-pypi.raw.json`|`12222c07b0aa62abb045a1123ab52be0b2d67d042b9cfccc69dc8e4ac0f1ef2f`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/metadata-readout.json`|`90cc94a4455e1d0c4d296bb26d1f857dda8215e814c06caf4772d117a72a7b61`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/modelscope-FP8-metadata.raw.json`|`02724bdc88ae5a854aa817ce1a4fb3e7efa169a10035836360749fe6f1067c04`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/modelscope-NVFP4-metadata.raw.json`|`5ac9471015af956cee2fc34e989d71eed0d8765f6c8619d20253651998a1e8eb`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/diagnostic/official-small-file-manifest.json`|`8bc70e43faced2b5f99e377d0e9369da18dc323b116e5dbe9709a712dff0b966`|
+
+规划工具记录：初次草稿写入命令使用不存在的 python，rc127；实际 Astra 规划者改用已安装 python3，未修复仓库/运行环境。源文件未修改。

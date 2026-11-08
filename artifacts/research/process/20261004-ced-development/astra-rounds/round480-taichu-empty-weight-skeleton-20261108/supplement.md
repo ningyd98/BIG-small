@@ -1,0 +1,7 @@
+# R480 Astra补充：详细meta证据
+
+实际Astra补充：R480 v3已报告248精确FP8替换、全部参数meta、CPU buffers合计272 bytes及ViTPatchLinear保留，但未逐项列参数/缓冲区、未记录RSS，故证据完整性尚未满足主计划；不补造旧运行值。保留主plan、v3及其原始日志。仅允许artifact证据枚举和RSS采集，以及同配置一次新的meta结构预检，输出meta-scope-verification-v3-detailed.json和独立stdout/stderr。
+
+复核本补充固定输入SHA后，在相同init_empty_weights(include_buffers=False)流程中记录每个named_parameter的name、device、shape、dtype、numel、逻辑bytes；每个named_buffer同样记录，并区分逻辑bytes与CPU实际驻留汇总。导入依赖后、构造前采集resource.getrusage(resource.RUSAGE_SELF).ru_maxrss，结束时再采集，声明Linux单位KiB及该值为进程历史峰值，峰值差不可冒充当前RSS增长。可同时采集/proc/self/status当前VmRSS以辅助判断；没有观测到的数据写NOT_MEASURED。记录248集合摘要、config/adapter/header/hash，与原v3一致；要求全部parameters为meta、CPU buffers<=64MiB，无非meta CPU大权重。
+
+新runner门槛显式读取detailed v3及其hash，而非旧v3；详细补充验证不加载权重、不产生生成、不改变attention/targets/包。通过后仍仅执行原R478一次实际reload和四次请求。此次meta补充<=5分钟，继续原总预算；若出现新异常或集合漂移，保留失败并暂停。完整输入path/bytes/SHA256见supplement.json；本补充不更改主计划SHA。
