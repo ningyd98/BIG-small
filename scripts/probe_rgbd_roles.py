@@ -142,7 +142,13 @@ def summarize_role_request(body: Mapping[str, Any]) -> dict[str, Any]:
     summary["wire_sha256"] = _sha(json.dumps(dict(body)).encode())
     summary["response_format"] = body.get("response_format")
     summary["generation_parameters"] = {
-        key: body[key] for key in ("temperature", "max_tokens") if key in body
+        key: body[key]
+        for key in (
+            ("reasoning_effort", "max_completion_tokens")
+            if body.get("model") == "gpt-6.1-sol"
+            else ("temperature", "max_tokens")
+        )
+        if key in body
     }
     return summary
 
@@ -193,11 +199,13 @@ def read_role_config(path: Path) -> dict[str, Any]:
         "grasp_profile",
     }:
         raise ValueError("cloud config must reference a profile, never credentials")
-    if config["cloud"]["model_family"] != "qwen3.8-max" or config["cloud"]["image_size"] != [
+    if config["cloud"]["model_family"] not in {"gpt-6.1-sol", "qwen3.8-max"} or config["cloud"][
+        "image_size"
+    ] != [
         320,
         240,
     ]:
-        raise ValueError("cloud requires Max family and fixed 320x240 RGB-D")
+        raise ValueError("cloud requires a supported model family and fixed 320x240 RGB-D")
     if not isinstance(config["cloud"]["available_model_ids"], list):
         raise ValueError("available_model_ids must be provider-advertised IDs")
     if set(config["edge"]) != {
@@ -402,6 +410,7 @@ def run_probe(
                 coordinate_system=cloud_config["coordinate_system"],
                 grasp_profile=cloud_config["grasp_profile"],
                 available_model_ids=cloud_config["available_model_ids"],
+                expected_model_family=cloud_config["model_family"],
             )
             edge = RoleProviderSnapshot(
                 role="EDGE",
@@ -519,6 +528,7 @@ def _attempt(
     from cloud_edge_robot_arm.research.cost_ledger import CostLedger
     from cloud_edge_robot_arm.vision.capture import save_captured_frame
     from cloud_edge_robot_arm.vision.messages import build_visual_messages
+    from cloud_edge_robot_arm.vision.model_resolver import compatible_chat_generation
     from cloud_edge_robot_arm.vision.planner import VisualDecision, compatible_messages
 
     directory = output / f"attempt-{index:02d}"
@@ -536,8 +546,7 @@ def _attempt(
         {
             "model": settings["model"],
             "messages": compatible_messages(messages),
-            "temperature": settings["generation_parameters"]["temperature"],
-            "max_tokens": settings["generation_parameters"]["num_predict"],
+            **compatible_chat_generation(settings["model"], settings["generation_parameters"]),
             "response_format": {"type": "json_object"},
         }
     )

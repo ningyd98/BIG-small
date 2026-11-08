@@ -133,13 +133,15 @@ class RoleModelBundle:
 
 
 def select_cloud_model_id(model_id: str, available_model_ids: Iterable[str] = ()) -> str:
-    """Prefer an advertised dated Max snapshot, never guess a service revision.
+    """Keep exact Sol; prefer an advertised dated Max snapshot for legacy profiles.
 
     An explicitly dated profile remains pinned. Registry availability must come
     from the caller's provider evidence; an alias stays an alias when unknown.
     """
+    if model_id == "gpt-6.1-sol":
+        return model_id
     if not re.fullmatch(r"qwen3\.8-max(?:-\d{4}-\d{2}-\d{2})?", model_id):
-        raise ValueError("cloud profile must select the qwen3.8-max family")
+        raise ValueError("cloud profile must select gpt-6.1-sol or the qwen3.8-max family")
     if model_id != "qwen3.8-max":
         date.fromisoformat(model_id[-10:])
         return model_id
@@ -169,12 +171,14 @@ def resolve_cloud_role(
         "unconfigured", "mujoco_upright_box_v1", "mujoco_upright_box_v2"
     ] = "unconfigured",
     available_model_ids: Iterable[str] = (),
+    expected_model_family: str | None = None,
 ) -> tuple[RGBDPlannerAdapter, RoleProviderSnapshot]:
     """Read a chosen profile and its existing secret store without activating it."""
     from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
     from cloud_edge_robot_arm.vision.model_resolver import (
         ModelConfigSnapshot,
         resolve_visual_planner,
+        sol_generation_parameters,
     )
     from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable
 
@@ -182,6 +186,9 @@ def resolve_cloud_role(
     if not profile.enabled or profile.provider_kind != PlannerProviderKind.OPENAI_COMPATIBLE:
         raise RGBDModelUnavailable("cloud role requires an enabled compatible API profile")
     model_id = select_cloud_model_id(profile.model_name, available_model_ids)
+    family = "gpt-6.1-sol" if model_id == "gpt-6.1-sol" else "qwen3.8-max"
+    if expected_model_family is not None and expected_model_family != family:
+        raise ValueError("cloud profile differs from configured model family")
     model_snapshot = ModelConfigSnapshot(
         provider="openai_compatible",
         model=model_id,
@@ -189,7 +196,9 @@ def resolve_cloud_role(
         weight_digest=None,
         quantization=None,
         image_size=image_size,
-        generation_parameters={
+        generation_parameters=sol_generation_parameters(profile.max_tokens)
+        if model_id == "gpt-6.1-sol"
+        else {
             "temperature": profile.temperature,
             "num_predict": profile.max_tokens,
             "think": False,

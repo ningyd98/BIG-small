@@ -479,6 +479,7 @@ class ModelControlService:
         from cloud_edge_robot_arm.vision.model_resolver import (
             ModelConfigSnapshot,
             resolve_visual_planner,
+            sol_generation_parameters,
         )
         from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
 
@@ -500,10 +501,12 @@ class ModelControlService:
             model=profile.model_name,
             endpoint=profile.base_url,
             # Interactive profiles require an explicit probe before research freezing.
-            weight_digest="",
-            quantization="UNKNOWN",
+            weight_digest=None if profile.model_name == "gpt-6.1-sol" else "",
+            quantization=None if profile.model_name == "gpt-6.1-sol" else "UNKNOWN",
             image_size=(640, 640),
-            generation_parameters={
+            generation_parameters=sol_generation_parameters(profile.max_tokens)
+            if profile.model_name == "gpt-6.1-sol"
+            else {
                 "temperature": profile.temperature,
                 "num_ctx": 8192,
                 "num_predict": 512,

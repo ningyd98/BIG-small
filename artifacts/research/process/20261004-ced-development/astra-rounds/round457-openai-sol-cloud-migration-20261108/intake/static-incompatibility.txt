@@ -1,0 +1,319 @@
+# src/cloud_edge_robot_arm/vision/model_resolver.py
+22: class ModelConfigSnapshot:
+23:     """A model identity and bounded request configuration, detached from live profiles."""
+24: 
+25:     provider: Literal["ollama", "openai_compatible"]
+26:     model: str
+27:     endpoint: str
+28:     weight_digest: str | None
+29:     quantization: str | None
+30:     image_size: tuple[int, int]
+31:     generation_parameters: Mapping[str, int | float | bool]
+32:     timeout_s: float
+33:     coordinate_system: Literal["pixel", "normalized_1000"] = "pixel"
+34:     grasp_profile: Literal[
+78:         object.__setattr__(self, "image_size", size)
+79:         if not math.isfinite(self.timeout_s) or not 0 < self.timeout_s <= 600:
+80:             raise ValueError("invalid model timeout")
+81:         allowed = {"temperature", "num_ctx", "num_predict", "top_k", "top_p", "seed", "think"}
+82:         params = dict(self.generation_parameters)
+83:         if not params or set(params) - allowed:
+84:             raise ValueError("invalid model generation parameters")
+85:         for key, value in params.items():
+86:             if key == "think":
+87:                 if type(value) is not bool:
+88:                     raise ValueError("think must be boolean")
+89:             elif type(value) not in {int, float} or not math.isfinite(value):
+90:                 raise ValueError(f"invalid {key} value")
+91:         object.__setattr__(self, "generation_parameters", MappingProxyType(params))
+92: 
+93:     def evidence(self) -> dict[str, object]:
+94:         return {
+# src/cloud_edge_robot_arm/vision/role_models.py
+139:     from the caller's provider evidence; an alias stays an alias when unknown.
+140:     """
+141:     if not re.fullmatch(r"qwen3\.8-max(?:-\d{4}-\d{2}-\d{2})?", model_id):
+142:         raise ValueError("cloud profile must select the qwen3.8-max family")
+143:     if model_id != "qwen3.8-max":
+144:         date.fromisoformat(model_id[-10:])
+145:         return model_id
+146:     candidates = []
+147:     for candidate in available_model_ids:
+148:         if not isinstance(candidate, str) or not re.fullmatch(
+149:             r"qwen3\.8-max-\d{4}-\d{2}-\d{2}", candidate
+150:         ):
+151:             continue
+152:         try:
+153:             date.fromisoformat(candidate[-10:])
+154:         except ValueError:
+155:             continue
+156:         candidates.append(candidate)
+157:     return max(candidates, default=model_id)
+158: 
+159: 
+160: def resolve_cloud_role(
+161:     service: ModelControlService,
+162:     profile_id: str,
+163:     *,
+164:     source_hashes: Mapping[str, str],
+174:     from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
+175:     from cloud_edge_robot_arm.vision.model_resolver import (
+176:         ModelConfigSnapshot,
+177:         resolve_visual_planner,
+178:     )
+179:     from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable
+180: 
+181:     profile = service.get_profile(profile_id)
+182:     if not profile.enabled or profile.provider_kind != PlannerProviderKind.OPENAI_COMPATIBLE:
+183:         raise RGBDModelUnavailable("cloud role requires an enabled compatible API profile")
+184:     model_id = select_cloud_model_id(profile.model_name, available_model_ids)
+185:     model_snapshot = ModelConfigSnapshot(
+186:         provider="openai_compatible",
+187:         model=model_id,
+188:         endpoint=profile.base_url,
+189:         weight_digest=None,
+190:         quantization=None,
+191:         image_size=image_size,
+192:         generation_parameters={
+193:             "temperature": profile.temperature,
+194:             "num_predict": profile.max_tokens,
+195:             "think": False,
+196:         },
+197:         timeout_s=profile.timeout_seconds,
+198:         coordinate_system=coordinate_system,
+199:         grasp_profile=grasp_profile,
+200:     )
+201:     planner = resolve_visual_planner(
+202:         model_snapshot,
+203:         api_key=service.secret_store.get_secret(profile.profile_id) or "",
+204:         chat_path=profile.chat_completions_path,
+205:         allow_paid=allow_paid,
+206:     )
+207:     planner.role_config_version = profile.config_version  # type: ignore[attr-defined]
+208:     request_settings = cloud_request_settings(planner)
+209:     location: Literal["LOCAL_HOST", "REMOTE_SERVICE"] = (
+232:     Mutable transport fields override the immutable model snapshot so an endpoint,
+233:     model, path, provider, timeout or payment-setting drift changes this binding.
+234:     Secrets and HTTP headers are never included.
+235:     """
+236:     snapshot = planner.model_snapshot
+237:     if snapshot is None:
+238:         raise ValueError("cloud role requires a model request snapshot")
+239:     return snapshot.evidence() | {
+240:         "provider": planner.provider,
+241:         "model": planner.model_name,
+242:         "endpoint_hash": hashlib.sha256(planner.base_url.encode()).hexdigest(),
+243:         "timeout_s": planner.timeout_s,
+244:         "chat_path": planner.chat_path,
+245:         "config_version": getattr(planner, "role_config_version", 1),
+246:         "response_format": {"type": "json_object"},
+247:         "allow_paid": planner.allow_paid,
+248:     }
+# src/cloud_edge_robot_arm/vision/planner.py
+192:         frozen = os.environ.get("BIGSMALL_VLM_FROZEN_DIR")
+193:         if frozen:
+194:             return load_frozen_planner(Path(frozen))
+195:         if frozen is None and not any(
+196:             name in os.environ
+197:             for name in (
+198:                 "BIGSMALL_VLM_PROVIDER",
+199:                 "BIGSMALL_VLM_MODEL",
+200:                 "BIGSMALL_VLM_BASE_URL",
+201:                 "BIGSMALL_VLM_API_KEY",
+202:             )
+203:         ):
+204:             return load_frozen_planner(DEFAULT_FROZEN_DIR)
+205:         provider = os.environ.get("BIGSMALL_VLM_PROVIDER", "ollama")
+206:         if provider not in {"ollama", "openai_compatible"}:
+207:             raise ValueError("unsupported visual provider")
+208:         return cls(
+209:             base_url=os.environ.get("BIGSMALL_VLM_BASE_URL", "http://127.0.0.1:11434"),
+210:             model=os.environ.get("BIGSMALL_VLM_MODEL", DEFAULT_VISUAL_MODEL),
+211:             provider=cast('Literal["ollama", "openai_compatible"]', provider),
+212:             api_key=os.environ.get("BIGSMALL_VLM_API_KEY", ""),
+213:             allow_paid=os.environ.get("BIGSMALL_VLM_ALLOW_PAID_CALL", "").lower() == "true",
+214:         )
+215: 
+216:     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+217:         from cloud_edge_robot_arm.research.cost_ledger import RequestCost
+425:                 "options": generation,
+426:             }
+427:             path = "/api/chat"
+428:         else:
+429:             if not self.allow_paid:
+430:                 raise RGBDModelUnavailable(
+431:                     "RGBD_MODEL_UNAVAILABLE: compatible provider requires "
+432:                     "BIGSMALL_VLM_ALLOW_PAID_CALL=true"
+433:                 )
+434:             generation = (
+435:                 dict(self.model_snapshot.generation_parameters) if self.model_snapshot else {}
+436:             )
+437:             body = {
+438:                 "model": self.model_name,
+439:                 "messages": compatible_messages(messages),
+440:                 "temperature": generation.get("temperature", 0),
+441:                 "max_tokens": generation.get("num_predict", 512),
+442:                 "response_format": {"type": "json_object"},
+443:             }
+444:             if "think" in generation:
+445:                 body["enable_thinking"] = generation["think"]
+446:             path = self.chat_path
+447:         return self._post(path, body)
+448: 
+# src/cloud_edge_robot_arm/model_control/service.py
+480:             ModelConfigSnapshot,
+481:             resolve_visual_planner,
+482:         )
+483:         from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
+484: 
+485:         active_id = self.repository.get_active_profile_id()
+486:         if not active_id:
+487:             return RGBDPlannerAdapter.from_environment()
+488:         profile = self.repository.get_profile(active_id)
+489:         if profile.provider_kind not in {
+490:             PlannerProviderKind.OLLAMA,
+491:             PlannerProviderKind.OPENAI_COMPATIBLE,
+492:         }:
+493:             raise RGBDModelUnavailable(
+494:                 "RGBD_MODEL_UNAVAILABLE: active profile is a legacy text/Mock planner"
+495:             )
+496:         snapshot = ModelConfigSnapshot(
+497:             provider="ollama"
+498:             if profile.provider_kind == PlannerProviderKind.OLLAMA
+499:             else "openai_compatible",
+500:             model=profile.model_name,
+501:             endpoint=profile.base_url,
+502:             # Interactive profiles require an explicit probe before research freezing.
+503:             weight_digest="",
+504:             quantization="UNKNOWN",
+505:             image_size=(640, 640),
+506:             generation_parameters={
+507:                 "temperature": profile.temperature,
+508:                 "num_ctx": 8192,
+509:                 "num_predict": 512,
+510:                 "think": False,
+511:             },
+512:             timeout_s=profile.timeout_seconds,
+513:         )
+514:         return resolve_visual_planner(
+515:             snapshot,
+516:             api_key=self.secret_store.get_secret(profile.profile_id) or "",
+517:             chat_path=profile.chat_completions_path,
+518:             allow_paid=os.environ.get("BIGSMALL_VLM_ALLOW_PAID_CALL", "").lower() == "true",
+519:         )
+520: 
+521:     def _with_active_flag(self, profile: ModelProviderProfile) -> ModelProviderProfile:
+522:         return profile.model_copy(
+523:             update={"active": self.repository.get_active_profile_id() == profile.profile_id}
+524:         )
+# scripts/probe_rgbd_roles.py
+140:     summary = summarize_chat_request(canonical)
+141:     summary["serialized_sent_bytes"] = len(json.dumps(dict(body)).encode())
+142:     summary["wire_sha256"] = _sha(json.dumps(dict(body)).encode())
+143:     summary["response_format"] = body.get("response_format")
+144:     summary["generation_parameters"] = {
+145:         key: body[key] for key in ("temperature", "max_tokens") if key in body
+146:     }
+147:     return summary
+148: 
+175: def read_role_config(path: Path) -> dict[str, Any]:
+176:     config = yaml.safe_load(path.read_text())
+177:     if not isinstance(config, dict) or set(config) != {
+178:         "schema_version",
+179:         "cloud",
+180:         "edge",
+181:         "device",
+182:         "probe",
+183:     }:
+184:         raise ValueError("invalid role config fields")
+185:     if config["schema_version"] != "ced.roles.v1":
+186:         raise ValueError("invalid role config schema")
+187:     if set(config["cloud"]) != {
+188:         "profile_id",
+189:         "model_family",
+190:         "available_model_ids",
+191:         "image_size",
+192:         "coordinate_system",
+193:         "grasp_profile",
+194:     }:
+195:         raise ValueError("cloud config must reference a profile, never credentials")
+196:     if config["cloud"]["model_family"] != "qwen3.8-max" or config["cloud"]["image_size"] != [
+197:         320,
+198:         240,
+199:     ]:
+200:         raise ValueError("cloud requires Max family and fixed 320x240 RGB-D")
+201:     if not isinstance(config["cloud"]["available_model_ids"], list):
+202:         raise ValueError("available_model_ids must be provider-advertised IDs")
+203:     if set(config["edge"]) != {
+390:             )
+391:         else:
+392:             if not service.secret_store.has_secret(selected):
+393:                 raise ValueError("selected cloud profile secret is unavailable")
+394:             artifact_secret = service.secret_store.get_secret(selected) or ""
+395:             cloud_config, edge_config = config["cloud"], config["edge"]
+396:             planner, cloud = resolve_cloud_role(
+397:                 service,
+398:                 selected,
+399:                 source_hashes=source_fingerprints(),
+400:                 allow_paid=allow_paid,
+401:                 image_size=tuple(cloud_config["image_size"]),
+402:                 coordinate_system=cloud_config["coordinate_system"],
+403:                 grasp_profile=cloud_config["grasp_profile"],
+404:                 available_model_ids=cloud_config["available_model_ids"],
+405:             )
+406:             edge = RoleProviderSnapshot(
+407:                 role="EDGE",
+408:                 provider_id=edge_config["provider_id"],
+409:                 provider_location=edge_config["provider_location"],
+530:         frame.observation,
+531:         image_size=tuple(settings["image_size"]),
+532:         coordinate_system=settings["coordinate_system"],
+533:         decision_schema=VisualDecision.model_json_schema(),
+534:     )
+535:     expected = summarize_role_request(
+536:         {
+537:             "model": settings["model"],
+538:             "messages": compatible_messages(messages),
+539:             "temperature": settings["generation_parameters"]["temperature"],
+540:             "max_tokens": settings["generation_parameters"]["num_predict"],
+541:             "response_format": {"type": "json_object"},
+542:         }
+543:     )
+544:     actual: dict[str, Any] = {"artifact_directory": str(directory.resolve())}
+545:     # The transport ledger measures the actual received raw bytes before parsing.
+640: 
+641: class _EnvironmentProfileSecrets:
+642:     """Read-only implementation of the existing SecretStore boundary for the CLI."""
+643: 
+644:     kind = SecretStoreKind.ENVIRONMENT
+645: 
+646:     def __init__(self, profile_id: str, variable: str) -> None:
+647:         self.profile_id, self.variable = profile_id, variable
+648: 
+649:     def get_secret(self, profile_id: str) -> str | None:
+650:         return os.environ.get(self.variable) if profile_id == self.profile_id else None
+651: 
+652:     def has_secret(self, profile_id: str) -> bool:
+653:         return bool(self.get_secret(profile_id))
+654: 
+655:     def set_secret(self, profile_id: str, value: str) -> None:
+# scripts/run_rgbd_pilot.py
+683:             if not verified["available"]:
+684:                 raise ValueError("original nominal cloud role probe unavailable")
+685:             probe = verified["report"]
+686:             role_config = read_role_config(Path(settings["role_config"]))
+687:             planner, cloud = resolve_cloud_role(
+688:                 service,
+689:                 profile_id,
+690:                 source_hashes=probe["bundle"]["cloud_snapshot"]["source_hashes"],
+691:                 allow_paid=allow_paid,
+692:                 image_size=tuple(role_config["cloud"]["image_size"]),
+693:                 coordinate_system=role_config["cloud"]["coordinate_system"],
+694:                 grasp_profile=role_config["cloud"]["grasp_profile"],
+695:                 available_model_ids=role_config["cloud"]["available_model_ids"],
+696:             )
+697:             if cloud.evidence() != probe["bundle"]["cloud_snapshot"]:
+698:                 raise ValueError("resolved cloud settings differ from frozen probe")
+699:             bundle = RoleModelBundle(
+700:                 cloud,
+701:                 probe["bundle"]["edge_provider_id"],

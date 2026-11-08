@@ -693,6 +693,7 @@ def run_ced_pilot(
                 coordinate_system=role_config["cloud"]["coordinate_system"],
                 grasp_profile=role_config["cloud"]["grasp_profile"],
                 available_model_ids=role_config["cloud"]["available_model_ids"],
+                expected_model_family=role_config["cloud"]["model_family"],
             )
             if cloud.evidence() != probe["bundle"]["cloud_snapshot"]:
                 raise ValueError("resolved cloud settings differ from frozen probe")

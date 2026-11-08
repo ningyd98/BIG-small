@@ -1,0 +1,73 @@
+# tests/test_openai_sol_visual_migration.py
+280:         calls.append(kwargs.get("expected_model_family"))
+281:         return original(*args, **kwargs)
+282: 
+283:     monkeypatch.setattr(probe, "resolve_cloud_role", checked)
+284:     from cloud_edge_robot_arm.vision import capture
+285: 
+286:     monkeypatch.setattr(
+287:         capture, "MuJoCoCaptureSession", lambda *a, **kw: pytest.fail("renderer started")
+288:     )
+289:     rows = _wire(monkeypatch)
+290:     report = probe.run_probe(
+291:         CONFIG,
+292:         tmp_path / "probe",
+293:         service=service,
+294:         profile_id=qwen.profile_id,
+295:         execute=True,
+296:         allow_paid=True,
+297:     )
+298:     assert report["status"] == "BLOCKED" and report["attempts"] == [] and rows == []
+299:     from cloud_edge_robot_arm.research import freeze_evidence
+300:     from scripts import run_rgbd_pilot as pilot
+301: 
+302:     monkeypatch.setattr(roles, "resolve_cloud_role", checked)
+303:     monkeypatch.setattr(
+304:         freeze_evidence,
+305:         "verify_role_probe_evidence",
+306:         lambda *a: {
+307:             "available": True,
+308:             "report": {"bundle": {"cloud_snapshot": {"source_hashes": {"test": "a" * 64}}}},
+309:         },
+310:     )
+311:     monkeypatch.setattr(pilot, "_ced_pools", lambda *a: [])
+312:     monkeypatch.setattr(
+313:         pilot, "run_pilot_stage", lambda *a, **kw: {"actual_research_status": "NOT_RUN"}
+314:     )
+315:     settings = yaml.safe_load(Path("configs/research/ced_selection.yaml").read_text())
+316:     settings["role_probe"] = "software-prerequisite"
+317:     path = tmp_path / "pilot.yaml"
+318:     path.write_text(yaml.safe_dump(settings))
+319:     output = tmp_path / "pilot"
+320:     output.mkdir()
+321:     result = pilot.run_ced_pilot(
+322:         path,
+323:         output,
+324:         "selection",
+325:         service=service,
+326:         profile_id=qwen.profile_id,
+327:         execute=True,
+328:         allow_paid=True,
+329:     )
+330:     assert result["actual_research_status"] == "NOT_RUN" and rows == []
+331:     assert calls == [MODEL, MODEL]
+332: 
+333: 
+334: def test_sol_two_image_json_wire_and_grounding(monkeypatch):
+# scripts/run_rgbd_pilot.py
+43: from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession, save_observation
+44: from cloud_edge_robot_arm.vision.evaluation import ExecutionPolicy, write_json
+45: from cloud_edge_robot_arm.vision.execution import run_visual_episode
+46: from cloud_edge_robot_arm.vision.frozen_model import load_frozen_planner
+47: from cloud_edge_robot_arm.vision.observations import RGBDObservation
+48: 
+49: 
+50: class PerturbedCapture(MuJoCoCaptureSession):
+51:     """Offline-fixed sensor faults; never inspect target labels to choose corruption."""
+52: 
+53:     noise_m = 0.0
+54:     invalid_fraction = 0.0
+55:     occlusion_fraction = 0.0
+56:     raw_directory: Path | None = None
+57:     frame_count = 0
+58:     perturbation_seed = 0

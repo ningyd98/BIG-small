@@ -38,6 +38,11 @@ from cloud_edge_robot_arm.vision.messages import (
     build_visual_messages,
     model_to_observation_pixel,
 )
+from cloud_edge_robot_arm.vision.model_resolver import (
+    SOL_MODEL,
+    compatible_chat_generation,
+    validate_sol_route,
+)
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
 from cloud_edge_robot_arm.vision.top_grasp import calibration_asset_sha256, resolve_top_grasp
 
@@ -45,6 +50,15 @@ if TYPE_CHECKING:
     from cloud_edge_robot_arm.research.cost_ledger import CostLedger
     from cloud_edge_robot_arm.research.network import NetworkInjector
     from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+
+
+class _NoSolRedirect(urllib.request.HTTPRedirectHandler):
+    """Never forward an official-provider credential to a redirected URL."""
+
+    def redirect_request(
+        self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
+    ) -> None:
+        return None
 
 
 SkillIntent = Literal[
@@ -183,6 +197,17 @@ class RGBDPlannerAdapter:
         if chat_path not in {"/chat/completions", "/v1/chat/completions"}:
             raise ValueError("unsupported visual chat path")
         self.chat_path = chat_path
+        self._validate_sol_identity()
+
+    def _validate_sol_identity(self) -> None:
+        snapshot = self.model_snapshot
+        if (
+            snapshot is not None
+            and snapshot.model == SOL_MODEL
+            and (self.model_name != snapshot.model or self.provider != snapshot.provider)
+        ):
+            raise ValueError("Sol adapter identity differs from its frozen snapshot")
+        validate_sol_route(self.provider, self.model_name, self.base_url, self.chat_path)
 
     @classmethod
     def from_environment(cls) -> RGBDPlannerAdapter:
@@ -216,6 +241,11 @@ class RGBDPlannerAdapter:
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         from cloud_edge_robot_arm.research.cost_ledger import RequestCost
 
+        self._validate_sol_identity()
+        if self.model_name == SOL_MODEL:
+            validate_sol_route(self.provider, self.model_name, self.base_url, path)
+            if body.get("model") != self.model_name:
+                raise ValueError("Sol request identity differs from its adapter")
         headers = {"Content-Type": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
@@ -272,7 +302,10 @@ class RGBDPlannerAdapter:
                     transfer = self.network_injector.begin(len(payload))
                 finally:
                     network_s += time.monotonic() - before
-            with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
+            handlers: list[urllib.request.BaseHandler] = [urllib.request.ProxyHandler({})]
+            if self.model_name == SOL_MODEL:
+                handlers.append(_NoSolRedirect())
+            with urllib.request.build_opener(*handlers).open(
                 request, timeout=self.timeout_s
             ) as response:
                 raw = response.read(2_000_001)
@@ -386,6 +419,7 @@ class RGBDPlannerAdapter:
     def _request_visual(
         self, messages: list[dict[str, Any]], decision_schema: dict[str, Any]
     ) -> dict[str, Any]:
+        self._validate_sol_identity()
         if self.provider == "ollama":
             info = self._post("/api/show", {"model": self.model_name})
             if "vision" not in info.get("capabilities", []):
@@ -437,12 +471,9 @@ class RGBDPlannerAdapter:
             body = {
                 "model": self.model_name,
                 "messages": compatible_messages(messages),
-                "temperature": generation.get("temperature", 0),
-                "max_tokens": generation.get("num_predict", 512),
+                **compatible_chat_generation(self.model_name, generation),
                 "response_format": {"type": "json_object"},
             }
-            if "think" in generation:
-                body["enable_thinking"] = generation["think"]
             path = self.chat_path
         return self._post(path, body)
 
