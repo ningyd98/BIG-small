@@ -25,7 +25,11 @@ from cloud_edge_robot_arm.research.protocol import (
     ProtocolSpec,
     file_hash,
 )
-from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+from cloud_edge_robot_arm.vision.model_resolver import (
+    SOL_MODEL,
+    ModelConfigSnapshot,
+    compatible_chat_generation,
+)
 
 
 def _inside(directory: Path, relative: str) -> Path:
@@ -110,6 +114,56 @@ def _model_evidence_hash(settings: Mapping[str, Any]) -> str:
     return hashlib.sha256(
         json.dumps(_model_evidence(settings), sort_keys=True).encode()
     ).hexdigest()
+
+
+def _recorded_chat_fields(settings: Mapping[str, Any]) -> dict[str, Any]:
+    """Reconstruct complete effective wire fields without filling missing evidence."""
+    generation = settings["generation_parameters"]
+    if not isinstance(generation, Mapping):
+        raise ValueError("recorded generation parameters must be an object")
+    if settings["model"] == SOL_MODEL:
+        if set(generation) != {"reasoning_effort", "max_completion_tokens"}:
+            raise ValueError("recorded Sol generation requires both effective fields only")
+    elif not {"temperature", "num_predict"} <= set(generation):
+        raise ValueError("recorded legacy generation requires temperature and num_predict")
+    if "response_format" in settings and settings["response_format"] != {"type": "json_object"}:
+        raise ValueError("recorded response format differs from JSON object")
+    return {
+        "model": settings["model"],
+        **compatible_chat_generation(settings["model"], generation),
+        "response_format": {"type": "json_object"},
+    }
+
+
+def _offline_reader_adapter_kwargs(settings: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind pure compilation/grounding to recorded identity, never a live service."""
+    provider = settings["provider"]
+    if provider not in {"ollama", "openai_compatible"}:
+        raise ValueError("unsupported recorded reader provider")
+    base_url = "http://127.0.0.1:11434"
+    chat_path = settings.get("chat_path", "/chat/completions")
+    if settings["model"] == SOL_MODEL:
+        if provider != "openai_compatible":
+            raise ValueError("recorded Sol requires the compatible provider")
+        for candidate, path in (
+            ("https://api.openai.com", "/v1/chat/completions"),
+            ("https://api.openai.com/v1", "/chat/completions"),
+        ):
+            if settings.get("endpoint_hash") == hashlib.sha256(candidate.encode()).hexdigest() and (
+                settings.get("chat_path") == path
+            ):
+                base_url, chat_path = candidate, path
+                break
+        else:
+            raise ValueError("recorded Sol endpoint hash/path has no official route match")
+    return {
+        "model": settings["model"],
+        "provider": provider,
+        "base_url": base_url,
+        "chat_path": chat_path,
+        "api_key": "",
+        "allow_paid": False,
+    }
 
 
 def verify_role_probe_evidence(directory: Path) -> dict[str, Any]:
@@ -212,17 +266,11 @@ def verify_role_probe_evidence(directory: Path) -> dict[str, Any]:
             expected_body = {
                 "model": settings["model"],
                 "messages": compatible_messages(messages),
-                "temperature": settings["generation_parameters"]["temperature"],
-                "max_tokens": settings["generation_parameters"]["num_predict"],
-                "response_format": {"type": "json_object"},
+                **_recorded_chat_fields(settings),
             }
-            if body != expected_body:
+            if json.dumps(body, sort_keys=True) != json.dumps(expected_body, sort_keys=True):
                 raise ValueError("actual wire does not bind the frozen frame/prompt/settings")
-            offline = RGBDPlannerAdapter(
-                base_url="http://127.0.0.1:11434",
-                model=cloud.model_id,
-                provider="openai_compatible",
-            )
+            offline = RGBDPlannerAdapter(**_offline_reader_adapter_kwargs(settings))
             draft = offline._ground_response(
                 request,
                 response,
@@ -562,10 +610,11 @@ def _b0_expected_request_body(
                 captured.append(messages)
                 raise _Compiled
 
-        # This endpoint is unused: the compiler stops before transport/parsing.
+        # The compiler stops before transport; Sol still binds its original route.
+        adapter_kwargs = _offline_reader_adapter_kwargs(settings)
         snapshot = ModelConfigSnapshot(
-            provider="openai_compatible",
-            endpoint="http://127.0.0.1:11434",
+            provider=adapter_kwargs["provider"],
+            endpoint=adapter_kwargs["base_url"],
             model=settings["model"],
             weight_digest=settings["weight_digest"],
             quantization=settings["quantization"],
@@ -575,7 +624,9 @@ def _b0_expected_request_body(
             coordinate_system=settings["coordinate_system"],
             grasp_profile=settings["grasp_profile"],
         )
-        compiler = _MessageCompiler(model=settings["model"], model_snapshot=snapshot)
+        if settings["model"] == SOL_MODEL and snapshot.evidence() != _model_evidence(settings):
+            raise ValueError("offline Sol snapshot differs from the recorded model evidence")
+        compiler = _MessageCompiler(**adapter_kwargs, model_snapshot=snapshot)
         try:
             compiler.supervise(observation, context)
         except _Compiled:
@@ -588,9 +639,7 @@ def _b0_expected_request_body(
     return {
         "model": settings["model"],
         "messages": compatible_messages(messages),
-        "temperature": settings["generation_parameters"]["temperature"],
-        "max_tokens": settings["generation_parameters"]["num_predict"],
-        "response_format": {"type": "json_object"},
+        **_recorded_chat_fields(settings),
     }
 
 
@@ -601,7 +650,9 @@ def _verify_b0_request_body(
     instruction: str,
     settings: Mapping[str, Any],
 ) -> None:
-    if body != _b0_expected_request_body(body, role, observation, instruction, settings):
+    if json.dumps(dict(body), sort_keys=True) != json.dumps(
+        _b0_expected_request_body(body, role, observation, instruction, settings), sort_keys=True
+    ):
         raise ValueError("complete original B0 role-specific request differs from production")
 
 
@@ -731,11 +782,9 @@ def _audit_ced_case(
         body = json.loads(request_raw)
         summary = summarize_role_request(body)
         if hashlib.sha256(request_raw).hexdigest() != entry["request_sha256"] or (
-            summary["model"] != settings["model"]
-            or tuple(summary["image_sha256"]) not in image_pairs
-            or body["temperature"] != settings["generation_parameters"]["temperature"]
-            or body["max_tokens"] != settings["generation_parameters"]["num_predict"]
-            or body["response_format"] != {"type": "json_object"}
+            tuple(summary["image_sha256"]) not in image_pairs
+            or json.dumps({k: v for k, v in body.items() if k != "messages"}, sort_keys=True)
+            != json.dumps(_recorded_chat_fields(settings), sort_keys=True)
         ):
             raise ValueError("actual model wire differs from frozen model/current RGB-D")
         matched = False

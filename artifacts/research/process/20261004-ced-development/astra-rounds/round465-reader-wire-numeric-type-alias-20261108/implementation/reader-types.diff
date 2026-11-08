@@ -1,0 +1,32 @@
+--- post-R464-reader
++++ R465-type-strict-reader
+@@ -268,7 +268,7 @@
+                 "messages": compatible_messages(messages),
+                 **_recorded_chat_fields(settings),
+             }
+-            if body != expected_body:
++            if json.dumps(body, sort_keys=True) != json.dumps(expected_body, sort_keys=True):
+                 raise ValueError("actual wire does not bind the frozen frame/prompt/settings")
+             offline = RGBDPlannerAdapter(**_offline_reader_adapter_kwargs(settings))
+             draft = offline._ground_response(
+@@ -650,7 +650,9 @@
+     instruction: str,
+     settings: Mapping[str, Any],
+ ) -> None:
+-    if body != _b0_expected_request_body(body, role, observation, instruction, settings):
++    if json.dumps(dict(body), sort_keys=True) != json.dumps(
++        _b0_expected_request_body(body, role, observation, instruction, settings), sort_keys=True
++    ):
+         raise ValueError("complete original B0 role-specific request differs from production")
+ 
+ 
+@@ -781,7 +783,8 @@
+         summary = summarize_role_request(body)
+         if hashlib.sha256(request_raw).hexdigest() != entry["request_sha256"] or (
+             tuple(summary["image_sha256"]) not in image_pairs
+-            or {k: v for k, v in body.items() if k != "messages"} != _recorded_chat_fields(settings)
++            or json.dumps({k: v for k, v in body.items() if k != "messages"}, sort_keys=True)
++            != json.dumps(_recorded_chat_fields(settings), sort_keys=True)
+         ):
+             raise ValueError("actual model wire differs from frozen model/current RGB-D")
+         matched = False
