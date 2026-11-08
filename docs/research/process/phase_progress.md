@@ -1,5 +1,7 @@
 # 阶段进度
 
+**2026-11-08 云端配置接续（R486–R488）：** 页面新密钥配置已激活；唯一真实 RGB-D dry-run 因服务付费开关未启用而返回 PLANNER_FAILED，无合同或派发，未重试。已修复保存配置的归一化坐标及 v2 抓取校准接入，并按独审将自动校准限定于经过实际默认场景资产哈希检查的内部采集路径；通用输入观测仍拒绝未经证明的校准。最终新增18项、相邻74项CPU测试通过，静态检查通过；保留所有旧RED及原字节输出。运行中的服务仍是旧代码且密钥仅在内存，部署后须通过页面重录密钥并启用付费门，再另行冻结真实测试。旧R469未运行、输入已随service修改过期；nominal/native/物理/正式研究验收不升级。见[本轮步骤与阶段报告](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round486-sol-saved-session-continuation-20261108/step-report.md)。
+
 第62步：OC2首轮完整CPU GREEN为57通过/4失败/61项；reset/capture失败原件序列化与缺文件、export/catalog环境终态断言需Astra67计划。RW1首轮GREEN为81通过/1失败/82项，畸形来源负例后的fixture别名污染待Astra68。两者源码/原日志/全失败分母已冻结，未修、未重跑、未静态/旧回归/独审；两份Astra计划已请求，此快照尚未交付。OC2原77仅批准差异、RW1其余35静止；真实prefix/source-positive与恢复0002仍0。第60步保存帧全时域观察结果保持，native/九组/G1/INITIAL/METHOD/FINAL未验收；主线T12/18、T13并行、边缘后置，本地公开载荷仍待批准。 [第62步报告](../../../artifacts/research/process/20261004-ced-development/report-step62.md)。
 
 第61步：第60步文档EOF问题经Astra64单字节修正、一次六文档检查通过，原STOP与367链接历史证据保持。OC2后续77预检匹配；子线程容量失败经Astra65在原线程内联恢复，17输入保持，现继续Task2/3软件，实际prefix仍0。RW1两文件/14输入冻结；原事件无episode字段的计划接口差异经Astra66明确活backend与原event分源绑定，37输入静止，已授权命名CPU开发，尚无新GREEN或实际故障证明。teacher仍是OC2保护pin、RW2/3后置；两次平台计数读取仅语义/API证据。第60步4807全OBSERVED结果保持，连续/native/九组/G1/INITIAL/METHOD/FINAL未验收；主线T12/18、T13并行，边缘后置。本地be1c10cd公开载荷仍待批准。 [第61步报告](../../../artifacts/research/process/20261004-ced-development/report-step61.md)。

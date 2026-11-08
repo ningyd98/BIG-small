@@ -1,0 +1,48 @@
+{
+  "kind": "STATIC_SOURCE_EVIDENCE_NOT_EXECUTED_FAILURE",
+  "observed_runtime_failure": false,
+  "evidence": [
+    {
+      "issue": "Existing simulator dry-run",
+      "path": "src/cloud_edge_robot_arm/model_control/service.py",
+      "start_line": 392,
+      "end_line": 444,
+      "verbatim_source": "    def planner_dry_run(\n        self,\n        *,\n        user_instruction: str,\n        sample_scene: str,\n        control_mode: str,\n        transport: OllamaTransport | None = None,\n        input_mode: str = \"RGBD\",\n    ) -> dict[str, Any]:\n        \"\"\"执行 planner dry-run，明确 dispatch=false 且 hardware_execution=false。\"\"\"\n\n        if input_mode == \"RGBD\":\n            from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest\n            from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline\n            from cloud_edge_robot_arm.vision.capture import capture_simulated_observation\n\n            try:\n                observation = capture_simulated_observation()\n                planner = self.visual_planner()\n                result = PlanningPipeline(planner=planner).process(\n                    InitialPlanningRequest(\n                        request_id=\"rgbd-dry-run-\" + uuid4().hex,\n                        user_instruction=user_instruction,\n                        observation=observation,\n                        control_mode=\"PERIODIC_CLOUD_SUPERVISION\"\n                        if control_mode == \"PCSC\"\n                        else \"EVENT_TRIGGERED_EDGE_AUTONOMY\",\n                    )\n                )\n                return {\n                    \"input_mode\": \"RGBD\",\n                    \"dispatch\": False,\n                    \"hardware_execution\": False,\n                    \"evaluation_scope\": \"RGBD_PLANNING_ONLY\",\n                    \"provider_kind\": planner.provider.upper(),\n                    \"model_name\": planner.model_name,\n                    \"parse_result\": result.outcome.value,\n                    \"reason\": result.reason,\n                    \"observation\": observation.evidence(),\n                    \"raw_planner_output\": result.attempts[0].draft.raw_text\n                    if result.attempts\n                    else \"\",\n                    \"validation_errors\": result.validation.errors,\n                    \"repair_attempts\": 0,\n                    \"final_contract\": result.contract.model_dump(mode=\"json\")\n                    if result.contract\n                    else None,\n                }\n            except Exception as exc:\n                return {\n                    \"input_mode\": \"RGBD\",\n                    \"dispatch\": False,\n                    \"hardware_execution\": False,"
+    },
+    {
+      "issue": "Saved-profile snapshot omits calibration and coordinate system",
+      "path": "src/cloud_edge_robot_arm/model_control/service.py",
+      "start_line": 474,
+      "end_line": 522,
+      "verbatim_source": "            \"final_contract\": {},\n        }\n\n    def visual_planner(self) -> RGBDPlannerAdapter:\n        \"\"\"为规划、工作进程和试运行解析同一份当前启用的模型配置。\"\"\"\n        from cloud_edge_robot_arm.vision.model_resolver import (\n            ModelConfigSnapshot,\n            resolve_visual_planner,\n            sol_generation_parameters,\n        )\n        from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter\n\n        active_id = self.repository.get_active_profile_id()\n        if not active_id:\n            return RGBDPlannerAdapter.from_environment()\n        profile = self.repository.get_profile(active_id)\n        if profile.provider_kind not in {\n            PlannerProviderKind.OLLAMA,\n            PlannerProviderKind.OPENAI_COMPATIBLE,\n        }:\n            raise RGBDModelUnavailable(\n                \"RGBD_MODEL_UNAVAILABLE: active profile is a legacy text/Mock planner\"\n            )\n        snapshot = ModelConfigSnapshot(\n            provider=\"ollama\"\n            if profile.provider_kind == PlannerProviderKind.OLLAMA\n            else \"openai_compatible\",\n            model=profile.model_name,\n            endpoint=profile.base_url,\n            # Interactive profiles require an explicit probe before research freezing.\n            weight_digest=None if profile.model_name == \"gpt-6.1-sol\" else \"\",\n            quantization=None if profile.model_name == \"gpt-6.1-sol\" else \"UNKNOWN\",\n            image_size=(640, 640),\n            generation_parameters=sol_generation_parameters(profile.max_tokens)\n            if profile.model_name == \"gpt-6.1-sol\"\n            else {\n                \"temperature\": profile.temperature,\n                \"num_ctx\": 8192,\n                \"num_predict\": 512,\n                \"think\": False,\n            },\n            timeout_s=profile.timeout_seconds,\n        )\n        return resolve_visual_planner(\n            snapshot,\n            api_key=self.secret_store.get_secret(profile.profile_id) or \"\",\n            chat_path=profile.chat_completions_path,\n            allow_paid=os.environ.get(\"BIGSMALL_VLM_ALLOW_PAID_CALL\", \"\").lower() == \"true\",\n        )"
+    },
+    {
+      "issue": "Omitted fields default to pixel/unconfigured",
+      "path": "src/cloud_edge_robot_arm/vision/model_resolver.py",
+      "start_line": 77,
+      "end_line": 92,
+      "verbatim_source": "class ModelConfigSnapshot:\n    \"\"\"A model identity and bounded request configuration, detached from live profiles.\"\"\"\n\n    provider: Literal[\"ollama\", \"openai_compatible\"]\n    model: str\n    endpoint: str\n    weight_digest: str | None\n    quantization: str | None\n    image_size: tuple[int, int]\n    generation_parameters: Mapping[str, int | float | bool | str]\n    timeout_s: float\n    coordinate_system: Literal[\"pixel\", \"normalized_1000\"] = \"pixel\"\n    grasp_profile: Literal[\"unconfigured\", \"mujoco_upright_box_v1\", \"mujoco_upright_box_v2\"] = (\n        \"unconfigured\"\n    )\n"
+    },
+    {
+      "issue": "Valid visual decision safely rejected without calibration",
+      "path": "src/cloud_edge_robot_arm/vision/planner.py",
+      "start_line": 548,
+      "end_line": 565,
+      "verbatim_source": "            ).hexdigest(),\n        }\n        if self.model_snapshot:\n            evidence[\"model_snapshot\"] = self.model_snapshot.evidence()\n            evidence[\"model_snapshot_hash\"] = self.model_snapshot.digest()\n        if min(observation.width, observation.height) >= 64 and (\n            calibration_asset_sha256(grasp_profile) is None or observation.source != \"mujoco_camera\"\n        ):\n            evidence[\"top_grasp_offset_from_surface_m\"] = None\n            evidence[\"top_grasp_offset_status\"] = \"NOT_CONFIGURED\"\n            return self._more_observation(\n                raw,\n                \"top grasp requires a trusted MuJoCo upright-box calibration profile\",\n                evidence,\n            )\n        if (\n            decision.reported_confidence < 0.5\n            or decision.target_pixel is None"
+    },
+    {
+      "issue": "Runtime reload is metadata only",
+      "path": "src/cloud_edge_robot_arm/model_control/service.py",
+      "start_line": 242,
+      "end_line": 252,
+      "verbatim_source": "        )\n\n    def runtime_reload(self) -> dict[str, Any]:\n        \"\"\"重新读取安全 runtime 状态，不加载任意代码或触碰硬件。\"\"\"\n\n        return {\n            \"runtime\": self.runtime_status().model_dump(mode=\"json\"),\n            \"reloaded\": True,\n            \"real_controller_contacted\": False,\n            \"hardware_motion_observed\": False,\n            \"hardware_write_operations\": [],"
+    },
+    {
+      "issue": "Frozen runner requires hidden TTY key",
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round469-current-sol-nominal-runtime-20261108/implementation/run_nominal.py",
+      "start_line": 1102,
+      "end_line": 1118,
+      "verbatim_source": "def execute():\n    global SUPERVISION\n    receipt = ready()\n    assert not RAW.exists() and not (HERE / 'supervisor-result.json').exists()\n    assert not (HERE / 'execution-start.json').exists()\n    assert sys.stdin.isatty(), 'HIDDEN_TTY_REQUIRED'\n    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))\n    with warnings.catch_warnings():\n        warnings.simplefilter('error', getpass.GetPassWarning)\n        key = getpass.getpass('OpenAI API key (hidden; memory only; never paste in chat): ')\n    if not key:\n        print('WAITING_HIDDEN_TTY_SECRET: empty input; no workload launched', flush=True)\n        return 2\n    assert len(key) <= 512\n    lock = (ROOT / PLAN['paths']['gpu_lock']).open('a')\n    known = {}\n    pid = None"
+    }
+  ]
+}

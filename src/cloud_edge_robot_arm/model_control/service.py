@@ -406,8 +406,8 @@ class ModelControlService:
             from cloud_edge_robot_arm.vision.capture import capture_simulated_observation
 
             try:
+                planner = self.visual_planner(trusted_default_capture=True)
                 observation = capture_simulated_observation()
-                planner = self.visual_planner()
                 result = PlanningPipeline(planner=planner).process(
                     InitialPlanningRequest(
                         request_id="rgbd-dry-run-" + uuid4().hex,
@@ -474,14 +474,22 @@ class ModelControlService:
             "final_contract": {},
         }
 
-    def visual_planner(self) -> RGBDPlannerAdapter:
-        """为规划、工作进程和试运行解析同一份当前启用的模型配置。"""
+    def visual_planner(self, *, trusted_default_capture: bool = False) -> RGBDPlannerAdapter:
+        """解析当前模型；仅内部默认场景采集允许使用对应抓取标定。"""
+        import hashlib
+        from pathlib import Path
+
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
         from cloud_edge_robot_arm.vision.model_resolver import (
             ModelConfigSnapshot,
             resolve_visual_planner,
             sol_generation_parameters,
         )
         from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
+        from cloud_edge_robot_arm.vision.top_grasp import (
+            CURRENT_GRASP_PROFILE,
+            calibration_asset_sha256,
+        )
 
         active_id = self.repository.get_active_profile_id()
         if not active_id:
@@ -494,6 +502,21 @@ class ModelControlService:
             raise RGBDModelUnavailable(
                 "RGBD_MODEL_UNAVAILABLE: active profile is a legacy text/Mock planner"
             )
+        if trusted_default_capture:
+            expected_asset = calibration_asset_sha256(CURRENT_GRASP_PROFILE)
+            try:
+                asset = Path(SimulatorConfig().model_path).resolve()
+                if (
+                    expected_asset is None
+                    or hashlib.sha256(asset.read_bytes()).hexdigest() != expected_asset
+                ):
+                    raise RGBDModelUnavailable(
+                        "RGBD_MODEL_UNAVAILABLE: default simulator calibration asset mismatch"
+                    )
+            except OSError as exc:
+                raise RGBDModelUnavailable(
+                    "RGBD_MODEL_UNAVAILABLE: default simulator calibration asset unavailable"
+                ) from exc
         snapshot = ModelConfigSnapshot(
             provider="ollama"
             if profile.provider_kind == PlannerProviderKind.OLLAMA
@@ -503,7 +526,7 @@ class ModelControlService:
             # Interactive profiles require an explicit probe before research freezing.
             weight_digest=None if profile.model_name == "gpt-6.1-sol" else "",
             quantization=None if profile.model_name == "gpt-6.1-sol" else "UNKNOWN",
-            image_size=(640, 640),
+            image_size=(320, 240),
             generation_parameters=sol_generation_parameters(profile.max_tokens)
             if profile.model_name == "gpt-6.1-sol"
             else {
@@ -513,6 +536,8 @@ class ModelControlService:
                 "think": False,
             },
             timeout_s=profile.timeout_seconds,
+            coordinate_system="normalized_1000",
+            grasp_profile=CURRENT_GRASP_PROFILE if trusted_default_capture else "unconfigured",
         )
         return resolve_visual_planner(
             snapshot,
