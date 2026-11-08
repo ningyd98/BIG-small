@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "round": "round503-taichu-raw-bpe-witness-20261108",
+  "planner_model": "gpt-6-astra",
+  "created_at": "2026-11-08T15:53:24.503142+00:00",
+  "status": "PLAN_GENERATED_NOT_EXECUTED",
+  "input_sha256": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round503-taichu-raw-bpe-witness-20261108/diagnostic/raw-bpe.stdout",
+      "bytes": 6859,
+      "sha256": "d254ea653f92ef97c5f9670c748c12cecc639f4b2b839bbaa6ad1e19a21e4e6e"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round503-taichu-raw-bpe-witness-20261108/diagnostic/raw-bpe.stderr",
+      "bytes": 377,
+      "sha256": "b8783d4382518929bd0d33f3b6736f0480222f2e05730df645cacfc147cbc1a8"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round503-taichu-raw-bpe-witness-20261108/diagnostic/probe_raw_bpe.py",
+      "bytes": 1610,
+      "sha256": "5182cde28c9b4674260f3f359d1749c1def78926959ec2ee98f689db033a96df"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/implementation/cpu_contract_r502.py",
+      "bytes": 8055,
+      "sha256": "58542cf0e8433c1ae4d25d7a5aed5d56731aa8a2185c99f8f7ca2c1b661850be"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/implementation/byte_decoder_r500.py",
+      "bytes": 8073,
+      "sha256": "8751c1f6bc475ca42e98172ecf982ba1e42e0965d79aed21f743488498114ed6"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/cpu-contract-r502.json",
+      "bytes": 11868,
+      "sha256": "11604030df046b90f4bcb646c8c666b233592de31a886fccfe54b5d35471d629"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/cpu-contract-r502.stderr",
+      "bytes": 2351,
+      "sha256": "e769d1439af647a1111759bbed53829a350c05b890e0c0e90f4f4ea5b52676b3"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round502-taichu-nfc-fixture-oracle-20261108/plan.json",
+      "bytes": 6895,
+      "sha256": "13e07ba22731e3540755c92acf87736a7ca3a083b8f478d3a15471ee13acb337"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round502-taichu-nfc-fixture-oracle-20261108/diagnostic/nfc-witness.stdout",
+      "bytes": 4560,
+      "sha256": "8a04ba3714e61b8ab2f80d83b88fdd8a102e6ee81d19f2f65ba17dc13c8b434b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round500-taichu-secondary-eos-mask-20261108/plan.json",
+      "bytes": 7320,
+      "sha256": "d72a0cb1f40bd71bb934eb91838834c0fa5e382b279e32aa309294e6e7b4e239"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/implementation/contract-fixtures-r496.json",
+      "bytes": 6834,
+      "sha256": "fd1be194f454c03bda701e83924635a0b4f0a69e1cd0f939cea4a4ccbacae99c"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/tokenizer.json",
+      "bytes": 19989343,
+      "sha256": "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4"
+    }
+  ],
+  "decision_and_evidence": "批准最后一次CPU原字节存在性见证编码器修正。实际raw-bpe.stdout六项全部完整matcher接受、native/HF decode都精确等于原始fixture、无D或EOS混入且原三EOS终态可达，原tokenizer未变。R502单byte序列在fixture0开头拒绝，不能由该失败断言原字符串不可生成；原生matcher实际只接受部分tokenization，原因归因canonical优化仍属假设，不做库内幕确定性声明。原R499 token-sequence子集限制继续。",
+  "scope": "只新cpu_contract_r503.py及唯一CPU/grammar报告、必要runner资格结果引用。byte_decoder_r500适配器及真实model tokenizer/HF参数/完整schema/fixture原件均保持SHA不变，不增加token允许集合、不改库、不强制真实采样采用测试BPE。",
+  "implementation": [
+    "复核所有input SHA/bytes无重复，保留原失败。以原backend_tokenizer.to_str序列化建立独立CPU测试Tokenizer副本，唯一语义变化normalizer=None；记录原与副本序列化字段diff，要求除normalizer之外vocab/merges/pretokenizer/decoder/addedtokens/postprocessor等完全相等，原实例前后SHA相同。副本不能替代processor/native LLTokenizer或进入真实runner。",
+    "仅替换R502原byte流测试编码器：用此副本既有BPE merges为原fixture bytes分词，保存IDs/hash，逐项native.decode_bytes及原HF decode(skip_special_tokens=False)严格还原原始UTF8。不得NFC重写fixture，不能跳过未知byte或让输出clean。canonical流继续原HF编码/native==实际HFdecode/NFC差异分列。",
+    "原6合法canonical与raw-BPE双流完整matcher回放；原11非法及4值边界按原schema核定并在原字节raw-BPE流拒绝，canonical若文本改变须独立按实际decode文本判断，保留差异。原27added ASCII存在性见证、D28闭合、唯一187byte例外、原三EOS非终态硬禁/终态原生可达、1030prefix/视觉、状态隔离及所有R497/500门槛保持。"
+  ],
+  "validation": "新gate全部21项及27见证成功，六原文本原字节无改、adapter SHA不变、测试副本diff仅normalizer，真实运行不导入/调用此副本编码器。记录token-sequence子集：不保证任意逐byte或所有canonical表示都允许，fixture存在性不是模型分布等价。任意真实native!=HF、raw-BPE fixture失败、新未知差异或超时，即冻结最终负结果，不再换见证方法/适配。",
+  "budget": "仅从原A空余最后拨3分钟，CPU15:51:20改为2026-11-08T15:54:20Z，新gate<=120秒且实际剩余时间更短优先。原总16:19:20Z/A16:00/B16:04:20、1load24gen不变。当前0load/gen；CPU全部PASS且原codec/环境/硬件准入通过才允许A8，无模型warmup。B来不及或缺格式/专项计划则NOT_RUN。",
+  "acceptance": "成功仅为正确CPU原字节存在性验证，仍不等同真实格式、定位或正式研究验收。所有原失败和子集/NFC差异保留，分层报告；交付继承R491显式artifact研发分支与三SHA，保护共享状态，不交付模型/环境/完整raw。"
+}

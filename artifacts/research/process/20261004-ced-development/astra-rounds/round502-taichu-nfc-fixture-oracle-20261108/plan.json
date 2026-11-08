@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "round": "round502-taichu-nfc-fixture-oracle-20261108",
+  "planner_model": "gpt-6-astra",
+  "created_at": "2026-11-08T15:48:48.560082+00:00",
+  "status": "PLAN_GENERATED_NOT_EXECUTED",
+  "input_sha256": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round502-taichu-nfc-fixture-oracle-20261108/diagnostic/nfc-witness.stdout",
+      "bytes": 4560,
+      "sha256": "8a04ba3714e61b8ab2f80d83b88fdd8a102e6ee81d19f2f65ba17dc13c8b434b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round502-taichu-nfc-fixture-oracle-20261108/diagnostic/nfc-witness.stderr",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/implementation/cpu_contract_r500.py",
+      "bytes": 6097,
+      "sha256": "e8ea7d3a116060d94165ec19b15673e1033312293e12a0f89fa14e8e42a32ea7"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/implementation/byte_decoder_r500.py",
+      "bytes": 8073,
+      "sha256": "8751c1f6bc475ca42e98172ecf982ba1e42e0965d79aed21f743488498114ed6"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/cpu-contract-r500.json",
+      "bytes": 10335,
+      "sha256": "75678f128b751b0af077427fe275169093d635c07d9c84b59d6c3adf65e8574a"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/cpu-contract-r500.stderr",
+      "bytes": 1270,
+      "sha256": "9b6790d8ed34fc527422560e61c0010e7799e622f6553799b07069ccc6a46c1d"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/cpu-contract-r500-launch.json",
+      "bytes": 68,
+      "sha256": "064c23a4e1a9d58845e93184141368f6d851eb62d9cbcf2db7c94230691fc655"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round500-taichu-secondary-eos-mask-20261108/plan.json",
+      "bytes": 7320,
+      "sha256": "d72a0cb1f40bd71bb934eb91838834c0fa5e382b279e32aa309294e6e7b4e239"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round499-taichu-native-token-subset-20261108/plan.json",
+      "bytes": 8148,
+      "sha256": "2236e88f6d3fd8d8d0634c3493f18349cbc8121f68a7908757293a682e547939"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/implementation/contract-fixtures-r496.json",
+      "bytes": 6834,
+      "sha256": "fd1be194f454c03bda701e83924635a0b4f0a69e1cd0f939cea4a4ccbacae99c"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/visual-decision-schema.json",
+      "bytes": 1762,
+      "sha256": "a1d239cf1039281b340fd92be94576d4c0015abc5e06743ebec7653263cc38de"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/tokenizer.json",
+      "bytes": 19989343,
+      "sha256": "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4"
+    }
+  ],
+  "decision": "批准仅CPU测试oracle修正。禁止改byte_decoder_r500或任何适配算法，真实模型参数/输入/解码不变。",
+  "failure_and_root_cause": "原R500四合法fixture全部通过，emoji/尾反斜线与EOS抑制均有证据。fixture4断言native.decode_bytes(HFencode(text))==text失败。实际tokenizer normalizer=NFC；nfc-witness证实全部6项nativebytes等于HF canonical decode，只有4/5原组合字符被HF编码规范化；另6项普通ByteLevel单byte IDs均可decode回原字节。这是把canonical HF encode当作无损原文本encode的测试oracle错误，尚非native字节映射错误。只读roundtrip不等同完整matcher契约，仍须新CPUgate。",
+  "scope": "仅新cpu_contract_r502.py及唯一cpu-contract-r502/grammar-r502报告和必要runner资格文件引用。冻结原测试/失败/fixture/adapter原字节，库、tokenizer、D28、3EOS、schema、prompt、视觉与原72包全部不动。",
+  "implementation": [
+    "复核input_sha256/path/bytes及无重复。保留原6 fixture bytes，报告每项原UTF8 hash、HFcanonical IDs/hash、HF decoded文本/hash、native bytes/hash及NFC差异；先核实际normalizer=NFC及native canonical bytes==HFdecode(ids).encode，仍保留native.tokenize_str与HF canonical IDs一致门槛。不得把canonical结果标成原始fixture。",
+    "新增CPU-only raw-byte replay编码器，按已冻结真实ByteLevel字节->字符->model.vocab单字节ID映射把原UTF8逐byte转成现有ID；逐项证明无D/EOS/越界ID、native.decode_bytes和HFdecode都精确还原原fixture字节/字符串。不能修改fixture或让模型强制采用byte分词；真实生成不调用此测试编码器。",
+    "原6合法分别执行canonical流与原byte流完整matcher逐token验证，两种来源分列；原11非法+4值边界至少按原始byte流完整重放并用原严格VisualDecision验证原文本，保留原canonical测试时其oracle必须以实际HFdecoded文本的严格schema判断，不能将NFC改变后的文本与原预期混为一谈。任何canonical/raw语义差异单独记录，不拿canonical通过覆盖raw失败。"
+  ],
+  "validation": "原21 fixture来源不变，6原字节合法都接受、11结构/enum等非法及4越界按原schema拒绝。27added-tag普通ASCII存在性见证全部维持；D闭合、唯一187byte例外、每步非终态EOS屏蔽及原生终态3EOS、1030prefix/视觉hash、cache与请求隔离、fixed-order子集、无fallback及库显式error门槛全部保持。adapter SHA前后相同。新gate总<=120秒。若native!=HF canonical、任何byte原fixture失败、未知新差异或超时，保存最终负结果，不再修。",
+  "budget": "仅从原A空余再拨最多3分钟，CPU截止15:48:20改为2026-11-08T15:51:20Z，不重置原90分钟；总16:19:20Z/A16:00/B16:04:20/1load24gen均不变。当前0模型load/gen。CPU通过后仍须原R497 codec/env/FP8/GPU前置，才能原八次对照；B待真实A JSON4/4及专项计划。",
+  "acceptance": "本轮成功只代表测试oracle与原字节契约得到正确验证，不代表真实生成/定位或正式研究通过；保留原错误oracle、失败、NFC区别。报告软件/真实/质量分列，沿用原R491显式artifact研发分支与三SHA交付，不改共享状态。"
+}

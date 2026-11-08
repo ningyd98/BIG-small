@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "round": "round500-taichu-secondary-eos-mask-20261108",
+  "planner_model": "gpt-6-astra",
+  "created_at": "2026-11-08T15:44:21.963068+00:00",
+  "status": "PLAN_GENERATED_NOT_EXECUTED",
+  "input_sha256": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round500-taichu-secondary-eos-mask-20261108/diagnostic/eos-alias.stdout",
+      "bytes": 310,
+      "sha256": "7a14a649d5a36c2950cfc7e4db945280faedae53f65b4baaf836578287a0cd79"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round500-taichu-secondary-eos-mask-20261108/diagnostic/eos-alias.stderr",
+      "bytes": 377,
+      "sha256": "b8783d4382518929bd0d33f3b6736f0480222f2e05730df645cacfc147cbc1a8"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round500-taichu-secondary-eos-mask-20261108/diagnostic/probe_eos_alias.py",
+      "bytes": 1081,
+      "sha256": "6653f173c7c2c6de947d70ac1b2b8f913f8ab4eb91425ded090b4b5aa1d07cc8"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/implementation/byte_decoder_r499.py",
+      "bytes": 7407,
+      "sha256": "6acfe4caabd4b2f190379712b313d184ef17f109d5f296b3f9d1db242323a451"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/implementation/cpu_contract_r499.py",
+      "bytes": 5813,
+      "sha256": "0734a3a7816265fa097858c7aeecb589157ea891414981ab85241cda36ed7a8c"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/cpu-contract-r499.json",
+      "bytes": 7415,
+      "sha256": "943c1f0c99934332b74519de157a640c7ef520e306eb74a913b0d216795aa9a7"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/cpu-contract-r499.stderr",
+      "bytes": 1718,
+      "sha256": "629d493ea08845c4ab33c9f50ca880c72b1355b43666a3e8b9f7455bfcb1d482"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/cpu-contract-r499-launch.json",
+      "bytes": 68,
+      "sha256": "072133cbde9aa385d82fa3aafc6082a09cffa8bb12ea4b23bb52930d9cc48114"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/plan.json",
+      "bytes": 12703,
+      "sha256": "9e95829203382f1b758944a4cd59bff77246a9002f9da4260de364b4a2f46658"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round499-taichu-native-token-subset-20261108/plan.json",
+      "bytes": 8148,
+      "sha256": "2236e88f6d3fd8d8d0634c3493f18349cbc8121f68a7908757293a682e547939"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round499-taichu-native-token-subset-20261108/diagnostic/native-subset.stdout",
+      "bytes": 10988,
+      "sha256": "2a82900ed37a90af5f27983f5a0fad967c2eed8ca647954f1e19e7710040be63"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/implementation/contract-fixtures-r496.json",
+      "bytes": 6834,
+      "sha256": "fd1be194f454c03bda701e83924635a0b4f0a69e1cd0f939cea4a4ccbacae99c"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/generation_config.json",
+      "bytes": 284,
+      "sha256": "fc84e407226adee495fc06cb354223d4912fea7ba6e8cee1b0b5f2c08e04badc"
+    }
+  ],
+  "decision_and_root_cause": "批准一次原EOS非终态硬禁的实现补全，不更换后端、不放宽schema。实际eos-alias.stdout证实第26token、target_label开引号时native_accepting=false，原3EOS mask为[0,200,0]，仅secondary248040漏出；原guard正确阻止，0load/gen。llguidance eos_tokens列表含3项不能代替HF实际停止语义。先前只断言而未显式屏蔽非终态EOS，未满足原R497门槛。",
+  "scope": "新byte_decoder_r500.py及新CPU test/runner引用/唯一结果名。保留r499脚本和所有失败字节。不得改HF3EOS/pad/bos、tokenizer/library、schema/prompt/1030prefix/视觉、原72包、D精确集合、byte映射规则、模型配置、生成参数或终态token。",
+  "implementation": [
+    "复核全部input_sha256/path/bytes且拒重复，记录input-review。新backend复制原native mask为mutable有效mask，先D全置0；调用matcher.is_accepting获得真实接受态。仅当accepting=false，将原generation_config完整3EOS置0。accepting=true不添加任何EOS、不改变native任何0位，原guard仍要求原native有效mask中3EOS全可达，否则立即失败。",
+    "每步记录native_accepting、native原3EOS mask、suppressed_eos_ids、抑制前后mask hash与D策略。有效mask缓存、chosen-token检查、callback allowlist和最终offline membership必须来自同一有效mask，不只在日志或最终检查屏蔽。原mask不得原地污染库，is_error/consume失败/空mask继续严格拒绝；不得将终态EOS强制补1/200或忽略缺失。",
+    "终态条件由原schema matcher决定，不按文本后缀/大括号猜测。248040同时为普通BPE文本映射与HF EOS，当前HF生成其ID会停，因此非终态屏蔽是停止契约约束，不是原文本概率等价；沿用R499生成序列子集披露。"
+  ],
+  "validation": "新cpu-contract-r500完整重放原21项及R49927个ASCII存在性见证，全部按原预期通过。显式重现旧开引号状态native248040=200但effective全部EOS=0；逐所有非终态原3EOS全0且空mask不得出现，所有合法终态native已提供完整3EOS且adapter未新增；重复callback缓存、主动注入EOS拒绝、消费/最终membership一致、1030prefix、Unicode/尾反斜线/quote、byte差异仅187、special差异精确28D、依赖/环境和跨请求隔离门槛全部保持。若native终态缺EOS或另失败，记录最终负结果，不继续新适配。",
+  "prerequisites": "当前0load/gen。CPU全部PASS后仍须原R497 codec/config dryrun、原72来源、R494环境及cuda89/FLA无fallback、共享GPU锁/free>=14000/no other compute等；只有此时允许原R491八次A。无模型warmup。",
+  "budget": "仅在原90分钟内从A余量再分配最多5分钟，CPU截止由15:43:20Z改为2026-11-08T15:48:20Z；新CPU gate<=120秒并受剩余时间限制。总16:19:20Z硬截止、A16:00/B16:04:20报告窗口、最大1load24gen及每请求180秒均不变。预算不重置；超过即停止自有任务并保存负结果。",
+  "acceptance_and_delivery": "本轮仅资格实现修复，通过不代表真实JSON/定位/正式研究验收。所有旧失败、R498否决与R499子集限制保留；软件/真实/质量分列。若未知根因、终态EOS不全、fixture失败或时间不足，停止候选，不扩框架/库/策略。原R491研发分支显式artifact交付与三SHA规则继承，保护共享状态，不交付模型/overlay/完整raw。"
+}

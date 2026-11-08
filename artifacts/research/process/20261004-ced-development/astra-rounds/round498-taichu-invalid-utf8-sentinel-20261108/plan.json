@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "round": "round498-taichu-invalid-utf8-sentinel-20261108",
+  "planner_model": "gpt-6-astra",
+  "created_at": "2026-11-08T15:37:47.245320+00:00",
+  "status": "PLAN_GENERATED_NEGATIVE_GATE_NO_ADAPTER_AUTHORIZED",
+  "input_sha256": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/cpu-contract.json",
+      "bytes": 1210,
+      "sha256": "f6e82061a9f9b9cd85f2d4743209872333c841381a37833c869c3acce68598ea"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/implementation/byte_decoder.py",
+      "bytes": 6691,
+      "sha256": "a360443b840055e17ac79909265d15682b1295027c0a3d20aca72439a2684945"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/implementation/cpu_contract.py",
+      "bytes": 4893,
+      "sha256": "cead945222c580dfdf0d4837760f223f7952a4f4787812a12bbb2cce00c76420"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/plan.json",
+      "bytes": 12703,
+      "sha256": "9e95829203382f1b758944a4cd59bff77246a9002f9da4260de364b4a2f46658"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round498-taichu-invalid-utf8-sentinel-20261108/diagnostic/failure.json",
+      "bytes": 1560,
+      "sha256": "c3acb0bcdab732d3b5f4fe398a3b160e429e7a257dc9893f80bb7745dea6f896"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round498-taichu-invalid-utf8-sentinel-20261108/diagnostic/native-token187.stdout",
+      "bytes": 450,
+      "sha256": "4c887ed71a9125b651139e50c26105b453e16d5e2d15cdccb75a59defe3d5df6"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round498-taichu-invalid-utf8-sentinel-20261108/diagnostic/native-token187.stderr",
+      "bytes": 377,
+      "sha256": "b8783d4382518929bd0d33f3b6736f0480222f2e05730df645cacfc147cbc1a8"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/tokenizer.json",
+      "bytes": 19989343,
+      "sha256": "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round498-taichu-invalid-utf8-sentinel-20261108/diagnostic/astra-special-classification-review.json",
+      "bytes": 4454,
+      "sha256": "97b7ad8e098ba10c8fe103734e10b96ca14566d0f2e855abeec9318f3747a739"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/environment.json",
+      "bytes": 25013,
+      "sha256": "7e9a5766c7290df41b447368d9d68d53ae9f2c68d8e446145f318f5359756633"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round497-taichu-byte-native-json-backend-20261108/library-static-review.json",
+      "bytes": 2135,
+      "sha256": "93de3397f544f8142dbc50d4295771f62f75215e3256150525f4fcbe55e554f4"
+    }
+  ],
+  "decision": "不批准拟议的仅187硬屏蔽后放行GPU。对单187无效UTF8的解释成立，但“所有其余特殊分类一致”的必要前提已被实测证据否定。保持当前llguidance候选NOT_QUALIFIED_TOKENIZER_SEMANTICS，0模型load/gen，不实施backend_r498或绕过断言。",
+  "evidence_and_root_cause": "完整248077词表byte检查仅187不同：原byteFF、native空字节/native_special=true/root mask0；原HF decode为替换字符。UTF8有效首字节/续字节均不含FF，因此屏蔽187不排除严格有效UTF8 byte-stream，但会排除部分HF lossy replacement decode路径，不能称模型所有文本语言等价。另native诊断有27个额外nonEOS special。原tokenizer.json实际added_tokens中248058..248069的special=false，native却true；其余若干是HF all_special_ids未列但backend special=true。故不能用“HF列表不完整”解释全部差异，更不能只修187后声称其余分类完全吻合。",
+  "allowed_scope": "本轮仅只读复核与追加诊断/步骤/阶段报告；允许报告各层分类集合及实际来源，保存原失败、当前计划和astraspecial审计。禁止修改byte_decoder、屏蔽或重映射其他ID、改变special配置、修库、清洗raw、换第三框架、改环境/模型/生产。原R497依赖安装PASS仍有效，CPU兼容性负门槛独立记录。",
+  "validation_and_prerequisites": "实施报告前复核全部input_sha256/path/bytes并拒绝重复。复核native stdout确实来源于原72包环境、模型load/gen仍0；根据冻结tokenizer原字节与native分类逐项解释12个明确false->true以及其他HF/backend差异，不泛化忽略任何未知差异，不冒称单ID完全等价。此计划不授权重新GPU/模型测试。无需新网络、安装或运行库；已有全部21 fixture未执行完成应写NOT_RUN_TOKENIZER_GATE，不假称通过。",
+  "budget": "继承CPU15:43:20Z及整体16:19:20Z，不延长；模型1load24gen上限不等于已获当前资格，当前0load/gen。后续独立报告/Git可以继续，原失败/原71+新1/旧LMFE2环境保留。",
+  "acceptance": "验收是有证据的候选兼容性负结果与报告：依赖PASS、tokenizer前置FAIL、真实生成NOT_RUN、质量/定位/正式研究NOT_ASSESSED。保持原R491研发分支显式artifact交付和三SHA核对，不带模型/环境/wheel/raw。若希望扩大到其他special分类适配，必须另Astra计划；本轮不预授权，也不以预算压力省略语义门槛。"
+}

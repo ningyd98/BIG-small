@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "round": "round495-taichu-tokenizer-parser-alphabet-20261108",
+  "planner_model": "gpt-6-astra",
+  "created_at": "2026-11-08T15:15:20.488143+00:00",
+  "status": "PLAN_GENERATED_NOT_EXECUTED",
+  "input_sha256": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/plan.json",
+      "bytes": 21777,
+      "sha256": "0675591ad48e2bb8e959771631de303277ed33f27669c1fd25000b14a09f4788"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/cpu-backend-r493.json",
+      "bytes": 1035,
+      "sha256": "9ced763dcd379b0ac1d304bc4db98797e33e6ffdf3236eeb614950cd3d5a478e"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/unicode-gate-diagnostic.json",
+      "bytes": 3185,
+      "sha256": "16c53dcb0655a47d5d8f942ce723ba376ed0135b2018fec0023fc87b01f3939f"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/implementation/backend_r493.py",
+      "bytes": 4281,
+      "sha256": "ec0c29a6e296a7898081f47b6919771945b88d8f0ed7ec8221a07723141e29c4"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/implementation/constraint_contract_r493_test.py",
+      "bytes": 4440,
+      "sha256": "2afb65e2d1a0d91dea8b9ad72539abb25ae8ba96de98e490a22b816db39ded72"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/visual-decision-schema.json",
+      "bytes": 1762,
+      "sha256": "a1d239cf1039281b340fd92be94576d4c0015abc5e06743ebec7653263cc38de"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round493-taichu-original-eos-exclusion-20261108/plan.json",
+      "bytes": 5417,
+      "sha256": "89aa852e7e2bdd7e838eec7b59b61eafbcb9426e62f72814e8f2fb4033827546"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round494-taichu-readiness-launch-environment-20261108/plan.json",
+      "bytes": 8100,
+      "sha256": "4dd329cbf3ba007be52d5c289b5c4ca854280fa3f2c77bb522d3a467d6c4d533"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/runtime-json-round491/lib/python3.12/site-packages/lmformatenforcer/jsonschemaparser.py",
+      "bytes": 35094,
+      "sha256": "6bc4a8a10621c6d38d70ebb5ae1dc21aaa98c0454a2e80be1896586f10dccf94"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/runtime-json-round491/lib/python3.12/site-packages/lmformatenforcer/tokenenforcer.py",
+      "bytes": 11022,
+      "sha256": "1ec82ff410cdafb89b5d9455cef15d6dc4c9741b439f35752f3f5ed289990d91"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/runtime-json-round491/lib/python3.12/site-packages/lmformatenforcer/characterlevelparser.py",
+      "bytes": 8701,
+      "sha256": "3e8e1773a2ed3078e9ab44f3aacb438f9529e6fd03bee37684fc0c40a51cab0a"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/runtime-json-round491/lib/python3.12/site-packages/lmformatenforcer/consts.py",
+      "bytes": 1356,
+      "sha256": "a021a8369cb5fe2acfa38238b80fcbbde47b3ed7ed77c7680eb688c9d8f461b7"
+    }
+  ],
+  "original_failure": "R493 EOS regular过滤已正确，新增排除精确{248040}，但4个合法fixture中3个中文fixture在target_label:\"红色\"后阻止普通token125872=方块，ASCII fixture完成；模型load/gen仍0。原cpu-backend-r493.json和unicode-gate-diagnostic.json冻结，不能删除中文或改标签掩盖。",
+  "root_cause_hypothesis": "已读实际LMFE0.11.3：JsonSchemaParser.__init__用当时config.alphabet建立context.alphabet_without_quotes；TokenEnforcer.__init__随后parser.config=CharacterLevelParserConfig(alphabet=data.tokenizer_alphabet)，但setter仅改_config，不更新context。因此context可能仍是默认字符集，中文add_character找不到合法接收状态。限定验证此初始化次序假设；不是改库或放宽schema。",
+  "scope": "仅新backend_r495.py从原backend_r493复制，在JsonSchemaParser构造时显式传CharacterLevelParserConfig(alphabet=data.tokenizer_alphabet)，再传给TokenEnforcer。允许新唯一CPU测试/报告cpu-backend-r495.*及必要runner新副本切换该backend导入，最小diff。保留全部旧源码和失败证据，第三方库只读。",
+  "implementation": [
+    "复核所有input_sha256的path/bytes/hash且无重复，记录input-review。先读取并报告真实data.tokenizer_alphabet长度/hash、中文红色方块各字符归属，以及旧/新parser config和context alphabet差异；不手工拼字符、不改tokenizer数据算法。",
+    "构造参数使用现成CharacterLevelParserConfig，仅显式指定alphabet，其他默认配置保持当前相同；每请求新config/parser/enforcer，context.alphabet_without_quotes必须精确为data.tokenizer_alphabet去双引号。保留R493排除all_special_ids与原3 EOS并集、原3EOS配置、suffix/prefix边界与严格guard、decoder_schema和所有Unicode解码算法。",
+    "沿用R494 fresh launcher预登记CPATH/JIT/cache/环境，生成新CPU证据；无需联网/安装/修改原73包。新runner仅改backend引用和唯一结果命名，保留原8顺序、所有提示与1030-token双图输入、HF参数/248FP8。"
+  ],
+  "validation": "完整重放原4合法fixture（3中文+ASCII），所有真实token均可达；原125872方块分叉明确通过。逐步非终态3EOS全禁、终态3EOS全允许，空allowlist/未知序列严格失败；重复完整prefix、连续请求、Unicode/转义和原负schema样例仍验证，无state泄漏。证明R493 regular tuple hash完全不变、过滤diff仍{248040}、schema投影内容/声明覆盖不变、其他config属性未变；不能用英语替换、去minLength、schemaless或清洗输出使测试过。实际模型前还必须通过R494真实cuda89/FLA无fallback及R491输入/依赖/配置全部门槛。",
+  "budget": "仅重分配原90分钟内部阶段：依赖/CPU截止由15:14:20 UTC延至2026-11-08T15:24:20Z，最多多用10分钟，从后续A/B可用时间扣除；R491起点14:49:20Z及总体硬截止16:19:20Z不变。本条仅替代R491/R493/R494的旧CPU截止，其他门槛不变。模型最大1 load、总24gen不增加，A仍8且B仍需原条件及独立来源计划。实施前记录余量，期限到停止自有进程/释放锁，不重置预算。",
+  "negative_and_acceptance": "若实际alphabet/context差异不支持假设，或修后仍阻止中文/引入新契约失败，保存唯一负结果并停相关修复；预登记库/schema不支持可报告负门槛，不无限选版本或静默降级。本轮仅CPU adapter契约修复；无模型load/gen/warmup、无生产/系统/依赖改动。CPU成功不等同真实JSON、坐标或正式研究验收。步骤报告保留软件与硬件及未来模型验收分层，交付沿用R491分支显式增加R495路径。"
+}

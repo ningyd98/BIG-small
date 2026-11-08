@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "round": "round496-taichu-byte-unicode-compatibility-20261108",
+  "planner_model": "gpt-6-astra",
+  "created_at": "2026-11-08T15:20:18.024977+00:00",
+  "status": "PLAN_GENERATED_NOT_EXECUTED",
+  "input_sha256": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/cpu-backend-r495.json",
+      "bytes": 1249,
+      "sha256": "a14b96bf648b607fd73f1f1271e6eeeb2cd4d1ea8cd99fc054f39f0f247e0302"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/implementation/backend_r495.py",
+      "bytes": 5117,
+      "sha256": "8fea67cc69af00f3f6677a649c1435f137a56a6b3dd433f32f3ef7468bbf5b8b"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/implementation/constraint_contract_r495_test.py",
+      "bytes": 4509,
+      "sha256": "8ffdaf451e604675d5469678f08cd2de5a2fc0445780ae67b36fc369a392ebcd"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round495-taichu-tokenizer-parser-alphabet-20261108/plan.json",
+      "bytes": 7347,
+      "sha256": "42e0f98a5da26033e42df7f9b3bf929776ec2a3ae235907c9daeed16d128ae2b"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round496-taichu-byte-unicode-compatibility-20261108/diagnostic/failure.json",
+      "bytes": 1590,
+      "sha256": "f4ed0cea18fb6948688f84f8e4b59a91ad6e5f51930d73a3e59f675686cf225c"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/emoji-gate-diagnostic.json",
+      "bytes": 1847,
+      "sha256": "17f1f6c2ad2eb8a8f8704f196e22f2c7af4d2db64a281b0c6b670c1aec666aa9"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/implementation/inspect_emoji_gate.py",
+      "bytes": 2622,
+      "sha256": "73c441effd942d51743689dcc7072dde4b4fccddf17095a402ddc44e84e39537"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/plan.json",
+      "bytes": 21777,
+      "sha256": "0675591ad48e2bb8e959771631de303277ed33f27669c1fd25000b14a09f4788"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round494-taichu-readiness-launch-environment-20261108/plan.json",
+      "bytes": 8100,
+      "sha256": "4dd329cbf3ba007be52d5c289b5c4ca854280fa3f2c77bb522d3a467d6c4d533"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/runtime-json-round491/lib/python3.12/site-packages/lmformatenforcer/tokenenforcer.py",
+      "bytes": 11022,
+      "sha256": "1ec82ff410cdafb89b5d9455cef15d6dc4c9741b439f35752f3f5ed289990d91"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/runtime-json-round491/lib/python3.12/site-packages/lmformatenforcer/jsonschemaparser.py",
+      "bytes": 35094,
+      "sha256": "6bc4a8a10621c6d38d70ebb5ae1dc21aaa98c0454a2e80be1896586f10dccf94"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/runtime-json-round491/lib/python3.12/site-packages/lmformatenforcer/characterlevelparser.py",
+      "bytes": 8701,
+      "sha256": "3e8e1773a2ed3078e9ab44f3aacb438f9529e6fd03bee37684fc0c40a51cab0a"
+    },
+    {
+      "path": "datasets/model-cache/zdtaichu5-9b-fp8-round473/runtime-json-round491/lib/python3.12/site-packages/lmformatenforcer/tokenizerprefixtree.py",
+      "bytes": 7303,
+      "sha256": "7ac7275143ffc775902e2318cd5d16f94e672c16c541c62b380bee3f1975157e"
+    }
+  ],
+  "failure_and_root_cause": "R495前三合法fixture完成，fixture3在跨BPE字节形成🦾后拒绝正常标点token5205；诊断证实emoji_in_alphabet=false，parser只允许空白。真实单token为替换字符片段，whole-sequence decoder能拼出🦾。LMFE tokenizer_alphabet仅来自token trie根字符，不能覆盖仅由多个byte-token拼出的Unicode标量；即使初始化同步该有限字符集仍会丢状态。尚无模型load/gen。",
+  "decision": "限定一次配置级完整Unicode标量字符域尝试，避免将实际字符转成JSON转义。内部非ASCII->\\u转义不予授权：改变字符计数、enum及增量byte片段解释，尚无普遍语义等价证明。不得删emoji fixture、换英文或只补🦾一个字符。若下面公开数据配置路线不成立或超预算，报告UNICODE_TOKENIZER_INCOMPATIBLE，不进入GPU，不另试转义/框架。",
+  "scope": "仅新artifact backend_r496.py、唯一CPU test/result及必要新runner导入/输出名。保持旧backend_r495/所有失败原字节，第三方库和原环境只读，无模型/权重/精度/attention/prompt/schema/tokenizer解码改动。",
+  "implementation": [
+    "复核冻结输入path/bytes/SHA且无重复，保留input-review。由同一R493 regular tuples和decoder构建新TokenEnforcerTokenizerData，记录原有限alphabet。将此新实例的公开tokenizer_alphabet设为原字符集与全部非ASCII Unicode scalar values的并集：U+0080..U+10FFFF排除U+D800..U+DFFF；保留原ASCII字符域不扩大，原集合若含surrogate则门槛失败。保留原顺序并按码点追加缺失字符，确定性hash/计数可复核。不改tokenizer_tree、regular_tokens、decoder、EOS或库源码。",
+    "JsonSchemaParser构造时即传同一完整alphabet的CharacterLevelParserConfig，之后TokenEnforcer的配置赋值仍得到相同字符域。每请求新parser/enforcer；完整字符域只用于允许字符与token trie求交以及whole-decoder产生字符的状态推进，不是允许任何无效token。无需更改minLength/maxLength或任何schema关键字；原原生字符长度/enum语义保持。",
+    "记录原/新字符域集合关系、码点边界/排除surrogate证明、raw/regular tuple hash不变、全量字符域构造耗时/RSS。内存中字符域可以复用只读字符串，parser状态不可跨请求共享。运行新cpu-backend-r496报告，不覆盖旧报告。必要runner仅改导入与唯一输出名。"
+  ],
+  "validation": "R494实际硬件PASS可作为已完成前置但仍复核环境/源SHA和运行准入。使用相同新launcher环境重放原4合法fixture，完整emoji三byte-token轨迹及后续标点/结束可达；记录每步实际whole-decoded suffix、parser状态/allowed摘要。增加至少一个另一supplementary标量和一个组合字符fixture（真实tokenizer拆分、无生成），原结构/额外键/错误enum/maxItems及Unicode转义负例仍应拒绝；字符串min/max不放宽，越界必须拒绝或按原覆盖声明终审而不得新称完整约束。全原EOS非终态全禁/终态全可达、1030prefix及跨请求无泄漏保持。原regular tuples hash、decoder算法、3EOS、依赖73版本/位置、schema投影及视觉输入不变。原四fixture与全部原契约通过才可进入原R491 GPU实验；任何库内部EOS fallback/异常即负门槛，不能以末端Pydantic替代核心生成契约。",
+  "bounded_cost": "完整scalar域约111万字符，允许配置构造和CPU测试相对同环境基线峰值RSS增加最多1GiB；单次整个新CPU gate最多120秒并以阶段剩余时间更短者为准。记录resource.ru_maxrss/elapsed，超限终止自有进程并记NOT_QUALIFIED_COST，不反复版本/算法尝试。后续真实请求仍180秒硬限；字符域额外callback开销必须记入JSON臂时延，不能只报告模型算子时间。",
+  "budget_and_acceptance": "CPU截止2026-11-08T15:24:20Z、总截止16:19:20Z不变，不再拓展；模型最多1 load/24gen，A8与B条件计划不变。仅本次CPU配置适配，无GPU模型warmup。失败可作为用户任务真实兼容性负结果；若通过仅表示CPU契约，JSON/定位与正式研究验收仍需原真实证据。步骤报告、原失败及来源hash进入显式R496交付路径，其他研发分支/三SHA规则沿用。"
+}

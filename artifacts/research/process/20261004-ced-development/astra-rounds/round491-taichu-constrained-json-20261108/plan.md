@@ -1,0 +1,95 @@
+# R491 Astra限定计划：太初生成时JSON约束与原条件对照
+
+实际规划者：`gpt-6-astra`；仅规划。用户已授权开始，无需重复审批研究范围。
+
+## 问题、原始证据与假设
+
+用户“好的，开始”授权先做太初约束解码同条件对照，格式通过后推进多场景定位。原R486四组16次真实完成但strict JSON均0/4；FLA+OFF约176tokens/12.169秒仍带JSON围栏，ON512截断。当前Qwen原接口能提交结构化schema，Taichu仅在prompt中要求schema，故本轮只测试生成时token约束能否补齐格式适配；不假设格式成功就定位成功。原四组报告、输入、真实权重与所有失败保持。待验证风险包括LMFE/TF5 API、原生schema coverage、tokenizer字节/BPE处理、1030token多图prefix、EOS/状态隔离及约束成本。
+
+## 范围
+
+仅R491 artifact adapter/callback/CPU gate/runner/scorer/protocol/报告，ignored cache/runtime-json-round491与独立raw。新增依赖只LMFE0.11.3+interegular0.3.3；既有68基础包和2个FLA包的版本及模块位置不变。原70环境、官方模型/模板/权重/产品parser/validator、prompt/schema、图像尺寸/内容、controller/default均不改。模型固定原官方FP8+248精确targets、BF16视觉层、SDPA、FLA-only、causal-conv fallback、thinkOFF。只增加JSON模式prefix/logits约束，不调token预算、不修raw、不训练、不渲染/重采样场景、不调用硬件。
+
+## 真实前置
+
+实施前复核全部input-inventory/本计划SHA、base70版本+模块__file__/distribution位置、R489 headers/readiness/JIT来源、原模型manifest和固定S01 raw/1030token/视觉张量证据。共享HEAD 3b2a698...、pyproject/dashboard测试/gitlink等现有无关改动只读保留，不纳入本轮。
+默认sandbox nvidia-smi rc9为设备可见性，宿主只读已报告free14702MiB且无compute，禁止修驱动。需要GPU/网络/.git写入时走正常require_escalated auto-review；不绕过审批或代理。实际load前共享GPU锁、free>=14000MiB且无其他compute；不足只等待30秒复查一次，仍不足NOT_RUN，不能降阈值/杀桌面进程。干净模型子进程env/cache cwd、无项目PYTHONPATH/PYTHONHOME、离线HF；延续R489仅隔离CPATH和已验证headers，复用旧JIT缓存须在结果明确warm reused，非冷机。
+
+## 两个固定新依赖
+
+先冻结本轮两wheel manifest后按已有strict direct transport以enp7s0、AliDNS223.5.5.5/223.6.6.6、TLS、trust_env=False和精确files.pythonhosted.org allowlist下载：lm_format_enforcer-0.11.3-py3-none-any.whl 45418 bytes SHA cf586350875def1ae7a8fba84fcbbfc8371424b6c9d05c1fcba70aa233fbf06f；interegular-0.3.3-py37-none-any.whl 23635 bytes SHA b0c07007d48c89d6d19f7204972d369b2a77222722e126b6aa63aa721dc3b19c；总69053 bytes。上游原始PyPI JSON已冻结，下载body后大小/SHA验证通过才可安装。禁止隐式pip联网、升级依赖、旧.venv-vlm0.10.9/TF4.48环境串入。
+新独立overlay/venv的.pth仅明确引用旧FLA site和base-B site，新增两包用--no-index --no-deps的本地wheel安装；此处no-deps前须验证pydantic/packaging/pyyaml等所有声明约束由原70满足。pip check完整可见闭包及freeze、模块__file__/distribution location逐项原70不变；只允许两新增位置。若冲突则DEPENDENCY_INCOMPATIBLE停止，不换包版本/改第三方代码。
+
+## API与schema覆盖边界
+
+CPU静态阅读新wheel实际API并保存源码SHA。优先使用可正常导入且语义验证通过的官方TF convenience adapter；若其LogitsWarper等TF5不兼容，预登记替代为backend-agnostic TokenEnforcer/TokenizerData加本轮透明prefix_allowed_tokens_fn，不patch第三方、不导入旧TF site。只允许此两条API候选，不无限框架试错。
+原prompt中的VisualDecision.model_json_schema保持逐字节一致。decoder schema若库不支持prefixItems，仅允许把两个完全相同integer prefixItems、minItems=maxItems=2的坐标数组精确等价改写为items:{type:integer},minItems=2,maxItems=2；保留anyOf null。保存原/decoder schema、diff和等价理由：固定两元素且每项同整数类型，合法JSON语言完全相同；不得泛化到异构tuple。title/default等annotation可为decoder去除但必须记diff且不改变值集合。
+建立逐keyword coverage表。必须实证约束JSON语法、顶层object、required字段、additionalProperties=false、各字段基本类型/null分支、坐标恰两整数、skills enum/maxItems结构；这些核心不能执行则停止JSON路径，不暗退为schemaless JSON。仅预先允许reported_confidence minimum/maximum、target_label/reason minLength/maxLength若库明确不支持，作为UNENFORCED_POSTVALIDATED逐项注明并从decoder副本省略；严格原Pydantic仍终审，不声称完整schema被生成器保证。任何其他必需keyword缺失/忽略、新schema改动需新Astra。
+
+## 真实tokenizer/prefix/EOS的CPU证明
+
+先在真实processor.from_messages/thinkOFF短作用域wrapper下证明FREE/JSON输入完全一样：旧1030 input_ids逐token相同，pixel_values及全部视觉张量原字节SHA/shape/dtype、双图顺序、模板/prompt均相同；callback不修改input_ids/attention_mask或图像。记录真实tokenizer vocabulary、decode参数、special tokens及generation_config。
+callback须把1030-token完整prompt（含图像/special tokens）与生成suffix明确分界，仅suffix参与JSON语言状态；按所选TokenEnforcer API正确初始化空生成前缀，不把prompt解码送入JSON parser。必须使用真实tokenizer的字节/BPE/Unicode语义，不用朴素逐token字符串拼接替代；每request新parser/enforcer/cache或明确等价隔离，batch_size1,num_beams1。可记录每步允许token数/摘要、callback计数/耗时，禁止无允许token时回退无限制或强行写答案。
+保留真实generation_config三EOS ID及pad语义；在JSON尚不能合法结束时三个EOS一律禁用，在可接受完整JSON终态允许原EOS终止（至少一个、优先全部三者按原生终止等价），不更换模型EOS配置、不把pad误当EOS、不得提前EOS或添加无模型生成的收尾。以实际EOS列表验证选定API与callback的处理，不能只测试某一个猜测EOS。
+CPU验证用真实tokenizer回放严格合法VisualDecision样例（中文/转义字符串、null、空skills拒答、两整数坐标、可选reason、confidence小数）逐prefix检查合法下一个token可接受，完整后EOS可达；非法围栏、缺key、多余key、坐标错误长度/类型、非法enum须按coverage被阻止。原严格parser独立验证样例/非法例，不让test替换实验raw。任意重复prefix/交错两个独立request、重置后同prefix的allowlist一致，无跨FREE/JSON污染。对schema省略的值keyword给出实际反例并明确postvalidation限定。执行prefix-only/EOS-only/未终止状态、中文多字节边界检查；不调用model.generate或伪造真实通过。
+
+## 证据前检与阶段A
+
+先复用已验证R488 codec及主异常保留逻辑，CPU dry-run所有实际预生成证据：prepare/AutoConfig/CompressedTensorsConfig/GenerationConfig、TorchVersion/QuantizationStatus、loading-info历史结构、运行state、schema/decoder/callback/provenance/processor信息；无权重地证明JSON结构可记录、未知类型仍失败。只读来源hash及新实现最小diff检查，不修改原helper。
+阶段A一个真实load；固定顺序FREE,JSON,JSON,FREE,FREE,JSON,JSON,FREE，每种4次，全部thinkOFF、旧S01双图/原prompt/schema、greedy seed0/do_sampleFalse/max_new_tokens512/num_beams1/use_cacheTrue/return_dictFalse/output_scoresFalse不变。FREE不安装任何约束callback；JSON仅添加已验证prefix filter。loading zero missing/mismatch，248原FP8全GPU+BF16 embedder/SDPA/FLA真实调用门槛不变，source/wrapper恢复门槛同旧。无额外warmup；每次重新创建decoder状态，禁止跨请求KV cache复用。
+逐次保存raw含/不含special tokens、全input/output ids、原始实际generation config/override、全部prefix回调证据、输入/视觉SHA、EOS/截断/错误、load/processor/generation/end-to-end/约束CPU耗时、显存峰值/采样、kernel调用和FP8保留。TTFT无实际首token事件则NOT_MEASURED。第一请求单列，FREE/JSON各自first及后3次warm描述统计；不把不同输出长度的walltime差叫纯kernel吞吐变化。
+
+## 质量门槛与条件B决定
+
+严格对完整raw用原VisualDecision/_ground_response/_pixel_hit，不剥围栏/思考、不截JSON、不补字段/坐标或修改生成响应。分别统计json.loads语法PASS、原schema严格PASS、grounded/目标hit/目的hit/完整质量、输出与定位coverage及UNSCORABLE原因；无坐标不能冒称偏差为0。StageA进入多场景门槛为JSON组4/4原严格schema PASS且无runtime/输入/FP8回归；不要求S01坐标命中才能进入B，因下一阶段正是测空间能力。若4/4格式未过，B_NOT_RUN_FORMAT，保留A的负结果。
+Astra只读核查T3 16个旧DEV captures：12positive/4negative_absent、320x240、rgb/depth/mask/instances文件齐全且pass_state同步，详细hash已在astra-multiscene-source-review.json；但candidate-config/provenance明确mujoco_upright_box_v1，而当前S01为v2。因此R491不授权直接重绑定旧captures至v2或立即B生成。A格式门槛通过后，无需重新问用户，立即交下一轮短Astra计划冻结这16场景或其他完整既存来源、原校准/profile/坐标评测边界、每个文件/prompt/token/视觉SHA及固定顺序；若证据不足，B先记WAITING_PROVENANCE_PLAN，不能伪称用户未授权。
+后续B只用已存在captured bytes，不重渲染/改变尺寸/交换图像/混入oracle，原case指令变化单独披露。原生成/模型预算继续，场景是已见DEV而非held-out；JSON-only16次最多，衡量target/destination可评分率、命中、缺目标拒答、空间误差及有条件P90并明确分母，不能称真实执行成功率。任何3D误差必须事先固定可重建的参考点/有效depth/calibration，不用换profile掩盖缺数据。
+
+## 预算及停止
+
+新用户任务总90分钟：起2026-11-08T14:49:20Z，硬截止16:19:20Z，旧R486已完成不混入。本轮依赖/CPU门槛最多25分钟，A加载+8请求/评分最多25分钟，条件B provenance/计划/16次最多25分钟，报告/Git15分钟；按当前实际剩余预算执行，不为修复重置。一次load优先，A与条件B尽量同一模型resident；本计划默认总load1，若模型已退出需另计划明确替代load。每load600秒、请求180秒；最大24真实生成（本R491仅8授权，B16待短Astra具体来源协议），零额外warmup。
+预期负门槛：依赖/API不兼容、核心schema不支持、tokenizer/prefix/EOS证明失败、空allowlist、网络/权限/资源不足、OOM/timeout、JSON/定位失败。JSON格式差不更改参数重试，继续其余已登记A重复；OOM/输入/FP8回归停后续。新实现/证据错误或超出已列keyword/API范围保存原异常再交Astra，不事后补计划。GPU清理仅本轮PID；保持原始失败与冻结字节。
+
+## 验收与Git交付
+
+软件验证是依赖/provenance/语义coverage/prefix/EOS/codec门槛通过；真实运行是原FP8+FLA+双图实际完成；格式、空间质量、定位coverage分别判断。若生成约束有效，只能称该S01严格格式适配改善，不能据此宣称空间/多场景/实机已通过；正式研究验收NOT_PERFORMED。
+新交付parent254a2752ca171cb93d98bed947fa935cff6b05ea，branch codex/taichu-constrained-json-20261108，仅明确R491及实际发生后单独授权的后续修复轮artifact。保护共享research HEAD及pyproject/dashboard/gitlink等无关变化，临时index/明确路径，原raw、weights/wheels/headers/venv/JIT留既有交付边界；记录依赖父脚本版本与live inputSHA差异不伪称完整远端包。Git/network受managed权限时正常require_escalated审批，先核验已确认origin所有权与公开payload边界，不绕过拒绝。提交/push后local/upstream/live remote三SHA一致；新冻结raw空白导致检查异常时先保留原rc和精确SHA分类再Astra，不清洗原件/全局关闭检查。
+
+## 固定输入SHA256
+
+|路径|SHA256|
+|---|---|
+|`AGENTS.md`|`8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649`|
+|`src/cloud_edge_robot_arm/vision/planner.py`|`cc632036242004480e85ae6977cfa4e662ac512b71cd3303c38a0510c7c0b1c5`|
+|`scripts/probe_rgbd_model.py`|`a6d8f61e6c278a2b06ae9a6abdcbb9d17dcee73666aa6735ee6ad0a6653dab94`|
+|`src/cloud_edge_robot_arm/datasets/external/network.py`|`d5c078fdeb7145f8714cbc30ff0add20b207a1aaed079b697d675614aac84997`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round486-taichu-no-think-best-profile-20261108/implementation/experiment_r488.py`|`2ec24bbba7ad1635600c34ca5eb71a3a7869e2bc38b4e053aeeb090e76e5b597`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round486-taichu-no-think-best-profile-20261108/implementation/experiment_r489.py`|`0d49292ef6f82b034b4b20edd46ca2db65ec9f7748f12f4b773f861562f53f4e`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round486-taichu-no-think-best-profile-20261108/implementation/run_profiles_r489.py`|`0e3178af62e6892d14ea3b7130e9d250fba4d1ea3efa577cf6796552413dca72`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round486-taichu-no-think-best-profile-20261108/implementation/score_profiles_r489.py`|`f3301b6774c6c0fcd50d4fda6c103e31f5a70aa6a7364312670731627300ce51`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round486-taichu-no-think-best-profile-20261108/implementation/evidence_codec_r488.py`|`cdad7b412c233e4f6421d009721597da8f2459184a8a226ce41b6de12ef9c7a1`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/implementation/process_pair.py`|`b0729db5c05a5c2161d95e1e395e7ce040126dbda8f3a75ef185618f2d74976a`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round473-taichu-quantized-dual-image-20261108/implementation/r478_adapter.py`|`c20160b9b7aa28964219e4509a76eb27f0f90b3916f532bd3683471bc84b2ca6`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round486-taichu-no-think-best-profile-20261108/comparison.json`|`2209a9049254917938888ce13e31b8218e973f533f5bdd46afcc4f8b6a53586c`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round489-taichu-isolated-jit-headers-20261108/readiness.json`|`536f5230ca2822b9cbf6f88c1cd7086b702950a8ffbb99046794758695f631b5`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round489-taichu-isolated-jit-headers-20261108/header-manifest.json`|`cbfb13bd389817121b44d4ea0ef03e0de34b9895bb35eb374b6b8c31852128e8`|
+|`datasets/model-cache/zdtaichu5-9b-fp8-round473/modeling.py`|`b3f46b9f1635663778eb30bff8b90c474d45b3186f469367df058a5f6a7117fa`|
+|`datasets/model-cache/zdtaichu5-9b-fp8-round473/processing.py`|`0e1fe5d7706886a4520604f3cdb0d7402866158db3636997ee7bb798587ad5f6`|
+|`datasets/model-cache/zdtaichu5-9b-fp8-round473/chat_template.jinja`|`a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/visual-decision-schema.json`|`a1d239cf1039281b340fd92be94576d4c0015abc5e06743ebec7653263cc38de`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/package-readout.json`|`09cd976944d2196b0d7c3b879d386305279820d8794feaf398807d550d908253`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/astra-multiscene-source-review.json`|`86a21bbd795aff1f752894690ea3c85e6623fe2a727eab6062d77174befa8a5c`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/context.json`|`de8638350b11cc65cbd686b10a644d8ee5a479ef22105b8e39bbd6435818795a`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/gpu-sandbox-observation.json`|`f17e9579b127b898666be42f00326571a67991692779d3157a4b11edb7b6ebab`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/input-inventory.json`|`4290da16b506cc7c3f8f5ca2127dae35f0a2edee0e68effc72b9027fd4712efd`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/interegular-latest.raw.json`|`6f6d1644494a3f8d4a1ace7bba3a3efc22237b894448d4ecc612bc34c00d03e7`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/lm-format-enforcer-latest.raw.json`|`49bd9813188f36923f562df06325f221b036973d2823cdacaab5c92aa537cfc5`|
+|`artifacts/research/process/20261004-ced-development/astra-rounds/round491-taichu-constrained-json-20261108/diagnostic/weight-stat-observation.json`|`0ed587e2aca35f9d18e884b17ae185d4249dde9f0924802baf726faa6fc08530`|
+|`artifacts/research/process/20261003-t3-small-model-optimization/scene-validation/assignments.json`|`45d3dbeee85db93f43bb84d34b06ef95fc981c0a236fc46847ec9e9ce5ccec20`|
+|`artifacts/research/process/20261003-t3-small-model-optimization/scene-validation/candidate-config.yaml`|`9f87800e06e7601167e6361baca2b2345840cb4ce1e4f4c5ee28c83c7715e9e8`|
+|`artifacts/research/process/20261003-t3-small-model-optimization/scene-validation/provenance.json`|`19013eb78518dbdf706f2af9ba6e608f642e773c75aec4968b758663c8172741`|
+|`src/cloud_edge_robot_arm/vision/model_resolver.py`|`e75a94929529a4537a980e33fa4645285baee85aaec0b5597b426c347cd41e04`|
+|`src/cloud_edge_robot_arm/vision/messages.py`|`f60868e4db77ac103d94d2b18b769612ae19b54bed60f79fbfe5a2846c5e30a3`|
+|`src/cloud_edge_robot_arm/vision/observations.py`|`1114e6b2de4107ae516f12f8972fcb3b6f71eae7ae5a45bf93adfeb4aa673bb8`|
+
+实际bytes及wheel完整pin见plan.json；实施前复核，不将漂移通过改期望hash掩盖。
