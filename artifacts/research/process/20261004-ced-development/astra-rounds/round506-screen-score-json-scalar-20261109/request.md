@@ -1,0 +1,1 @@
+实际 GPU 50 次调用已完成，离线 scorer 在 json.dump 输出时遇到 numpy bool 标量导致 TypeError。部分 score-01.json 原样保留。请制定最小修复计划，仅对 score_candidate.py 序列化本地 scalar 为 Python bool/int/float，输出新的 score-02 文件，不修改任何模型原始输出、阈值、数据、分母、冻结协议或 common helper。必须验证数值语义未改，拒绝 NaN，不重跑 GPU；实现阶段先回归 RED 再修复。计划要包含输入 SHA256、前置条件、验收与证据边界。
