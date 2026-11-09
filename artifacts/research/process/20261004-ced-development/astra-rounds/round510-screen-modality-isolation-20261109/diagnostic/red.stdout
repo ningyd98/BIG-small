@@ -1,0 +1,52 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+________________ test_production_multi_mode_counts_and_latency _________________
+
+    def test_production_multi_mode_counts_and_latency():
+        cases,rows=fixture();summary,latency=compute(cases,rows)
+>       assert summary["box"]["joint_hits"]==12 and summary["point"]["joint_hits"]==6
+E       assert (0 == 12)
+
+artifacts/research/process/20261004-ced-development/astra-rounds/round510-screen-modality-isolation-20261109/tests/test_modality_isolation.py:44: AssertionError
+__________________ test_absent_mode_does_not_inflate_coverage __________________
+
+    def test_absent_mode_does_not_inflate_coverage():
+        cases,rows=fixture();rows.pop(0);summary,_=compute(cases,rows)
+>       assert summary["box"]["coverage"]==31 and summary["point"]["coverage"]==32
+E       assert (32 == 31)
+
+artifacts/research/process/20261004-ced-development/astra-rounds/round510-screen-modality-isolation-20261109/tests/test_modality_isolation.py:57: AssertionError
+__________________ test_reversed_order_and_json_are_isolated ___________________
+
+    def test_reversed_order_and_json_are_isolated():
+        cases,rows=fixture();first,_=compute(cases,rows)
+        reordered=rows[34:]+rows[:34]+[{"stage":"JSON_RGB","repeat":False,"end_to_end_s":900}]
+        summary,_=compute(cases,reordered)
+>       assert summary==first
+E       AssertionError: assert {'box': {'abs...its': 0, ...}} == {'box': {'abs...its': 6, ...}}
+E         
+E         Differing items:
+E         {'point': {'absent_n': 4, 'clear_target_absence': 0, 'coverage': 32, 'destination_hits': 0, ...}} != {'point': {'absent_n': 4, 'clear_target_absence': 4, 'coverage': 32, 'destination_hits': 6, ...}}
+E         {'box': {'absent_n': 4, 'clear_target_absence': 4, 'coverage': 32, 'destination_hits': 12, ...}} != {'box': {'absent_n': 4, 'clear_target_absence': 0, 'coverage': 32, 'destination_hits': 0, ...}}
+E         Use -v to get more diff
+
+artifacts/research/process/20261004-ced-development/astra-rounds/round510-screen-modality-isolation-20261109/tests/test_modality_isolation.py:65: AssertionError
+_______________ test_shared_multimode_observation_keeps_one_call _______________
+
+    def test_shared_multimode_observation_keeps_one_call():
+        cases,rows=fixture();rows=rows[:34]
+        for row in rows:row["modes"]["mask"]=dict(row["modes"]["box"])
+        summary,latency=compute(cases,rows)
+        assert len(rows)==34
+        assert summary["box"]==summary["mask"]
+>       assert latency["native_by_mode"]["box"]==latency["native_by_mode"]["mask"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'native_by_mode'
+
+artifacts/research/process/20261004-ced-development/astra-rounds/round510-screen-modality-isolation-20261109/tests/test_modality_isolation.py:74: KeyError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/astra-rounds/round510-screen-modality-isolation-20261109/tests/test_modality_isolation.py::test_production_multi_mode_counts_and_latency
+FAILED artifacts/research/process/20261004-ced-development/astra-rounds/round510-screen-modality-isolation-20261109/tests/test_modality_isolation.py::test_absent_mode_does_not_inflate_coverage
+FAILED artifacts/research/process/20261004-ced-development/astra-rounds/round510-screen-modality-isolation-20261109/tests/test_modality_isolation.py::test_reversed_order_and_json_are_isolated
+FAILED artifacts/research/process/20261004-ced-development/astra-rounds/round510-screen-modality-isolation-20261109/tests/test_modality_isolation.py::test_shared_multimode_observation_keeps_one_call
+4 failed in 0.37s

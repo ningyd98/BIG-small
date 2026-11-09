@@ -33,6 +33,22 @@ def stats(values):
             "p90_s": float(np.percentile(values, 90)) if values else None}
 
 
+def native_latency(rows):
+    native = [r for r in rows if r["stage"].startswith("NATIVE") and not r["repeat"]]
+    modes = sorted({m for r in native for m in r["modes"]})
+    result = {}
+    for mode in modes:
+        mode_rows = [r for r in native if mode in r["modes"]]
+        first = mode_rows[0] if mode_rows else None
+        cold = bool(first is not None and native and first is native[0])
+        result[mode] = {"first_request_s": first["end_to_end_s"] if first else None,
+                        "first_is_process_cold": cold,
+                        "cold_first_request_s": first["end_to_end_s"] if cold else None,
+                        "warm_excluding_first": stats([r["end_to_end_s"] for r in mode_rows[1:]]),
+                        "fixed_repetitions": stats([r["end_to_end_s"] for r in rows if r["stage"].startswith("NATIVE") and r["repeat"] and mode in r["modes"]])}
+    return {"native_by_mode": result}
+
+
 def score(candidate):
     out = HERE / "candidates" / candidate
     run = json.loads((out / "run-01.json").read_text())
@@ -119,7 +135,7 @@ def score(candidate):
     modes = sorted({m for r in native for m in r["modes"]})
     summary = {}
     for mode in modes:
-        lookup = {(r["id"], r["query"]): r["modes"].get(mode, {}) for r in native}
+        lookup = {(r["id"], r["query"]): r["modes"][mode] for r in native if mode in r["modes"]}
         hit = lambda key, kind: lookup.get((key, kind), {}).get("hit", False)
         summary[mode] = {"positive_n": 12, "target_hits": sum(hit(k, "target") for k in positive),
                          "destination_hits": sum(hit(k, "destination") for k in positive),
@@ -159,15 +175,13 @@ def score(candidate):
               "oracle_sha256": digest(HERE / "diagnostic/oracle-inputs.json"), "scorer_sha256": digest(Path(__file__)),
               "model_loads_started": run["model_loads_started"], "generation_calls_started": run["generation_calls_started"],
               "completed_calls": len(rows), "load_s": run.get("load_s"), "native": summary, "json": json_summary,
-              "latency": {"native_cold_first_request_s": native[0]["end_to_end_s"] if native else None,
-                          "native_warm_excluding_first": stats([r["end_to_end_s"] for r in native[1:]]),
-                          "native_fixed_repetitions": stats([r["end_to_end_s"] for r in rows if r["repeat"]])},
+              "latency": native_latency(rows),
               "gpu": {"torch_peak_allocated_bytes": max((r["torch_peak_allocated_bytes"] for r in run["completed"]), default=0),
                       "torch_peak_reserved_bytes": max((r["torch_peak_reserved_bytes"] for r in run["completed"]), default=0),
                       "device_peak_used_MiB_200ms": max(memory) if memory else None, "samples": len(memory)},
               "cap_reached_calls": sum(r["reached_cap"] for r in rows), "rows": rows,
               "acceptance": "DEVELOPMENT_SCREEN_ONLY_NOT_HELDOUT_OR_PHYSICAL_ACCEPTANCE", "hardware_dispatch": False}
-    with (out / "score-02.json").open("x") as stream:
+    with (out / "score-03.json").open("x") as stream:
         json.dump(result, stream, ensure_ascii=False, indent=2, allow_nan=False, default=_json_scalar)
         stream.write("\n")
     print(json.dumps({k: v for k, v in result.items() if k != "rows"}, ensure_ascii=False, indent=2, allow_nan=False, default=_json_scalar))

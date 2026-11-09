@@ -56,9 +56,9 @@ def test_unknown_objects_rejected(kind, value):
 
 
 def test_output_is_exclusive_score02(tmp_path):
-    node = next(n for n in ast.walk(tree) if isinstance(n, ast.With) and "score-02.json" in ast.unparse(n.items[0].context_expr))
+    node = next(n for n in ast.walk(tree) if isinstance(n, ast.With) and "score-03.json" in ast.unparse(n.items[0].context_expr))
     assert ast.unparse(node.items[0].context_expr).endswith('.open(\'x\')')
-    target = tmp_path / "score-02.json"
+    target = tmp_path / "score-03.json"
     target.write_bytes(b"original")
     with pytest.raises(FileExistsError):
         eval(compile(ast.Expression(node.items[0].context_expr), str(SOURCE), "eval"), {"out": tmp_path})
