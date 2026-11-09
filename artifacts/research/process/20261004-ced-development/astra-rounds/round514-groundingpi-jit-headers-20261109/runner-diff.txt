@@ -1,0 +1,67 @@
+--- artifacts/research/process/20261004-ced-development/astra-rounds/round505-ordered-small-vlm-screen-20261109/implementation/run_groundingpi.py
++++ artifacts/research/process/20261004-ced-development/astra-rounds/round505-ordered-small-vlm-screen-20261109/implementation/run_groundingpi_r514.py
+@@ -9,6 +9,7 @@
+ import traceback
+ from pathlib import Path
+ from run_candidate_molmoer import sha, save, now, timeout
++from preflight_groundingpi_jit_r514 import cumulative
+ HERE = Path(__file__).resolve().parents[1]
+ ROOT = HERE.parents[5]
+ CACHE = ROOT / "datasets/model-cache/ordered-small-vlm-20261109"
+@@ -16,20 +17,25 @@
+ 
+ def main(candidate):
+     out = HERE / "candidates" / candidate
+-    raw = CACHE / "actual" / candidate / "run-01"
+-    protocol = json.loads((out / "protocol.json").read_text())
++    raw = CACHE / "actual" / candidate / "run-02"
++    protocol = json.loads((out / "protocol-r514.json").read_text())
+     for row in protocol["research_sources"]:
+         assert sha(ROOT / row["path"]) == row["sha256"]
+     assert sha(out / "cpu-contract-r511.json") == protocol["cpu_contract_sha256"]
+     contract = json.loads((out / "cpu-contract-r511.json").read_text())
+     assert candidate == "06-groundingpi"
+     assert json.loads((HERE / "candidates/05-rynn/run-01.json").read_text())["status"] == "ALL_REQUESTS_COMPLETED"
++    prior = json.loads((out / "run-01.json").read_text())
++    assert prior["model_loads_started"] == 1 and prior["generation_calls_started"] == 1 and len(prior["completed"]) == 0
++    assert sha(out / "run-01.json") == protocol["prior_run_sha256"]
+     raw.mkdir(parents=True, exist_ok=False)
+     state = {"candidate": candidate, "status": "STARTED", "created_at": now(), "pid": os.getpid(), "model_loads_started": 0,
+-             "generation_calls_started": 0, "completed": [], "raw_directory": str(raw), "protocol_sha256": sha(out / "protocol.json"),
+-             "formal_acceptance": "NOT_PERFORMED", "hardware_dispatch": False}
++             "generation_calls_started": 0, "completed": [], "raw_directory": str(raw), "protocol_sha256": sha(out / "protocol-r514.json"),
++             "formal_acceptance": "NOT_PERFORMED", "hardware_dispatch": False,
++             "prior_model_loads_started": 1, "prior_generation_calls_started": 1, "prior_completed": 0,
++             "cumulative_model_loads_started": 1, "cumulative_generation_calls_started": 1}
+     def progress():
+-        (out / "run-progress.local.json").write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n")
++        (out / "run-progress-r514.local.json").write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+     lock = (ROOT / "datasets/model-cache/zdtaichu5-9b-fp8-round473/research/.r468-r469-gpu.lock").open("a+")
+     fcntl.flock(lock, fcntl.LOCK_EX)
+     sampler = None
+@@ -53,6 +59,7 @@
+         processor = AutoProcessor.from_pretrained(protocol["model_directory"], trust_remote_code=True, local_files_only=True)
+         stream = (raw / "gpu-memory-200ms.csv").open("xb")
+         sampler = subprocess.Popen(["nvidia-smi", "--query-gpu=timestamp,memory.used,memory.free,utilization.gpu", "--format=csv,noheader,nounits", "-lms", "200"], stdout=stream, stderr=subprocess.DEVNULL)
++        state["cumulative_model_loads_started"] = cumulative(1, state["model_loads_started"], 2)
+         state["model_loads_started"] = 1
+         progress()
+         signal.setitimer(signal.ITIMER_REAL, 1800)
+@@ -85,6 +92,8 @@
+             (folder / "prompt.txt").write_text(rendered)
+             row["input_tokens"] = features["input_ids"].shape[1]
+             features = {k: v.to("cuda:0") if hasattr(v, "to") else v for k,v in features.items()}
++            row["cumulative_generation_index"] = cumulative(1, state["generation_calls_started"], 101)
++            state["cumulative_generation_calls_started"] = row["cumulative_generation_index"]
+             state["generation_calls_started"] += 1
+             progress()
+             torch.cuda.synchronize()
+@@ -126,7 +135,7 @@
+         if stream is not None:
+             stream.close()
+         state["finished_at"] = now()
+-        save(out / "run-01.json", state)
++        save(out / "run-02.json", state)
+         progress()
+         fcntl.flock(lock, fcntl.LOCK_UN)
+         lock.close()

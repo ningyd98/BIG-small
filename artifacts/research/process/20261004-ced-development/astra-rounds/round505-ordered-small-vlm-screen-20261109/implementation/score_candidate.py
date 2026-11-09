@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -49,9 +50,52 @@ def native_latency(rows):
     return {"native_by_mode": result}
 
 
-def score(candidate):
+def resolve_score_inputs(candidate, run_json, protocol_json, output_name):
+    out=(HERE/"candidates"/candidate).resolve()
+    if (run_json is None)!=(protocol_json is None):
+        raise ValueError("run-json and protocol-json must be selected together")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*\.json",output_name) or ".." in output_name:
+        raise ValueError("output-name must be a safe JSON basename")
+    paths=[]
+    for supplied,default in [(run_json,"run-01.json"),(protocol_json,"protocol.json")]:
+        path=Path(supplied).resolve() if supplied is not None else out/default
+        if path.parent!=out or path.is_symlink() or not path.is_file() or path.suffix!=".json" or "progress" in path.name or path.name.endswith(".local.json"):
+            raise ValueError("input must be a sealed JSON in this candidate directory")
+        paths.append(path)
+    run_path,protocol_path=paths
+    if json.loads(run_path.read_text()).get("protocol_sha256")!=digest(protocol_path):
+        raise ValueError("selected run/protocol hash mismatch")
+    output=out/output_name
+    if output.exists():raise FileExistsError(output)
+    return run_path,protocol_path,output
+
+
+def score(candidate, *, run_json=None, protocol_json=None, output_name="score-03.json"):
     out = HERE / "candidates" / candidate
-    run = json.loads((out / "run-01.json").read_text())
+    run_path,protocol_path,output_path=resolve_score_inputs(candidate,run_json,protocol_json,output_name)
+    run = json.loads(run_path.read_text())
+    protocol=json.loads(protocol_path.read_text())
+    cpu_path=None
+    if "cpu_contract_sha256" in protocol:
+        matches=[p for p in out.glob("cpu-contract*.json") if digest(p)==protocol["cpu_contract_sha256"]]
+        if len(matches)!=1:raise ValueError("selected protocol CPU contract is missing or ambiguous")
+        cpu_path=matches[0]
+    reliability=None
+    if "prior_run_sha256" in protocol:
+        cpu=json.loads(cpu_path.read_text())
+        if run_path.name!="run-02.json" or run["status"]!="ALL_REQUESTS_COMPLETED" or run["model_loads_started"]!=1 or run["generation_calls_started"]!=100 or len(run["completed"])!=100 or cpu["status"]!="PASS" or len(cpu["requests"])!=100:
+            raise ValueError("R514 scoring requires sealed complete 100-request run-02 and CPU contract")
+        prior_path=out/"run-01.json"
+        if digest(prior_path)!=protocol["prior_run_sha256"]:raise ValueError("prior failure hash mismatch")
+        prior=json.loads(prior_path.read_text())
+        if (prior["model_loads_started"],prior["generation_calls_started"],len(prior["completed"]))!=(1,1,0):raise ValueError("prior reliability ledger mismatch")
+        if (run["cumulative_model_loads_started"],run["cumulative_generation_calls_started"])!=(2,101):raise ValueError("cumulative ledger mismatch")
+        for observed,expected in zip(run["completed"],cpu["requests"]):
+            if any(observed[k]!=expected[k] for k in ("id","query","mode","stage","repeat")):raise ValueError("run/CPU request order mismatch")
+            folder=Path(observed["raw_directory"])
+            if folder.parent!=Path(run["raw_directory"]) or folder.parent.name!="run-02":raise ValueError("raw run directory mismatch")
+            if json.loads((folder/"processor.json").read_text())!=expected["features"] or digest(folder/"prompt.txt")!=expected["rendered_sha256"]:raise ValueError("processor/prompt contract mismatch")
+        reliability={"prior_loads":prior["model_loads_started"],"prior_generation":prior["generation_calls_started"],"prior_completed":len(prior["completed"]),"current_loads":run["model_loads_started"],"current_generation":run["generation_calls_started"],"current_completed":len(run["completed"]),"cumulative_loads":run["cumulative_model_loads_started"],"cumulative_generation":run["cumulative_generation_calls_started"],"cumulative_completed":len(prior["completed"])+len(run["completed"])}
     oracle = json.loads((HERE / "diagnostic/oracle-inputs.json").read_text())
     frozen_schema = HERE.parent / "round491-taichu-constrained-json-20261108/diagnostic/visual-decision-schema.json"
     assert VisualDecision.model_json_schema() == json.loads(frozen_schema.read_text())
@@ -171,7 +215,7 @@ def score(candidate):
             except (ValueError, IndexError):
                 pass
     result = {"candidate": candidate, "status": "SCORED_DEV16", "run_status": run["status"],
-              "protocol_sha256": digest(out / "protocol.json"), "run_sha256": digest(out / "run-01.json"),
+              "protocol_sha256": digest(protocol_path), "run_sha256": digest(run_path),
               "oracle_sha256": digest(HERE / "diagnostic/oracle-inputs.json"), "scorer_sha256": digest(Path(__file__)),
               "model_loads_started": run["model_loads_started"], "generation_calls_started": run["generation_calls_started"],
               "completed_calls": len(rows), "load_s": run.get("load_s"), "native": summary, "json": json_summary,
@@ -181,7 +225,10 @@ def score(candidate):
                       "device_peak_used_MiB_200ms": max(memory) if memory else None, "samples": len(memory)},
               "cap_reached_calls": sum(r["reached_cap"] for r in rows), "rows": rows,
               "acceptance": "DEVELOPMENT_SCREEN_ONLY_NOT_HELDOUT_OR_PHYSICAL_ACCEPTANCE", "hardware_dispatch": False}
-    with (out / "score-03.json").open("x") as stream:
+    result["provenance"]={"run_path":str(run_path),"protocol_path":str(protocol_path),"output_name":output_name,"run_bytes":run_path.stat().st_size,"protocol_bytes":protocol_path.stat().st_size,"cpu_contract_path":str(cpu_path) if cpu_path else None,"cpu_contract_sha256":digest(cpu_path) if cpu_path else None,"oracle_path":str(HERE/"diagnostic/oracle-inputs.json"),"helper_sha256":digest(HERE/"implementation/score_native.py")}
+    if reliability is not None:result["reliability"]=reliability
+    assert digest(run_path)==result["run_sha256"] and digest(protocol_path)==result["protocol_sha256"]
+    with output_path.open("x") as stream:
         json.dump(result, stream, ensure_ascii=False, indent=2, allow_nan=False, default=_json_scalar)
         stream.write("\n")
     print(json.dumps({k: v for k, v in result.items() if k != "rows"}, ensure_ascii=False, indent=2, allow_nan=False, default=_json_scalar))
@@ -190,4 +237,8 @@ def score(candidate):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("candidate")
-    score(parser.parse_args().candidate)
+    parser.add_argument("--run-json")
+    parser.add_argument("--protocol-json")
+    parser.add_argument("--output-name",default="score-03.json")
+    args=parser.parse_args()
+    score(args.candidate,run_json=args.run_json,protocol_json=args.protocol_json,output_name=args.output_name)

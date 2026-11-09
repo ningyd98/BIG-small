@@ -1,0 +1,1 @@
+R511固定3wheel静态闭包核验确认唯一直接缺失httpx<1>=0.23。安装尚未开始，SDK布局2328完整PASS，0模型import/load/generate。请制定最小隔离overlay补全计划，固定官方httpx0.28.1并按基线实有版本核Requires-Dist和传递闭包；缺失httpcore/h11等仅在有官方metadata证据后固定兼容版本。禁止改历史环境/fork/SDK，保留R511锁。允许新R512raw metadata及SHAwheel、全闭包PASS后--no-deps安装到groundingpi-r505及CPU门禁。

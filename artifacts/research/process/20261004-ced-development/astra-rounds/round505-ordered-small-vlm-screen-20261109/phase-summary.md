@@ -9,7 +9,7 @@
 |3|Xiaomi-Lens-0 BF16|mask联合12/12、缺目标拒答1/4；box联合7/12；JSON格式16/16但联合3/12、缺目标0/4|原生0.978秒；JSON4.621秒|未过缺目标门槛|
 |4|Molmo2-ER BF16|point联合12/12、缺目标拒答4/4；34调用；原system JSON不支持|0.727秒|首轮DEV筛选信号通过|
 |5|RynnBrain1.1-2B BF16|box联合7/12拒答0/4；point联合7/12拒答1/4；JSON_RGB联合4/12拒答1/4；JSON_DUAL联合5/12拒答0/4；100调用|box0.533秒；point1.401秒；双图JSON2.203秒|未过门槛|
-|6|GroundingPI|完整权重已校验|未测|待测|
+|6|GroundingPI BF16|box联合5/12拒答0/4；point联合3/12拒答0/4；JSON_RGB/DUAL格式均0/16；完整screen100调用（累计含失败101）|box0.300秒；point0.254秒|未过门槛|
 |7|GroundAnything DLM|完整权重已校验|未测|待测|
 |8|MiniCPM-V-4.7-1B|完整权重已校验|未测|待测|
 
@@ -22,3 +22,5 @@ R507实际Astra将Molmo独立运行时只读绑定至真实TF4.57.1隔离层，�
 完整raw、模型、SDK、venv/JIT仅保留本地；远端研究代码/清单/派生报告不构成完整复现包。产品默认与硬件方案未改。
 
 R510实际Astra修复多模态独立请求在scorer lookup覆盖问题，并将latency按mode分列。62项软件检查通过，Lens/Molmo全部定位及JSON指标与旧score-02精确一致；Rynn来自原100调用的离线score-03，独立原始i32像素核计一致。所有既有raw前后SHA未变；新增模型调用0。
+
+R511/R512依赖准备保持原错误解包树及缺HTTP依赖锁，正确2328文件官方fork5.7与独立5wheel闭包17节点验证后CPU100通过。R514原首生成Python.h失败保留，原始Triton C在冻结header链CPU编译/链接PASS，不导入扩展；只新增CPATH和独立JIT，第二次且最后一次加载完成100请求，累计load2/gen101。R516仅显式选择run02/protocol-r514离线评分，原run01和三旧候选全部科学结果保持；schema失败不等于执行物理动作。

@@ -1,0 +1,105 @@
+{
+  "round": "round517-metadata-resolver-lazy-factory-20261109",
+  "planner_model": "gpt-6-astra",
+  "planner_role": "actual Astra planning subagent",
+  "created_at_utc": "2026-11-09T10:01:38.568691+00:00",
+  "status": "PLAN_READY_NOT_IMPLEMENTED",
+  "plan_markdown_sha256": "bd2948d37157855bda99c112c72247e9caefe7bf0b304194161fee1fcc465047",
+  "inputs": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round517-metadata-resolver-lazy-factory-20261109/failure.json",
+      "bytes": 756,
+      "sha256": "6bf7caccfff7fa3ee0a85c41d9b4e1df891864fb72aadb2f3af8f550b60624ce"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round515-dlm-serving-stack-clarification-20261109/implementation/resolve_official_wheels.py",
+      "bytes": 10041,
+      "sha256": "203ddf5ddf458d663c9eb9463ac2a969815db459cbfe7f553fcd8c431b8d677f"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round515-dlm-serving-stack-clarification-20261109/plan.md",
+      "bytes": 9595,
+      "sha256": "e4b9d2b07d4793604edbf4d71da3fde99ebed85110344cee0ab7d2da1f1ce945"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round515-dlm-serving-stack-clarification-20261109/plan.json",
+      "bytes": 5155,
+      "sha256": "c17aa1ea60b5b8033d371bd843c22addfcb92200fc186365556a96dac4953773"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round515-dlm-serving-stack-clarification-20261109/diagnostic/resolve-download.stdout",
+      "bytes": 4733,
+      "sha256": "bfdee9b605342eba35978be3387b147308df6f8431e500fe16c07da0531c2f1a"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round515-dlm-serving-stack-clarification-20261109/diagnostic/resolve-download.stderr",
+      "bytes": 5621,
+      "sha256": "f5d9fda2789c7f46c9cb965b97f7334b6d863a28b7f420f58196eaefc2e34eaa"
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/pip/_vendor/resolvelib/structs.py",
+      "bytes": 6420,
+      "sha256": "a6ef84262476201213af649078d3d16b4ad7863952b5f98efc6120021af7d34e"
+    }
+  ],
+  "failure": {
+    "issue": "find_matches returns generator instance; pip vendored resolvelib build_iter_view eagerly materializes list of all candidates; callable factory is lazy",
+    "source": "artifacts/research/process/20261004-ced-development/astra-rounds/round515-dlm-serving-stack-clarification-20261109/implementation/resolve_official_wheels.py",
+    "source_sha256": "203ddf5ddf458d663c9eb9463ac2a969815db459cbfe7f553fcd8c431b8d677f",
+    "observed": "metadata log iterated all setuptools>=68 then wheel versions, rather than selecting lazy candidate; stopped own metadata-only process SIGINT",
+    "pid": 3502320,
+    "model_loads": 0,
+    "generation_calls": 0,
+    "proposed": "return candidates factory; invoke factory explicitly only for direct postoverride consumer"
+  },
+  "source_sha_verified": true,
+  "root_cause": "generator instance materialized by actual build_iter_view; callable factory yields lazy view",
+  "changes": [
+    {
+      "file": "artifacts/research/process/20261004-ced-development/astra-rounds/round515-dlm-serving-stack-clarification-20261109/implementation/resolve_official_wheels.py",
+      "location": "find_matches final return",
+      "before": "return candidates()",
+      "after": "return candidates"
+    },
+    {
+      "file": "artifacts/research/process/20261004-ced-development/astra-rounds/round515-dlm-serving-stack-clarification-20261109/implementation/resolve_official_wheels.py",
+      "location": "direct postoverride consumer",
+      "before": "list(provider.find_matches(...))[0]",
+      "after": "list(provider.find_matches(...)())[0]"
+    }
+  ],
+  "preserve": [
+    "candidate order/filter/dependency/marker semantics",
+    "network/hash policy",
+    "metadata cache bytes",
+    "original logs",
+    "pip version"
+  ],
+  "new_logs": [
+    "resolve-download-02.stdout",
+    "resolve-download-02.stderr",
+    "resolve-download-02.exitcode"
+  ],
+  "tests": [
+    "actual build_iter_view first item only fetches first viable version",
+    "construction has no version detail fetch",
+    "reiteration lazy",
+    "full enumeration matches old output",
+    "actual Resolver backtracking",
+    "actual postoverride direct consumer factory invocation"
+  ],
+  "execution_boundary": "R515 original metadata/download preparation may resume after GREEN; no installation or model calls for this fix",
+  "stop_triggers": [
+    "new interface cause",
+    "resolution impossible",
+    "hash drift",
+    "new network failure",
+    "candidate/dependency scope expansion"
+  ],
+  "acceptance": {
+    "development": "RED/GREEN actual lazy interface and backtracking",
+    "metadata_download": "separately evidenced",
+    "installation": "not conferred",
+    "model_calls": 0
+  }
+}
