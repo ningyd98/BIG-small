@@ -7,11 +7,16 @@
 ## 接口
 
 - `vision/molmo_pointing.py`：严格单点/ABSENT 解析、观测/RGB/查询绑定、一次 BF16 加载和有界生成。原始输出、token IDs、处理器摘要与失败记录写入本地 raw。
+- `vision/point_association.py`：低饱和背景点的有界局部颜色关联，保留原生点并独立记录几何采样点。
 - `vision/planner.py`：共享 `ground_observation` 与 `build_grounded_contract`；原 `RGBDPlannerAdapter` 接口保持兼容。
 - `vision/grounded_planner.py`：任务描述、OpenCV 检查、技能专用云端请求与现有 profile/secret-store 工厂。
 - `scripts/probe_molmo_grounded_planner.py`：空运行、回放及真实本地诊断；没有派发或硬件执行选项。
 
 任务描述必须来自用户指令或调用方显式配置，指令逐字匹配。模型接收两个单 RGB 查询：`visible top center of ...`、`interior of ...`。每个结果只能有一个点，0..1000 坐标按现有协议转换一次；1000 对应最后一个像素。多个点、矛盾拒答、非法坐标或错误绑定均关闭候选生成。检出状态不是成功概率，不补造模型置信度。
+
+当目标原生点落在低饱和背景时，允许一次受限关联：任务短语须严格为 `red|green|blue|yellow` 与 `block|box|cube` 的组合，固定半径为图像短边8%且限定8..24像素。范围内所有面积至少8像素的饱和颜色连通域先计数，恰有一个完整位于窗口内部、颜色一致且原始深度有效的候选时，才选择其完整3×3内部点。多候选、颜色矛盾、截断或无效深度均拒绝，不扩窗或重试。直接落在有色区域的点不平移，放置区点不细化。随后仍进入原有抓取几何和全局颜色唯一性/轮廓检查。这是开发范围内的关联策略，不是经校准的模型误差界。
+
+原生坐标保存在 `native_results` 与 `native_original_pixel_target/destination`；`associated_pixel_target` 是关联建议，`original_pixel_target` 是实际送入几何的原图坐标。`target_point_association` 记录候选、策略、拒绝原因和 helper 源码哈希，不能用关联点改写原生预测或原始采集时间。
 
 原始深度无效、未注册抓取 profile、相机方向不支持、初始颜色支撑不唯一/不完整或观测超过5秒时要求重新观测；未来容差为50毫秒。此版本继续限制于已校准的 MuJoCo 顶视、竖直刚性彩色方块研究范围。初始几何通过不证明连续运动、完整放置或物理任务成功。
 

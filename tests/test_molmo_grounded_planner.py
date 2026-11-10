@@ -434,9 +434,11 @@ def test_pixel_mapping_once(monkeypatch, normalized, pixel):
                 )
             return value
 
-    adapter, _, _ = adapter_fixture(monkeypatch, points=BoundaryPoints())
+    adapter, _, bodies = adapter_fixture(monkeypatch, points=BoundaryPoints())
     draft = adapter.plan(request_scene())
-    assert draft.observation_evidence["original_pixel_target"] == [pixel, 26]
+    assert draft.observation_evidence["native_original_pixel_target"] == [pixel, 26]
+    assert draft.parsed_json["_sentinel"] == "REQUEST_MORE_OBSERVATION"
+    assert bodies == []
 
 
 def test_scene_oracle_metadata_does_not_enter_requests(monkeypatch):
@@ -549,3 +551,56 @@ def test_cloud_snapshot_provenance_is_recorded(monkeypatch):
     )
     assert draft.observation_evidence["cloud_role_snapshot"] is None
     assert "test-only-cloud-secret" not in json.dumps(draft.observation_evidence)
+
+
+def near_background_points():
+    class NearbyPoints(FixturePoints):
+        def point(self, observation, phrase):
+            import hashlib
+
+            from cloud_edge_robot_arm.vision.molmo_pointing import (
+                BoundPointResult,
+                parse_native_point,
+            )
+
+            if self.queries:
+                return super().point(observation, phrase)
+            self.queries.append(phrase)
+            raw = '<points coords="1 1 150 360">visible top center of red block</points>'
+            return BoundPointResult(
+                parse_native_point(raw),
+                observation.checksum_sha256,
+                observation.evidence()["rgb_sha256"],
+                hashlib.sha256(phrase.encode()).hexdigest(),
+                {"evidence_scope": "CPU_CONTRACT_FIXTURE"},
+            )
+
+    return NearbyPoints()
+
+
+def test_nearby_point_association_composes_with_original_pipeline(monkeypatch):
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    adapter, _, bodies = adapter_fixture(monkeypatch, points=near_background_points())
+    response = PlanningPipeline(planner=adapter).process(request_scene())
+    assert response.outcome == "PLANNED"
+    evidence = response.attempts[0].draft.observation_evidence
+    assert evidence["native_results"][0]["normalized_1000"] == (150, 360)
+    assert evidence["native_original_pixel_target"] == [12, 23]
+    assert evidence["associated_pixel_target"] == [12, 26]
+    assert evidence["original_pixel_target"] == [12, 26]
+    assert evidence["target_point_association"]["status"] == "ASSOCIATED"
+    assert evidence["native_original_pixel_destination"] == [52, 27]
+    assert len(bodies) == 1
+
+
+@pytest.mark.parametrize(
+    "damage",
+    ["decoy", "partial", "occluded", "edge_occluder", "invalid_edge", "depth", "depth_spike"],
+)
+def test_association_cannot_bypass_original_geometry_or_tracker(monkeypatch, damage):
+    adapter, _, bodies = adapter_fixture(monkeypatch, points=near_background_points())
+    draft = adapter.plan(request_scene(damage=damage))
+    assert draft.parsed_json["_sentinel"] == "REQUEST_MORE_OBSERVATION"
+    assert bodies == []
+    assert draft.observation_evidence["native_original_pixel_target"] == [12, 23]

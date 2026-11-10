@@ -26,6 +26,10 @@ from cloud_edge_robot_arm.vision.planner import (
     build_grounded_contract,
     ground_observation,
 )
+from cloud_edge_robot_arm.vision.point_association import (
+    PointAssociationError,
+    associate_target_point,
+)
 from cloud_edge_robot_arm.vision.role_models import (
     cloud_request_settings,
     configuration_hash,
@@ -211,10 +215,21 @@ class MolmoGroundedPlannerAdapter:
                         coordinate_system="normalized_1000",
                     )
                 )
+            evidence["native_original_pixel_target"] = list(points[0])
+            evidence["native_original_pixel_destination"] = list(points[1])
+            try:
+                association = associate_target_point(
+                    observation, points[0], target_phrase=task.target_phrase
+                )
+            except PointAssociationError as exc:
+                evidence["target_point_association"] = exc.evidence
+                raise ValueError(str(exc)) from exc
+            evidence["associated_pixel_target"] = list(association.pixel)
+            evidence["target_point_association"] = association.evidence
             measured = ground_observation(
                 request,
                 observation,
-                target_pixel=points[0],
+                target_pixel=association.pixel,
                 destination_pixel=points[1],
                 target_label=task.target_label,
                 grasp_profile=profile,
@@ -332,6 +347,7 @@ def build_molmo_grounded_planner(
         for name in (
             "grounded_planner",
             "molmo_pointing",
+            "point_association",
             "planner",
             "observations",
             "messages",
