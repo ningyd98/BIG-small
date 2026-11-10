@@ -14,7 +14,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, PlannerDraft
+from cloud_edge_robot_arm.cloud.planning.models import (
+    FinalPlanAdmission,
+    InitialPlanningRequest,
+    PlannerDraft,
+)
 from cloud_edge_robot_arm.model_control.service import ModelControlService
 from cloud_edge_robot_arm.vision.messages import model_to_observation_pixel
 from cloud_edge_robot_arm.vision.molmo_pointing import (
@@ -135,6 +139,32 @@ class MolmoGroundedPlannerAdapter:
         self.task = task
         self.model_name = cloud.model_name
         self._cloud_hash = configuration_hash(cloud_request_settings(cloud))
+
+    @property
+    def requires_final_plan_admission(self) -> bool:
+        """显式补帧结果必须在最终合同及缓存返回前检查。"""
+        return self.post_cloud_observation_supplier is not None
+
+    def _make_final_plan_admission(
+        self, binding: _PlanBinding, observation: RGBDObservation
+    ) -> FinalPlanAdmission:
+        retained = RGBDObservation.model_validate(observation.model_dump())
+        checksum = retained.checksum_sha256
+
+        def admit(original_request: InitialPlanningRequest, active_planner: object) -> None:
+            if active_planner is not self or (
+                configuration_hash(original_request.model_dump(mode="json")) != binding.request_hash
+            ):
+                raise ValueError("inflight_planning_context_changed")
+            try:
+                checked = RGBDObservation.model_validate(retained.model_dump())
+            except ValueError:
+                raise ValueError("final_plan_admission_observation_changed") from None
+            if checked.checksum_sha256 != checksum:
+                raise ValueError("final_plan_admission_observation_changed")
+            self._fresh(retained, binding)
+
+        return admit
 
     def _context(self, binding: _PlanBinding) -> None:
         if (
@@ -357,8 +387,7 @@ class MolmoGroundedPlannerAdapter:
                         "instruction": working.user_instruction,
                         "geometry": facts,
                         "geometry_status": (
-                            "CALIBRATED_DEVELOPMENT_ESTIMATE_"
-                            "NOT_PHYSICAL_ACCEPTANCE"
+                            "CALIBRATED_DEVELOPMENT_ESTIMATE_NOT_PHYSICAL_ACCEPTANCE"
                         ),
                     },
                     ensure_ascii=False,
@@ -471,6 +500,7 @@ class MolmoGroundedPlannerAdapter:
                     evidence["cloud_reference"]["native_results"]
                 )
                 draft.observation_evidence = copy.deepcopy(evidence)
+                draft._final_plan_admission = self._make_final_plan_admission(binding, observation)
             return draft
         except _NativePerceptionFailure as exc:
             if refresh is not None:
@@ -504,6 +534,9 @@ def build_molmo_grounded_planner(
         raise ValueError("explicit registered grasp profile required")
     root = Path(__file__).resolve().parents[3]
     paths = [
+        "src/cloud_edge_robot_arm/cloud/planning/models.py",
+        "src/cloud_edge_robot_arm/cloud/planning/pipeline.py",
+    ] + [
         f"src/cloud_edge_robot_arm/vision/{name}.py"
         for name in (
             "capture",

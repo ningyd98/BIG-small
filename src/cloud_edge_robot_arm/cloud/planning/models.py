@@ -9,11 +9,12 @@ controls joints, motors, PWM, or low-level trajectory points directly.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from cloud_edge_robot_arm.contracts import Pose, TaskContract
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
@@ -104,7 +105,9 @@ class InitialPlanningRequest(BaseModel):
         default="EVENT_TRIGGERED_EDGE_AUTONOMY",
         pattern=r"^(PERIODIC_CLOUD_SUPERVISION|EVENT_TRIGGERED_EDGE_AUTONOMY|AUTO)$",
     )
-    scene: SceneSummary = Field(default_factory=lambda: SceneSummary(scene_version=1, updated_at=datetime.now(UTC)))
+    scene: SceneSummary = Field(
+        default_factory=lambda: SceneSummary(scene_version=1, updated_at=datetime.now(UTC))
+    )
     observation: RGBDObservation | None = None
     capabilities: RobotCapabilities = Field(default_factory=lambda: RobotCapabilities())
     safety_policy: SafetyPolicyReference | None = None
@@ -123,8 +126,13 @@ class InitialPlanningRequest(BaseModel):
         return v
 
 
+FinalPlanAdmission = Callable[[InitialPlanningRequest, object], None]
+
+
 class PlannerDraft(BaseModel):
     """Raw planner output before validation and repair."""
+
+    _final_plan_admission: FinalPlanAdmission | None = PrivateAttr(default=None)
 
     raw_text: str
     parsed_json: dict[str, Any] | None = None

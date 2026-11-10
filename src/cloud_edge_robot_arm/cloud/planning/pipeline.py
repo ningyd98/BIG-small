@@ -17,13 +17,15 @@ import hashlib
 import json
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError as PydanticValidationError
 
 from cloud_edge_robot_arm.cloud.planning.adapter import PlannerAdapter
 from cloud_edge_robot_arm.cloud.planning.models import (
+    FinalPlanAdmission,
     InitialPlanningRequest,
     InitialPlanningResponse,
     PlannerDraft,
@@ -441,6 +443,14 @@ def compute_request_hash(request: InitialPlanningRequest) -> str:
 # ── Full pipeline ────────────────────────────────────────────────────────────
 
 
+@dataclass(frozen=True)
+class _CachedPlanningResult:
+    request_hash: str
+    response: InitialPlanningResponse
+    admission_required: bool = False
+    admission: FinalPlanAdmission | None = None
+
+
 class PlanningPipeline:
     """End-to-end pipeline: request → scene check → planner → validate → repair → contract."""
 
@@ -456,8 +466,70 @@ class PlanningPipeline:
         self._command_ttl_ms = command_ttl_ms
         self._max_repair_attempts = max_repair_attempts
         self._scene_staleness_ms = scene_staleness_ms
-        # Idempotency cache: request_id -> (request_hash, response)
-        self._cache: dict[str, tuple[str, InitialPlanningResponse]] = {}
+        # Idempotency state retains the trusted per-invocation admission privately.
+        self._cache: dict[str, _CachedPlanningResult] = {}
+
+    def _admit_planned_response(
+        self,
+        response: InitialPlanningResponse,
+        *,
+        original_request: InitialPlanningRequest,
+        active_planner: PlannerAdapter,
+        required: bool,
+        admission: FinalPlanAdmission | None,
+        phase: Literal["final_contract", "cache_hit"],
+    ) -> InitialPlanningResponse:
+        if response.outcome != PlanningOutcome.PLANNED or (not required and admission is None):
+            return response
+        if phase == "final_contract" and response.attempts:
+            evidence = response.attempts[-1].draft.observation_evidence
+            response.attempts[-1].draft.observation_evidence = {
+                **evidence,
+                "final_plan_admission": {"status": "PASSED", "phase": phase},
+            }
+        try:
+            if not callable(admission):
+                raise ValueError("final_plan_admission_missing")
+            if admission(original_request, active_planner) is not None:
+                raise ValueError("final_plan_admission_invalid_result")
+        except Exception as exc:
+            # Only fixed local reason codes may escape a private callback.
+            known = {
+                "capture_time_not_fresh",
+                "inflight_planning_context_changed",
+                "selected_cloud_configuration_changed",
+                "final_plan_admission_observation_changed",
+                "final_plan_admission_missing",
+                "final_plan_admission_invalid_result",
+            }
+            reason = (
+                str(exc)
+                if isinstance(exc, ValueError) and str(exc) in known
+                else f"final_plan_admission_error:{type(exc).__name__}"
+            )
+            rejected = response.model_copy(deep=True)
+            rejected.outcome = PlanningOutcome.REQUEST_MORE_OBSERVATION
+            rejected.contract = None
+            rejected.dispatch = None
+            rejected.reason = reason
+            error = {"field": "final_plan_admission", "message": reason}
+            rejected.validation = rejected.validation.model_copy(
+                update={"passed": False, "errors": [*rejected.validation.errors, error]}
+            )
+            for attempt in rejected.attempts:
+                attempt.draft._final_plan_admission = None
+            if rejected.attempts:
+                attempt = rejected.attempts[-1]
+                attempt.validation = attempt.validation.model_copy(
+                    update={"passed": False, "errors": [*attempt.validation.errors, error]}
+                )
+                attempt.draft.observation_evidence["final_plan_admission"] = {
+                    "status": "REJECTED",
+                    "phase": phase,
+                    "reason": reason,
+                }
+            return rejected
+        return response
 
     def process(
         self,
@@ -467,14 +539,26 @@ class PlanningPipeline:
     ) -> InitialPlanningResponse:
         """Run the full planning pipeline."""
         active_planner = planner if planner is not None else self._planner
+        original_request = request
+        admission_required = bool(getattr(active_planner, "requires_final_plan_admission", False))
         created_at = datetime.now(UTC)
 
         # --- Idempotency ---
         request_hash = compute_request_hash(request)
         if request.request_id in self._cache:
-            cached_hash, cached_response = self._cache[request.request_id]
-            if cached_hash == request_hash:
-                return cached_response
+            cached = self._cache[request.request_id]
+            if cached.request_hash == request_hash:
+                response = self._admit_planned_response(
+                    cached.response,
+                    original_request=original_request,
+                    active_planner=active_planner,
+                    required=cached.admission_required or admission_required,
+                    admission=cached.admission,
+                    phase="cache_hit",
+                )
+                if response is not cached.response:
+                    self._cache[request.request_id] = _CachedPlanningResult(request_hash, response)
+                return response
             else:
                 return InitialPlanningResponse(
                     request_id=request.request_id,
@@ -506,7 +590,7 @@ class PlanningPipeline:
                 reason=insufficiency,
                 created_at=created_at,
             )
-            self._cache[request.request_id] = (request_hash, response)
+            self._cache[request.request_id] = _CachedPlanningResult(request_hash, response)
             return response
 
         # --- Call planner ---
@@ -520,8 +604,9 @@ class PlanningPipeline:
                 reason=f"Planner exception: {exc}",
                 created_at=created_at,
             )
-            self._cache[request.request_id] = (request_hash, response)
+            self._cache[request.request_id] = _CachedPlanningResult(request_hash, response)
             return response
+        admission = draft._final_plan_admission
         latency_ms = int((time.monotonic() - started) * 1_000)
 
         if request.observation is not None and draft.observed_scene is not None:
@@ -552,7 +637,7 @@ class PlanningPipeline:
                 ],
                 created_at=created_at,
             )
-            self._cache[request.request_id] = (request_hash, response)
+            self._cache[request.request_id] = _CachedPlanningResult(request_hash, response)
             return response
 
         # --- JSON parse check ---
@@ -577,7 +662,7 @@ class PlanningPipeline:
                 ],
                 created_at=created_at,
             )
-            self._cache[request.request_id] = (request_hash, response)
+            self._cache[request.request_id] = _CachedPlanningResult(request_hash, response)
             return response
 
         # --- Trusted-field pre-fill for validation ---
@@ -707,7 +792,7 @@ class PlanningPipeline:
                 validation=validation,
                 created_at=created_at,
             )
-            self._cache[request.request_id] = (request_hash, response)
+            self._cache[request.request_id] = _CachedPlanningResult(request_hash, response)
             return response
 
         # --- Trusted-field completion ---
@@ -735,7 +820,7 @@ class PlanningPipeline:
                 validation=validation,
                 created_at=created_at,
             )
-            self._cache[request.request_id] = (request_hash, response)
+            self._cache[request.request_id] = _CachedPlanningResult(request_hash, response)
             return response
 
         response = InitialPlanningResponse(
@@ -746,5 +831,18 @@ class PlanningPipeline:
             validation=validation,
             created_at=created_at,
         )
-        self._cache[request.request_id] = (request_hash, response)
+        required = admission_required or admission is not None
+        response = self._admit_planned_response(
+            response,
+            original_request=original_request,
+            active_planner=active_planner,
+            required=required,
+            admission=admission,
+            phase="final_contract",
+        )
+        self._cache[request.request_id] = (
+            _CachedPlanningResult(request_hash, response, required, admission)
+            if response.outcome == PlanningOutcome.PLANNED
+            else _CachedPlanningResult(request_hash, response)
+        )
         return response
