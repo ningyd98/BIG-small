@@ -604,3 +604,327 @@ def test_association_cannot_bypass_original_geometry_or_tracker(monkeypatch, dam
     assert draft.parsed_json["_sentinel"] == "REQUEST_MORE_OBSERVATION"
     assert bodies == []
     assert draft.observation_evidence["native_original_pixel_target"] == [12, 23]
+
+
+def refresh_fixture(
+    monkeypatch, *, content=None, fresh_transform=None, drift=None, point_hook=None
+):
+    """One deterministic slow cloud, a true second fixture payload and bound queries."""
+    import hashlib
+    from types import SimpleNamespace
+
+    import cloud_edge_robot_arm.cloud.planning.pipeline as pipeline_module
+    import cloud_edge_robot_arm.vision.grounded_planner as module
+    import cloud_edge_robot_arm.vision.tracking as tracking_module
+    from cloud_edge_robot_arm.vision.molmo_pointing import BoundPointResult, parse_native_point
+    from tests.test_molmo_revalidation import rebuild
+
+    request = request_scene(scene_id="S01_TEST_STATIC")
+    state = SimpleNamespace(
+        clock=request.observation.captured_at, calls=[], captures=[], queries=[], bindings=[]
+    )
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return state.clock if tz else state.clock.replace(tzinfo=None)
+
+    monkeypatch.setattr(module, "_utcnow", lambda: state.clock)
+    monkeypatch.setattr(tracking_module, "datetime", Clock)
+    monkeypatch.setattr(pipeline_module, "datetime", Clock)
+
+    class Points:
+        def point(self, observation, phrase):
+            state.queries.append(phrase)
+            state.bindings.append(observation.checksum_sha256)
+            coords = "150 410" if phrase.startswith("visible top center") else "650 425"
+            raw = f'<points coords="1 1 {coords}">support</points>'
+            result = BoundPointResult(
+                parse_native_point(raw),
+                observation.checksum_sha256,
+                observation.evidence()["rgb_sha256"],
+                hashlib.sha256(phrase.encode()).hexdigest(),
+                {"evidence_scope": "CPU_FRESH_CAPTURE_FIXTURE"},
+            )
+            if point_hook:
+                point_hook(state, len(state.queries))
+            return result
+
+    cloud, _ = cloud_fixture(monkeypatch)
+
+    def post(path, body):
+        from datetime import timedelta
+
+        state.calls.append((path, body))
+        state.clock += timedelta(seconds=6)
+        if drift:
+            drift(state, "cloud")
+        return {"choices": [{"message": {"content": content or json.dumps({"skills": SKILLS})}}]}
+
+    monkeypatch.setattr(cloud, "_post", post)
+
+    def capture():
+        from datetime import timedelta
+
+        state.clock += timedelta(milliseconds=10)
+        fresh = rebuild(request.observation, frame_id="fresh-grounded", captured_at=state.clock)
+        # A small actual depth change makes stale versus fresh geometry distinguishable.
+        depth = np.asarray(fresh.depth_values(), dtype="<f4")
+        depth[26 * 80 + 12] += 0.0001
+        fresh = rebuild(fresh, depth_float32_base64=base64.b64encode(depth.tobytes()).decode())
+        if fresh_transform:
+            fresh = fresh_transform(fresh, state)
+        state.captures.append(fresh)
+        if drift:
+            drift(state, "supplier")
+        return fresh
+
+    descriptor = module.GroundingTaskDescriptor(
+        instruction=request.user_instruction,
+        target_phrase="red block",
+        destination_phrase="green region",
+        target_label="red block",
+    )
+    state.adapter = module.MolmoGroundedPlannerAdapter(
+        point_provider=Points(),
+        cloud=cloud,
+        task=descriptor,
+        post_cloud_observation_supplier=capture,
+    )
+    state.request = request
+    state.original_json = request.model_dump_json()
+    state.cloud = cloud
+    return state
+
+
+def test_slow_cloud_uses_independently_grounded_fresh_frame_and_existing_pipeline(monkeypatch):
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    state = refresh_fixture(monkeypatch)
+    response = PlanningPipeline(planner=state.adapter).process(state.request)
+    assert response.outcome == "PLANNED" and response.contract is not None
+    assert response.validation.passed and not response.attempts[0].repaired
+    assert len(state.calls) == len(state.captures) == 1
+    assert len(state.queries) == 4
+    fresh = state.captures[0]
+    evidence = response.attempts[0].draft.observation_evidence
+    assert evidence["checksum_sha256"] == fresh.checksum_sha256
+    assert evidence["captured_at"] == fresh.captured_at.isoformat()
+    assert (
+        evidence["cloud_reference"]["checksum_sha256"] == state.request.observation.checksum_sha256
+    )
+    assert evidence["post_cloud_revalidation"]["status"] == "PASSED"
+    assert (
+        len(evidence["native_results"]) == len(evidence["cloud_reference"]["native_results"]) == 2
+    )
+    assert evidence["perception_model_image_count"] == 2
+    assert evidence["cloud_model_image_count"] == 0
+    assert (
+        state.bindings
+        == [state.request.observation.checksum_sha256] * 2 + [fresh.checksum_sha256] * 2
+    )
+    assert evidence["grounded_target"] == fresh.world_point((12, 26)).model_dump()
+    assert evidence["grounded_target"] != evidence["cloud_reference"]["grounded_target"]
+    assert response.attempts[0].draft.observed_scene.updated_at == fresh.captured_at
+    assert response.contract.issued_at >= fresh.captured_at
+    assert state.request.model_dump_json() == state.original_json
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "not-json",
+        '{"skills":[],"skills":["HOME"]}',
+        '{"skills":[],"reason":NaN}',
+        json.dumps({"skills": ["FLY"]}),
+        json.dumps({"skills": SKILLS, "issued_at": "override"}),
+        json.dumps({"skills": []}),
+        json.dumps({"skills": ["GRASP"]}),
+        json.dumps({"skills": list(reversed(SKILLS))}),
+    ],
+)
+def test_invalid_or_empty_cloud_skills_never_trigger_new_capture(monkeypatch, content):
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    state = refresh_fixture(monkeypatch, content=content)
+    response = PlanningPipeline(planner=state.adapter).process(state.request)
+    assert response.contract is None and response.outcome != "PLANNED"
+    assert len(state.calls) == 1 and len(state.queries) == 2 and state.captures == []
+
+
+@pytest.mark.parametrize(
+    "variant", ["same_id", "old_time", "pre_cloud", "episode", "checksum", "type", "exception"]
+)
+def test_supplier_binding_or_acquisition_failure_never_reuses_old_geometry(monkeypatch, variant):
+    from datetime import timedelta
+
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+    from tests.test_molmo_revalidation import rebuild
+
+    def change(fresh, state):
+        reference = state.request.observation
+        if variant == "same_id":
+            return rebuild(fresh, frame_id=reference.frame_id)
+        if variant == "old_time":
+            return rebuild(fresh, captured_at=reference.captured_at)
+        if variant == "pre_cloud":
+            return rebuild(fresh, captured_at=reference.captured_at + timedelta(seconds=1))
+        if variant == "episode":
+            return rebuild(fresh, episode_id="new-episode")
+        if variant == "checksum":
+            return fresh.model_copy(update={"checksum_sha256": reference.checksum_sha256})
+        if variant == "type":
+            return object()
+        raise RuntimeError("fixture capture unavailable")
+
+    state = refresh_fixture(monkeypatch, fresh_transform=change)
+    response = PlanningPipeline(planner=state.adapter).process(state.request)
+    assert response.contract is None and response.outcome != "PLANNED"
+    assert len(state.calls) == 1 and len(state.queries) == 2
+    assert len(state.captures) <= 1
+    terminal = response.attempts[0].draft.observation_evidence["post_cloud_revalidation"]
+    assert terminal["status"] == "REJECTED"
+    assert terminal["reason"] == response.reason
+
+
+@pytest.mark.parametrize("stage", ["cloud", "supplier"])
+@pytest.mark.parametrize(
+    "field", ["request", "task", "provider", "supplier", "cloud", "settings", "profile"]
+)
+def test_inflight_binding_drift_is_closed_before_further_perception(monkeypatch, stage, field):
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    def mutate(state, current):
+        if current != stage:
+            return
+        adapter = state.adapter
+        if field == "request":
+            state.request.capabilities.supported_skills.append("FLY")
+        elif field == "task":
+            adapter.task = adapter.task.model_copy(update={"target_phrase": "blue block"})
+        elif field == "provider":
+            adapter.point_provider = object()
+        elif field == "supplier":
+            adapter.post_cloud_observation_supplier = lambda: state.request.observation
+        elif field == "cloud":
+            adapter.cloud = object()
+        elif field == "profile":
+            adapter.cloud.role_snapshot = object()
+        else:
+            adapter.cloud.timeout_s = 31
+
+    state = refresh_fixture(monkeypatch, drift=mutate)
+    response = PlanningPipeline(planner=state.adapter).process(state.request)
+    assert response.contract is None and response.outcome != "PLANNED"
+    assert len(state.calls) == 1 and len(state.queries) == 2
+    assert len(state.captures) == (1 if stage == "supplier" else 0)
+
+
+@pytest.mark.parametrize(
+    "damage", ["missing", "decoy", "depth", "depth_spike", "wrong_color", "occluded"]
+)
+def test_fresh_scene_or_depth_change_does_not_create_a_contract(monkeypatch, damage):
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    def change(fresh, state):
+        return scene(
+            "fresh-damaged",
+            started=state.clock,
+            source="mujoco_camera",
+            scene_id="S01_TEST_STATIC",
+            damage=damage,
+        )
+
+    state = refresh_fixture(monkeypatch, fresh_transform=change)
+    response = PlanningPipeline(planner=state.adapter).process(state.request)
+    assert response.contract is None and response.outcome != "PLANNED"
+    assert len(state.calls) == len(state.captures) == 1
+    assert len(state.queries) == 2
+
+
+@pytest.mark.parametrize("query", [3, 4])
+def test_fresh_ttl_expiration_during_either_query_rejects_contract(monkeypatch, query):
+    from datetime import timedelta
+
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    def expire(state, index):
+        if index == query:
+            state.clock += timedelta(seconds=6)
+
+    state = refresh_fixture(monkeypatch, point_hook=expire)
+    response = PlanningPipeline(planner=state.adapter).process(state.request)
+    assert response.outcome == "REQUEST_MORE_OBSERVATION" and response.contract is None
+    assert len(state.calls) == len(state.captures) == 1 and len(state.queries) == query
+    terminal = response.attempts[0].draft.observation_evidence["post_cloud_revalidation"]
+    assert terminal["status"] == "REJECTED"
+    assert terminal["reason"] == response.reason
+
+
+def test_expiration_after_candidate_construction_cannot_return_a_stale_draft(monkeypatch):
+    from datetime import timedelta
+
+    import cloud_edge_robot_arm.vision.grounded_planner as module
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    state = refresh_fixture(monkeypatch)
+    original = module.build_grounded_contract
+
+    def delayed(*args, **kwargs):
+        draft = original(*args, **kwargs)
+        state.clock += timedelta(seconds=6)
+        return draft
+
+    monkeypatch.setattr(module, "build_grounded_contract", delayed)
+    response = PlanningPipeline(planner=state.adapter).process(state.request)
+    assert response.outcome == "REQUEST_MORE_OBSERVATION" and response.contract is None
+    assert len(state.calls) == len(state.captures) == 1 and len(state.queries) == 4
+    terminal = response.attempts[0].draft.observation_evidence["post_cloud_revalidation"]
+    assert terminal["status"] == "REJECTED"
+    assert terminal["reason"] == response.reason
+
+
+@pytest.mark.parametrize("which", [3, 4])
+def test_fresh_tracker_support_mask_must_match_its_reference_role(monkeypatch, which):
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+    from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker
+
+    state = refresh_fixture(monkeypatch)
+    original = OpenCVTargetTracker._geometry
+    calls = []
+
+    def changed(self, *args, **kwargs):
+        geometry, reason = original(self, *args, **kwargs)
+        calls.append(1)
+        if len(calls) == which and geometry is not None:
+            geometry["mask"] = geometry["mask"].copy()
+            geometry["mask"][0, 0] = not geometry["mask"][0, 0]
+        return geometry, reason
+
+    monkeypatch.setattr(OpenCVTargetTracker, "_geometry", changed)
+    response = PlanningPipeline(planner=state.adapter).process(state.request)
+    assert response.contract is None and response.outcome != "PLANNED"
+    assert len(state.calls) == len(state.captures) == 1 and len(state.queries) == 4
+    terminal = response.attempts[0].draft.observation_evidence["post_cloud_revalidation"]
+    assert terminal["status"] == "REJECTED"
+    assert terminal["reason"] == response.reason
+
+
+def test_fresh_native_failure_keeps_terminal_rejection_and_original_error(monkeypatch):
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    state = refresh_fixture(monkeypatch)
+    original = state.adapter.point_provider.point
+
+    def unavailable(observation, phrase):
+        if len(state.queries) >= 2:
+            raise RuntimeError("fresh fixture generation failure")
+        return original(observation, phrase)
+
+    monkeypatch.setattr(state.adapter.point_provider, "point", unavailable)
+    response = PlanningPipeline(planner=state.adapter).process(state.request)
+    assert response.contract is None and response.outcome == "PLANNER_FAILED"
+    draft = response.attempts[0].draft
+    assert draft.parse_error == "native perception failed: RuntimeError"
+    assert draft.observation_evidence["post_cloud_revalidation"]["status"] == "REJECTED"
+    assert len(state.calls) == len(state.captures) == 1
