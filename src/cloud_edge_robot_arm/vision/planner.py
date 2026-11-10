@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -581,114 +582,31 @@ class RGBDPlannerAdapter:
                 image_size=image_size,
                 coordinate_system=coordinate_system,
             )
-            target = observation.world_point(target_pixel)
-            destination = observation.world_point(destination_pixel)
         except ValueError as exc:
             return self._more_observation(raw, str(exc), evidence)
         evidence["model_pixel_target"] = list(decision.target_pixel)
         evidence["model_pixel_destination"] = list(decision.destination_pixel)
-        evidence["original_pixel_target"] = list(target_pixel)
-        evidence["original_pixel_destination"] = list(destination_pixel)
-        evidence["target_visible_surface"] = target.model_dump()
         try:
-            relief = _target_relief_above_local_support(observation, target_pixel)
-        except ValueError as exc:
-            return self._more_observation(raw, str(exc), evidence)
-        if relief is None:
-            evidence["target_relief_status"] = "NOT_MEASURED_SMALL_FRAME"
-            evidence["top_grasp_offset_from_surface_m"] = None
-            evidence["top_grasp_offset_status"] = "REQUIRES_OBJECT_AND_TOOL_GEOMETRY"
-        else:
-            evidence["target_relief_above_support_m"] = round(relief[0], 6)
-            evidence["local_support_height_m"] = round(relief[1], 6)
-            if relief[0] < 0.01:
-                return self._more_observation(
-                    raw, "selected target pixel is not a raised visible top surface", evidence
-                )
-            try:
-                evidence.update(resolve_top_grasp(observation, target_pixel, relief[1]))
-                evidence["grasp_calibration_asset_sha256"] = calibration_asset_sha256(grasp_profile)
-            except ValueError as exc:
-                return self._more_observation(raw, str(exc), evidence)
-        evidence["grounding_semantics"] = "VISIBLE_SURFACE_NOT_OBJECT_CENTER"
-        evidence["reported_confidence_semantics"] = "MODEL_SELF_REPORT_NOT_SUCCESS_PROBABILITY"
-        required: list[SkillIntent] = [
-            "MOVE_ABOVE",
-            "APPROACH",
-            "GRASP",
-            "LIFT",
-            "MOVE_TO_REGION",
-            "PLACE",
-            "RELEASE",
-            "RETREAT",
-        ]
-        order = decision.skills
-        core = order[1:] if order and order[0] == "HOME" else order[:]
-        if core and core[-1] == "HOME":
-            core = core[:-1]
-        if core != required:
-            return PlannerDraft(
-                raw_text=raw,
-                parse_error="visual skill sequence is incomplete or out of order",
-                observation_evidence=evidence,
+            grounded = ground_observation(
+                request,
+                observation,
+                target_pixel=target_pixel,
+                destination_pixel=destination_pixel,
+                target_label=decision.target_label,
+                grasp_profile=grasp_profile,
+                evidence=evidence,
             )
-        scene = SceneSummary(
-            scene_version=request.scene.scene_version,
-            updated_at=observation.captured_at,
-            objects=[
-                SceneObjectSummary(
-                    object_id="visual_target",
-                    object_class=decision.target_label,
-                    pose=None,
-                    pose_confidence=0.0,
-                )
-            ],
-            regions=[TargetRegionSummary(region_id="visual_destination", center=destination)],
-            scene_confidence=0.5,
+        except _GroundingError as exc:
+            return self._more_observation(raw, str(exc), exc.evidence)
+        grounded.evidence["reported_confidence_semantics"] = (
+            "MODEL_SELF_REPORT_NOT_SUCCESS_PROBABILITY"
         )
-        templates = {
-            s["skill"]: s for s in _build_pick_place_steps("visual_target", "visual_destination")
-        }
-        steps = [
-            dict(copy.deepcopy(templates[skill]), step_id=f"step-{i:02d}")
-            for i, skill in enumerate(order, 1)
-        ]
-        contract = {
-            "task_id": "",
-            "plan_version": 0,
-            "command_seq": 0,
-            "timestamp": "",
-            "issued_at": "",
-            "valid_until": "",
-            "control_mode": request.control_mode,
-            "user_instruction": request.user_instruction,
-            "scene_version": scene.scene_version,
-            "expected_scene_version": scene.scene_version,
-            "task_target": {
-                "object_id": "visual_target",
-                "object_class": decision.target_label,
-                "target_region_id": "visual_destination",
-            },
-            "current_step_id": None,
-            "steps": steps,
-            "safety_constraints": _build_safety_constraints(request),
-            "failure_policy": {
-                "local_retry_limit": 2,
-                "on_timeout": "REQUEST_CLOUD_REPLAN",
-                "on_safety_rejection": "PAUSE_AND_REPORT",
-                "on_network_loss": "SAFE_STOP",
-            },
-            "completion_criteria": [
-                "object_inside_target_region",
-                "gripper_released",
-                "robot_in_safe_pose",
-            ],
-        }
-        evidence["grounded_target"] = target.model_dump()
-        evidence["grounded_destination"] = destination.model_dump()
-        return PlannerDraft(
-            raw_text=raw, parsed_json=contract, observed_scene=scene, observation_evidence=evidence
-        )
+        try:
+            return build_grounded_contract(request, grounded, decision.skills, raw_text=raw)
+        except ValueError as exc:
+            return PlannerDraft(
+                raw_text=raw, parse_error=str(exc), observation_evidence=grounded.evidence
+            )
 
     @staticmethod
     def _more_observation(raw: str, reason: str, evidence: dict[str, Any]) -> PlannerDraft:
@@ -697,3 +615,150 @@ class RGBDPlannerAdapter:
             parsed_json={"_sentinel": "REQUEST_MORE_OBSERVATION", "_reason": reason},
             observation_evidence=evidence,
         )
+
+
+@dataclass(frozen=True)
+class GroundedScene:
+    """独立几何结果；每次请求拥有自己的场景和证据副本。"""
+
+    scene: SceneSummary
+    evidence: dict[str, Any]
+
+
+class _GroundingError(ValueError):
+    def __init__(self, message: str, evidence: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.evidence = evidence
+
+
+def ground_observation(
+    request: InitialPlanningRequest,
+    observation: RGBDObservation,
+    *,
+    target_pixel: tuple[int, int],
+    destination_pixel: tuple[int, int],
+    target_label: str,
+    grasp_profile: str,
+    evidence: dict[str, Any],
+) -> GroundedScene:
+    """只用原图像素和米制深度落地几何；不要求或虚构模型置信度。"""
+    result = copy.deepcopy(evidence)
+    try:
+        if min(observation.width, observation.height) >= 64 and (
+            calibration_asset_sha256(grasp_profile) is None or observation.source != "mujoco_camera"
+        ):
+            result["top_grasp_offset_from_surface_m"] = None
+            result["top_grasp_offset_status"] = "NOT_CONFIGURED"
+            raise ValueError("top grasp requires a trusted MuJoCo upright-box calibration profile")
+        for pixel in (target_pixel, destination_pixel):
+            if len(pixel) != 2 or any(type(v) is not int for v in pixel):
+                raise ValueError("original pixels must contain two integers")
+        target = observation.world_point(target_pixel)
+        destination = observation.world_point(destination_pixel)
+        result["original_pixel_target"] = list(target_pixel)
+        result["original_pixel_destination"] = list(destination_pixel)
+        result["target_visible_surface"] = target.model_dump()
+        relief = _target_relief_above_local_support(observation, target_pixel)
+        if relief is None:
+            result["target_relief_status"] = "NOT_MEASURED_SMALL_FRAME"
+            result["top_grasp_offset_from_surface_m"] = None
+            result["top_grasp_offset_status"] = "REQUIRES_OBJECT_AND_TOOL_GEOMETRY"
+        else:
+            result["target_relief_above_support_m"] = round(relief[0], 6)
+            result["local_support_height_m"] = round(relief[1], 6)
+            if relief[0] < 0.01:
+                raise ValueError("selected target pixel is not a raised visible top surface")
+            result.update(resolve_top_grasp(observation, target_pixel, relief[1]))
+            result["grasp_calibration_asset_sha256"] = calibration_asset_sha256(grasp_profile)
+        result["grounding_semantics"] = "VISIBLE_SURFACE_NOT_OBJECT_CENTER"
+        result["grounded_target"] = target.model_dump()
+        result["grounded_destination"] = destination.model_dump()
+        # 以下两个值沿用旧场景 schema，占位而非模型概率；姿态中心未从单像素推断。
+        scene = SceneSummary(
+            scene_version=request.scene.scene_version,
+            updated_at=observation.captured_at,
+            objects=[
+                SceneObjectSummary(
+                    object_id="visual_target",
+                    object_class=target_label,
+                    pose=None,
+                    pose_confidence=0.0,
+                )
+            ],
+            regions=[TargetRegionSummary(region_id="visual_destination", center=destination)],
+            scene_confidence=0.5,
+        )
+        return GroundedScene(scene, result)
+    except ValueError as exc:
+        raise _GroundingError(str(exc), result) from exc
+
+
+def build_grounded_contract(
+    request: InitialPlanningRequest,
+    grounded: GroundedScene,
+    skills: list[SkillIntent],
+    *,
+    raw_text: str,
+) -> PlannerDraft:
+    """验证白名单技能顺序并构造候选；可信版本和时间仍由原管线填写。"""
+    required: list[SkillIntent] = [
+        "MOVE_ABOVE",
+        "APPROACH",
+        "GRASP",
+        "LIFT",
+        "MOVE_TO_REGION",
+        "PLACE",
+        "RELEASE",
+        "RETREAT",
+    ]
+    order = list(skills)
+    core = order[1:] if order and order[0] == "HOME" else order[:]
+    if core and core[-1] == "HOME":
+        core = core[:-1]
+    if core != required:
+        raise ValueError("visual skill sequence is incomplete or out of order")
+    scene = grounded.scene.model_copy(deep=True)
+    templates = {
+        s["skill"]: s for s in _build_pick_place_steps("visual_target", "visual_destination")
+    }
+    steps = [
+        dict(copy.deepcopy(templates[skill]), step_id=f"step-{i:02d}")
+        for i, skill in enumerate(order, 1)
+    ]
+    contract = {
+        "task_id": "",
+        "plan_version": 0,
+        "command_seq": 0,
+        "timestamp": "",
+        "issued_at": "",
+        "valid_until": "",
+        "control_mode": request.control_mode,
+        "user_instruction": request.user_instruction,
+        "scene_version": scene.scene_version,
+        "expected_scene_version": scene.scene_version,
+        "task_target": {
+            "object_id": "visual_target",
+            "object_class": scene.objects[0].object_class,
+            "target_region_id": "visual_destination",
+        },
+        "current_step_id": None,
+        "steps": steps,
+        "safety_constraints": _build_safety_constraints(request),
+        "failure_policy": {
+            "local_retry_limit": 2,
+            "on_timeout": "REQUEST_CLOUD_REPLAN",
+            "on_safety_rejection": "PAUSE_AND_REPORT",
+            "on_network_loss": "SAFE_STOP",
+        },
+        "completion_criteria": [
+            "object_inside_target_region",
+            "gripper_released",
+            "robot_in_safe_pose",
+        ],
+    }
+    return PlannerDraft(
+        raw_text=raw_text,
+        parsed_json=contract,
+        observed_scene=scene,
+        observation_evidence=copy.deepcopy(grounded.evidence),
+    )

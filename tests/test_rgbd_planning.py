@@ -502,9 +502,14 @@ def test_visible_top_surface_must_rise_above_local_support(
 
     monkeypatch.setattr(RGBDPlannerAdapter, "_post", staticmethod(fake_post))
     snapshot = ModelConfigSnapshot(
-        provider="ollama", model="qwen3.5:4b", endpoint="http://127.0.0.1:11434",
-        weight_digest="", quantization="UNKNOWN", image_size=(64, 64),
-        generation_parameters={"temperature": 0}, timeout_s=60,
+        provider="ollama",
+        model="qwen3.5:4b",
+        endpoint="http://127.0.0.1:11434",
+        weight_digest="",
+        quantization="UNKNOWN",
+        image_size=(64, 64),
+        generation_parameters={"temperature": 0},
+        timeout_s=60,
         grasp_profile="mujoco_upright_box_v1",
     )
     draft = RGBDPlannerAdapter(model_snapshot=snapshot).plan(
@@ -531,3 +536,53 @@ def test_visible_top_surface_must_rise_above_local_support(
             draft.parsed_json and draft.parsed_json.get("_sentinel") == "REQUEST_MORE_OBSERVATION"
         )
         assert draft.observed_scene is None
+
+
+def test_legacy_response_matches_shared_grounding() -> None:
+    from cloud_edge_robot_arm.vision.planner import (
+        RGBDPlannerAdapter,
+        build_grounded_contract,
+        ground_observation,
+    )
+    from tests.test_molmo_grounded_planner import SKILLS, request_scene
+
+    request = request_scene()
+    observation = request.observation
+    assert observation is not None
+    raw = json.dumps(
+        {
+            "target_pixel": [12, 26],
+            "destination_pixel": [52, 27],
+            "target_label": "red block",
+            "reported_confidence": 0.9,
+            "skills": SKILLS,
+        }
+    )
+    draft = RGBDPlannerAdapter()._ground_response(
+        request,
+        {"message": {"content": raw}},
+        0,
+        observation,
+        [],
+        None,
+        "pixel",
+        "mujoco_upright_box_v2",
+    )
+    shared = ground_observation(
+        request,
+        observation,
+        target_pixel=(12, 26),
+        destination_pixel=(52, 27),
+        target_label="red block",
+        grasp_profile="mujoco_upright_box_v2",
+        evidence={},
+    )
+    expected = build_grounded_contract(request, shared, SKILLS, raw_text=raw)
+    assert draft.parsed_json == expected.parsed_json
+    assert draft.observation_evidence["reported_confidence_semantics"] == (
+        "MODEL_SELF_REPORT_NOT_SUCCESS_PROBABILITY"
+    )
+    assert (
+        draft.observation_evidence["grounded_target"]
+        == expected.observation_evidence["grounded_target"]
+    )
