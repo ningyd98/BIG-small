@@ -1,0 +1,107 @@
+{
+  "schema_version": "astra.round-plan.v1",
+  "round": "round546-grounded-observer-binding-20261110",
+  "planner_model": "gpt-6-astra",
+  "planner_kind": "actual_model_subagent",
+  "created_at": "2026-11-10T00:43:13.887451+00:00",
+  "request_sha256": "89e5695aaaa46c8dc0576bb2e058c109559aa1d83e5559aa13e756931f62977f",
+  "inputs": [
+    {
+      "path": "scripts/probe_molmo_grounded_planner.py",
+      "sha256": "16e551fe9c145e4f6acc962c0252b363106ec1af47afe9f0047dda3315992bb3",
+      "bytes": 20674
+    },
+    {
+      "path": "tests/test_molmo_grounded_cli.py",
+      "sha256": "5ef1b9cd3ceccc7ae5bc3a81205aae57fb874ea0a7b03bcca5266e548191cd2b",
+      "bytes": 13580
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round546-grounded-observer-binding-20261110/original-ruff.stdout",
+      "sha256": "adf1c96e72cd3a4e6b10ad17e7148a306072b29be0966134d7f0f42141215744",
+      "bytes": 2710
+    }
+  ],
+  "constraint_inputs": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round544-molmo-integration-review-fixes-20261110/plan.md",
+      "bytes": 14404,
+      "sha256": "f268088c71ca4efbd67fe6c6916f97ec82d625887b7423303fcc44d3cc3e3f70"
+    }
+  ],
+  "input_verification": "2_SOURCE_AND_1_FAILURE_HASHES_MATCH",
+  "problem": "Final scoped Ruff found B023 closure late-binding of per-attempt index/counters in cloud observer, plus two I001 test import blocks after R544 repair. No additional actual-model calls have run. Need bounded real Astra plan before repair.",
+  "original_failure_exit": 1,
+  "root_cause": "loop closure late binds index and observer_counts; import blocks violate I001",
+  "scope": [
+    "scripts/probe_molmo_grounded_planner.py",
+    "tests/test_molmo_grounded_cli.py"
+  ],
+  "allowed_changes": [
+    "capture iteration index/counter dict as keyword-only observer defaults",
+    "replace three late-bound body references",
+    "sort two reported test import blocks",
+    "add deterministic two-attempt delayed-callback CPU regression"
+  ],
+  "regression_required": true,
+  "regression": "test_cloud_observers_keep_attempt_binding_when_callbacks_are_delayed",
+  "expected_red": "retained attempt1 observer writes delayed bytes under attempt2 paths/counters",
+  "verification": [
+    "focused RED/GREEN",
+    "R544 three-module tests plus R542 planning/top-grasp/roles regression",
+    "Ruff changed files and R544 scope",
+    "git diff --check",
+    "raw exact bytes and five manifest hashes",
+    "shared paid starts equals3 in CPU fixture"
+  ],
+  "runtime_preconditions": [
+    "existing original app .venv interpreter",
+    "approved managed-worktree writes",
+    "host loopback if required",
+    "all actual model/cloud/resource calls mocked",
+    "independent app stdin imports set PYTHONPATH=/home/ningyd/.codex/worktrees/molmo-opencv-integration/BIGsmall/src; native uses R545 launcher only; pytest paths already configured"
+  ],
+  "native_budget": {
+    "load_starts": 0,
+    "generation_starts": 0,
+    "cap_load_starts": 1,
+    "cap_generation_starts": 8
+  },
+  "actual_calls_this_round": {
+    "model": 0,
+    "cloud": 0,
+    "hardware": 0
+  },
+  "acceptance": {
+    "software": "per-attempt observer isolation, provenance and lint checks",
+    "real_local": "NOT_PERFORMED",
+    "real_cloud": "NOT_PERFORMED",
+    "physical": "NOT_PERFORMED",
+    "formal_research": "NOT_PERFORMED"
+  },
+  "replan_on": [
+    "input drift",
+    "new lint root",
+    "unplanned regression",
+    "broader lifecycle/transport changes"
+  ],
+  "additional_review_required": false,
+  "subagents_authorized": false,
+  "unresolved_design_decisions": [],
+  "plan_markdown_sha256": "caf0c77b8644457f26b26fafcb58e4760fbbf2dfc54ffb86a7cc2b0799934533",
+  "command_invocation_issue": {
+    "source": "parent report",
+    "error": "ModuleNotFoundError cloud_edge_robot_arm.vision.grounded_planner",
+    "cause": "app stdin command omitted managed/src PYTHONPATH and selected original installed checkout",
+    "authorized_correction": "set command-local PYTHONPATH for app stdin only",
+    "source_change": false,
+    "model_loads": 0,
+    "template_created": false,
+    "independent_pytest_parent_report": "249 PASS"
+  }
+}

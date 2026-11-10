@@ -1,0 +1,8 @@
+# SDD ledger — plan: artifacts/research/process/20261004-ced-development/astra-rounds/round542-molmo-opencv-grounded-planner-20261110/plan.md
+
+Pre-flight: Task1 results -> Task2 pixels -> Task3 factory -> Task4 CLI; exact interfaces match.
+Task1 complete; commit 3a96a539344e984b064dd990b9fc708a19f47417; pytest33/33.
+Task 1: complete (commits 025c538..3a96a53, tests: /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -m pytest tests/test_molmo_pointing.py -q -p no:cacheprovider → 33 passed in 0.26s)
+Task 2: complete (commits 3a96a53..cabbeac, tests: /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -m pytest tests/test_rgbd_planning.py tests/test_rgbd_top_grasp.py tests/test_rgbd_role_models.py tests/test_molmo_grounded_planner.py -q -p no:cacheprovider → 137 passed, 1 warning in 3.78s)
+Task 3: complete (commits cabbeac..31b2ee9, tests: /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -m pytest tests/test_molmo_grounded_planner.py tests/test_molmo_pointing.py tests/test_rgbd_planning.py tests/test_rgbd_top_grasp.py tests/test_rgbd_role_models.py -q -p no:cacheprovider → 213 passed, 1 warning in 3.86s)
+Task 4: complete (commits 31b2ee9..5110348, tests: /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -m pytest tests/test_molmo_point_association.py tests/test_molmo_grounded_planner.py tests/test_molmo_pointing.py tests/test_molmo_grounded_cli.py tests/test_rgbd_planning.py tests/test_rgbd_top_grasp.py tests/test_rgbd_role_models.py tests/test_opencv_target_evidence.py artifacts/research/process/20261004-ced-development/astra-rounds/round545-molmo-opencv-runtime-overlay-20261110/implementation/test_runtime_overlay.py -q -p no:cacheprovider → 322 passed, 1 warning in 6.24s)
