@@ -82,6 +82,16 @@ native 默认仅验证真实本地识别/几何，云端保持 NOT_PERFORMED；�
 
 `--mode replay --replay-points points.json --replay-cloud cloud.json` 使用绑定到 observation/RGB/query/task SHA 的本地夹具，始终标为 REPLAY/API_FIXTURE，实际模型与付费调用数为0。回放保留真实采集时间，过期结果仍拒绝。
 
+## 云端返回后的同会话新帧复核
+
+显式增加 `--post-cloud-revalidate` 可验证云端延迟超过初始观测寿命的情况。该开关要求 `--mode native --capture-fresh --allow-paid`、恰好一对请求/任务描述，以及 `--generation-limit 4` 或更高；本轮真实验证仍严格限定一次加载、四次生成启动、一次付费请求，不重试。默认不开启时，继续按原采集时间执行 5 秒寿命和 50 毫秒未来容差检查。
+
+入口在模型加载后开启一个 `MuJoCoCaptureSession`，第一次采集后进行两次 RGB 定位和现有云端技能规划。只有云端回复通过严格 JSON、非空技能及原有顺序校验，才在同一暂停会话调用一次新的 `capture()`；两帧之间不重置场景、不执行物理步进。第二帧重新执行两次原生定位、OpenCV、原始深度几何和跟踪检查，合同只使用第二帧的观测、几何与原管线生成的可信字段。原请求对象和初始证据不被重写。
+
+复核策略 `paused_mujoco_rgb_depth_v1` 要求相同场景、会话、校准、内参/变换、深度约定、尺寸与仿真时间；新观测必须有新的 ID、checksum 和云端返回后实际采集时间。RGB SHA、有效深度掩码，以及重新计算的目标和放置区支撑掩码 SHA 必须相同。全部有效像素的原始米制深度差要求最大绝对值 ≤0.010 m、RMS ≤0.002 m、绝对有符号均值 ≤0.00025 m。阈值用于同一暂停 MuJoCo 场景的工程异常筛查，不是传感器误差界、物体身份或物理稳定性证明。每次新定位及合同生成后仍检查新帧 5 秒寿命；任一绑定、策略或新几何检查失败均要求重新观测，不沿用旧几何。
+
+原始两帧分别保存于 `raw/capture-01` 和 `raw/refresh-01`，含 RGB、原始 float32 深度、valid mask 和请求诊断快照；后者快照包含新帧，仅用于审计，不替换原 API 请求。`report.json` 区分 `initial_observation_checksum`、成功合同时的 `final_observation_checksum`、补帧启动/完成数与复核状态。最终证据顶层只包含新帧的两次 `native_results`，`cloud_reference` 保留初始两次定位及几何，成功路径总计两帧、四次定位、零张云端图像。元数据一致性本身不能证明不可信调用方实际重新采集；CLI 的受控 `capture()` 调用记录承担采集边界证据。
+
 ## 证据与验收
 
 `report.json` 分开记录模式、加载/生成启动及完成数、API 夹具、付费请求启动、几何状态和规划管线结果；成功或异常结束均生成 `raw-manifest.local.json`，对实际保留的输入、原生 token/响应与云端请求/响应正文逐文件记录 SHA256；raw 与清单仅保存在本地。云端正文记录不含认证头。每次真实调用的原始证据不可用派生摘要替代。

@@ -15,7 +15,9 @@ import subprocess
 import sys
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +27,8 @@ if __package__ in {None, ""}:
 
 from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest
 from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
 from cloud_edge_robot_arm.vision.grounded_planner import (
     GroundingTaskDescriptor,
     MolmoGroundedPlannerAdapter,
@@ -222,6 +226,15 @@ def _fresh_capture() -> Any:
     return capture_simulated_observation()
 
 
+def _save_capture(folder: Path, request: InitialPlanningRequest, observation: Any) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    snapshot = request.model_copy(update={"observation": observation})
+    _write(folder / "request.json", snapshot.model_dump(mode="json"))
+    _write_bytes(folder / "rgb.png", base64.b64decode(observation.rgb_png_base64))
+    _write_bytes(folder / "depth.f32", base64.b64decode(observation.depth_float32_base64))
+    _write_bytes(folder / "valid_mask.u8", observation.valid_mask_bytes())
+
+
 def main(argv: list[str] | None = None) -> int:
     """执行可审计诊断；--allow-paid 只能在另行授权的实际云端验证中使用。"""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -239,6 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--gpu-lock", type=Path)
     parser.add_argument("--capture-fresh", action="store_true")
     parser.add_argument("--allow-paid", action="store_true")
+    parser.add_argument("--post-cloud-revalidate", action="store_true")
     args = parser.parse_args(argv)
     report: dict[str, Any] = {
         "status": "NOT_STARTED",
@@ -247,6 +261,9 @@ def main(argv: list[str] | None = None) -> int:
         "generation_calls_started": 0,
         "generation_calls_completed": 0,
         "paid_cloud_calls_started": 0,
+        "post_cloud_revalidation_enabled": args.post_cloud_revalidate,
+        "refresh_capture_calls_started": 0,
+        "refresh_capture_calls_completed": 0,
         "api_fixture_calls": 0,
         "hardware_dispatch": False,
         "real_cloud_status": "NOT_PERFORMED",
@@ -284,6 +301,16 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("paid flag is only valid for explicitly authorized native mode")
         if args.capture_fresh and args.mode != "native":
             raise ValueError("fresh sensor acquisition requires native mode")
+        if args.post_cloud_revalidate and (
+            args.mode != "native"
+            or not args.capture_fresh
+            or not args.allow_paid
+            or len(pairs) != 1
+            or args.generation_limit < 4
+        ):
+            raise ValueError(
+                "post-cloud revalidation requires native fresh paid single-pair budget>=4"
+            )
         if args.mode == "native" and (
             not args.model_directory
             or not args.model_directory.is_dir()
@@ -313,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
             _write_bytes(args.output / "raw/inputs" / name, raw_input)
         if args.mode != "dry-run":
             with ExitStack() as stack:
+                capture_session = None
                 if args.mode == "native":
                     report["resource_admission"] = stack.enter_context(
                         _admit_resources(args.model_directory, args.gpu_lock)
@@ -342,22 +370,70 @@ def main(argv: list[str] | None = None) -> int:
                         raw_directory=args.output / "raw/native",
                         generation_limit=args.generation_limit,
                     )
+                    if args.post_cloud_revalidate:
+                        capture_session = stack.enter_context(
+                            MuJoCoCaptureSession(
+                                SimulatorConfig(render_rgb=True, render_depth=True)
+                            )
+                        )
                 for index, (request, task) in enumerate(pairs, 1):
                     if args.capture_fresh:
-                        observation = _fresh_capture()
-                        request = request.model_copy(update={"observation": observation})
-                        folder = args.output / "raw" / f"capture-{index:02}"
-                        folder.mkdir(parents=True)
-                        _write(folder / "request.json", request.model_dump(mode="json"))
-                        (folder / "rgb.png").write_bytes(
-                            base64.b64decode(observation.rgb_png_base64)
+                        observation = (
+                            capture_session.capture()
+                            if capture_session is not None
+                            else _fresh_capture()
                         )
-                        (folder / "depth.f32").write_bytes(
-                            base64.b64decode(observation.depth_float32_base64)
+                        request = request.model_copy(update={"observation": observation})
+                        _save_capture(
+                            args.output / "raw" / f"capture-{index:02}", request, observation
                         )
                     if adapters:
                         adapter = adapters[index - 1]
                         adapter.point_provider = provider
+                        if args.post_cloud_revalidate:
+                            if capture_session is None:
+                                raise ValueError("post-cloud capture session unavailable")
+
+                            def refresh_capture(
+                                *,
+                                session: Any = capture_session,
+                                original: InitialPlanningRequest = request,
+                                attempt: int = index,
+                            ) -> Any:
+                                if report["refresh_capture_calls_started"] >= 1:
+                                    raise RuntimeError("post-cloud capture allocation exhausted")
+                                report["refresh_capture_calls_started"] += 1
+                                folder = args.output / "raw" / f"refresh-{attempt:02}"
+                                folder.mkdir(parents=True, exist_ok=False)
+                                _write(
+                                    folder / "capture-started.json",
+                                    {
+                                        "utc": datetime.now(UTC).isoformat(),
+                                        "monotonic_s": monotonic(),
+                                        "request_id": original.request_id,
+                                        "capture_role": "POST_CLOUD_REVALIDATION",
+                                    },
+                                )
+                                try:
+                                    fresh = session.capture()
+                                except Exception as exc:
+                                    try:
+                                        _write(
+                                            folder / "capture-failure.json",
+                                            {
+                                                "error_type": type(exc).__name__,
+                                            },
+                                        )
+                                    except OSError as log_error:
+                                        report["capture_failure_log_error_type"] = type(
+                                            log_error
+                                        ).__name__
+                                    raise
+                                report["refresh_capture_calls_completed"] += 1
+                                _save_capture(folder, original, fresh)
+                                return fresh
+
+                            adapter.post_cloud_observation_supplier = refresh_capture
 
                         observer_counts = {"REQUEST": 0, "RESPONSE": 0}
 
@@ -399,6 +475,15 @@ def main(argv: list[str] | None = None) -> int:
                         {
                             "request_id": request.request_id,
                             "observation_checksum": request.observation.checksum_sha256,
+                            "initial_observation_checksum": request.observation.checksum_sha256,
+                            "final_observation_checksum": (
+                                evidence.get("checksum_sha256")
+                                if result.outcome.value == "PLANNED"
+                                else None
+                            ),
+                            "post_cloud_revalidation_status": evidence.get(
+                                "post_cloud_revalidation", {}
+                            ).get("status", "NOT_PERFORMED"),
                             "pipeline_outcome": result.outcome.value,
                             "local_geometry_status": "READY" if ready else "NOT_READY",
                             "parse_error": draft.parse_error if draft else None,
