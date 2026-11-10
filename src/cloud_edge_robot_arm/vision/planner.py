@@ -693,14 +693,8 @@ def ground_observation(
         raise _GroundingError(str(exc), result) from exc
 
 
-def build_grounded_contract(
-    request: InitialPlanningRequest,
-    grounded: GroundedScene,
-    skills: list[SkillIntent],
-    *,
-    raw_text: str,
-) -> PlannerDraft:
-    """验证白名单技能顺序并构造候选；可信版本和时间仍由原管线填写。"""
+def validate_grounded_skill_order(skills: list[SkillIntent]) -> None:
+    """保持原有核心顺序与首尾可选 HOME 规则。"""
     required: list[SkillIntent] = [
         "MOVE_ABOVE",
         "APPROACH",
@@ -717,6 +711,18 @@ def build_grounded_contract(
         core = core[:-1]
     if core != required:
         raise ValueError("visual skill sequence is incomplete or out of order")
+
+
+def build_grounded_contract(
+    request: InitialPlanningRequest,
+    grounded: GroundedScene,
+    skills: list[SkillIntent],
+    *,
+    raw_text: str,
+) -> PlannerDraft:
+    """验证白名单技能顺序并构造候选；可信版本和时间仍由原管线填写。"""
+    validate_grounded_skill_order(skills)
+    order = list(skills)
     scene = grounded.scene.model_copy(deep=True)
     templates = {
         s["skill"]: s for s in _build_pick_place_steps("visual_target", "visual_destination")
