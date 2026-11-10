@@ -92,6 +92,10 @@ native 默认仅验证真实本地识别/几何，云端保持 NOT_PERFORMED；�
 
 原始两帧分别保存于 `raw/capture-01` 和 `raw/refresh-01`，含 RGB、原始 float32 深度、valid mask 和请求诊断快照；后者快照包含新帧，仅用于审计，不替换原 API 请求。`report.json` 区分 `initial_observation_checksum`、成功合同时的 `final_observation_checksum`、补帧启动/完成数与复核状态。最终证据顶层只包含新帧的两次 `native_results`，`cloud_reference` 保留初始两次定位及几何，成功路径总计两帧、四次定位、零张云端图像。元数据一致性本身不能证明不可信调用方实际重新采集；CLI 的受控 `capture()` 调用记录承担采集边界证据。
 
+最终合同构造完成后，原管线还会执行一次该调用专属的私有准入检查；相同请求读取已缓存的 `PLANNED` 时也必须通过。检查保留可信新帧和原请求/任务/规划器/供应器/云端角色与配置绑定，不从可修改的公开 evidence 重建权限。私有回调不进入 Pydantic 的 JSON、schema 或公开字段；序列化回读不能恢复执行资格。相同有效缓存返回原响应；过期、绑定改变、回调丢失或异常则返回新的 `REQUEST_MORE_OBSERVATION` 响应，合同与派发均为空，响应和最后一次验证均失败，并用拒绝结果替换缓存；不重采、不生成、不重复付费。先前已经交给调用方的响应不会被追溯修改，新计划需使用新请求流程。
+
+局部新帧复核确实通过时保留 `post_cloud_revalidation.status=PASSED`，最终出口另记 `final_plan_admission` 的 PASSED/REJECTED、`final_contract`/`cache_hit` 阶段和拒绝原因。缓存有效时保留最初证据与可信时间，不刷新它们。角色来源 SHA 清单包含最终准入所用的 `cloud/planning/models.py` 与 `pipeline.py`，便于与实际代码绑定。
+
 ## 证据与验收
 
 `report.json` 分开记录模式、加载/生成启动及完成数、API 夹具、付费请求启动、几何状态和规划管线结果；成功或异常结束均生成 `raw-manifest.local.json`，对实际保留的输入、原生 token/响应与云端请求/响应正文逐文件记录 SHA256；raw 与清单仅保存在本地。云端正文记录不含认证头。每次真实调用的原始证据不可用派生摘要替代。
