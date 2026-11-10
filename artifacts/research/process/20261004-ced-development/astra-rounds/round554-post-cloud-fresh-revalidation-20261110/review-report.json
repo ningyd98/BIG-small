@@ -1,0 +1,94 @@
+{
+  "base": "ae9cbf0b6bb5330de799004c664749ee462c3329",
+  "head": "9f7e7064e2e5ba204517af95d5832330ad45112d",
+  "scope": "whole three-commit change plus R554/R555/R556 plans and ledger; independent read-only review",
+  "critical": [],
+  "important": [
+    {
+      "id": "R554-REV-1",
+      "severity": "Important",
+      "title": "显式新帧路径没有覆盖最终合同返回及缓存命中的新鲜度/绑定门",
+      "primary_location": "src/cloud_edge_robot_arm/vision/grounded_planner.py:465",
+      "related_locations": [
+        "src/cloud_edge_robot_arm/cloud/planning/pipeline.py:476",
+        "src/cloud_edge_robot_arm/cloud/planning/pipeline.py:728",
+        "src/cloud_edge_robot_arm/cloud/planning/pipeline.py:741",
+        "tests/test_molmo_grounded_planner.py:860"
+      ],
+      "root_cause": "Adapter 最后一次 _fresh 发生在 PlannerDraft 返回前；原管线随后完成可信字段、语义验证和实际合同构造，且 cache hit 直接返回历史响应。冻结原管线的计划未闭合最终返回边界。",
+      "evidence": [
+        "review-evidence/original-output.log",
+        "review-evidence/recheck-stdout.log",
+        "review-evidence/cached-original-output.log"
+      ],
+      "observed": "延迟真正 build_task_contract 后帧龄 6.0s，仍 PLANNED、contract 非空、validation passed、refresh PASSED；同请求缓存命中在帧龄6.0s或 timeout_s 改为31后仍返回同一 PLANNED 对象，未重新执行本地检查。",
+      "impact": "新路径的软件合同接受结果可能携带已过期的新帧，或缓存命中跳过当前绑定验证，不能满足最终有效合同边界。",
+      "minimal_fix": "先由实际 Astra 针对同根因制定下一轮计划；考虑仅对显式 post-cloud 模式提供携带可信新帧与原绑定的最终准入回调/等价机制，在实际合同构造后和缓存 PLANNED 返回前执行。失败返回 contract null，保留原证据，不重采、不生成、不付费重试；不放宽TTL、不改其他规划器默认语义。",
+      "tests_needed": [
+        "真实 PlanningPipeline.build_task_contract 委托后推进时钟超过5s，应拒绝且contract null",
+        "语义验证/可信字段阶段跨越TTL，最终不得 PLANNED",
+        "新路径缓存命中：时效/绑定有效时保持幂等，过期或绑定改变时拒绝，无新增采集/模型/付费调用"
+      ]
+    }
+  ],
+  "minor": [],
+  "declined_to_judge": [
+    {
+      "behavior": "实机身份、连续稳定性、动作效果和正式研究验收",
+      "reason": "本轮明确只允许暂停MuJoCo开发；本审查未运行硬件，也不将端点一致视作物理证明。"
+    },
+    {
+      "behavior": "恶意supplier伪造整套合法载荷、ID和时间",
+      "reason": "计划明确把受控CLI.capture设为信任边界；元数据校验不能认证恶意Python调用方，未宣称可抵御此威胁。"
+    },
+    {
+      "behavior": "真实Molmo四次生成、选定Sol付费回复、GPU/运行时资源准入是否成功",
+      "reason": "本次仅只读及CPU桩复现；真实执行仍须独立前置检查，且审查发现阻断项。"
+    },
+    {
+      "behavior": "既存中文docstring失败的修复及全量第一个失败之后的测试健康",
+      "reason": "受影响文件与BASE相同，计划禁止无关修复；现有全量一次运行并非全绿。"
+    }
+  ],
+  "rulings_considered": [
+    {
+      "ruling": "用户继续授权，无第二确认轮",
+      "assessment": "与request/design明确授权和限定预算相符；本审查是实施准入，不要求追加用户确认。"
+    },
+    {
+      "ruling": "float32阈值使用上下1um边界",
+      "assessment": "接受。生产严格比较未放宽，三类独立阈值都有上下界试验；不据此声称统计误差保证。"
+    },
+    {
+      "ruling": "provider没有close接口，独立进程退出释放模型",
+      "assessment": "接受该限定的专用真实进程生命周期；不把CPU会话/锁退出等价为GPU内存回收证明，按账本保留成本。"
+    },
+    {
+      "ruling": "全量一次maxfail=1及180s超时",
+      "assessment": "接受作为失败分类；实际94PASS/1FAIL且未超时，不能声称全量绿。"
+    }
+  ],
+  "ready_to_merge": "No",
+  "real_run_admissible": false,
+  "reason": "Important R554-REV-1 requires actual Astra repair plan and final-return CPU regression evidence before using remaining allocation.",
+  "review_actual_calls": {
+    "native_loads": 0,
+    "generations": 0,
+    "paid_attempts": 0,
+    "hardware": 0
+  },
+  "remaining_allocation_unchanged": {
+    "loads": 1,
+    "generations": 4,
+    "paid_attempts": 1
+  },
+  "verification": {
+    "inspected_evidence": "456 adjacent CPU PASS;14 capture-session PASS;5 observer PASS;26 CLI included in456;Ruff PASS;full suite94PASS/1existingFAIL",
+    "independently_checked": "HEAD exact;6 frozen core hashes match;git diff --check PASS;final-build-expiry CPU reproduced twice with identical stdout;cache age/settings CPU reproduced",
+    "new_tests_in_repository": false
+  },
+  "evidence_manifests": [
+    "review-evidence/manifest.json",
+    "review-evidence/cached-manifest.json"
+  ]
+}
