@@ -225,3 +225,22 @@ def test_native_output_cap_is_not_accepted(tmp_path, monkeypatch):
     result = provider.point(RGBDObservation.model_validate(observation_payload()), "red block")
     assert result.result.status == "INVALID"
     assert result.evidence["reached_cap"] is True
+
+
+def test_decode_failure_retains_generated_tokens(tmp_path, monkeypatch):
+    from cloud_edge_robot_arm.vision.observations import RGBDObservation
+
+    provider, _, _, _ = native_fixture(tmp_path, monkeypatch)
+
+    def fail_decode(*args, **kwargs):
+        raise RuntimeError("fixture decoder failure")
+
+    monkeypatch.setattr(provider._processor, "decode", fail_decode)
+    with pytest.raises(RuntimeError, match="decoder failure"):
+        provider.point(RGBDObservation.model_validate(observation_payload()), "red block")
+    assert provider.generation_calls_started == provider.generation_calls_completed == 1
+    folder = tmp_path / "raw/request-0001"
+    assert json.loads((folder / "output-token-ids.json").read_text()) == [3]
+    assert (folder / "generation-completed.json").exists()
+    assert json.loads((folder / "failure.json").read_text())["generation_calls_completed"] == 1
+    assert not (folder / "raw-response.txt").exists()

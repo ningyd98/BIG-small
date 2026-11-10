@@ -317,8 +317,10 @@ def test_expiry_during_local_or_cloud_call(monkeypatch, stage):
 
     request = request_scene()
     clock = [request.observation.captured_at]
+
     def advance() -> None:
         clock[0] = clock[0] + timedelta(seconds=6)
+
     points = FixturePoints(after=advance if stage == "local" else None)
     adapter, _, bodies = adapter_fixture(
         monkeypatch, points=points, after=advance if stage == "cloud" else None
@@ -476,3 +478,74 @@ def test_small_frame_never_uses_legacy_geometry_bypass(monkeypatch):
     )
     assert adapter.plan(request).parsed_json["_sentinel"] == "REQUEST_MORE_OBSERVATION"
     assert points.queries == [] and bodies == []
+
+
+@pytest.mark.parametrize("stage", ["local1", "local2", "cloud"])
+@pytest.mark.parametrize("field", ["observation", "instruction", "control_mode", "descriptor"])
+def test_inflight_request_context_drift_is_closed(monkeypatch, stage, field):
+    request = request_scene()
+    adapter, points, bodies = adapter_fixture(monkeypatch)
+
+    def mutate():
+        if field == "observation":
+            request.observation = request_scene().observation
+        elif field == "instruction":
+            request.user_instruction = "Move the blue cylinder."
+        elif field == "control_mode":
+            request.control_mode = "PERIODIC_CLOUD_SUPERVISION"
+        else:
+            adapter.task = adapter.task.model_copy(update={"target_label": "blue cylinder"})
+
+    if stage == "cloud":
+        original = adapter.cloud._request_visual
+
+        def callback(*args):
+            value = original(*args)
+            mutate()
+            return value
+
+        monkeypatch.setattr(adapter.cloud, "_request_visual", callback)
+    else:
+        original = points.point
+
+        def callback(observation, phrase):
+            value = original(observation, phrase)
+            if len(points.queries) == (1 if stage == "local1" else 2):
+                mutate()
+            return value
+
+        monkeypatch.setattr(points, "point", callback)
+    draft = adapter.plan(request)
+    assert draft.parsed_json["_sentinel"] == "REQUEST_MORE_OBSERVATION"
+    assert len(bodies) == (1 if stage == "cloud" else 0)
+
+
+@pytest.mark.parametrize("variant", ["refusal-first", "refusal-last", "equal", "reason", "escaped"])
+def test_skill_json_duplicate_keys_are_rejected(monkeypatch, variant):
+    adapter, _, _ = adapter_fixture(monkeypatch)
+    skills = json.dumps(SKILLS)
+    payloads = {
+        "refusal-first": '{"skills":[],"skills":' + skills + "}",
+        "refusal-last": '{"skills":' + skills + ',"skills":[]}',
+        "equal": '{"skills":' + skills + ',"skills":' + skills + "}",
+        "reason": '{"skills":' + skills + ',"reason":"x","reason":"y"}',
+        "escaped": '{"skills":[],"sk\\u0069lls":' + skills + "}",
+    }
+    monkeypatch.setattr(
+        adapter.cloud,
+        "_request_visual",
+        lambda *a: {"choices": [{"message": {"content": payloads[variant]}}]},
+    )
+    draft = adapter.plan(request_scene())
+    assert draft.parsed_json is None and draft.parse_error
+
+
+def test_cloud_snapshot_provenance_is_recorded(monkeypatch):
+    adapter, _, _ = adapter_fixture(monkeypatch)
+    draft = adapter.plan(request_scene())
+    assert (
+        draft.observation_evidence["cloud_model_snapshot_hash"]
+        == adapter.cloud.model_snapshot.digest()
+    )
+    assert draft.observation_evidence["cloud_role_snapshot"] is None
+    assert "test-only-cloud-secret" not in json.dumps(draft.observation_evidence)

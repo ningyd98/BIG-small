@@ -316,18 +316,26 @@ class MolmoPointProvider:
                         )
                     torch.cuda.synchronize()
                     generation_s = time.perf_counter() - generation_started
+                    self.generation_calls_completed += 1
                     ids = output[0, input_tokens:].tolist()
+                    _write(folder / "output-token-ids.json", ids)
+                    _write(
+                        folder / "generation-completed.json",
+                        {
+                            "generation_calls_completed": self.generation_calls_completed,
+                            "generation_s": generation_s,
+                            "output_tokens": len(ids),
+                        },
+                    )
                     raw = processor.tokenizer.decode(
                         ids, skip_special_tokens=False, clean_up_tokenization_spaces=False
                     )
-                    _write(folder / "output-token-ids.json", ids)
                     with (folder / "raw-response.txt").open("x") as stream:
                         stream.write(raw)
                     result = parse_native_point(raw)
                     reached_cap = len(ids) >= 512
                     if reached_cap:
                         result = NativePointResult("INVALID", None, None, raw, "output token cap")
-                    self.generation_calls_completed += 1
                     evidence: dict[str, object] = {
                         "model": MODEL_ID,
                         "precision": "BF16",
@@ -352,6 +360,7 @@ class MolmoPointProvider:
                     binding
                     | {
                         "error_type": type(exc).__name__,
+                        "end_to_end_s": time.perf_counter() - started,
                         "generation_calls_started": self.generation_calls_started,
                         "generation_calls_completed": self.generation_calls_completed,
                     },

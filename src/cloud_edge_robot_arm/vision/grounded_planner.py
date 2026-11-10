@@ -39,6 +39,21 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def _strict_skill_json(raw: str) -> Any:
+    def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate skill JSON key")
+            result[key] = value
+        return result
+
+    def reject_constant(value: str) -> None:
+        raise ValueError("nonfinite skill JSON value")
+
+    return json.loads(raw, object_pairs_hook=unique, parse_constant=reject_constant)
+
+
 class GroundingTaskDescriptor(BaseModel):
     """显式任务语义；指令必须逐字绑定，禁止从场景真值或评测标签生成。"""
 
@@ -86,7 +101,18 @@ class MolmoGroundedPlannerAdapter:
         self.model_name = cloud.model_name
         self._cloud_hash = configuration_hash(cloud_request_settings(cloud))
 
-    def _fresh(self, observation: RGBDObservation) -> None:
+    def _fresh(
+        self,
+        observation: RGBDObservation,
+        request: InitialPlanningRequest,
+        context_hash: str,
+        task_hash: str,
+    ) -> None:
+        if (
+            configuration_hash(request.model_dump(mode="json")) != context_hash
+            or configuration_hash(self.task.model_dump()) != task_hash
+        ):
+            raise ValueError("inflight_planning_context_changed")
         age = (_utcnow() - observation.captured_at).total_seconds()
         if age < -0.05 or age > 5:
             raise ValueError("capture_time_not_fresh")
@@ -108,6 +134,11 @@ class MolmoGroundedPlannerAdapter:
 
     def plan(self, request: InitialPlanningRequest) -> PlannerDraft:
         """定位与几何先成立，再请求云端；任一绑定或测量失败均停止候选生成。"""
+        original_request = request
+        context_hash = configuration_hash(request.model_dump(mode="json"))
+        task_hash = configuration_hash(self.task.model_dump())
+        request = request.model_copy(deep=True)
+        task = self.task.model_copy(deep=True)
         observation = request.observation
         evidence: dict[str, Any] = {
             **(observation.evidence() if observation else {}),
@@ -123,13 +154,18 @@ class MolmoGroundedPlannerAdapter:
             "native_results": [],
             "hardware_dispatch": False,
         }
+        evidence["cloud_model_snapshot"] = self.cloud.model_snapshot.evidence()
+        evidence["cloud_model_snapshot_hash"] = self.cloud.model_snapshot.digest()
+        role = getattr(self.cloud, "role_snapshot", None)
+        evidence["cloud_role_snapshot"] = role.evidence() if role is not None else None
+        evidence["cloud_role_snapshot_hash"] = role.digest() if role is not None else None
         raw = ""
         try:
-            if observation is None or request.user_instruction != self.task.instruction:
+            if observation is None or request.user_instruction != task.instruction:
                 raise ValueError("task_instruction_or_observation_binding_missing")
             # model_copy 不能绕过采集校验；重新验证原 checksum，绝不刷新时间戳。
             RGBDObservation.model_validate(observation.model_dump())
-            self._fresh(observation)
+            self._fresh(observation, original_request, context_hash, task_hash)
             profile = self.cloud.model_snapshot.grasp_profile
             if (
                 min(observation.width, observation.height) < 64
@@ -143,12 +179,12 @@ class MolmoGroundedPlannerAdapter:
                 raise ValueError("native_grounding_domain_or_calibration_unavailable")
             evidence["grasp_profile"] = profile
             queries = (
-                f"visible top center of {self.task.target_phrase}",
-                f"interior of {self.task.destination_phrase}",
+                f"visible top center of {task.target_phrase}",
+                f"interior of {task.destination_phrase}",
             )
             points = []
             for query in queries:
-                self._fresh(observation)
+                self._fresh(observation, original_request, context_hash, task_hash)
                 try:
                     point = self.point_provider.point(observation, query)
                 except (RuntimeError, OSError, TimeoutError) as exc:
@@ -167,7 +203,7 @@ class MolmoGroundedPlannerAdapter:
                     }
                 )
                 self._bound(point, observation, query)
-                self._fresh(observation)
+                self._fresh(observation, original_request, context_hash, task_hash)
                 points.append(
                     model_to_observation_pixel(
                         point.result.normalized_1000,
@@ -180,7 +216,7 @@ class MolmoGroundedPlannerAdapter:
                 observation,
                 target_pixel=points[0],
                 destination_pixel=points[1],
-                target_label=self.task.target_label,
+                target_label=task.target_label,
                 grasp_profile=profile,
                 evidence=evidence,
             )
@@ -192,7 +228,7 @@ class MolmoGroundedPlannerAdapter:
                 "algorithm_sha256": tracker.algorithm_sha256,
                 "calibration_sha256": tracker.calibration_sha256,
             }
-            self._fresh(observation)
+            self._fresh(observation, original_request, context_hash, task_hash)
         except ValueError as exc:
             # 共享几何异常可携带部分测量证据；不把部分结果提升为可执行合同。
             evidence = getattr(exc, "evidence", evidence)
@@ -218,8 +254,7 @@ class MolmoGroundedPlannerAdapter:
                     "PLACE, RELEASE, RETREAT, HOME in that order. "
                     "If uncertain return skills []. Do not output coordinates, targets, "
                     "confidence, safety overrides, identity, timestamps or low-level controls. "
-                    "Schema: "
-                    + json.dumps(SkillDecision.model_json_schema())
+                    "Schema: " + json.dumps(SkillDecision.model_json_schema())
                 ),
             },
             {
@@ -252,7 +287,7 @@ class MolmoGroundedPlannerAdapter:
             if not isinstance(raw, str):
                 raise TypeError("cloud content must be text")
             evidence["cloud_response_content_sha256"] = hashlib.sha256(raw.encode()).hexdigest()
-            self._fresh(observation)
+            self._fresh(observation, original_request, context_hash, task_hash)
         except ValueError as exc:
             return RGBDPlannerAdapter._more_observation(raw, str(exc), evidence)
         except (KeyError, IndexError, TypeError):
@@ -262,13 +297,16 @@ class MolmoGroundedPlannerAdapter:
                 observation_evidence=evidence,
             )
         try:
-            decision = SkillDecision.model_validate_json(raw, strict=True)
+            decision = SkillDecision.model_validate(_strict_skill_json(raw), strict=True)
             if not decision.skills:
                 return RGBDPlannerAdapter._more_observation(
                     raw, decision.reason or "cloud requests observation", evidence
                 )
+            self._fresh(observation, original_request, context_hash, task_hash)
             return build_grounded_contract(request, measured, decision.skills, raw_text=raw)
-        except (ValidationError, ValueError):
+        except (ValidationError, ValueError) as exc:
+            if str(exc) == "inflight_planning_context_changed":
+                return RGBDPlannerAdapter._more_observation(raw, str(exc), evidence)
             return PlannerDraft(
                 raw_text=raw,
                 parse_error="invalid cloud skill-only decision or sequence",
