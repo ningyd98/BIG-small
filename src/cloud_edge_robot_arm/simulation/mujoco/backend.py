@@ -112,6 +112,10 @@ class ActuatorStepObservation:
 
 
 def _operation_detach(value: Any) -> Any:
+    # Exact builtins are immutable; subclasses retain their copy hooks below.
+    value_type = type(value)
+    if value_type is int or value_type is float:
+        return value
     if is_dataclass(value) and not isinstance(value, type):
         return _operation_detach(asdict(value))
     if isinstance(value, Mapping):
