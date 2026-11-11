@@ -188,12 +188,26 @@ def verify_archive(raw_root: Path) -> dict:
         },
     }
     try:
-        _require(
-            harness._sha(Path(harness.__file__)) == HARNESS_SHA256,
-            "historical harness source drift",
-        )
         raw_root = raw_root.resolve(strict=True)
         registry = harness._read(raw_root / "registry.json")
+        if registry["schema"] == "molmo.interface.r558.v2":
+            expected_harness = HARNESS_SHA256
+            identity_error = "historical harness source drift"
+        else:
+            execution = harness._execution_for_registry(registry)
+            expected_harness = execution["source_hashes"]["scripts/probe_molmo_multiscene.py"]
+            report["original_source_commit"] = execution["source_commit"]
+            identity_error = "current harness source drift"
+        actual_harness = harness._sha(Path(harness.__file__))
+        report["derived_verifier"].update(
+            expected_harness_sha256=expected_harness,
+            actual_harness_sha256=actual_harness,
+            registry_schema=registry["schema"],
+        )
+        _require(
+            actual_harness == expected_harness,
+            identity_error,
+        )
         harness._registry_check(raw_root, registry)
         report["registry_sha256"] = harness._sha(raw_root / "registry.json")
         report["historical_summary_sha256"] = harness._sha(raw_root / "summary.local.json")

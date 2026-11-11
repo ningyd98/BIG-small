@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -15,11 +16,11 @@ def api():
     return importlib.import_module("scripts.probe_molmo_multiscene")
 
 
-def setup_run(tmp_path, *, source_hashes=None, asset_sha="a" * 64):
+def setup_run(tmp_path, *, source_hashes=None, asset_sha="a" * 64, execution_plan=None):
     module = api()
     cases = module.build_cases(asset_sha)
     root = tmp_path / "run"
-    registry = module.preregister(root, cases, source_hashes or {})
+    registry = module.preregister(root, cases, source_hashes or {}, execution_plan=execution_plan)
     ledger = module.RunLedger(root, registry)
     return module, cases, root, registry, ledger
 
@@ -364,6 +365,7 @@ def recorded_suite(
     damage=None,
     setup_hook=None,
     capture_transform=None,
+    execution_plan=None,
 ):
     """Exercise original pipeline/transport with CPU-only native and HTTP boundaries."""
     import hashlib
@@ -395,8 +397,12 @@ def recorded_suite(
     sources = {
         name: hashlib.sha256((module.ROOT / name).read_bytes()).hexdigest() for name in names
     }
+    execution = module._load_execution_plan(execution_plan) if execution_plan is not None else None
+    if execution is not None:
+        sources = execution["source_hashes"]
     module, cases, root, registry, _ = setup_run(
-        tmp_path, source_hashes=sources, asset_sha=sources["assets/robots/franka_panda/scene.xml"]
+        tmp_path, source_hashes=sources, asset_sha=sources["assets/robots/franka_panda/scene.xml"],
+        execution_plan=execution_plan,
     )
     state = SimpleNamespace(
         active=None,
@@ -575,7 +581,8 @@ def recorded_suite(
     monkeypatch.setattr(module, "MuJoCoCaptureSession", Session)
     monkeypatch.setattr(module, "MolmoPointProvider", Provider)
     monkeypatch.setattr(module, "build_molmo_grounded_planner", build)
-    monkeypatch.setattr(module, "_check_sources", lambda registry: None)
+    if execution is None:
+        monkeypatch.setattr(module, "_check_sources", lambda registry: None)
     monkeypatch.setattr(
         module,
         "_profile",
@@ -589,17 +596,24 @@ def recorded_suite(
         setup_hook(module, state, root, registry)
     for group in groups:
         state.group, state.case_index = group, 0
+        arguments = {
+            "model_directory": root, "asset_manifest": root / "fake.json",
+            "model_store": root / "fake.db", "profile_id": "fixture", "gpu_lock": root / "gpu.lock",
+        }
+        if execution is not None:
+            runtime = execution["runtime"]
+            arguments = {
+                k: Path(runtime[k]) for k in ("model_directory", "model_store", "gpu_lock")
+            }
+            arguments.update(asset_manifest=Path(runtime["asset_manifest"]["path"]),
+                             profile_id=runtime["profile_id"])
         try:
             report = module.run_group(
                 group,
                 registry=root / "registry.json",
                 output=root,
-                model_directory=root,
-                asset_manifest=root / "fake.json",
-                model_store=root / "fake.db",
-                profile_id="fixture",
-                gpu_lock=root / "gpu.lock",
                 allow_paid=True,
+                **arguments,
             )
             state.reports.append(report)
         except Exception as exc:

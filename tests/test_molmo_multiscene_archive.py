@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -32,7 +33,11 @@ def inventory(root):
 
 @pytest.fixture(scope="module")
 def archive(tmp_path_factory):
+    from tests.test_molmo_current_execution import current_binding
+
     with pytest.MonkeyPatch.context() as patch:
+        base = tmp_path_factory.mktemp("r569-archive")
+        binding = current_binding(base, patch)
 
         def hook(module, state, root, registry):
             delegate = module.MolmoPointProvider.point
@@ -40,7 +45,6 @@ def archive(tmp_path_factory):
             def point(provider, observation, phrase):
                 active = state.active
                 try:
-                    # This changes only the existing CPU provider stub's output mode.
                     if active == "N02":
                         state.active = "CPU_POINT_N02"
                     return delegate(provider, observation, phrase)
@@ -50,29 +54,26 @@ def archive(tmp_path_factory):
             patch.setattr(module.MolmoPointProvider, "point", point)
 
         data = recorded_suite(
-            tmp_path_factory.mktemp("r564-archive"),
-            patch,
-            groups=("G1", "G2", "G3"),
-            damage="decoy",
-            setup_hook=hook,
+            base, patch, groups=("G1", "G2", "G3"), damage="decoy", setup_hook=hook,
+            execution_plan=binding[3],
         )
-    module, cases, root, registry, state = data
-    assert all(r["status"] == "COMPLETED" for r in state.reports)
-    assert next(r for r in state.reports[0]["results"] if r["case_id"] == "N02")["passed"]
-    from cloud_edge_robot_arm.vision import tracking
+        module, cases, root, registry, state = data
+        assert all(r["status"] == "COMPLETED" for r in state.reports)
+        assert next(r for r in state.reports[0]["results"] if r["case_id"] == "N02")["passed"]
+        from cloud_edge_robot_arm.vision import tracking
 
-    class Later(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return datetime(2090, 1, 1, tzinfo=UTC)
+        class Later(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2090, 1, 1, tzinfo=UTC)
 
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(tracking, "datetime", Later)
-        rows = [r for report in state.reports for r in report["results"]]
-        original = module.summarize(registry, rows, root=root)
-    assert not original["valid_suite"]
-    module._write(root / "summary.local.json", original)
-    return SimpleNamespace(module=module, cases=cases, root=root, registry=registry, state=state)
+        with pytest.MonkeyPatch.context() as clock_patch:
+            clock_patch.setattr(tracking, "datetime", Later)
+            rows = [r for report in state.reports for r in report["results"]]
+            original = module.summarize(registry, rows, root=root)
+        assert not original["valid_suite"]
+        module._write(root / "summary.local.json", original)
+        yield SimpleNamespace(module=module, cases=cases, root=root, registry=registry, state=state)
 
 
 def tracker_inputs(archive):
@@ -206,7 +207,13 @@ def test_replay_constructor_requires_the_bound_grounding(archive):
 def test_bad_original_evidence_never_passes(archive, monkeypatch, damage):
     module = api()
     if damage == "harness_source":
-        monkeypatch.setattr(module, "HARNESS_SHA256", "0" * 64)
+        original = archive.module._sha
+        actual = Path(archive.module.__file__)
+        monkeypatch.setattr(
+            archive.module,
+            "_sha",
+            lambda path: "0" * 64 if Path(path) == actual else original(path),
+        )
         assert not module.verify_archive(archive.root)["derived_summary"]["valid_suite"]
         return
     p = archive.root / ("registry.json" if damage == "registry" else "G1/N02/capture-01/depth.f32")
@@ -267,3 +274,25 @@ def test_cli_requires_new_external_output_and_returns_evidence_status(
         module.main(["--raw-root", str(archive.root), "--output-new", str(output)])
     with pytest.raises(ValueError):
         module.main(["--raw-root", str(archive.root), "--output-new", str(archive.root / "new")])
+
+
+def test_current_archive_reports_its_bound_execution_identity(archive):
+    report = api().verify_archive(archive.root)
+    assert report["derived_summary"]["valid_suite"], report
+    execution = archive.module._execution_for_registry(archive.registry)
+    assert report["original_source_commit"] == execution["source_commit"]
+    assert report["derived_verifier"]["expected_harness_sha256"] == (
+        archive.registry["source_hashes"]["scripts/probe_molmo_multiscene.py"]
+    )
+
+
+@pytest.mark.parametrize("schema", ["molmo.interface.r558.v2", "unknown"])
+def test_legacy_and_unknown_identity_cannot_use_changed_harness(tmp_path, schema):
+    root = tmp_path / "archive"
+    root.mkdir()
+    (root / "registry.json").write_text(json.dumps({"schema": schema}))
+    result = api().verify_archive(root)
+    assert not result["derived_summary"]["valid_suite"]
+    error = " ".join(result["derived_summary"]["evidence_errors"])
+    assert ("historical harness source drift" if schema.endswith("r558.v2")
+            else "unknown registry") in error

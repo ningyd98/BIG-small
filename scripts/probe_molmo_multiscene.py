@@ -10,6 +10,8 @@ import fcntl
 import hashlib
 import json
 import os
+import re
+import subprocess
 import sys
 import uuid
 from collections import Counter
@@ -50,6 +52,13 @@ ROUND = ROOT / (
 GROUPS = {"G1": ("N01", "N02", "P01"), "G2": ("N03", "P02"), "G3": ("N04", "P03")}
 CAPS = {"G1": 8, "G2": 6, "G3": 6}
 SETTINGS_SHA = "eb31dd5eb394646e1a09a0116c7d8d58c954a8c200f2443d12b5ce3ef972362d"
+CURRENT_ASTRA_RELATIVE = (
+    "artifacts/research/process/20261004-ced-development/astra-rounds/"
+    "round569-current-suite-revalidation-20261112/plan.json"
+)
+CURRENT_ASTRA_SHA256 = "c1a9428b45529babcef4635f6bff2f0af5fac7478fc21b240b7acd10108ad42a"
+CURRENT_SCHEMA = "molmo.interface.r569.v1"
+CURRENT_RUN_ID = "r569-current-suite-20261112"
 
 
 def _sha(path: Path) -> str:
@@ -196,9 +205,18 @@ def build_cases(asset_sha256: str) -> tuple[CaseSpec, ...]:
 
 
 def preregister(
-    output: Path, cases: tuple[CaseSpec, ...], source_hashes: dict[str, str]
+    output: Path, cases: tuple[CaseSpec, ...], source_hashes: dict[str, str],
+    *, execution_plan: Path | None = None,
 ) -> dict[str, Any]:
     """独占登记整个分母，目录及登记均不可覆盖。"""
+    execution = _load_execution_plan(execution_plan) if execution_plan is not None else None
+    if execution is not None:
+        _require(str(output.resolve()) == execution["new_raw_root"], "execution raw root changed")
+        _require(source_hashes == execution["source_hashes"], "execution source map changed")
+        _require(
+            hashlib.sha256(_canonical([c.payload() for c in cases])).hexdigest()
+            == execution["case_digest"], "execution case matrix changed",
+        )
     output.mkdir(parents=True, exist_ok=False)
     rows = [case.payload() for case in cases]
     expected = [name for ids in GROUPS.values() for name in ids]
@@ -218,6 +236,12 @@ def preregister(
         "physical_formal": "NOT_RUN",
         "sensor_noise": "existing apply_scene clean raw path, 0m; no offline perturbation",
     }
+    if execution is not None:
+        registry.update(
+            schema=CURRENT_SCHEMA, run_id=CURRENT_RUN_ID, prior=execution["prior"],
+            execution_plan={"path": str(execution_plan.resolve()), "sha256": _sha(execution_plan)},
+            source_hashes=_execution_sources(execution_plan, execution),
+        )
     _write(output / "registry.json", registry)
     _write(output / "registry.sha256", {"sha256": _sha(output / "registry.json")})
     for directory in ["claims", "reservations", "events"]:
@@ -263,6 +287,174 @@ def _require(value, reason):
 
 def _read(path):
     return json.loads(path.read_bytes())
+
+
+def _strict_execution_json(path):
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            _require(key not in result, "duplicate execution JSON key")
+            result[key] = value
+        return result
+
+    def constant(value):
+        raise EvidenceError("nonfinite execution JSON value")
+
+    return json.loads(path.read_bytes(), object_pairs_hook=pairs, parse_constant=constant)
+
+
+def _ordinary_file(path):
+    path = Path(path)
+    _require(
+        path.is_absolute() and path.is_file()
+        and not any(p.is_symlink() for p in (path, *path.parents)),
+        "execution requires ordinary absolute file",
+    )
+    return path
+
+
+def _exact_counts(value, expected):
+    return (
+        type(value) is dict and set(value) == set(expected)
+        and all(type(value[k]) is int and value[k] == n for k, n in expected.items())
+    )
+
+
+def _committed_execution_sources(commit, hashes):
+    _require(type(commit) is str and re.fullmatch(r"[0-9a-f]{40}", commit), "execution commit")
+    try:
+        raw = subprocess.check_output(
+            ["git", "-C", str(ROOT), "ls-tree", "-r", "-z", commit, "--", *hashes],
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise EvidenceError("execution source commit unavailable") from exc
+    entries = {}
+    for record in raw.split(b"\0"):
+        if record:
+            metadata, name = record.split(b"\t", 1)
+            entries[name.decode()] = metadata.split()[2].decode()
+    for name in hashes:
+        if name not in entries:
+            _require(name.startswith("artifacts/"), "execution source not committed")
+            continue
+        contents = (ROOT / name).read_bytes()
+        blob = b"blob " + str(len(contents)).encode() + b"\0" + contents
+        _require(hashlib.sha1(blob).hexdigest() == entries[name], "execution commit source drift")
+
+
+def _load_execution_plan(path: Path) -> dict[str, Any]:
+    """核验本轮固定授权、已提交源码和运行参数；不接受任意预算配置。"""
+    path = _ordinary_file(path)
+    execution = _strict_execution_json(path)
+    fields = {
+        "schema", "run_id", "source_commit", "worktree_root", "new_raw_root", "astra_plan",
+        "prior_evidence", "prior", "additional_max", "group_caps", "retries",
+        "hardware_dispatch", "physical_formal", "case_digest", "source_hashes", "runtime",
+    }
+    _require(type(execution) is dict and set(execution) == fields, "execution fields")
+    _require(execution["schema"] == "molmo.execution.r569.v1", "execution schema")
+    _require(execution["run_id"] == CURRENT_RUN_ID, "execution run identity")
+    astra_path = _ordinary_file(ROOT / CURRENT_ASTRA_RELATIVE)
+    _require(_sha(astra_path) == CURRENT_ASTRA_SHA256, "execution Astra source drift")
+    _require(
+        execution["astra_plan"] == {"path": str(astra_path), "sha256": CURRENT_ASTRA_SHA256},
+        "execution Astra reference",
+    )
+    plan = _strict_execution_json(astra_path)
+    _require(
+        _sha(_ordinary_file(astra_path.with_suffix(".md"))) == plan["plan_md_sha256"],
+        "execution Astra Markdown drift",
+    )
+    _require(execution["worktree_root"] == str(ROOT.resolve()), "execution worktree changed")
+    _require(execution["new_raw_root"] == plan["runtime"]["new_raw_root"], "execution raw root")
+    _require(_exact_counts(execution["prior"], {"loads": 7, "generations": 27, "paid": 4}),
+             "execution prior changed")
+    _require(_exact_counts(execution["additional_max"], {"loads": 3, "generations": 20, "paid": 3}),
+             "execution caps changed")
+    _require(_exact_counts(execution["group_caps"], CAPS), "execution group caps changed")
+    _require(
+        type(execution["retries"]) is int and execution["retries"] == 0
+        and execution["hardware_dispatch"] is False and execution["physical_formal"] == "NOT_RUN",
+        "execution boundary changed",
+    )
+    prior = execution["prior_evidence"]
+    _require(prior == plan["prior_evidence"], "execution prior reference")
+    prior_file = _ordinary_file(prior["path"])
+    _require(prior_file.stat().st_size == prior["bytes"] and _sha(prior_file) == prior["sha256"],
+             "execution prior source drift")
+    _require(_exact_counts(_strict_execution_json(prior_file)["cumulative_actual"],
+                          {"loads": 7, "generations_started": 27, "paid_attempts": 4}),
+             "execution prior evidence counts")
+    hashes = execution["source_hashes"]
+    _require(type(hashes) is dict and set(hashes) == set(plan["required_source_paths"]),
+             "execution required sources changed")
+    for name, digest in hashes.items():
+        _require(type(digest) is str and re.fullmatch(r"[0-9a-f]{64}", digest), "execution digest")
+        source = _safe_path(ROOT, name)
+        _ordinary_file(source)
+        _require(_sha(source) == digest, "execution source identity drift")
+    _committed_execution_sources(execution["source_commit"], hashes)
+    _require(
+        execution["case_digest"] == hashlib.sha256(_canonical([
+            case.payload() for case in build_cases(hashes["assets/robots/franka_panda/scene.xml"])
+        ])).hexdigest(), "execution case digest changed",
+    )
+    runtime = plan["runtime"]
+    overlay = next(n for n in hashes if n.endswith("implementation/launch_molmo_grounded.py"))
+    proof = next(n for n in hashes if n.endswith("planner-r545-import-preflight.stdout"))
+    asset = plan["external_inputs"][0]
+    expected_runtime = {
+        **{k: runtime[k] for k in ("native_python", "cpu_python", "model_directory",
+                                   "model_store", "profile_id", "gpu_lock")},
+        "overlay": {"path": str(ROOT / overlay), "sha256": hashes[overlay]},
+        "proof": {"path": str(ROOT / proof), "sha256": hashes[proof]},
+        "asset_manifest": {"path": asset["path"], "sha256": asset["sha256"], "files": 26},
+        "settings_sha256": SETTINGS_SHA, "roles_sha256": hashes["configs/research/ced_roles.yaml"],
+    }
+    _require(execution["runtime"] == expected_runtime, "execution runtime binding changed")
+    manifest = _ordinary_file(asset["path"])
+    _require(_sha(manifest) == asset["sha256"]
+             and len(_strict_execution_json(manifest)["files"]) == 26, "execution asset manifest")
+    return execution
+
+
+def _execution_sources(path, execution):
+    hashes = dict(execution["source_hashes"])
+    path = Path(path).resolve()
+    if path.is_relative_to(ROOT):
+        hashes[str(path.relative_to(ROOT))] = _sha(path)
+    return hashes
+
+
+def _execution_for_registry(registry):
+    if registry["schema"] == "molmo.interface.r558.v2":
+        return None
+    _require(registry["schema"] == CURRENT_SCHEMA, "unknown registry execution schema")
+    ref = registry["execution_plan"]
+    _require(type(ref) is dict and set(ref) == {"path", "sha256"}, "execution registry reference")
+    path = _ordinary_file(ref["path"])
+    _require(_sha(path) == ref["sha256"], "sealed execution plan drift")
+    execution = _load_execution_plan(path)
+    _require(registry["run_id"] == execution["run_id"]
+             and registry["raw_root"] == execution["new_raw_root"], "execution registry identity")
+    _require(
+        hashlib.sha256(_canonical(registry["cases"])).hexdigest() == execution["case_digest"],
+        "execution registry case matrix changed",
+    )
+    _require(registry["source_hashes"] == _execution_sources(path, execution),
+             "execution registry sources changed")
+    return execution
+
+
+def _admit_execution_arguments(execution, **arguments):
+    if execution is None:
+        return
+    runtime = execution["runtime"]
+    for key, value in arguments.items():
+        expected = runtime["asset_manifest"]["path"] if key == "asset_manifest" else runtime[key]
+        _require(str(value) == expected, f"execution worker argument changed:{key}")
+    _require(str(Path(sys.executable)) == runtime["native_python"], "execution native interpreter")
 
 
 def _safe_path(root, relative):
@@ -320,14 +512,16 @@ def _registry_check(root, registry):
         registry["additional_max"] == {"loads": 3, "generations": 20, "paid": 3},
         "allocation changed",
     )
-    _require(registry["schema"] == "molmo.interface.r558.v2", "registry schema")
+    execution = _execution_for_registry(registry)
     _require(
         _canonical(registry["groups"])
         == _canonical({g: {"cases": list(ids), "point_cap": CAPS[g]} for g, ids in GROUPS.items()}),
         "group matrix changed",
     )
     _require(
-        _canonical(registry["prior"]) == _canonical({"loads": 4, "generations": 10, "paid": 2})
+        _canonical(registry["prior"]) == _canonical(
+            execution["prior"] if execution else {"loads": 4, "generations": 10, "paid": 2}
+        )
         and type(registry["retries"]) is int
         and registry["retries"] == 0
         and registry["hardware_dispatch"] is False
@@ -1975,6 +2169,8 @@ def _profile(model_store, profile_id, task):
 
 
 def _check_sources(registry):
+    if _execution_for_registry(registry) is not None:
+        return
     required = json.loads((ROUND / "plan.json").read_bytes())["inputs"]
     for row in required:
         relative = str(Path(row["path"]).relative_to(ROOT))
@@ -2036,6 +2232,14 @@ def run_group(
     registered = _read(registry)
     if registry.read_bytes() != (output / "registry.json").read_bytes():
         raise ValueError("external registry drift")
+    _admit_execution_arguments(
+        _execution_for_registry(registered),
+        model_directory=model_directory,
+        asset_manifest=asset_manifest,
+        model_store=model_store,
+        profile_id=profile_id,
+        gpu_lock=gpu_lock,
+    )
     _check_sources(registered)
     ledger = None
     provider = None
@@ -2203,6 +2407,7 @@ def main(argv: list[str] | None = None) -> int:
     register = sub.add_parser("preregister")
     register.add_argument("--output", type=Path, required=True)
     register.add_argument("--registry", type=Path, required=True)
+    register.add_argument("--execution-plan", type=Path)
     worker = sub.add_parser("run-group")
     worker.add_argument("--group", choices=tuple(GROUPS), required=True)
     for key in [
@@ -2221,6 +2426,20 @@ def main(argv: list[str] | None = None) -> int:
     summary.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.command == "preregister":
+        if args.execution_plan is not None:
+            execution = _load_execution_plan(args.execution_plan)
+            registry = preregister(
+                args.output,
+                build_cases(execution["source_hashes"]["assets/robots/franka_panda/scene.xml"]),
+                execution["source_hashes"],
+                execution_plan=args.execution_plan,
+            )
+            _write(args.registry, registry)
+            print(json.dumps({
+                "status": "PREREGISTERED", "cases": 7,
+                "registry_sha256": _sha(args.registry), "run_id": registry["run_id"],
+            }))
+            return 0
         plan = json.loads((ROUND / "plan.json").read_bytes())
         paths = [Path(row["path"]) for row in plan["inputs"]]
         paths += [
