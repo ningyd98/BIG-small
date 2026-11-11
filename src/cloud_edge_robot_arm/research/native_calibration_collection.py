@@ -10,12 +10,18 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import asdict, fields, is_dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from cloud_edge_robot_arm.vision.marker_families import (
+    LEGACY_FAMILY,
+    PREPARE_ONLY_FAMILY,
+    marker_family,
+)
 from cloud_edge_robot_arm.vision.native_completion import COMPLETION_SKILLS_V2
 from cloud_edge_robot_arm.vision.native_completion_horizon import completion_horizon_rational_v1
 
@@ -25,6 +31,9 @@ MARKED_ASSET = "assets/robots/franka_panda/scene_pose_marker_outboard_v3.xml"
 MARKED_SHA = "ddc34b13d8df403f3fdeeab94be75ca988541f2eac0a3e534704f68200c39a23"
 BASE_ASSET = "assets/robots/franka_panda/scene.xml"
 BASE_SHA = "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2"
+_PREPARE_CONFIG = "configs/research/native_operational_calibration_75mm_r579.yaml"
+_PREPARE_CONFIG_DIGEST = "5e00a5bb52b465a9b49931357ae630cef8cc56766bd115b8db0bba42c3cf213b"
+_PREPARE_CONFIG_SHA = "621624088a9d3e3df7fe9de522b960abd8ea9c1c45193067b6978665fd88b6f3"
 ADMISSION_VERSION = "teacher.collection.admission.v1"
 ADMISSION_ROWS = (
     "PRE_INITIAL_REACHABLE_DEPTH",
@@ -103,22 +112,26 @@ def fresh_directory(path: Path) -> Path:
     return path
 
 
-def source_inventory() -> dict[str, str]:
+def source_inventory(*, marker_family_id: str | None = None) -> dict[str, str]:
+    family = marker_family(LEGACY_FAMILY if marker_family_id is None else marker_family_id)
+    new_family = family.family_id == PREPARE_ONLY_FAMILY
     paths = sorted((ROOT / "src/cloud_edge_robot_arm").rglob("*.py"))
     paths += [
-        ROOT / CONFIG,
+        ROOT / (_PREPARE_CONFIG if new_family else CONFIG),
         ROOT / BASE_ASSET,
-        ROOT / MARKED_ASSET,
+        ROOT / family.asset_path,
         ROOT / "scripts/collect_native_calibration.py",
         ROOT / "pyproject.toml",
     ]
+    if new_family:
+        paths.append(ROOT / MARKED_ASSET)
     return {
         str(p.relative_to(ROOT)): hashlib.sha256(regular(p).read_bytes()).hexdigest() for p in paths
     }
 
 
-def check_sources(expected: dict[str, str]) -> None:
-    if source_inventory() != expected:
+def check_sources(expected: dict[str, str], *, marker_family_id: str | None = None) -> None:
+    if source_inventory(marker_family_id=marker_family_id) != expected:
         raise ValueError("registered source generation changed")
 
 
@@ -159,24 +172,63 @@ def action_horizons() -> list[dict[str, Any]]:
     return rows
 
 
-def _protocol(config: Path) -> dict[str, Any]:
+def _registered_settings(family_id: str | None) -> dict[str, Any]:
+    new_family = family_id == PREPARE_ONLY_FAMILY
+    path = ROOT / (_PREPARE_CONFIG if new_family else CONFIG)
+    expected = load_json(path)
+    expected_digest = (
+        _PREPARE_CONFIG_DIGEST
+        if new_family
+        else ("5752ed89e2b05e5265695298f9478813b01cd8ad4e6cde577f52287cfa2e2346")
+    )
+    if digest(expected) != expected_digest or (
+        new_family and hashlib.sha256(regular(path).read_bytes()).hexdigest() != _PREPARE_CONFIG_SHA
+    ):
+        raise ValueError("fixed policy bytes changed")
+    return expected
+
+
+def _protocol(config: Path, *, historical_sources: dict[str, str] | None = None) -> dict[str, Any]:
     from cloud_edge_robot_arm.research.native_collection_grounding import (
         geometry_registration,
         release_reference_registration,
     )
 
     settings = load_json(config)  # The fixed file uses the JSON subset of YAML.
-    expected = load_json(ROOT / CONFIG)
-    if digest(expected) != "5752ed89e2b05e5265695298f9478813b01cd8ad4e6cde577f52287cfa2e2346":
-        raise ValueError("fixed policy bytes changed")
+    if not isinstance(settings, dict):
+        raise ValueError("fixed registered collection policy required")
+    family_id = (
+        PREPARE_ONLY_FAMILY if settings.get("marker_family") == PREPARE_ONLY_FAMILY else None
+    )
+    config_sha = hashlib.sha256(regular(config).read_bytes()).hexdigest()
+    if family_id is not None and config_sha != _PREPARE_CONFIG_SHA:
+        raise ValueError("fixed registered new-family config bytes required")
+    family = marker_family(family_id or LEGACY_FAMILY)
+    expected = _registered_settings(family_id)
     if canonical(settings) != canonical(expected) or (
-        settings["model_path"] != MARKED_ASSET
-        or settings["marked_asset_sha256"] != MARKED_SHA
+        settings["model_path"] != family.asset_path
+        or settings["marked_asset_sha256"] != family.asset_sha256
         or settings["grasp_profile_base_asset_sha256"] != BASE_SHA
     ):
         raise ValueError("fixed registered collection policy required")
-    geometry = geometry_registration()
-    sources = source_inventory()
+    geometry = geometry_registration(marker_family_id=family_id)
+    sources = source_inventory(marker_family_id=family_id)
+    if historical_sources is not None:
+        if (
+            not isinstance(historical_sources, dict)
+            or historical_sources.keys() != sources.keys()
+            or any(
+                type(v) is not str or re.fullmatch(r"[0-9a-f]{64}", v) is None
+                for v in historical_sources.values()
+            )
+            or any(
+                historical_sources[p] != value
+                for p, value in sources.items()
+                if not p.startswith("src/")
+            )
+        ):
+            raise ValueError("registered family source inventory incomplete or mismatched")
+        sources = historical_sources
     horizons = action_horizons()
     physics = settings["settle_steps"] + sum(row["horizon"]["total_steps"] for row in horizons)
     if physics != 12960 or physics > 32768:
@@ -186,10 +238,10 @@ def _protocol(config: Path) -> dict[str, Any]:
     # Explicit per-step and 16 boundary frames each use RGB/depth/instance passes.
     implicit = physics + 2
     explicit = physics + 16
-    return dict(
-        schema_version="native.calibration.operational.v2",
+    protocol = dict(
+        schema_version=settings["schema_version"],
         settings=settings,
-        config_sha256=hashlib.sha256(regular(config).read_bytes()).hexdigest(),
+        config_sha256=config_sha,
         source_hashes=sources,
         source_generation=digest(sources),
         geometry=geometry,
@@ -223,15 +275,34 @@ def _protocol(config: Path) -> dict[str, Any]:
         coverage=0.9,
         assignments=[
             dict(
-                assignment_id=f"native-r439-{i:04d}",
-                seed=439000 + i,
-                ancestors=[f"native-r439-preregistered-{i:04d}"],
+                assignment_id=f"native-r{579 if family_id else 439}-{i:04d}",
+                seed=settings["first_seed"] + i - 1,
+                ancestors=[f"native-r{579 if family_id else 439}-preregistered-{i:04d}"],
                 pool="CALIBRATION_ONLY",
-                status="RELEASED" if i == 1 else "PREASSIGNED_NOT_RUN",
+                status="RELEASED" if i == 1 and family_id is None else "PREASSIGNED_NOT_RUN",
             )
             for i in range(1, 10)
         ],
     )
+    if family_id is not None:
+        protocol.update(
+            marker_family=family_id,
+            execution_release="PREPARE_ONLY_NOT_RELEASED",
+            budget_basis="RECIPE_ESTIMATES_ONLY",
+            authorized_actual_budget=dict(
+                model_loads=0,
+                generations=0,
+                paid=0,
+                teacher_acquisitions=0,
+                mujoco_compile=0,
+                mj_forward=0,
+                render=0,
+                physics_steps=0,
+                controller=0,
+                hardware=0,
+            ),
+        )
+    return protocol
 
 
 def prepare_native_calibration(config: Path, *, output: Path) -> dict[str, Any]:
@@ -243,18 +314,75 @@ def prepare_native_calibration(config: Path, *, output: Path) -> dict[str, Any]:
         protocol_sha256=digest(protocol),
         physical_budget=protocol["physical_budget"],
         assigned_groups=9,
-        released_assignments=["native-r439-0001"],
+        released_assignments=[
+            row["assignment_id"] for row in protocol["assignments"] if row["status"] == "RELEASED"
+        ],
         native_qualification="UNKNOWN",
+    )
+
+
+def _has_prepare_family_identity(protocol: Mapping[str, Any]) -> bool:
+    """Recognize reserved identity fields without rewriting historical legacy data."""
+    family = marker_family(PREPARE_ONLY_FAMILY)
+    reserved = {"marker_family", "execution_release", "budget_basis", "authorized_actual_budget"}
+    if reserved.intersection(protocol):
+        return True
+
+    def mapping(value: Any) -> Mapping[str, Any]:
+        return value if isinstance(value, Mapping) else {}
+
+    def sources(value: Any) -> bool:
+        inventory = mapping(value)
+        return bool({family.asset_path, _PREPARE_CONFIG}.intersection(inventory)) or any(
+            value in (family.asset_sha256, _PREPARE_CONFIG_SHA) for value in inventory.values()
+        )
+
+    geometry = mapping(protocol.get("geometry"))
+    pose = mapping(geometry.get("pose_marker"))
+    settings = mapping(protocol.get("settings"))
+    settings_pose = mapping(settings.get("pose_marker"))
+    release = mapping(protocol.get("release_reference"))
+    return (
+        "marker_family" in geometry
+        or geometry.get("asset_path") == family.asset_path
+        or geometry.get("registration_id") == family.registration_id
+        or pose.get("marked_asset_sha256") == family.asset_sha256
+        or pose.get("marker_size_m") == family.marker_size_m
+        or "marker_family" in settings
+        or settings.get("model_path") == family.asset_path
+        or settings.get("marked_asset_sha256") == family.asset_sha256
+        or settings.get("marker_size_m") == family.marker_size_m
+        or settings_pose.get("marker_size_m") == family.marker_size_m
+        or protocol.get("config_sha256") == _PREPARE_CONFIG_SHA
+        or sources(protocol.get("source_hashes"))
+        or "marker_family" in release
+        or release.get("marked_asset_sha256") == family.asset_sha256
+        or sources(release.get("source_hashes"))
     )
 
 
 def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]:
     protocol = load_json(path / "protocol.json")
-    if (
-        not isinstance(protocol, dict)
-        or protocol.get("schema_version") != "native.calibration.operational.v2"
-    ):
+    if not isinstance(protocol, dict) or protocol.get("schema_version") not in {
+        "native.calibration.operational.v2",
+        "native.calibration.operational.v3",
+    }:
         raise ValueError("registered operational calibration protocol required")
+    if protocol["schema_version"] == "native.calibration.operational.v3":
+        if protocol.get("marker_family") != PREPARE_ONLY_FAMILY:
+            raise ValueError("registered prepare-only marker family required")
+        sources = protocol.get("source_hashes")
+        if not isinstance(sources, dict) or protocol.get("source_generation") != digest(sources):
+            raise ValueError("original source generation digest mismatch")
+        expected = _protocol(
+            ROOT / _PREPARE_CONFIG,
+            historical_sources=None if current_sources else sources,
+        )
+        if canonical(protocol) != canonical(expected):
+            raise ValueError("fixed prepare-only registration/recipe or source generation changed")
+        return protocol
+    if _has_prepare_family_identity(protocol):
+        raise ValueError("prepare-only family cannot downgrade to legacy protocol")
     if canonical(protocol["settings"]) != canonical(load_json(ROOT / CONFIG)) or canonical(
         protocol["actions"]
     ) != canonical(action_horizons()):

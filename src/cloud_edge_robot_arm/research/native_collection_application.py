@@ -480,6 +480,8 @@ class NativeCollectionApplication:
         if cls is not NativeCollectionApplication:
             raise TypeError("exact collection factory required")
         registration = read_protocol(protocol)
+        if registration.get("execution_release") == "PREPARE_ONLY_NOT_RELEASED":
+            raise ValueError("prepare-only marker family has no execution release")
         if assignment_id != registration["settings"]["released_assignment"]:
             raise ValueError("only the first preregistered assignment is released")
         claim = protocol / "claims" / (assignment_id + ".json")

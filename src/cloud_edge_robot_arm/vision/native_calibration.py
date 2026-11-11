@@ -20,6 +20,13 @@ from xml.etree import ElementTree as ET
 
 import numpy as np
 
+from cloud_edge_robot_arm.vision.marker_families import (
+    LEGACY_FAMILY,
+    PREPARE_ONLY_FAMILY,
+    _geometry_family,
+    _validate_75mm_structure,
+    marker_family,
+)
 from cloud_edge_robot_arm.vision.native_references import (
     NativeActionReference,
     NativeActionTiming,
@@ -60,8 +67,8 @@ _GROUP_KEYS = {
 }
 
 
-def required_native_source_paths() -> tuple[str, ...]:
-    return (
+def required_native_source_paths(*, marker_family_id: str | None = None) -> tuple[str, ...]:
+    paths = (
         "src/cloud_edge_robot_arm/vision/native_calibration.py",
         "src/cloud_edge_robot_arm/research/native_geometry_calibration.py",
         "src/cloud_edge_robot_arm/vision/native_references.py",
@@ -80,6 +87,13 @@ def required_native_source_paths() -> tuple[str, ...]:
         "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
         "src/cloud_edge_robot_arm/simulation/mujoco/camera.py",
         _ASSET,
+    )
+    if marker_family_id is None or marker_family_id == LEGACY_FAMILY:
+        return paths
+    family = marker_family(marker_family_id)
+    return paths + (
+        "src/cloud_edge_robot_arm/vision/marker_families.py",
+        family.asset_path,
     )
 
 
@@ -195,12 +209,13 @@ class NativeGeometryRegistration:
             "region_world_m",
             "support_height_m",
         }
-        if set(data) != keys or (
+        if set(data) not in (keys, keys | {"marker_family"}) or (
             data["object_id"],
             data["object_class"],
             data["target_region_id"],
         ) != ("object", "cube", "target_region"):
             raise ValueError("complete supported object/tool/region geometry required")
+        _geometry_family(data)
         _relative(data["asset_path"])
         if not data["registration_id"] or set(data["camera"]) != _CAMERA_KEYS:
             raise ValueError("registered identity and full camera descriptor required")
@@ -224,11 +239,21 @@ class NativeGeometryRegistration:
     def pose_marker(self) -> PoseMarkerRegistration:
         return PoseMarkerRegistration(**self.to_payload()["pose_marker"])
 
+    @property
+    def marker_family_id(self) -> str | None:
+        family = _geometry_family(self.to_payload())
+        return None if family is None else family.family_id
+
     def validate_asset(self, root: Path) -> None:
         data = self.to_payload()
         path = _safe(root, data["asset_path"])
         if _hash(path) != self.pose_marker.marked_asset_sha256:
             raise ValueError("registered asset bytes differ")
+        if self.marker_family_id == PREPARE_ONLY_FAMILY:
+            legacy = _safe(root, marker_family(LEGACY_FAMILY).asset_path)
+            if _hash(legacy) != marker_family(LEGACY_FAMILY).asset_sha256:
+                raise ValueError("registered original comparison asset bytes differ")
+            _validate_75mm_structure(path.read_bytes(), legacy.read_bytes())
         tree = ET.fromstring(path.read_bytes())
         geom = tree.find("./worldbody/body[@name='object']/geom[@name='object_geom']")
         site = tree.find(".//site[@name='tcp']")
@@ -312,7 +337,9 @@ class NativeCalibrationRegistration:
                 _relative(name)
             if group["clock_reference_path"] is not None:
                 _relative(group["clock_reference_path"])
-        if not set(required_native_source_paths()) <= set(data["source_hashes"]):
+        geometry = NativeGeometryRegistration(data["geometry"])
+        required = required_native_source_paths(marker_family_id=geometry.marker_family_id)
+        if not set(required) <= set(data["source_hashes"]):
             raise ValueError("registered native producer/consumer source inventory incomplete")
         for inventory in (data["source_hashes"], data["original_file_hashes"]):
             if not isinstance(inventory, dict) or not inventory:
@@ -320,7 +347,6 @@ class NativeCalibrationRegistration:
             for name, digest in inventory.items():
                 _relative(name)
                 _sha(digest)
-        geometry = NativeGeometryRegistration(data["geometry"])
         geometry.validate_asset(self.source_root)
         for skill, horizon in data["supported_actions"].items():
             if skill not in {
@@ -357,6 +383,8 @@ class NativeCalibrationRegistration:
 
     def revalidate(self) -> dict[str, Any]:
         data = self.read_registry()
+        family_id = NativeGeometryRegistration(data["geometry"]).marker_family_id
+        required = required_native_source_paths(marker_family_id=family_id)
         actual_paths = set()
         for path in self.artifact_root.rglob("*"):
             if path.is_symlink():
@@ -374,10 +402,7 @@ class NativeCalibrationRegistration:
         for name, expected in data["source_hashes"].items():
             if _hash(_safe(self.source_root, name)) != expected:
                 raise ValueError("registered native source drift")
-            if (
-                name in required_native_source_paths()
-                and _hash(_safe(executing_root, name)) != expected
-            ):
+            if name in required and _hash(_safe(executing_root, name)) != expected:
                 raise ValueError("rehashed copy differs from current native implementation")
         return data
 

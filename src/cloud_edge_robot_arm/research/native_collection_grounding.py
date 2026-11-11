@@ -34,13 +34,12 @@ from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
 from cloud_edge_robot_arm.research.native_calibration_collection import (
     BASE_ASSET,
     BASE_SHA,
-    MARKED_ASSET,
-    MARKED_SHA,
     ROOT,
     action_horizons,
     digest,
     regular,
 )
+from cloud_edge_robot_arm.vision.marker_families import LEGACY_FAMILY, marker_family
 from cloud_edge_robot_arm.vision.native_calibration import NativeGeometryRegistration
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
 from cloud_edge_robot_arm.vision.owner_registration import (
@@ -73,6 +72,9 @@ def release_reference_registration(
     from cloud_edge_robot_arm.simulation.mujoco.skill_robot import _DOWNWARD
     from cloud_edge_robot_arm.vision.top_grasp import _TCP_ABOVE_ESTIMATED_CENTER_M
 
+    registered = NativeGeometryRegistration(geometry)
+    registered.validate_asset(ROOT)
+    family = marker_family(registered.marker_family_id or LEGACY_FAMILY)
     paths = (
         "simulation/mujoco/skill_robot.py",
         "simulation/mujoco/motion_controller.py",
@@ -84,7 +86,9 @@ def release_reference_registration(
         "src/cloud_edge_robot_arm/" + p: source_hashes["src/cloud_edge_robot_arm/" + p]
         for p in paths
     }
-    sources.update({p: source_hashes[p] for p in (BASE_ASSET, MARKED_ASSET)})
+    sources.update({p: source_hashes[p] for p in (BASE_ASSET, family.asset_path)})
+    if sources[family.asset_path] != family.asset_sha256:
+        raise ValueError("selected release asset source differs from registered family")
     w, x, y, z = _DOWNWARD
     rotation = np.array(
         [
@@ -116,23 +120,25 @@ def release_reference_registration(
         vertices_object_m=[list(v) for v in itertools.product(*[(-h, h) for h in extent])],
         grasp_profile=CURRENT_GRASP_PROFILE,
         base_asset_sha256=BASE_SHA,
-        marked_asset_sha256=MARKED_SHA,
+        marked_asset_sha256=family.asset_sha256,
         formula="WORLD_TCP_COMMAND_TIMES_INVERSE_NOMINAL_OBJECT_TCP_V1",
         measured_tcp_rotation=False,
         reference_kind="NOMINAL_UPRIGHT_CONTROLLER_PROFILE",
     )
 
 
-def geometry_registration() -> dict[str, Any]:
+def geometry_registration(*, marker_family_id: str | None = None) -> dict[str, Any]:
     """Derive the registered top camera from immutable XML, without compilation."""
+    family = marker_family(LEGACY_FAMILY if marker_family_id is None else marker_family_id)
     if (
-        hashlib.sha256(regular(ROOT / MARKED_ASSET).read_bytes()).hexdigest() != MARKED_SHA
+        hashlib.sha256(regular(ROOT / family.asset_path).read_bytes()).hexdigest()
+        != family.asset_sha256
         or hashlib.sha256(regular(ROOT / BASE_ASSET).read_bytes()).hexdigest() != BASE_SHA
         or CURRENT_GRASP_PROFILE != "mujoco_upright_box_v2"
         or calibration_asset_sha256(CURRENT_GRASP_PROFILE) != BASE_SHA
     ):
         raise ValueError("exact marked asset and separate base grasp profile required")
-    tree = ET.fromstring((ROOT / MARKED_ASSET).read_bytes())
+    tree = ET.fromstring((ROOT / family.asset_path).read_bytes())
     camera = tree.find("./worldbody/camera[@name='rgbd']")
     if camera is None or (camera.get("pos"), camera.get("quat"), camera.get("fovy")) != (
         "0.35 0 1.4",
@@ -147,18 +153,18 @@ def geometry_registration() -> dict[str, Any]:
         np.asarray(intrinsics + transform, dtype="<f8").tobytes()
     ).hexdigest()[:16]
     geometry = dict(
-        registration_id="native-r439-outboard-v3",
+        registration_id=family.registration_id,
         object_id="object",
         object_class="cube",
         target_region_id="target_region",
-        asset_path=MARKED_ASSET,
+        asset_path=family.asset_path,
         pose_marker=dict(
-            marker_id=7,
-            marker_size_m=0.045,
-            marked_asset_sha256=MARKED_SHA,
-            dictionary="DICT_4X4_50",
+            marker_id=family.marker_id,
+            marker_size_m=family.marker_size_m,
+            marked_asset_sha256=family.asset_sha256,
+            dictionary=family.dictionary,
         ),
-        marker_to_object=_transform(0.1, 0, 0.03505),
+        marker_to_object=list(family.marker_to_object),
         object_half_extent_m=[0.035] * 3,
         contact_points_m={"top": [0, 0, 0.035], "left": [0, 0.035, 0], "right": [0, -0.035, 0]},
         object_to_tcp=_transform(0, 0, 0.01),
@@ -174,6 +180,8 @@ def geometry_registration() -> dict[str, Any]:
         region_world_m=[0.2, 0.25, 0.004],
         support_height_m=0.0,
     )
+    if family.family_id != LEGACY_FAMILY:
+        geometry["marker_family"] = family.family_id
     NativeGeometryRegistration(geometry).validate_asset(ROOT)
     return geometry
 
