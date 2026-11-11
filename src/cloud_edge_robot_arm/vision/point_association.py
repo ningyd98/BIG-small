@@ -1,4 +1,4 @@
-"""在固定彩色方块研究范围内，将近邻背景点关联到唯一完整可见支撑。"""
+"""在固定彩色方块范围内，将背景或边缘点关联到唯一完整可见支撑。"""
 
 from __future__ import annotations
 
@@ -96,21 +96,35 @@ def associate_target_point(
             [(values >= lower) & (values <= upper) for lower, upper in _HUE_BOUNDS[color]]
         )
 
-    if int(chroma[v, u]) >= 35:
+    native_colored = int(chroma[v, u]) >= 35
+    if native_colored:
         if color is not None and not bool(hue_matches(hsv[v, u, 0:1])[0]):
             reject("native colored pixel contradicts explicit descriptor color")
-        evidence.update(
-            status="UNCHANGED",
-            selected_pixel=[u, v],
-            selected_source="NATIVE_POINT",
-            selected_rgb=rgb[v, u].tolist(),
-            selected_hsv=hsv[v, u].tolist(),
-            displacement_px=0.0,
-            descriptor_color_status="MATCHED" if color else "UNSUPPORTED_DIRECT_UNCHANGED",
-        )
-        return PointAssociation(native_pixel, evidence)
+        if color is not None:
+            # RGB alone decides whether to relocate; invalid/nonflat depth must
+            # still reject downstream instead of initiating another search.
+            evidence["native_rgb_patch_complete"] = bool(
+                1 <= u < observation.width - 1
+                and 1 <= v < observation.height - 1
+                and np.all(chroma[v - 1 : v + 2, u - 1 : u + 2] >= 35)
+                and np.all(hue_matches(hsv[v - 1 : v + 2, u - 1 : u + 2, 0]))
+            )
+        if color is None or evidence["native_rgb_patch_complete"]:
+            evidence.update(
+                status="UNCHANGED",
+                selected_pixel=[u, v],
+                selected_source="NATIVE_POINT",
+                selected_rgb=rgb[v, u].tolist(),
+                selected_hsv=hsv[v, u].tolist(),
+                displacement_px=0.0,
+                descriptor_color_status="MATCHED" if color else "UNSUPPORTED_DIRECT_UNCHANGED",
+            )
+            return PointAssociation(native_pixel, evidence)
     if color is None:
         reject("background association requires explicit supported color/object descriptor")
+    evidence["association_trigger"] = (
+        "NATIVE_COLORED_BOUNDARY" if native_colored else "NEAR_BACKGROUND"
+    )
 
     radius = min(24, max(8, round(0.08 * min(observation.width, observation.height))))
     left, top, right, bottom = u - radius, v - radius, u + radius, v + radius
@@ -140,6 +154,8 @@ def associate_target_point(
     if left < 0 or top < 0 or right >= observation.width or bottom >= observation.height:
         reject("association window is truncated by image boundary")
     index = candidates[0]
+    if native_colored and (labels[v, u] == 0 or labels[v, u] != index):
+        reject("colored boundary association must retain its native component")
     x, y, width, height, area = (int(value) for value in stats[index])
     if not (
         left < x

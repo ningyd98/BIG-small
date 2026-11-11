@@ -962,3 +962,73 @@ def test_native_absence_alias_stops_target_or_destination(monkeypatch, absent_at
     assert evidence["native_results"][-1]["status"] == "ABSENT"
     assert evidence["native_results"][-1]["normalized_1000"] is None
     assert evidence["native_results"][-1]["raw_sha256"] == hashlib.sha256(raw.encode()).hexdigest()
+
+
+def colored_edge_points():
+    """仅替代外部原生推理，保留真实绑定、解析与后续完整规划管线。"""
+    class EdgePoints(FixturePoints):
+        def point(self, observation, phrase):
+            import hashlib
+
+            from cloud_edge_robot_arm.vision.molmo_pointing import (
+                BoundPointResult,
+                parse_native_point,
+            )
+
+            if self.queries:
+                return super().point(observation, phrase)
+            self.queries.append(phrase)
+            return BoundPointResult(
+                parse_native_point('<points coords="1 1 150 375">red block</points>'),
+                observation.checksum_sha256,
+                observation.evidence()["rgb_sha256"],
+                hashlib.sha256(phrase.encode()).hexdigest(),
+                {"evidence_scope": "CPU_CONTRACT_FIXTURE"},
+            )
+
+    return EdgePoints()
+
+
+def test_colored_edge_association_composes_with_original_pipeline(monkeypatch):
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    adapter, _, bodies = adapter_fixture(monkeypatch, points=colored_edge_points())
+    request = request_scene()
+    checksum = request.observation.checksum_sha256
+    response = PlanningPipeline(planner=adapter).process(request)
+    assert response.outcome == "PLANNED"
+    assert response.contract is not None and response.dispatch is None
+    evidence = response.attempts[0].draft.observation_evidence
+    assert evidence["native_results"][0]["normalized_1000"] == (150, 375)
+    assert evidence["native_original_pixel_target"] == [12, 24]
+    assert evidence["associated_pixel_target"] == evidence["original_pixel_target"] == [12, 26]
+    assert evidence["native_original_pixel_destination"] == [52, 27]
+    assert evidence["target_point_association"]["association_trigger"] == "NATIVE_COLORED_BOUNDARY"
+    assert evidence["checksum_sha256"] == checksum == request.observation.checksum_sha256
+    assert len(bodies) == 1
+
+
+@pytest.mark.parametrize(
+    "damage",
+    ["decoy", "partial", "occluded", "edge_occluder", "invalid_edge", "depth", "depth_spike"],
+)
+def test_colored_edge_association_preserves_original_downstream_rejection(monkeypatch, damage):
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    adapter, _, bodies = adapter_fixture(monkeypatch, points=colored_edge_points())
+    response = PlanningPipeline(planner=adapter).process(request_scene(damage=damage))
+    assert response.outcome == "REQUEST_MORE_OBSERVATION"
+    assert response.contract is None and response.dispatch is None
+    assert bodies == []
+
+
+def test_colored_edge_selected_spike_does_not_hunt_for_a_flatter_pixel(monkeypatch):
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+
+    adapter, _, bodies = adapter_fixture(monkeypatch, points=colored_edge_points())
+    response = PlanningPipeline(planner=adapter).process(request_scene(damage="depth_spike"))
+    assert response.outcome == "REQUEST_MORE_OBSERVATION"
+    evidence = response.attempts[0].draft.observation_evidence
+    assert evidence["associated_pixel_target"] == [12, 26]
+    assert "flat" in response.reason
+    assert bodies == [] and response.contract is None
