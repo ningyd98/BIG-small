@@ -11,8 +11,11 @@ from xml.etree import ElementTree as ET
 
 LEGACY_FAMILY = "outboard_id7_45mm_v3"
 PREPARE_ONLY_FAMILY = "outboard_id7_75mm_r579"
+SIDE_PREPARE_ONLY_FAMILY = "side_y_plus_id7_75mm_r593"
 _PREFIX = "pose_marker_outboard_v3_"
 _ATTACHMENT = (1, 0, 0, 0.1, 0, 1, 0, 0, 0, 0, 1, 0.03505, 0, 0, 0, 1)
+_SIDE_ATTACHMENT = (1, 0, 0, 0, 0, 1, 0, 0.1, 0, 0, 1, 0.03505, 0, 0, 0, 1)
+_PREPARE_FAMILIES = (PREPARE_ONLY_FAMILY, SIDE_PREPARE_ONLY_FAMILY)
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,16 @@ _FAMILIES = MappingProxyType(
             "native-r579-outboard-75mm",
             _ATTACHMENT,
         ),
+        SIDE_PREPARE_ONLY_FAMILY: MarkerFamily(
+            SIDE_PREPARE_ONLY_FAMILY,
+            "assets/robots/franka_panda/scene_pose_marker_side_y_plus_75mm_r593.xml",
+            "1e95054dc74e1c8ff51042290450b5e01e7410dd653870c553f056892efca140",
+            7,
+            "DICT_4X4_50",
+            0.075,
+            "native-r593-side-y-plus-75mm",
+            _SIDE_ATTACHMENT,
+        ),
     }
 )
 
@@ -64,18 +77,24 @@ def marker_family(family_id: str) -> MarkerFamily:
 
 def _geometry_family(data: Mapping[str, Any]) -> MarkerFamily | None:
     """Recognize every new-family identifier before any generic legacy fallback."""
-    family = marker_family(PREPARE_ONLY_FAMILY)
     pose = data.get("pose_marker", {})
     if not isinstance(pose, Mapping):
         raise ValueError("complete registered marker descriptor required")
     strict = (
         "marker_family" in data
-        or data.get("asset_path") == family.asset_path
-        or pose.get("marked_asset_sha256") == family.asset_sha256
-        or data.get("registration_id") == family.registration_id
+        or any(
+            data.get("asset_path") == _FAMILIES[family_id].asset_path
+            or pose.get("marked_asset_sha256") == _FAMILIES[family_id].asset_sha256
+            or data.get("registration_id") == _FAMILIES[family_id].registration_id
+            for family_id in _PREPARE_FAMILIES
+        )
+        or data.get("marker_to_object") == list(_SIDE_ATTACHMENT)
     )
     if not strict:
         return None
+    if data.get("marker_family") not in _PREPARE_FAMILIES:
+        raise ValueError("complete exact marker family/asset/geometry binding required")
+    family = marker_family(data["marker_family"])
     if (
         data.get("marker_family") != family.family_id
         or data.get("asset_path") != family.asset_path
@@ -114,8 +133,14 @@ def _canonical(element: ET.Element) -> tuple[Any, ...]:
     )
 
 
-def _validate_75mm_structure(candidate: bytes, legacy: bytes) -> None:
+def _validate_75mm_structure(
+    candidate: bytes, legacy: bytes, *, family_id: str = PREPARE_ONLY_FAMILY
+) -> None:
     """Validate static marker cells and preserve every nonmarker XML element."""
+    if family_id not in _PREPARE_FAMILIES:
+        raise ValueError("registered prepare-only marker family required")
+    attachment = marker_family(family_id).marker_to_object
+    center_x, center_y = attachment[3], attachment[7]
     tree, original = ET.fromstring(candidate), ET.fromstring(legacy)
     objects = tree.findall(".//body[@name='object']")
     direct = tree.findall("./worldbody/body[@name='object']")
@@ -154,12 +179,15 @@ def _validate_75mm_structure(candidate: bytes, legacy: bytes) -> None:
             raise ValueError("registered visual marker group required")
         name = node.attrib["name"]
         if name == _PREFIX + "quiet":
-            _numbers(node.get("pos"), (0.1, 0, 0.03502))
+            _numbers(node.get("pos"), (center_x, center_y, 0.03502))
             _numbers(node.get("size"), (0.05, 0.05, 0.00001))
             white = True
         else:
             r, c = int(name[-3]), int(name[-1])
-            _numbers(node.get("pos"), (0.1 + (c - 2.5) * 0.0125, (2.5 - r) * 0.0125, 0.03504))
+            _numbers(
+                node.get("pos"),
+                (center_x + (c - 2.5) * 0.0125, center_y + (2.5 - r) * 0.0125, 0.03504),
+            )
             _numbers(node.get("size"), (0.00625, 0.00625, 0.00001))
             white = bits[r][c] == "1"
         _numbers(node.get("rgba"), (0.98, 0.98, 0.98, 1) if white else (0.01, 0.01, 0.01, 1))

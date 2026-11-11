@@ -23,6 +23,7 @@ import numpy as np
 from cloud_edge_robot_arm.vision.marker_families import (
     LEGACY_FAMILY,
     PREPARE_ONLY_FAMILY,
+    SIDE_PREPARE_ONLY_FAMILY,
     _geometry_family,
     _validate_75mm_structure,
     marker_family,
@@ -249,11 +250,13 @@ class NativeGeometryRegistration:
         path = _safe(root, data["asset_path"])
         if _hash(path) != self.pose_marker.marked_asset_sha256:
             raise ValueError("registered asset bytes differ")
-        if self.marker_family_id == PREPARE_ONLY_FAMILY:
+        if self.marker_family_id in (PREPARE_ONLY_FAMILY, SIDE_PREPARE_ONLY_FAMILY):
             legacy = _safe(root, marker_family(LEGACY_FAMILY).asset_path)
             if _hash(legacy) != marker_family(LEGACY_FAMILY).asset_sha256:
                 raise ValueError("registered original comparison asset bytes differ")
-            _validate_75mm_structure(path.read_bytes(), legacy.read_bytes())
+            _validate_75mm_structure(
+                path.read_bytes(), legacy.read_bytes(), family_id=self.marker_family_id
+            )
         tree = ET.fromstring(path.read_bytes())
         geom = tree.find("./worldbody/body[@name='object']/geom[@name='object_geom']")
         site = tree.find(".//site[@name='tcp']")
