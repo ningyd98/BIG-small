@@ -65,6 +65,13 @@ _PREPARE_POLICIES = MappingProxyType(
         ),
     }
 )
+_SINGLE_TEACHER_POLICY = _PreparePolicy(
+    "configs/research/native_operational_calibration_side_y_plus_single_teacher_r595.yaml",
+    "da7426ab451bf59e76c682d605e5b211c79395b73fbe127990c1e0a1e2cf53cd",
+    "3b1ff7748003c90dc922e2b21ba555269933887ac7bfb46ce03ceaa6cd455bac",
+    "native.calibration.operational.v5",
+    595,
+)
 ADMISSION_VERSION = "teacher.collection.admission.v1"
 ADMISSION_ROWS = (
     "PRE_INITIAL_REACHABLE_DEPTH",
@@ -143,9 +150,32 @@ def fresh_directory(path: Path) -> Path:
     return path
 
 
-def source_inventory(*, marker_family_id: str | None = None) -> dict[str, str]:
+def _collection_policy(
+    family_id: str | None, protocol_schema: str | None = None
+) -> _PreparePolicy | None:
+    if (family_id is not None and type(family_id) is not str) or (
+        protocol_schema is not None and type(protocol_schema) is not str
+    ):
+        raise ValueError("registered schema/family pair required")
+    if family_id in (None, LEGACY_FAMILY) and protocol_schema in (
+        None,
+        "native.calibration.operational.v2",
+    ):
+        return None
+    if family_id in _PREPARE_POLICIES:
+        policy = _PREPARE_POLICIES[family_id]
+        if protocol_schema in (None, policy.schema):
+            return policy
+    if family_id == SIDE_PREPARE_ONLY_FAMILY and protocol_schema == _SINGLE_TEACHER_POLICY.schema:
+        return _SINGLE_TEACHER_POLICY
+    raise ValueError("registered schema/family pair required")
+
+
+def source_inventory(
+    *, marker_family_id: str | None = None, protocol_schema: str | None = None
+) -> dict[str, str]:
     family = marker_family(LEGACY_FAMILY if marker_family_id is None else marker_family_id)
-    policy = _PREPARE_POLICIES.get(family.family_id)
+    policy = _collection_policy(marker_family_id, protocol_schema)
     paths = sorted((ROOT / "src/cloud_edge_robot_arm").rglob("*.py"))
     paths += [
         ROOT / (policy.config if policy is not None else CONFIG),
@@ -161,8 +191,16 @@ def source_inventory(*, marker_family_id: str | None = None) -> dict[str, str]:
     }
 
 
-def check_sources(expected: dict[str, str], *, marker_family_id: str | None = None) -> None:
-    if source_inventory(marker_family_id=marker_family_id) != expected:
+def check_sources(
+    expected: dict[str, str],
+    *,
+    marker_family_id: str | None = None,
+    protocol_schema: str | None = None,
+) -> None:
+    if (
+        source_inventory(marker_family_id=marker_family_id, protocol_schema=protocol_schema)
+        != expected
+    ):
         raise ValueError("registered source generation changed")
 
 
@@ -203,10 +241,10 @@ def action_horizons() -> list[dict[str, Any]]:
     return rows
 
 
-def _registered_settings(family_id: str | None) -> dict[str, Any]:
-    if family_id is not None and (type(family_id) is not str or family_id not in _PREPARE_POLICIES):
-        raise ValueError("registered prepare-only marker family required")
-    policy = _PREPARE_POLICIES.get(family_id)
+def _registered_settings(
+    family_id: str | None, protocol_schema: str | None = None
+) -> dict[str, Any]:
+    policy = _collection_policy(family_id, protocol_schema)
     path = ROOT / (policy.config if policy is not None else CONFIG)
     expected = load_json(path)
     expected_digest = (
@@ -232,16 +270,12 @@ def _protocol(config: Path, *, historical_sources: dict[str, str] | None = None)
     if not isinstance(settings, dict):
         raise ValueError("fixed registered collection policy required")
     family_id = settings.get("marker_family")
-    if "marker_family" in settings and (
-        type(family_id) is not str or family_id not in _PREPARE_POLICIES
-    ):
-        raise ValueError("registered prepare-only marker family required")
-    policy = _PREPARE_POLICIES.get(family_id)
+    policy = _collection_policy(family_id, settings.get("schema_version"))
     config_sha = hashlib.sha256(regular(config).read_bytes()).hexdigest()
     if policy is not None and config_sha != policy.config_sha256:
         raise ValueError("fixed registered new-family config bytes required")
     family = marker_family(family_id or LEGACY_FAMILY)
-    expected = _registered_settings(family_id)
+    expected = _registered_settings(family_id, settings.get("schema_version"))
     if canonical(settings) != canonical(expected) or (
         settings["model_path"] != family.asset_path
         or settings["marked_asset_sha256"] != family.asset_sha256
@@ -249,7 +283,9 @@ def _protocol(config: Path, *, historical_sources: dict[str, str] | None = None)
     ):
         raise ValueError("fixed registered collection policy required")
     geometry = geometry_registration(marker_family_id=family_id)
-    sources = source_inventory(marker_family_id=family_id)
+    sources = source_inventory(
+        marker_family_id=family_id, protocol_schema=settings["schema_version"]
+    )
     if historical_sources is not None:
         if (
             not isinstance(historical_sources, dict)
@@ -318,7 +354,9 @@ def _protocol(config: Path, *, historical_sources: dict[str, str] | None = None)
                     f"native-r{policy.lineage if policy is not None else 439}-preregistered-{i:04d}"
                 ],
                 pool="CALIBRATION_ONLY",
-                status="RELEASED" if i == 1 and family_id is None else "PREASSIGNED_NOT_RUN",
+                status="RELEASED"
+                if i == 1 and (family_id is None or policy is _SINGLE_TEACHER_POLICY)
+                else "PREASSIGNED_NOT_RUN",
             )
             for i in range(1, 10)
         ],
@@ -341,6 +379,30 @@ def _protocol(config: Path, *, historical_sources: dict[str, str] | None = None)
                 hardware=0,
             ),
         )
+    if policy is _SINGLE_TEACHER_POLICY:
+        protocol.update(
+            execution_release="SINGLE_TEACHER_ASSIGNMENT_RELEASED",
+            budget_basis="SINGLE_TEACHER_ATTEMPT_CEILINGS",
+            authorized_actual_budget=dict(
+                model_loads=0,
+                generations=0,
+                paid=0,
+                teacher_acquisitions=1,
+                mujoco_compile=1,
+                mj_forward=4501,
+                render=64852,
+                physics_steps=12960,
+                controller=8,
+                hardware=0,
+                MjData=19,
+                mj_jacSite=4500,
+            ),
+            authorized_actual_roles={
+                "MjData": {"ENGINE": 1, "IK_SCRATCH": 18},
+                "mj_forward": {"RESET": 1, "IK_SCRATCH": 4500},
+                "mj_jacSite": {"IK_SCRATCH": 4500},
+            },
+        )
     return protocol
 
 
@@ -362,7 +424,13 @@ def prepare_native_calibration(config: Path, *, output: Path) -> dict[str, Any]:
 
 def _has_prepare_family_identity(protocol: Mapping[str, Any]) -> bool:
     """Recognize reserved identity fields without rewriting historical legacy data."""
-    reserved = {"marker_family", "execution_release", "budget_basis", "authorized_actual_budget"}
+    reserved = {
+        "marker_family",
+        "execution_release",
+        "budget_basis",
+        "authorized_actual_budget",
+        "authorized_actual_roles",
+    }
     if reserved.intersection(protocol):
         return True
 
@@ -374,11 +442,31 @@ def _has_prepare_family_identity(protocol: Mapping[str, Any]) -> bool:
     settings = mapping(protocol.get("settings"))
     settings_pose = mapping(settings.get("pose_marker"))
     release = mapping(protocol.get("release_reference"))
+    assignments = protocol.get("assignments")
+    if isinstance(assignments, list):
+        for row in assignments:
+            row = mapping(row)
+            ancestors = row.get("ancestors")
+            if (
+                row.get("assignment_id") in tuple(f"native-r595-{i:04d}" for i in range(1, 10))
+                or row.get("seed") in range(595001, 595010)
+                or (
+                    isinstance(ancestors, list)
+                    and any(
+                        value in tuple(f"native-r595-preregistered-{i:04d}" for i in range(1, 10))
+                        for value in ancestors
+                    )
+                )
+            ):
+                return True
     if geometry.get("marker_to_object") == list(
         marker_family(SIDE_PREPARE_ONLY_FAMILY).marker_to_object
     ):
         return True
-    for family_id, policy in _PREPARE_POLICIES.items():
+    for family_id, policy in (
+        *_PREPARE_POLICIES.items(),
+        (SIDE_PREPARE_ONLY_FAMILY, _SINGLE_TEACHER_POLICY),
+    ):
         family = marker_family(family_id)
 
         def sources(value: Any, *, family=family, policy=policy) -> bool:
@@ -414,14 +502,13 @@ def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]
         "native.calibration.operational.v2",
         "native.calibration.operational.v3",
         "native.calibration.operational.v4",
+        "native.calibration.operational.v5",
     }:
         raise ValueError("registered operational calibration protocol required")
     if protocol["schema_version"] != "native.calibration.operational.v2":
         family_id = protocol.get("marker_family")
-        if type(family_id) is not str or family_id not in _PREPARE_POLICIES:
-            raise ValueError("registered prepare-only marker family required")
-        policy = _PREPARE_POLICIES[family_id]
-        if protocol["schema_version"] != policy.schema:
+        policy = _collection_policy(family_id, protocol["schema_version"])
+        if policy is None:
             raise ValueError("registered schema/family pair required")
         sources = protocol.get("source_hashes")
         if not isinstance(sources, dict) or protocol.get("source_generation") != digest(sources):

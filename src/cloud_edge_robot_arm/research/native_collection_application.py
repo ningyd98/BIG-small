@@ -54,6 +54,18 @@ from cloud_edge_robot_arm.vision.worker_owner import (
 
 _ISSUER = object()
 
+
+def _check_protocol_sources(protocol: dict[str, Any]) -> None:
+    if "marker_family" not in protocol:
+        check_sources(protocol["source_hashes"])
+    else:
+        check_sources(
+            protocol["source_hashes"],
+            marker_family_id=protocol["marker_family"],
+            protocol_schema=protocol["schema_version"],
+        )
+
+
 if TYPE_CHECKING:
     from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
         SQLiteSimulationJobRepository,
@@ -577,7 +589,7 @@ class NativeCollectionApplication:
             scenario_id="S01_NORMAL_STATIC",
             control_mode="PCSC",
             seed=assignment["seed"],
-            manifest_id="native.calibration.operational.v2",
+            manifest_id=protocol["schema_version"],
             reproducibility_hash=digest(assignment),
             draft=draft,
             timeout_seconds=self.policy["task_timeout_s"],
@@ -1143,7 +1155,7 @@ class NativeCollectionApplication:
         render_accounting: dict[str, Any] | None = None
         try:
             self.check_active()
-            check_sources(self.protocol["source_hashes"])
+            _check_protocol_sources(self.protocol)
             if shutil.disk_usage(live.output).free < self.policy["free_disk_min_bytes"]:
                 raise RuntimeError("registered 32GiB free disk prerequisite unavailable")
             live.progress["preflight_completed"] = True
@@ -1240,7 +1252,7 @@ class NativeCollectionApplication:
                     shield = research_safety_shield(self.policy["task_timeout_s"])
                     recorder.record_shield_config(shield)
                     for index in range(8):
-                        check_sources(self.protocol["source_hashes"])
+                        _check_protocol_sources(self.protocol)
                         contract, step, binding, _, _ = _collect_grounded_step(
                             live,
                             index,
