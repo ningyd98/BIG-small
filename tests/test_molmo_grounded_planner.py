@@ -928,3 +928,37 @@ def test_fresh_native_failure_keeps_terminal_rejection_and_original_error(monkey
     assert draft.parse_error == "native perception failed: RuntimeError"
     assert draft.observation_evidence["post_cloud_revalidation"]["status"] == "REJECTED"
     assert len(state.calls) == len(state.captures) == 1
+
+
+@pytest.mark.parametrize("absent_at", [1, 2], ids=["target", "destination"])
+def test_native_absence_alias_stops_target_or_destination(monkeypatch, absent_at):
+    import hashlib
+    from dataclasses import replace
+
+    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+    from cloud_edge_robot_arm.vision.molmo_pointing import parse_native_point
+
+    raw = "There are none.<|im_end|>"
+
+    class AbsencePoints(FixturePoints):
+        def point(self, observation, phrase):
+            bound = super().point(observation, phrase)
+            if len(self.queries) == absent_at:
+                return replace(bound, result=parse_native_point(raw))
+            return bound
+
+    adapter, points, bodies = adapter_fixture(monkeypatch, points=AbsencePoints())
+
+    def forbidden_cloud(*args, **kwargs):
+        raise AssertionError("absence must stop before cloud transport")
+
+    monkeypatch.setattr(adapter.cloud, "_post", forbidden_cloud)
+    response = PlanningPipeline(planner=adapter).process(request_scene())
+    assert response.outcome == "REQUEST_MORE_OBSERVATION"
+    assert response.contract is None and response.dispatch is None
+    assert len(points.queries) == absent_at and bodies == []
+    evidence = response.attempts[-1].draft.observation_evidence
+    assert len(evidence["native_results"]) == absent_at
+    assert evidence["native_results"][-1]["status"] == "ABSENT"
+    assert evidence["native_results"][-1]["normalized_1000"] is None
+    assert evidence["native_results"][-1]["raw_sha256"] == hashlib.sha256(raw.encode()).hexdigest()

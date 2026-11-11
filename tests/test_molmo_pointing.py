@@ -244,3 +244,93 @@ def test_decode_failure_retains_generated_tokens(tmp_path, monkeypatch):
     assert (folder / "generation-completed.json").exists()
     assert json.loads((folder / "failure.json").read_text())["generation_calls_completed"] == 1
     assert not (folder / "raw-response.txt").exists()
+
+
+@pytest.mark.parametrize("terminal", ["", "<|im_end|>", "<|endoftext|>"])
+@pytest.mark.parametrize("padding", ["", " \n"])
+def test_native_absence_alias_exact_protocol(terminal, padding):
+    from cloud_edge_robot_arm.vision.molmo_pointing import parse_native_point
+
+    raw = f"{padding}There are none.{terminal}{padding}"
+    result = parse_native_point(raw)
+    assert result.status == "ABSENT"
+    assert result.normalized_1000 is None and result.object_index is None
+    assert result.error is None and result.raw_text == raw
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "there are none.",
+        "There Are None.",
+        "There are none",
+        "There may be none.",
+        "There are none. More details.",
+        "ABSENT There are none.",
+        "There are non",
+        "There are none.<|im",
+        "There are none.<|im_end|><|im_end|>",
+        "There are none.<|im_end|><|endoftext|>",
+        'There are none.<points coords="1 1 2 3">block</points>',
+        '<points coords="1 1 2 3">block</points>There are none.',
+        '<points coords="1 1 2 3">There are none.</points>',
+        '<points coords="1 1 2 3">red block. There are none.</points>',
+        '<points coords="1 1 2 3">THERE ARE NONE.</points>',
+        '<points coords="1 1 2 3">there  are none.</points>',
+        '<points coords="1 1 2 3">there are   none.</points>',
+        '<points coords="1 1 2 3">There are none but maybe one.</points>',
+    ],
+)
+def test_native_absence_alias_rejects_mixed_or_unknown(raw):
+    from cloud_edge_robot_arm.vision.molmo_pointing import parse_native_point
+
+    result = parse_native_point(raw)
+    assert result.status == "INVALID"
+    assert result.normalized_1000 is None and result.object_index is None
+    assert result.raw_text == raw
+
+
+def test_native_absence_alias_contradiction_is_word_bounded():
+    from cloud_edge_robot_arm.vision.molmo_pointing import parse_native_point
+
+    raw = '<points coords="1 1 2 3">there are nonetheless visible blocks</points>'
+    result = parse_native_point(raw)
+    assert result.status == "POINT" and result.normalized_1000 == (2, 3)
+
+
+@pytest.mark.parametrize("terminal", ["", "<|im_end|>", "<|endoftext|>"])
+def test_native_absence_alias_preserves_evidence(tmp_path, monkeypatch, terminal):
+    from cloud_edge_robot_arm.vision.observations import RGBDObservation
+
+    raw = f"There are none.{terminal}"
+    provider, _, _, _ = native_fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(provider._processor, "decode", lambda *args, **kwargs: raw)
+    observation = RGBDObservation.model_validate(observation_payload())
+    result = provider.point(observation, "blue block")
+    folder = tmp_path / "raw/request-0001"
+    saved = json.loads((folder / "result.json").read_text())
+    assert result.result.status == saved["native"]["status"] == "ABSENT"
+    assert result.result.raw_text == saved["native"]["raw_text"] == raw
+    assert (folder / "raw-response.txt").read_bytes() == raw.encode()
+    assert result.evidence["raw_sha256"] == hashlib.sha256(raw.encode()).hexdigest()
+    assert (
+        result.observation_checksum
+        == saved["observation_checksum"]
+        == observation.checksum_sha256
+    )
+    assert result.rgb_sha256 == saved["rgb_sha256"] == observation.evidence()["rgb_sha256"]
+    assert result.query_sha256 == saved["query_sha256"] == hashlib.sha256(b"blue block").hexdigest()
+    assert result.result.normalized_1000 is None and result.result.object_index is None
+    assert provider.generation_calls_started == provider.generation_calls_completed == 1
+
+
+def test_native_absence_alias_at_cap_is_invalid(tmp_path, monkeypatch):
+    from cloud_edge_robot_arm.vision.observations import RGBDObservation
+
+    raw = "There are none.<|im_end|>"
+    provider, _, _, _ = native_fixture(tmp_path, monkeypatch, cap=True)
+    monkeypatch.setattr(provider._processor, "decode", lambda *args, **kwargs: raw)
+    result = provider.point(RGBDObservation.model_validate(observation_payload()), "blue block")
+    assert result.result.status == "INVALID"
+    assert result.result.error == "output token cap"
+    assert result.evidence["reached_cap"] is True and result.result.raw_text == raw

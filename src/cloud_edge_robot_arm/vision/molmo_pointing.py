@@ -28,7 +28,10 @@ _POINT = re.compile(
     r'<points coords="1[ \t]+([0-9]{1,6})[ \t]+([0-9]{1,4})[ \t]+([0-9]{1,4})">'
     r"([^<>\x00-\x1f]{1,500})</points>"
 )
-_CONTRADICTION = re.compile(r"\b(absent|not\s+visible|no\s+points)\b", re.IGNORECASE)
+_ABSENCE_ALIASES = frozenset({"There are none."})
+_CONTRADICTION = re.compile(
+    r"\b(absent|not\s+visible|no\s+points|there\s+are\s+none)\b", re.IGNORECASE
+)
 
 
 @dataclass(frozen=True)
@@ -65,7 +68,7 @@ class PointProvider(Protocol):
 
 
 def parse_native_point(raw: str) -> NativePointResult:
-    """只接受一个规范点标签或明确 ABSENT，歧义和截断一律拒绝。"""
+    """只接受单个规范点、ABSENT或已验证完整缺失句；歧义和截断均拒绝。"""
     invalid = NativePointResult("INVALID", None, None, raw, "invalid native point grammar")
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > 16384:
         return invalid
@@ -74,7 +77,7 @@ def parse_native_point(raw: str) -> NativePointResult:
         if text.endswith(terminal):
             text = text[: -len(terminal)].strip()
             break
-    if text == "ABSENT":
+    if text == "ABSENT" or text in _ABSENCE_ALIASES:
         return NativePointResult("ABSENT", None, None, raw)
     match = _POINT.fullmatch(text)
     if match is None or _CONTRADICTION.search(match[4]):
