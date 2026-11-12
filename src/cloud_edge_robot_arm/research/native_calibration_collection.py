@@ -498,6 +498,15 @@ def _has_prepare_family_identity(protocol: Mapping[str, Any]) -> bool:
 
 def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]:
     protocol = load_json(path / "protocol.json")
+    if (
+        isinstance(protocol, dict)
+        and protocol.get("schema_version") == REGISTERED_PREPARATION_SCHEMA
+    ):
+        sources = protocol.get("source_hashes")
+        expected = _registered_grounding_protocol(None if current_sources else sources)
+        if canonical(protocol) != canonical(expected):
+            raise ValueError("registered preparation recipe/source/zero-release identity changed")
+        return protocol
     if not isinstance(protocol, dict) or protocol.get("schema_version") not in {
         "native.calibration.operational.v2",
         "native.calibration.operational.v3",
@@ -534,6 +543,76 @@ def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]
     return protocol
 
 
+REGISTERED_PREPARATION_SCHEMA = "native.calibration.operational.v6"
+
+
+def _registered_grounding_protocol(historical_sources=None):
+    from cloud_edge_robot_arm.research.native_collection_grounding import geometry_registration
+
+    current = source_inventory(
+        marker_family_id=SIDE_PREPARE_ONLY_FAMILY,
+        protocol_schema="native.calibration.operational.v4",
+    )
+    sources = current if historical_sources is None else historical_sources
+    if (
+        type(sources) is not dict
+        or set(sources) != set(current)
+        or any(
+            type(v) is not str or re.fullmatch(r"[a-f0-9]{64}", v) is None for v in sources.values()
+        )
+    ):
+        raise ValueError("complete registered preparation source key set and SHA256 required")
+    return dict(
+        schema_version=REGISTERED_PREPARATION_SCHEMA,
+        scope="REGISTERED_GROUNDING_PREPARATION",
+        marker_family=SIDE_PREPARE_ONLY_FAMILY,
+        geometry=geometry_registration(marker_family_id=SIDE_PREPARE_ONLY_FAMILY),
+        geometry_basis="REGISTERED_RIGID_MODEL",
+        support_basis="REGISTERED_NOMINAL",
+        policy_id="registered-model-grounding-prepare-v1",
+        condition_version="registered-model-condition-v1",
+        admission_schema="registered.grounding.preparation-admission.v1",
+        input_schema="registered.grounding.inputs.v1",
+        binding_schema="registered.grounding.prepared-step.v1",
+        actions=action_horizons(),
+        source_hashes=sources,
+        source_generation=digest(sources),
+        authorized_actual_budget={
+            name: 0
+            for name in (
+                "engine",
+                "render",
+                "physics_steps",
+                "actions",
+                "teacher",
+                "model",
+                "paid",
+                "hardware",
+            )
+        },
+        assignments=[],
+        released_assignments=[],
+        execution_release="PREPARE_ONLY_NOT_RELEASED",
+        prepare_only=True,
+        execution_allowed=False,
+        native_qualification="UNKNOWN",
+    )
+
+
+def prepare_registered_grounding_protocol(*, output: Path) -> dict[str, Any]:
+    """生成独立v6准备协议；不分配种子、领取任务或初始化物理后端。"""
+    protocol = _registered_grounding_protocol()
+    destination = fresh_directory(output)
+    save_exclusive(destination / "protocol.json", protocol)
+    return dict(
+        status="REGISTERED_PROTOCOL_PREPARED",
+        protocol=str(destination),
+        protocol_sha256=digest(protocol),
+        execution_admitted=False,
+        formal="NOT_ACCEPTED",
+    )
+
+
 def collect_native_calibration_once(
     protocol: Path, *, assignment_id: str, output: Path
 ) -> dict[str, Any]:
@@ -552,6 +631,10 @@ def verify_native_calibration_collection(protocol: Path, *, output: Path) -> dic
     )
 
     data = read_protocol(protocol, current_sources=False)
+    if data["schema_version"] == REGISTERED_PREPARATION_SCHEMA:
+        raise ValueError(
+            "v6 preparation requires its current-frame reader; no full-horizon release"
+        )
     roots = {}
     for row in data["assignments"]:
         claim = protocol / "claims" / (row["assignment_id"] + ".json")

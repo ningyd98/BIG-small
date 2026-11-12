@@ -121,6 +121,424 @@ class _Live:
 _REGISTRY: dict[Any, _Live] = {}
 
 
+def _registered_lease(repository, identity):
+    return read_visual_worker_lease(
+        repository,
+        job_id=identity.job_id,
+        run_id=identity.run_id,
+        worker_id=identity.worker_id,
+        lease_id=identity.lease_id,
+    )
+
+
+def _registered_context_payload(values):
+    return {key: _plain(value) for key, value in values.items()}
+
+
+def registered_preparation_context(payload):
+    """严格解码准备上下文，不创建任务、租约或完成记录。"""
+    from cloud_edge_robot_arm.contracts import ExecutionCheckpoint, RobotState
+    from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import original_from_payload
+    from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    from cloud_edge_robot_arm.vision.owner_registration import VisualOriginalPlan, _model_json
+
+    names = {
+        "original",
+        "source_checkpoint",
+        "reference_observation",
+        "observation",
+        "robot_state",
+        "owner_revision",
+        "state_generation",
+    }
+    if type(payload) is not dict or set(payload) != names:
+        raise ValueError("exact registered preparation context required")
+    original = original_from_payload(payload["original"])
+    if type(original) is not VisualOriginalPlan:
+        raise TypeError("registered preparation does not implement local runtime authority")
+    result = {"original": original}
+    for name, model in (
+        ("source_checkpoint", ExecutionCheckpoint),
+        ("robot_state", RobotState),
+        ("reference_observation", RGBDObservation),
+        ("observation", RGBDObservation),
+    ):
+        supplied = payload[name]
+        if type(supplied) is not dict:
+            raise ValueError("complete typed context source required")
+        typed = model.model_validate(supplied)
+        if json.loads(_model_json(typed, model)) != supplied:
+            raise ValueError("context source coercion or extra fields rejected")
+        result[name] = typed
+    for name in ("owner_revision", "state_generation"):
+        if type(payload[name]) is not int or payload[name] < 0:
+            raise ValueError("strict preparation revision required")
+        result[name] = payload[name]
+    return result
+
+
+def registered_preparation_admission(
+    original, online, inputs, binding, *, step_id, now, reason=None
+):
+    """保留旧条件判断；姿态可用只决定候选是否齐备，永不授予执行。"""
+    from cloud_edge_robot_arm.edge.evidence.conditions import (
+        ConditionStatus,
+        ConditionVerdict,
+        evaluate_registered_pose_available,
+    )
+
+    requirement = original.requirements[step_id]
+    target_id = original.contract.task_target.object_id
+    pose = (
+        evaluate_registered_pose_available(inputs, online.observation, target_id=target_id, now=now)
+        if inputs is not None
+        else ConditionVerdict(
+            ConditionStatus.UNKNOWN,
+            "registered_object_pose_available",
+            online.observation.observation_id,
+            reasons=(reason or "registered_geometry_unavailable",),
+        )
+    )
+    return RegisteredPreparationAdmission(
+        {
+            "schema_version": "registered.grounding.preparation-admission.v1",
+            "candidate_ready": binding is not None and pose.status == ConditionStatus.PASS,
+            "execution_admitted": False,
+            "native_authority": "UNAVAILABLE",
+            "unknown_allowance_rows": [],
+            "pose_verdict": _plain(pose),
+            "preconditions": _plain(
+                evaluate_conditions(requirement.preconditions, online, now=now)
+            ),
+            "postconditions": _plain(
+                evaluate_conditions(requirement.postconditions, online, now=now)
+            ),
+            "condition_scope": "CURRENT_STATE_ONLY_NO_EFFECT_HORIZON",
+            "blockers": [
+                "protocol_prepare_only_not_released",
+                "metric_geometry_uncalibrated",
+                "object_surface_visibility_unknown",
+                "clock_authority_unavailable",
+                "full_horizon_effect_evidence_unavailable",
+                "runtime_dispatch_not_integrated",
+                *([reason] if reason else []),
+            ],
+        }
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class RegisteredPreparationAdmission:
+    """不可变的准备判定，候选齐备与执行准入始终分开。"""
+
+    _payload_json: bytes
+
+    def __init__(self, payload):
+        required = {
+            "schema_version",
+            "candidate_ready",
+            "execution_admitted",
+            "native_authority",
+            "unknown_allowance_rows",
+            "pose_verdict",
+            "preconditions",
+            "postconditions",
+            "condition_scope",
+            "blockers",
+        }
+        if (
+            type(payload) is not dict
+            or set(payload) != required
+            or payload["schema_version"] != "registered.grounding.preparation-admission.v1"
+            or type(payload["candidate_ready"]) is not bool
+            or payload["execution_admitted"] is not False
+            or payload["native_authority"] != "UNAVAILABLE"
+            or payload["unknown_allowance_rows"] != []
+            or payload["condition_scope"] != "CURRENT_STATE_ONLY_NO_EFFECT_HORIZON"
+            or "protocol_prepare_only_not_released" not in payload["blockers"]
+        ):
+            raise ValueError("registered preparation admission cannot authorize execution")
+        object.__setattr__(self, "_payload_json", canonical(payload))
+
+    @classmethod
+    def from_payload(cls, payload):
+        """重建严格准备判定；独立reader仍需重算所有字段。"""
+        return cls(payload)
+
+    def to_payload(self):
+        """导出独立JSON值，保留所有未知条件和阻断原因。"""
+        return json.loads(self._payload_json)
+
+    def digest(self):
+        """散列完整非授权判定。"""
+        return hashlib.sha256(self._payload_json).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class RegisteredGroundingPreparationApplication:
+    """独立的当前帧准备入口，不启动worker或配置动作执行器。"""
+
+    protocol_path: Path
+    source_root: Path
+    _protocol_json: bytes
+
+    @classmethod
+    def from_protocol(cls, protocol: Path, *, source_root: Path):
+        """读取固定v6零释放协议并校验完整本地来源。"""
+        from cloud_edge_robot_arm.research.native_calibration_collection import (
+            REGISTERED_PREPARATION_SCHEMA,
+        )
+        from cloud_edge_robot_arm.vision.worker_owner import pin_worker_source_inventory
+
+        if cls is not RegisteredGroundingPreparationApplication:
+            raise TypeError("exact registered preparation application required")
+        registration = read_protocol(protocol)
+        if registration["schema_version"] != REGISTERED_PREPARATION_SCHEMA:
+            raise ValueError("v6 registered preparation protocol required")
+        pin_worker_source_inventory(
+            source_root,
+            registration["source_hashes"],
+            required_paths=frozenset(registration["source_hashes"]),
+        )
+        return cls(protocol.absolute(), source_root.absolute(), canonical(registration))
+
+    def prepare_step(
+        self,
+        *,
+        repository,
+        original,
+        source_checkpoint,
+        reference_observation,
+        observation,
+        robot_state,
+        owner_revision,
+        state_generation,
+        output: Path,
+    ):
+        """准备并保留一个当前待执行步骤；任何输出均不释放实际动作。"""
+        started = datetime.now(UTC)
+        from cloud_edge_robot_arm.contracts import ExecutionCheckpoint, RobotState
+        from cloud_edge_robot_arm.research.native_collection_grounding import (
+            bootstrap_registered_collection_tracker_v1,
+            registered_collection_grounding_preview_v1,
+        )
+        from cloud_edge_robot_arm.vision.native_calibration import NativeGeometryRegistration
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            RegisteredGroundingFrameInputs,
+            RegisteredGroundingPolicy,
+            VisualOriginalPlan,
+            _current_grounding_context,
+            _registered_preparation_deadline,
+            prepare_registered_step_binding,
+        )
+        from cloud_edge_robot_arm.vision.worker_owner import pin_worker_source_inventory
+
+        if type(self) is not RegisteredGroundingPreparationApplication:
+            raise TypeError("exact preparation application required")
+        if (
+            type(original) is not VisualOriginalPlan
+            or type(source_checkpoint) is not ExecutionCheckpoint
+            or type(reference_observation) is not RGBDObservation
+            or type(observation) is not RGBDObservation
+            or type(robot_state) is not RobotState
+        ):
+            raise TypeError("exact registered preparation context types required")
+        protocol = read_protocol(self.protocol_path)
+        if canonical(protocol) != self._protocol_json:
+            raise ValueError("registered preparation protocol changed")
+        context = registered_preparation_context(
+            _registered_context_payload(
+                {
+                    "original": original,
+                    "source_checkpoint": source_checkpoint,
+                    "reference_observation": reference_observation,
+                    "observation": observation,
+                    "robot_state": robot_state,
+                    "owner_revision": owner_revision,
+                    "state_generation": state_generation,
+                }
+            )
+        )
+        original = context["original"]
+        source_checkpoint, reference_observation, observation, robot_state = (
+            context[n]
+            for n in ("source_checkpoint", "reference_observation", "observation", "robot_state")
+        )
+        if dict(original.source_hashes) != protocol["source_hashes"]:
+            raise ValueError("original and v6 preparation source generations differ")
+        if source_checkpoint.robot_state != robot_state.model_dump(mode="json"):
+            raise ValueError("checkpoint/current proprioceptive state mismatch")
+        step_id = source_checkpoint.current_step_id
+        initial_deadline = _registered_preparation_deadline(
+            original,
+            original_step_id=step_id,
+            observation=observation,
+        )
+        if not original.registered_at <= observation.captured_at <= started < initial_deadline:
+            raise ValueError("registered preparation entry frame future or deadline expired")
+        lease_before = _registered_lease(repository, original.identity)
+        after_first_join = datetime.now(UTC)
+        if (
+            not lease_before.observed_at
+            <= after_first_join
+            < min(initial_deadline, lease_before.expires_at)
+        ):
+            raise ValueError("registered preparation initial lease/frame deadline expired")
+        online = OnlineEvidenceSnapshot(
+            observation,
+            robot_state,
+            {},
+            original.contract.plan_version,
+            original.contract.command_seq,
+            source_checkpoint.checkpoint_hash,
+        )
+        _current_grounding_context(
+            original,
+            original_step_id=step_id,
+            online=online,
+            source_checkpoint=source_checkpoint,
+            current_identity=original.identity,
+            owner_revision=owner_revision,
+            state_generation=state_generation,
+            now=started,
+        )
+        if (
+            lease_before.identity(
+                episode_id=original.identity.episode_id,
+                task_id=original.identity.task_id,
+                plan_id=original.identity.plan_id,
+                robot_id=original.identity.robot_id,
+            )
+            != original.identity
+        ):
+            raise ValueError("current live lease epoch differs from original")
+        registration = NativeGeometryRegistration(protocol["geometry"])
+        tracker = bootstrap_registered_collection_tracker_v1(
+            reference_observation,
+            registration,
+            source_root=self.source_root,
+            source_hashes=protocol["source_hashes"],
+        )
+        preview = registered_collection_grounding_preview_v1(tracker, observation, robot_state)
+        inputs = (
+            RegisteredGroundingFrameInputs.from_preview(preview, observation, registration)
+            if preview.status == "DERIVED"
+            else None
+        )
+        policy = RegisteredGroundingPolicy.for_original(original, protocol["source_hashes"])
+        pin_worker_source_inventory(
+            self.source_root,
+            protocol["source_hashes"],
+            required_paths=frozenset(protocol["source_hashes"]),
+        )
+        reason, _ = tracker._provider._recheck_current(observation)
+        if reason:
+            raise ValueError("registered preparation final frame stale/invalid: " + reason)
+        lease_after = _registered_lease(repository, original.identity)
+        evaluated = datetime.now(UTC)
+        if (
+            lease_after.identity(
+                episode_id=original.identity.episode_id,
+                task_id=original.identity.task_id,
+                plan_id=original.identity.plan_id,
+                robot_id=original.identity.robot_id,
+            )
+            != original.identity
+        ):
+            raise ValueError("registered preparation live lease changed")
+        expires = _registered_preparation_deadline(
+            original,
+            original_step_id=step_id,
+            observation=observation,
+            lease_source=lease_after,
+        )
+        if not original.registered_at <= observation.captured_at <= evaluated < expires:
+            raise ValueError(
+                "registered preparation original/frame deadline stale/expired or future"
+            )
+        binding = (
+            prepare_registered_step_binding(
+                original,
+                original_step_id=step_id,
+                online=online,
+                source_checkpoint=source_checkpoint,
+                current_identity=original.identity,
+                owner_revision=owner_revision,
+                state_generation=state_generation,
+                lease_source=lease_after,
+                grounding_inputs=inputs,
+                grounding_policy=policy,
+                now=evaluated,
+            )
+            if inputs is not None
+            else None
+        )
+        admission = registered_preparation_admission(
+            original,
+            online,
+            inputs,
+            binding,
+            step_id=step_id,
+            now=evaluated,
+            reason=None if binding is not None else preview.reason,
+        )
+        content = dict(
+            protocol_sha256=digest(protocol),
+            source_generation=protocol["source_generation"],
+            context=_registered_context_payload(context),
+            started_at=started.isoformat(),
+            evaluated_at=evaluated.isoformat(),
+            lease_before=lease_before.to_payload(),
+            lease_after=lease_after.to_payload(),
+            preview=preview.to_payload(),
+            inputs=None if inputs is None else inputs.to_payload(),
+            policy=policy.to_payload(),
+            binding=None if binding is None else binding.to_payload(),
+            admission=admission.to_payload(),
+        )
+        reason, finished = tracker._provider._recheck_current(observation)
+        if (
+            reason
+            or not (
+                observation.captured_at
+                <= started
+                <= lease_before.observed_at
+                <= lease_after.observed_at
+                <= evaluated
+                <= finished
+                < expires
+            )
+            or (binding is not None and finished >= binding.valid_until)
+        ):
+            raise ValueError(
+                "registered preparation final source/frame/lease deadline stale or expired"
+            )
+        content["finished_at"] = finished.isoformat()
+        envelope = dict(
+            schema_version="native.registered.prepared-record.v1",
+            content=content,
+            content_sha256=digest(content),
+        )
+        record_sha256 = digest(envelope)
+        binding_sha256 = None if binding is None else binding.digest()
+        publication_check = datetime.now(UTC)
+        if not finished <= publication_check < expires:
+            raise ValueError("registered preparation publication deadline expired")
+        if binding is not None and publication_check >= binding.valid_until:
+            raise ValueError("registered preparation publication binding expired")
+        destination = fresh_directory(output)
+        save_exclusive(destination / "prepared-step.json", envelope)
+        return dict(
+            status="PREPARED_CANDIDATE" if binding is not None else "PREPARATION_UNKNOWN",
+            record_path=str(destination / "prepared-step.json"),
+            record_sha256=record_sha256,
+            binding_sha256=binding_sha256,
+            execution_admitted=False,
+            formal="NOT_ACCEPTED",
+        )
+
+
 def _live(app: Any) -> _Live:
     if type(app) is not NativeCollectionApplication or app not in _REGISTRY:
         raise RuntimeError("exact live collection application required")

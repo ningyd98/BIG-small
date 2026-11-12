@@ -91,6 +91,53 @@ _ROBOT_CONDITIONS = frozenset(
 )
 
 
+def evaluate_registered_pose_available(inputs, observation, *, target_id, now) -> ConditionVerdict:
+    """仅判断注册模型当前姿态可用，不证明完整可见、精度或动作安全。"""
+    from cloud_edge_robot_arm.vision.owner_registration import RegisteredGroundingFrameInputs
+
+    name = "registered_object_pose_available"
+    observation_id = getattr(observation, "observation_id", "")
+
+    def unknown(reason):
+        return ConditionVerdict(ConditionStatus.UNKNOWN, name, observation_id, reasons=(reason,))
+
+    if (
+        type(inputs) is not RegisteredGroundingFrameInputs
+        or type(observation) is not RGBDObservation
+        or type(target_id) is not str
+        or not target_id
+    ):
+        return unknown("registered_pose_typed_source_unavailable")
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        return unknown("registered_pose_aware_clock_required")
+    try:
+        current = RGBDObservation.model_validate(observation.model_dump())
+        typed = RegisteredGroundingFrameInputs.from_payload(inputs.to_payload())
+        if typed.to_payload()["object_id"] != target_id:
+            return unknown("registered_pose_target_identity_mismatch")
+        if not typed.matches_observation(current):
+            return unknown("registered_pose_current_frame_mismatch")
+        age = (now - current.captured_at).total_seconds()
+        if age < 0 or age >= 5:
+            return unknown("registered_pose_current_frame_stale_or_future")
+    except (TypeError, ValueError, AttributeError):
+        return unknown("registered_pose_invalid_source")
+    return ConditionVerdict(
+        ConditionStatus.PASS,
+        name,
+        observation_id,
+        {
+            "condition_version": "registered-model-condition-v1",
+            "target_id": target_id,
+            "geometry_basis": "REGISTERED_RIGID_MODEL",
+            "geometric_error_bound_m": None,
+            "object_surface_visibility": "UNKNOWN",
+            "input_sha256": typed.digest(),
+        },
+        ("current_registered_model_pose_only",),
+    )
+
+
 def evaluate_conditions(
     conditions: Sequence[ConditionSpec],
     evidence: OnlineEvidenceSnapshot,

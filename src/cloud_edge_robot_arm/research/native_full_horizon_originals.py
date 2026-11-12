@@ -120,6 +120,368 @@ def _require(condition: Any, reason: str) -> None:
         raise ValueError(reason)
 
 
+def _registered_lease_from_payload(payload):
+    from cloud_edge_robot_arm.vision.worker_owner import WorkerLeaseObservation
+
+    names = {f.name for f in fields(WorkerLeaseObservation)} | {"scope"}
+    if (
+        type(payload) is not dict
+        or set(payload) != names
+        or payload["scope"] != "WORKER_LEASE_SOURCE_ONLY"
+    ):
+        raise ValueError("complete registered preparation lease source required")
+    values = {n: v for n, v in payload.items() if n != "scope"}
+    for name in ("acquired_at", "observed_at", "expires_at"):
+        values[name] = datetime.fromisoformat(values[name])
+    return WorkerLeaseObservation(**values)
+
+
+def _registered_preview_semantics(payload):
+    result = json.loads(canonical(payload))
+    # Only the two known current evaluation readings change during a fresh read.
+    del result["evaluated_at"]
+    del result["track"]["evaluated_at"]
+    return result
+
+
+def verify_registered_prepared_step(
+    protocol: Path,
+    prepared: Path,
+    *,
+    repository,
+    source_root: Path,
+    output: Path,
+) -> dict[str, Any]:
+    """重建仍新鲜的准备记录；不回拨时钟，不读作实际动作或完整历史轨迹。"""
+    from datetime import UTC
+
+    entered = datetime.now(UTC)
+
+    from cloud_edge_robot_arm.research.native_calibration_collection import (
+        fresh_directory,
+        save_exclusive,
+    )
+    from cloud_edge_robot_arm.research.native_collection_application import (
+        RegisteredPreparationAdmission,
+        registered_preparation_admission,
+        registered_preparation_context,
+    )
+    from cloud_edge_robot_arm.research.native_collection_grounding import (
+        bootstrap_registered_collection_tracker_v1,
+        registered_collection_grounding_preview_v1,
+    )
+    from cloud_edge_robot_arm.vision.owner_registration import (
+        RegisteredGroundingFrameInputs,
+        RegisteredGroundingPolicy,
+        RegisteredPreparedStepBinding,
+        _aware,
+        _current_grounding_context,
+        _registered_preparation_deadline,
+        prepare_registered_step_binding,
+    )
+    from cloud_edge_robot_arm.vision.worker_owner import (
+        pin_worker_source_inventory,
+        read_visual_worker_lease,
+    )
+
+    registration = read_protocol(protocol)
+    _require(
+        registration["schema_version"] == "native.calibration.operational.v6",
+        "v6 preparation required",
+    )
+    sources = registration["source_hashes"]
+    pin_worker_source_inventory(source_root, sources, required_paths=frozenset(sources))
+    envelope = load_json(prepared)
+    _require(
+        type(envelope) is dict and set(envelope) == {"schema_version", "content", "content_sha256"},
+        "exact preparation record envelope required",
+    )
+    _require(
+        envelope["schema_version"] == "native.registered.prepared-record.v1",
+        "preparation record schema",
+    )
+    content = envelope["content"]
+    _require(
+        type(content) is dict
+        and set(content)
+        == {
+            "protocol_sha256",
+            "source_generation",
+            "context",
+            "started_at",
+            "evaluated_at",
+            "finished_at",
+            "lease_before",
+            "lease_after",
+            "preview",
+            "inputs",
+            "policy",
+            "binding",
+            "admission",
+        },
+        "exact preparation content field set required",
+    )
+    _require(envelope["content_sha256"] == digest(content), "prepared content SHA mismatch")
+    _require(
+        content["protocol_sha256"] == digest(registration)
+        and content["source_generation"] == registration["source_generation"],
+        "prepared protocol/source mismatch",
+    )
+    ctx = registered_preparation_context(content["context"])
+    original, cp, observation, state = (
+        ctx[n] for n in ("original", "source_checkpoint", "observation", "robot_state")
+    )
+    _require(dict(original.source_hashes) == sources, "prepared original source differs")
+    _require(
+        cp.robot_state == state.model_dump(mode="json"),
+        "prepared current state differs from checkpoint",
+    )
+    started, evaluated, finished = (
+        _aware(datetime.fromisoformat(content[n]))
+        for n in ("started_at", "evaluated_at", "finished_at")
+    )
+    now = entered
+    _require(
+        started <= evaluated <= finished <= now
+        and 0 <= (now - observation.captured_at).total_seconds() < 5,
+        "prepared current frame stale/future or recorded time reversed",
+    )
+    before, after = (
+        _registered_lease_from_payload(content[n]) for n in ("lease_before", "lease_after")
+    )
+    _require(
+        started <= before.observed_at <= after.observed_at <= evaluated,
+        "recorded lease source readings differ from preparation boundaries",
+    )
+    for lease in (before, after):
+        _require(
+            lease.identity(
+                episode_id=original.identity.episode_id,
+                task_id=original.identity.task_id,
+                plan_id=original.identity.plan_id,
+                robot_id=original.identity.robot_id,
+            )
+            == original.identity,
+            "recorded lease epoch/identity mismatch",
+        )
+    policy = RegisteredGroundingPolicy.from_payload(content["policy"])
+    _same(
+        policy.to_payload(),
+        RegisteredGroundingPolicy.for_original(original, sources).to_payload(),
+        "prepared fixed policy changed",
+    )
+    online = OnlineEvidenceSnapshot(
+        observation,
+        state,
+        {},
+        original.contract.plan_version,
+        original.contract.command_seq,
+        cp.checkpoint_hash,
+    )
+    _current_grounding_context(
+        original,
+        original_step_id=cp.current_step_id,
+        online=online,
+        source_checkpoint=cp,
+        current_identity=original.identity,
+        owner_revision=ctx["owner_revision"],
+        state_generation=ctx["state_generation"],
+        now=finished,
+    )
+    expires = _registered_preparation_deadline(
+        original,
+        original_step_id=cp.current_step_id,
+        observation=observation,
+        lease_source=after,
+    )
+    _require(
+        original.registered_at
+        <= observation.captured_at
+        <= started
+        <= evaluated
+        <= finished
+        < expires,
+        "recorded original/frame/lease deadline invalid",
+    )
+    _require(now < expires, "prepared current original/frame/lease deadline expired")
+
+    def rebuild(inputs, lease, evaluated_at):
+        return prepare_registered_step_binding(
+            original,
+            original_step_id=cp.current_step_id,
+            online=online,
+            source_checkpoint=cp,
+            current_identity=original.identity,
+            owner_revision=ctx["owner_revision"],
+            state_generation=ctx["state_generation"],
+            lease_source=lease,
+            grounding_inputs=inputs,
+            grounding_policy=policy,
+            now=evaluated_at,
+        )
+
+    inputs = (
+        None
+        if content["inputs"] is None
+        else RegisteredGroundingFrameInputs.from_payload(content["inputs"])
+    )
+    binding = (
+        None
+        if content["binding"] is None
+        else RegisteredPreparedStepBinding.from_payload(content["binding"])
+    )
+    _require((inputs is None) == (binding is None), "prepared input/binding availability differs")
+    if binding is not None:
+        _require(
+            datetime.fromisoformat(binding.to_payload()["created_at"]) == evaluated,
+            "prepared binding decision timestamp differs",
+        )
+        _require(now < binding.valid_until, "prepared binding expired")
+        _same(
+            binding.to_payload(),
+            rebuild(inputs, after, evaluated).to_payload(),
+            "prepared candidate/recipe/context differs",
+        )
+        _require(
+            inputs.to_payload()["preview_sha256"] == digest(content["preview"]),
+            "prepared preview digest mismatch",
+        )
+    admission = RegisteredPreparationAdmission.from_payload(content["admission"])
+    _same(
+        admission.to_payload(),
+        registered_preparation_admission(
+            original,
+            online,
+            inputs,
+            binding,
+            step_id=cp.current_step_id,
+            now=evaluated,
+            reason=None if binding is not None else content["preview"]["reason"],
+        ).to_payload(),
+        "prepared admission decision was not reconstructed",
+    )
+    for value in (content["preview"]["evaluated_at"], content["preview"]["track"]["evaluated_at"]):
+        _require(
+            observation.captured_at <= _aware(datetime.fromisoformat(value)) <= evaluated,
+            "prepared preview recorded timestamp outside observation/preparation",
+        )
+
+    def current_lease():
+        lease = read_visual_worker_lease(
+            repository,
+            job_id=original.identity.job_id,
+            run_id=original.identity.run_id,
+            worker_id=original.identity.worker_id,
+            lease_id=original.identity.lease_id,
+        )
+        _require(
+            lease.identity(
+                episode_id=original.identity.episode_id,
+                task_id=original.identity.task_id,
+                plan_id=original.identity.plan_id,
+                robot_id=original.identity.robot_id,
+            )
+            == original.identity,
+            "current preparation lease epoch differs",
+        )
+        return lease
+
+    initial_lease = current_lease()
+    after_initial_join = datetime.now(UTC)
+    _require(
+        initial_lease.observed_at <= after_initial_join < min(expires, initial_lease.expires_at),
+        "registered reader initial lease/frame deadline expired",
+    )
+    tracker = bootstrap_registered_collection_tracker_v1(
+        ctx["reference_observation"],
+        NativeGeometryRegistration(registration["geometry"]),
+        source_root=source_root,
+        source_hashes=sources,
+    )
+    preview = registered_collection_grounding_preview_v1(tracker, observation, state)
+    _same(
+        _registered_preview_semantics(content["preview"]),
+        _registered_preview_semantics(preview.to_payload()),
+        "independent current preview geometry/provenance differs",
+    )
+    fresh_inputs = (
+        RegisteredGroundingFrameInputs.from_preview(
+            preview, observation, NativeGeometryRegistration(registration["geometry"])
+        )
+        if preview.status == "DERIVED"
+        else None
+    )
+    _require(
+        (inputs is None) == (fresh_inputs is None),
+        "independent registered input availability differs",
+    )
+    if inputs is not None:
+        expected, actual = inputs.to_payload(), fresh_inputs.to_payload()
+        del expected["preview_sha256"], actual["preview_sha256"]
+        _same(expected, actual, "independent registered input source/geometry differs")
+    pin_worker_source_inventory(source_root, sources, required_paths=frozenset(sources))
+    reason, _ = tracker._provider._recheck_current(observation)
+    _require(reason is None, "registered reader final frame stale/invalid: " + str(reason))
+    lease = current_lease()
+    current_evaluated = datetime.now(UTC)
+    current_deadline = min(
+        expires,
+        _registered_preparation_deadline(
+            original,
+            original_step_id=cp.current_step_id,
+            observation=observation,
+            lease_source=lease,
+        ),
+    )
+    _require(
+        lease.observed_at <= current_evaluated < current_deadline,
+        "registered reader current original/frame/lease deadline expired",
+    )
+    if binding is not None:
+        _require(
+            current_evaluated < binding.valid_until,
+            "prepared binding expired during reconstruction",
+        )
+        fresh_binding = rebuild(fresh_inputs, lease, current_evaluated)
+        _same(
+            fresh_binding.grounded_step.model_dump(mode="json"),
+            binding.grounded_step.model_dump(mode="json"),
+            "independent current numerical candidate differs",
+        )
+    reason, final_checked = tracker._provider._recheck_current(observation)
+    _require(
+        reason is None and current_evaluated <= final_checked < current_deadline,
+        "registered reader final source/frame/lease deadline stale or expired",
+    )
+    if binding is not None:
+        _require(
+            final_checked < binding.valid_until, "prepared binding expired after reconstruction"
+        )
+    result = dict(
+        status="PREPARED_CANDIDATE_RECONSTRUCTED"
+        if binding is not None
+        else "PREPARATION_UNKNOWN_RECONSTRUCTED",
+        record_sha256=digest(envelope),
+        binding_sha256=None if binding is None else binding.digest(),
+        source_generation=registration["source_generation"],
+        execution_admitted=False,
+        native_authority="UNAVAILABLE",
+        formal="NOT_ACCEPTED",
+        reader_scope="CURRENT_FRAME_SOURCE_CONSISTENCY_ONLY",
+    )
+    canonical(result)
+    publication_check = datetime.now(UTC)
+    _require(
+        final_checked <= publication_check < current_deadline,
+        "registered reader publication deadline expired",
+    )
+    if binding is not None:
+        _require(publication_check < binding.valid_until, "prepared publication binding expired")
+    destination = fresh_directory(output)
+    save_exclusive(destination / "verification.json", result)
+    return result
+
+
 def _same(left: Any, right: Any, reason: str) -> None:
     _require(canonical(detached(left)) == canonical(detached(right)), reason)
 
@@ -1818,6 +2180,8 @@ def read_native_full_horizon_group(
     protocol: Path, *, assignment_id: str, root: Path
 ) -> FullHorizonGroupDiagnostics:
     registration = read_protocol(protocol)
+    if registration["schema_version"] == "native.calibration.operational.v6":
+        raise ValueError("v6 preparation has no full-horizon action release or raw action spans")
     assigned = [r for r in registration["assignments"] if r["assignment_id"] == assignment_id]
     _require(len(assigned) == 1, "foreign calibration assignment")
     audit = _Audit(registration, assigned[0], Path(root))
@@ -1882,6 +2246,10 @@ def reconstruct_native_full_horizon_registry(
     protocol: Path, *, roots: Mapping[str, Path], group_sink: Any = None
 ) -> CompletionCalibrationDiagnosticsV2:
     registration = read_protocol(protocol)
+    if registration["schema_version"] == "native.calibration.operational.v6":
+        raise ValueError(
+            "v6 preparation requires its current-frame reader, not full-horizon verification"
+        )
     _require(
         set(roots) <= {r["assignment_id"] for r in registration["assignments"]},
         "foreign registry group",
