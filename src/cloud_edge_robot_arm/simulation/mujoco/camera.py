@@ -15,6 +15,22 @@ import numpy as np
 from cloud_edge_robot_arm.simulation.models import SensorFrame
 
 
+def _depth_tuple(values: Any) -> tuple[float, ...]:
+    if type(values) is np.ndarray and values.dtype.type in {np.float32, np.float64}:
+        return tuple(values.ravel().tolist())
+    return tuple(float(value) for value in values.ravel())
+
+
+def _instance_tuple(values: Any) -> tuple[int, ...]:
+    if (
+        type(values) is np.ndarray
+        and values.dtype.kind in {"i", "u"}
+        and values.dtype.itemsize in {1, 2, 4, 8}
+    ):
+        return tuple(values.ravel().tolist())
+    return tuple(int(value) for value in values.ravel())
+
+
 class MuJoCoRGBDCamera:
     def __init__(self, mujoco: Any, model: Any, *, width: int, height: int) -> None:
         self._mujoco = mujoco
@@ -137,7 +153,7 @@ class MuJoCoRGBDCamera:
                 segmentation[:, :, 0],
                 -1,
             )
-            instance_ids = tuple(int(value) for value in geom_pixels.ravel())
+            instance_ids = _instance_tuple(geom_pixels)
             for geom_id in set(instance_ids) - {-1}:
                 name = self._mujoco.mj_id2name(
                     self._model,
@@ -168,7 +184,7 @@ class MuJoCoRGBDCamera:
             width=self._width,
             height=self._height,
             rgb=rgb.tobytes(),
-            depth=tuple(float(value) for value in depth.ravel()),
+            depth=_depth_tuple(depth),
             intrinsics=intrinsics,
             camera_to_world=tuple(float(value) for value in transform.ravel()),
             captured_at=captured_at,

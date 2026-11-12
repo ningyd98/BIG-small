@@ -9,6 +9,8 @@ import io
 import json
 import math
 import struct
+import sys
+from array import array
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -17,6 +19,24 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from cloud_edge_robot_arm.contracts import Pose
 from cloud_edge_robot_arm.simulation.models import SensorFrame
+
+
+def _validated_depth_mask(depth: bytes) -> bytes:
+    values = array("f")
+    if values.itemsize != 4:
+        depths = tuple(v[0] for v in struct.iter_unpack("<f", depth))
+        if any(not math.isfinite(value) or value < 0 for value in depths):
+            raise ValueError("depth must be finite nonnegative metres (zero = invalid)")
+        return bytes(int(value > 0) for value in depths)
+    values.frombytes(depth)
+    if sys.byteorder == "big":
+        values.byteswap()
+    mask = bytearray(len(values))
+    for index, value in enumerate(values):
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("depth must be finite nonnegative metres (zero = invalid)")
+        mask[index] = value > 0
+    return bytes(mask)
 
 
 class RGBDObservation(BaseModel):
@@ -60,10 +80,7 @@ class RGBDObservation(BaseModel):
             raise ValueError("invalid RGB-D image encoding") from exc
         if len(depth) != self.width * self.height * 4:
             raise ValueError("depth size must equal width * height * float32")
-        depths = tuple(v[0] for v in struct.iter_unpack("<f", depth))
-        if any(not math.isfinite(value) or value < 0 for value in depths):
-            raise ValueError("depth must be finite nonnegative metres (zero = invalid)")
-        expected_mask = bytes(int(value > 0) for value in depths)
+        expected_mask = _validated_depth_mask(depth)
         if self.valid_mask_base64 is None:
             object.__setattr__(
                 self, "valid_mask_base64", base64.b64encode(expected_mask).decode("ascii")
