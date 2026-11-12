@@ -598,13 +598,23 @@ def isolated_estimate(tmp_path, monkeypatch, *, horizon=10.0, registered_policy=
     )
     monkeypatch.setattr(module, "resolve_native_reference", lambda *args, **kwargs: reference)
     monkeypatch.setattr(module, "validate_native_reference", lambda *args, **kwargs: None)
-    marker = SimpleNamespace(
+    from cloud_edge_robot_arm.vision import registered_objects
+    from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate
+
+    observation = data["online"].observation
+    marker = PoseMarkerEstimate(
         status="OBSERVED",
+        reason="SOFTWARE_ONLY_isolated_source_gate",
+        observation_id=observation.observation_id,
+        observation_checksum_sha256=observation.checksum_sha256,
+        captured_at=observation.captured_at,
+        registration_hash=module.NativeGeometryRegistration(registry["geometry"]).pose_marker.digest(),
+        observed_marker_ids=(7,),
         rotation_marker_to_world=(1, 0, 0, 0, 1, 0, 0, 0, 1),
         marker_center_world_m=(0.3, 0.1, 0.08505),
         measured_min_side_px=20.0,
     )
-    monkeypatch.setattr(module, "detect_pose_marker", lambda *args, **kwargs: marker)
+    monkeypatch.setattr(registered_objects, "detect_pose_marker", lambda *args, **kwargs: marker)
     diagnostics = SimpleNamespace(action_quantiles={"MOVE_ABOVE": SimpleNamespace(bound_m=0.001)})
     monkeypatch.setattr(module.NativeCalibrationSource, "revalidate", lambda *args: diagnostics)
     expected_policy = registered_policy or data["grounding_policy"].digest()

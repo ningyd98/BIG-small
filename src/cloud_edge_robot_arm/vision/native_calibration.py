@@ -35,7 +35,8 @@ from cloud_edge_robot_arm.vision.native_references import (
     validate_native_reference,
 )
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
-from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerRegistration, detect_pose_marker
+from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerRegistration
+from cloud_edge_robot_arm.vision.registered_objects import derive_registered_object_geometry
 from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
 
 APPLICATION_INDEX_PATH = "configs/research/native_calibration_sources.json"
@@ -79,6 +80,7 @@ def required_native_source_paths(*, marker_family_id: str | None = None) -> tupl
         "src/cloud_edge_robot_arm/edge/runtime/skill_executor.py",
         "src/cloud_edge_robot_arm/vision/owner_registration.py",
         "src/cloud_edge_robot_arm/vision/pose_markers.py",
+        "src/cloud_edge_robot_arm/vision/registered_objects.py",
         "src/cloud_edge_robot_arm/vision/observations.py",
         "src/cloud_edge_robot_arm/vision/runtime_binding.py",
         "src/cloud_edge_robot_arm/vision/execution.py",
@@ -573,20 +575,18 @@ class NativeCalibrationSource:
         )
         scope = NativeGeometryRegistration(data["geometry"])
         observation = RGBDObservation.model_validate(online.observation.model_dump())
-        estimate = detect_pose_marker(observation, scope.pose_marker)
-        camera = {k: observation.model_dump(mode="json")[k] for k in _CAMERA_KEYS}
+        geometry = derive_registered_object_geometry(observation, scope)
+        estimate = geometry.marker_estimate
         reasons = []
         bound = None
         motion = None
-        if camera != data["geometry"]["camera"] or estimate.status != "OBSERVED":
+        if geometry.status != "DERIVED":
             reasons.append("current_camera_or_full_geometry_unavailable")
         else:
-            transform = _rigid(data["geometry"]["marker_to_object"])
-            rotation = (
-                np.array(estimate.rotation_marker_to_world).reshape(3, 3) @ transform[:3, :3].T
-            )
-            center = np.array(estimate.marker_center_world_m) - rotation @ transform[:3, 3]
-            grasp = center + rotation @ _rigid(data["geometry"]["object_to_tcp"])[:3, 3]
+            assert estimate is not None and geometry.object_center_world_m is not None
+            assert geometry.grasp_tcp_world_m is not None
+            center = np.asarray(geometry.object_center_world_m)
+            grasp = np.asarray(geometry.grasp_tcp_world_m)
             if (
                 not np.allclose(
                     grasp,

@@ -51,7 +51,7 @@ from cloud_edge_robot_arm.vision.owner_registration import (
     bind_step_grounding,
     freeze_original_visual_plan,
 )
-from cloud_edge_robot_arm.vision.pose_markers import detect_pose_marker
+from cloud_edge_robot_arm.vision.registered_objects import derive_registered_object_geometry
 from cloud_edge_robot_arm.vision.top_grasp import (
     CURRENT_GRASP_PROFILE,
     calibration_asset_sha256,
@@ -241,12 +241,11 @@ def collection_bootstrap_evidence(
 ) -> dict[str, Any]:
     validate_camera(observation, registration)
     scope = NativeGeometryRegistration(registration)
-    marker = detect_pose_marker(observation, scope.pose_marker)
-    if marker.status != "OBSERVED":
-        raise ValueError("registered marker unavailable: " + marker.reason)
-    attached = np.asarray(registration["marker_to_object"]).reshape(4, 4)
-    rotation = np.asarray(marker.rotation_marker_to_world).reshape(3, 3) @ attached[:3, :3].T
-    center = np.asarray(marker.marker_center_world_m) - rotation @ attached[:3, 3]
+    geometry = derive_registered_object_geometry(observation, scope)
+    if geometry.status != "DERIVED":
+        raise ValueError("registered marker unavailable: " + geometry.reason)
+    assert geometry.object_center_world_m is not None
+    center = np.asarray(geometry.object_center_world_m)
     transform = np.asarray(observation.camera_to_world).reshape(4, 4)
     optical = transform[:3, :3].T @ (center - transform[:3, 3])
     if optical[2] <= 0:
