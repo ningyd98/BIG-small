@@ -1438,6 +1438,53 @@ class RegisteredPreparedStepBinding(_RegisteredPayload):
         return datetime.fromisoformat(self.to_payload()["valid_until"])
 
 
+class RegisteredCollectionStepBinding(_RegisteredPayload):
+    """注册模型采集来源绑定；不提供普通执行或native权限。"""
+
+    __slots__ = ()
+    _constants = {
+        "schema_version": "registered.collection.binding.v1",
+        "binding_scope": "REGISTERED_MODEL_COLLECTION_SOURCE_ONLY",
+        "collection_policy_id": "registered-model-collection-v1",
+        "execution_authority": False,
+        "ordinary_execution_allowed": False,
+        "native_authority": "UNAVAILABLE",
+    }
+
+    @classmethod
+    def _validate(cls, payload):
+        p = _registered_object(payload, {"prepared"}, cls._constants)
+        prepared = RegisteredPreparedStepBinding.from_payload(p["prepared"])
+        if prepared.to_payload() != p["prepared"]:
+            raise ValueError("exact registered preparation payload required")
+        return p
+
+    @classmethod
+    def from_prepared(cls, prepared, *, collection_policy_id):
+        """保留内层准备语义；实际采集许可仍由私有应用独立判定。"""
+        if type(prepared) is not RegisteredPreparedStepBinding:
+            raise TypeError("exact registered preparation binding required")
+        return cls(
+            {
+                **cls._constants,
+                "collection_policy_id": collection_policy_id,
+                "prepared": prepared.to_payload(),
+            }
+        )
+
+    @property
+    def prepared(self):
+        return RegisteredPreparedStepBinding.from_payload(self.to_payload()["prepared"])
+
+    @property
+    def grounded_step(self):
+        return self.prepared.grounded_step
+
+    @property
+    def valid_until(self):
+        return self.prepared.valid_until
+
+
 def _registered_preparation_deadline(original, *, original_step_id, observation, lease_source=None):
     """计算新准备路径共同截止时间；UNKNOWN也不得绕过原条件时效。"""
     requirement = original.requirements.get(original_step_id)

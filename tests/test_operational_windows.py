@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import gzip
 import hashlib
 import importlib
 import json
@@ -28,29 +27,59 @@ from tests.test_operational_time_v1 import _identity
 
 
 def marker_cpu_inputs():
-    """Pinned historical pixels for CPU logic only; never new live/admission evidence."""
+    """Fresh synthetic CPU pixels and a distinct current-code DEVELOPMENT_ONLY registry."""
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+
     from cloud_edge_robot_arm.contracts.models import TaskTarget
     from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    from tests.test_pose_marker_evidence import BITS7
 
     root = Path(__file__).resolve().parents[1]
-    fixture = root / "tests/fixtures/p5_marker_source_v1"
-    provenance = json.loads((fixture / "provenance.json").read_text())
-    assert provenance["scope"] == "SOFTWARE_ONLY_DEVELOPMENT_DIAGNOSTIC_REUSE_NOT_NEW_ACTUAL"
-    compressed = (fixture / "observation-full.json.gz").read_bytes()
-    assert hashlib.sha256(compressed).hexdigest() == (
-        "21bf6d3787eca744af20c205469b8c56c51b46cd14e53068f12d7dbf1f251fca"
+    frozen = root / "tests/fixtures/p5_marker_source_v1/registration.json"
+    blob = frozen.read_bytes()
+    assert (
+        hashlib.sha256(blob).hexdigest()
+        == "3e9cf0c1d44116cec83d913e003b53ec8157d09acf36164078825ae6c836c5bc"
     )
-    pixels = gzip.decompress(compressed)
-    assert hashlib.sha256(pixels).hexdigest() == provenance["original_frame"]["sha256"]
+    payload = json.loads(blob)
+    payload["registration_id"] = "p5-cpu-marker-synthetic-current-v2"
+    names = set(payload["registration_source_hashes"]) | {
+        "tests/test_operational_windows.py",
+        "tests/test_pose_marker_evidence.py",
+    }
+    payload["registration_source_hashes"] = {
+        name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in names
+    }
     module = importlib.import_module("cloud_edge_robot_arm.vision.marker_association")
-    observation = RGBDObservation.model_validate_json(pixels)
-    registration = module.load_marker_registration(
-        fixture / "registration.json",
-        expected_registry_sha256="3e9cf0c1d44116cec83d913e003b53ec8157d09acf36164078825ae6c836c5bc",
-        root=root,
+    registration = module.MarkerObjectRegistration.from_payload(payload, root=root)
+    assert registration.sources_valid() and registration.admission_scope == "DEVELOPMENT_ONLY"
+    rgb = np.full((160, 160, 3), 255, dtype=np.uint8)
+    rgb[42:118, 42:118] = (255, 0, 0)
+    rgb[48:112, 48:112] = 255
+    glyph = np.repeat(np.repeat(BITS7, 8, axis=0), 8, axis=1)
+    rgb[56:104, 56:104] = glyph[:, :, None]
+    depth = np.full((160, 160), 0.1875, dtype="<f4")
+    output = io.BytesIO()
+    Image.fromarray(rgb).save(output, format="PNG")
+    observation = RGBDObservation(
+        frame_id="synthetic-p5-current",
+        captured_at=datetime.now(UTC),
+        sim_time_s=0,
+        width=160,
+        height=160,
+        rgb_png_base64=base64.b64encode(output.getvalue()).decode(),
+        depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
+        intrinsics=(200.0, 200.0, 79.5, 79.5),
+        camera_to_world=(1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 1.5, 0, 0, 0, 1),
+        source="rgbd_camera",
+        episode_id="SOFTWARE_ONLY_CURRENT_P5",
+        scene_id="SOFTWARE_ONLY_CURRENT_P5",
+        calibration_version="synthetic-p5-v2",
     )
-    assert registration.sources_valid()
-    assert registration.admission_scope == "DEVELOPMENT_ONLY"
     context = module.marker_frame_context(
         observation,
         registration,
@@ -1036,3 +1065,25 @@ def test_nonzero_bracket_age_uses_original_lower_boundary(monkeypatch, tmp_path)
         assert owner.check(window, after=token).status == "INVALID"
 
     exercise(monkeypatch, tmp_path, run)
+
+
+def test_current_synthetic_marker_source_preserves_frozen_registry():
+    module, observation, registration, context = marker_cpu_inputs()
+    result = module.associate_marker_target(
+        observation, registration, context, now=datetime.now(UTC)
+    )
+    assert result.status == "OBSERVED_CANDIDATE"
+    assert result.admission_status == "NOT_ADMITTED"
+    assert (
+        result.geometric_error_bound_m is None and result.whole_target_identity_status == "UNKNOWN"
+    )
+    assert registration.registration_id == "p5-cpu-marker-synthetic-current-v2"
+    root = Path(__file__).resolve().parents[1]
+    frozen = root / "tests/fixtures/p5_marker_source_v1/registration.json"
+    assert (
+        hashlib.sha256(frozen.read_bytes()).hexdigest()
+        == "3e9cf0c1d44116cec83d913e003b53ec8157d09acf36164078825ae6c836c5bc"
+    )
+    assert not module.MarkerObjectRegistration.from_payload(
+        json.loads(frozen.read_bytes()), root=root
+    ).sources_valid()

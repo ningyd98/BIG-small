@@ -531,13 +531,28 @@ def grounded_worker_effect_conditions(
     does not replace the original requirement/template and has no clock oracle.
     A live caller must separately recheck current lease/frame/expiry and safety.
     """
-    from cloud_edge_robot_arm.vision.owner_registration import LocalVisualOriginalPlan, LocalStepGroundingBinding
-    local = type(original) is LocalVisualOriginalPlan and type(grounding) is LocalStepGroundingBinding
-    if not local and (type(original) is not VisualOriginalPlan or type(grounding) is not StepGroundingBinding):
+    from cloud_edge_robot_arm.vision.owner_registration import (
+        LocalStepGroundingBinding,
+        LocalVisualOriginalPlan,
+    )
+
+    local = (
+        type(original) is LocalVisualOriginalPlan and type(grounding) is LocalStepGroundingBinding
+    )
+    if not local and (
+        type(original) is not VisualOriginalPlan or type(grounding) is not StepGroundingBinding
+    ):
         raise ValueError("concrete original plan and grounding binding required")
-    original = (LocalVisualOriginalPlan.from_payload(original.to_payload()) if local
-                else freeze_original_visual_plan(**original.freeze_inputs()))
-    grounding = (LocalStepGroundingBinding.from_payload(grounding.to_payload()) if local else replace(grounding))
+    original = (
+        LocalVisualOriginalPlan.from_payload(original.to_payload())
+        if local
+        else freeze_original_visual_plan(**original.freeze_inputs())
+    )
+    grounding = (
+        LocalStepGroundingBinding.from_payload(grounding.to_payload())
+        if local
+        else replace(grounding)
+    )
     step = grounding.grounded_step
     requirement = original.requirements.get(step.step_id)
     if (
@@ -550,11 +565,55 @@ def grounded_worker_effect_conditions(
         or any(
             original.source_hashes.get(k) != v for k, v in grounding.grounding_source_hashes.items()
         )
-        or (not local and (not original.registered_at <= grounding.created_at < grounding.valid_until
-                           or grounding.valid_until > original.effective_deadline_at))
+        or (
+            not local
+            and (
+                not original.registered_at <= grounding.created_at < grounding.valid_until
+                or grounding.valid_until > original.effective_deadline_at
+            )
+        )
         or (local and grounding.local_time.to_payload() != original.local_time.to_payload())
     ):
         raise ValueError("grounded effect original/source/version/policy binding mismatch")
+    return _bound_effect_conditions(requirement, step)
+
+
+def registered_collection_effect_conditions(original, grounding) -> tuple[ConditionSpec, ...]:
+    """按新采集来源实例化原效果模板，不删除条件或授予执行权限。"""
+    from cloud_edge_robot_arm.vision.owner_registration import RegisteredCollectionStepBinding
+
+    if (
+        type(original) is not VisualOriginalPlan
+        or type(grounding) is not RegisteredCollectionStepBinding
+    ):
+        raise ValueError("concrete registered collection source binding required")
+    original = freeze_original_visual_plan(**original.freeze_inputs())
+    grounding = RegisteredCollectionStepBinding.from_payload(grounding.to_payload())
+    payload = grounding.prepared.to_payload()
+    step = grounding.grounded_step
+    requirement = original.requirements.get(step.step_id)
+    if (
+        requirement is None
+        or payload["original_plan_hash"] != original.digest()
+        or payload["current_identity"] != original.identity.to_payload()
+        or (payload["plan_version"], payload["command_seq"])
+        != (original.contract.plan_version, original.contract.command_seq)
+        or payload["original_requirements"] != requirement.to_payload()
+        or any(
+            original.source_hashes.get(k) != v
+            for k, v in payload["grounding_source_hashes"].items()
+        )
+        or not original.registered_at
+        <= datetime.fromisoformat(payload["created_at"])
+        < grounding.valid_until
+        <= original.effective_deadline_at
+    ):
+        raise ValueError("registered collection effect original/source binding mismatch")
+    return _bound_effect_conditions(requirement, step)
+
+
+def _bound_effect_conditions(requirement, step) -> tuple[ConditionSpec, ...]:
+    """共用已绑定步骤的TCP模板算法，不决定来源或时效资格。"""
     result = []
     for condition in requirement.postconditions:
         if condition.name != "tcp_at_resolved_target":

@@ -31,6 +31,20 @@ ENCODED_FIELDS = {
 
 
 class NativeFullHorizonRecorder(VisualRawRecorderV3):
+    def _before_executor_attempt(
+        self, *, contract: Any, step: Any, attempt: int, grounding: Any
+    ) -> None:
+        """仅 v7 在真实执行器入口消费应用绑定的 PRE；旧采集路径保持原样。"""
+        from cloud_edge_robot_arm.vision.owner_registration import RegisteredCollectionStepBinding
+
+        if type(grounding) is RegisteredCollectionStepBinding or (
+            getattr(self.application, "protocol", {}).get("schema_version")
+            == "native.calibration.operational.v7"
+        ):
+            self.application._validate_registered_dispatch(
+                self, contract=contract, step=step, attempt=attempt, binding=grounding
+            )
+
     def __init__(
         self, *args: Any, application: Any, owner: Any, _token: object | None = None, **kwargs: Any
     ) -> None:
@@ -528,11 +542,37 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
         self._require_open()
         if self._published:
             raise RuntimeError("collection originals already frozen")
+        registered = (
+            getattr(self.application, "protocol", {}).get("schema_version")
+            == "native.calibration.operational.v7"
+        )
+        actions = self._actions
+        if registered:
+            from cloud_edge_robot_arm.research.raw_episode_v3 import (
+                RegisteredCollectionActionSpanV1,
+            )
+
+            actions = [
+                RegisteredCollectionActionSpanV1.from_payload(
+                    dict(
+                        schema_version="native.registered.action-span.v1",
+                        identity=self._identity.to_payload(),
+                        **_plain(row),
+                    )
+                ).to_payload()
+                for row in actions
+            ]
         self._write_original(
             "partial-originals.json",
             dict(
-                schema_version="native.full-horizon.originals.v1",
-                source_scope="TEACHER_COLLECTION",
+                schema_version=(
+                    "native.registered.full-horizon.originals.v1"
+                    if registered
+                    else "native.full-horizon.originals.v1"
+                ),
+                source_scope="REGISTERED_MODEL_TEACHER_COLLECTION"
+                if registered
+                else "TEACHER_COLLECTION",
                 identity=self._identity.to_payload() if self._identity is not None else None,
                 descriptor=self._descriptor.to_payload() if self._descriptor is not None else None,
                 reset=self._reset_result,
@@ -542,7 +582,7 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
                 physics=self._physics,
                 commands=self._commands,
                 control_sources=list(self.control_sources.values()),
-                actions=self._actions,
+                actions=actions,
                 joins=self._joins,
                 frame_sources=self.frame_sources,
                 allocated_frames=self._allocated_frames,
@@ -567,7 +607,11 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
             ),
         )
         manifest = dict(
-            schema_version="native.full-horizon.inventory.v1",
+            schema_version=(
+                "native.registered.full-horizon.inventory.v1"
+                if registered
+                else "native.full-horizon.inventory.v1"
+            ),
             files=dict(self.inventory),
             file_count=len(self.inventory),
             original_bytes=self.bytes_written,

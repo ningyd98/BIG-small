@@ -56,7 +56,14 @@ _ISSUER = object()
 
 
 def _check_protocol_sources(protocol: dict[str, Any]) -> None:
-    if "marker_family" not in protocol:
+    if protocol.get("schema_version") == "native.calibration.operational.v7":
+        from cloud_edge_robot_arm.research.native_calibration_collection import (
+            _registered_collection_protocol,
+        )
+
+        if canonical(protocol) != canonical(_registered_collection_protocol()):
+            raise ValueError("registered collection source or recipe changed")
+    elif "marker_family" not in protocol:
         check_sources(protocol["source_hashes"])
     else:
         check_sources(
@@ -104,6 +111,7 @@ class _Live:
     recorder: Any = None
     original: Any = None
     tracker: Any = None
+    registered_tracker: Any = None
     grounding_evidence: Any = None
     session: Any = None
     next_index: int = 0
@@ -114,6 +122,7 @@ class _Live:
     result: dict[str, Any] | None = None
     config_json: bytes | None = None
     pending: tuple[int, str, str] | None = None
+    registered_dispatch: dict[str, Any] | None = None
     progress: dict[str, bool] = field(default_factory=dict)
     consumptions: list[Any] = field(default_factory=list)
 
@@ -665,12 +674,25 @@ def _collect_grounded_step(
     *,
     consume_capture: Callable[[], dict[str, Any]],
 ) -> Any:
+    registered = protocol.get("schema_version") == "native.calibration.operational.v7"
+    if registered:
+        _check_protocol_sources(protocol)
+        if dict(live.original.source_hashes) != protocol["source_hashes"]:
+            raise ValueError("registered collection original source generation differs")
     before = consume_capture()
     started = datetime.now(UTC)
 
     def record(data: dict[str, Any]) -> None:
         finished = datetime.now(UTC)
         after = consume_capture()
+        if registered:
+            _registered_lease(live.repository, live.original.identity)
+            reason, _ = live.registered_tracker._provider._recheck_current(observation)
+            finished = datetime.now(UTC)
+            until = datetime.fromisoformat(data["binding"]["prepared"]["valid_until"])
+            if reason or not observation.captured_at <= started <= finished < until:
+                raise ValueError("registered collection publication expired or changed")
+            data["final_validation_at"] = finished.isoformat()
         data["tracker_clock"] = _tracker_clock_record(
             live,
             observation,
@@ -686,6 +708,20 @@ def _collect_grounded_step(
         )
         live.recorder.record_grounding(data)
 
+    if registered:
+        from cloud_edge_robot_arm.research.native_collection_grounding import (
+            registered_collection_step,
+        )
+
+        return registered_collection_step(
+            live.original,
+            index=index,
+            observation=observation,
+            state=live.robot.get_state(),
+            tracker=live.registered_tracker,
+            lease_source=_registered_lease(live.repository, live.original.identity),
+            evidence_sink=record,
+        )
     return grounded_collection_step(
         live.original,
         index=index,
@@ -1288,7 +1324,11 @@ class NativeCollectionApplication:
         return dict(
             assignment_basis=assignment_basis,
             attempt_basis=attempt_basis,
-            control_source="PIXELS_PROPRIO_REGISTERED_CONSTANTS",
+            control_source=(
+                "PIXELS_PROPRIO_REGISTERED_MODEL"
+                if self.protocol["schema_version"] == "native.calibration.operational.v7"
+                else "PIXELS_PROPRIO_REGISTERED_CONSTANTS"
+            ),
             truth="OFFLINE_LABELS_ONLY",
             session_id=live.application_id,
             assignment_id=live.assignment_id,
@@ -1351,11 +1391,53 @@ class NativeCollectionApplication:
         shield_source: Any = None,
     ) -> CollectionAdmissionDecision:
         from cloud_edge_robot_arm.vision.native_calibration import NativeGeometryRegistration
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            RegisteredCollectionStepBinding,
+            StepGroundingBinding,
+        )
         from cloud_edge_robot_arm.vision.pose_markers import detect_pose_marker
         from cloud_edge_robot_arm.vision.tracking import _CONDITIONS, OpenCVTargetTracker
 
         live = _live(self)
+        registered = self.protocol["schema_version"] == "native.calibration.operational.v7"
+        expected_type = RegisteredCollectionStepBinding if registered else StepGroundingBinding
+        if type(binding) is not expected_type:
+            raise TypeError(
+                "registered" if registered else "exact legacy collection binding required"
+            )
         consumed = self._consume_capture()
+        registered_preview = registered_inputs = registered_verdict = None
+        registered_evaluated_at = None
+        if registered:
+            from cloud_edge_robot_arm.edge.evidence.conditions import (
+                evaluate_registered_pose_available,
+            )
+            from cloud_edge_robot_arm.research.native_collection_grounding import (
+                registered_collection_grounding_preview_v1,
+            )
+            from cloud_edge_robot_arm.vision.owner_registration import (
+                RegisteredCollectionStepBinding,
+                RegisteredGroundingFrameInputs,
+            )
+
+            if type(binding) is not RegisteredCollectionStepBinding:
+                raise TypeError("v7 requires its distinct collection source binding")
+            registered_preview = registered_collection_grounding_preview_v1(
+                live.registered_tracker, observation, live.robot.get_state()
+            )
+            if registered_preview.status == "DERIVED":
+                registered_inputs = RegisteredGroundingFrameInputs.from_preview(
+                    registered_preview,
+                    observation,
+                    NativeGeometryRegistration(self.protocol["geometry"]),
+                )
+            registered_evaluated_at = datetime.now(UTC)
+            registered_verdict = evaluate_registered_pose_available(
+                registered_inputs,
+                observation,
+                target_id=live.original.contract.task_target.object_id,
+                now=registered_evaluated_at,
+            )
         tracker_started = datetime.now(UTC)
         state = live.robot.get_state()
         if type(live.tracker) is not OpenCVTargetTracker:
@@ -1377,6 +1459,8 @@ class NativeCollectionApplication:
         )
         status = {v.condition_name: v.status.value for v in [*verdicts, *supplemental]}
         reasons: list[str] = []
+        if registered_verdict is not None and registered_verdict.status.value != "PASS":
+            reasons.append("registered_model_pose_unavailable")
         # Current, complete marker/colour geometry comes from the same RGB-D frame.
         marker = detect_pose_marker(
             observation, NativeGeometryRegistration(self.protocol["geometry"]).pose_marker
@@ -1440,6 +1524,23 @@ class NativeCollectionApplication:
                 rows.append(row)
         tracker_finished = datetime.now(UTC)
         consumed_after = self._consume_capture()
+        if registered:
+            final_lease = _registered_lease(live.repository, live.original.identity)
+            reason, _ = live.registered_tracker._provider._recheck_current(observation)
+            tracker_finished = datetime.now(UTC)
+            # POST consumes a new frame; the original PRE binding is historical.
+            # Each current frame still obeys the original condition TTL/deadline.
+            from cloud_edge_robot_arm.vision.owner_registration import (
+                _registered_preparation_deadline,
+            )
+
+            deadline = _registered_preparation_deadline(
+                live.original, original_step_id=step.step_id, observation=observation
+            )
+            if reason or not observation.captured_at <= tracker_finished < min(
+                deadline, final_lease.expires_at
+            ):
+                reasons.append("registered_admission_final_frame_expired")
         tracker_clock = _tracker_clock_record(
             live,
             observation,
@@ -1477,6 +1578,15 @@ class NativeCollectionApplication:
             marker=_plain(marker),
             evaluation_at=evaluated_at.isoformat(),
         )
+        if registered:
+            original_inputs.update(
+                registered_preview=registered_preview.to_payload(),
+                registered_inputs=registered_inputs.to_payload()
+                if registered_inputs is not None
+                else None,
+                registered_pose_verdict=_plain(registered_verdict),
+                registered_pose_evaluated_at=registered_evaluated_at.isoformat(),
+            )
         decision = CollectionAdmissionDecision(
             phase,
             step.step_id,
@@ -1485,6 +1595,11 @@ class NativeCollectionApplication:
             tuple(rows),
             tuple(reasons),
             digest(_plain(original_inputs)),
+            schema_version=(
+                "teacher.registered.collection.admission.v1"
+                if registered
+                else "teacher.collection.admission.v1"
+            ),
         )
         live.recorder.decisions.append(
             dict(
@@ -1500,6 +1615,125 @@ class NativeCollectionApplication:
             live.pending = (live.next_index, digest(step.model_dump(mode="json")), binding.digest())
         return decision
 
+    def _validate_registered_dispatch(
+        self, recorder: Any, *, contract: Any, step: Any, attempt: int, binding: Any
+    ) -> None:
+        """在全部慢处理后自读时钟，单次核验同一 PRE、原帧、来源和真实租约。"""
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            RegisteredCollectionStepBinding,
+            _registered_preparation_deadline,
+        )
+        from cloud_edge_robot_arm.vision.worker_owner import registered_collection_effect_conditions
+
+        live = _live(self)
+        context, live.registered_dispatch = live.registered_dispatch, None
+        protocol = self.protocol
+        if (
+            context is None
+            or protocol["schema_version"] != "native.calibration.operational.v7"
+            or live.protocol_json != context["protocol_json"]
+            or type(binding) is not RegisteredCollectionStepBinding
+            or binding is not context["binding"]
+            or type(attempt) is not int
+            or attempt != 1
+            or context["session"] is not live.session
+            or context["index"] != live.next_index
+            or context["index"] != len(live.completed)
+            or live.original is not context["original"]
+            or recorder is not live.recorder
+            or recorder._original != live.original
+            or recorder.backend is not live.backend
+            or recorder.executor is not live.executor
+            or recorder.capture_session is not live.capture
+            or recorder.owner is not live.owner
+            or live.executor._robot is not live.robot
+            or live.robot._backend is not live.backend
+        ):
+            raise RuntimeError("single current registered dispatch context required")
+        payload = binding.prepared.to_payload()
+        created = datetime.fromisoformat(payload["created_at"])
+        bound_until = datetime.fromisoformat(payload["valid_until"])
+        expected_contract = live.original.contract.model_copy(
+            update={
+                "steps": [
+                    step if s.step_id == step.step_id else s
+                    for s in live.original.contract.steps
+                ]
+            },
+            deep=True,
+        )
+        if (
+            binding.digest() != context["binding_hash"]
+            or digest(step.model_dump(mode="json")) != context["step_hash"]
+            or contract.model_dump(mode="json") != expected_contract.model_dump(mode="json")
+            or digest(contract.model_dump(mode="json")) != context["contract_hash"]
+            or payload["original_plan_hash"] != live.original.digest()
+            or payload["current_identity"] != live.original.identity.to_payload()
+            or payload["grounded_step"] != step.model_dump(mode="json")
+            or step.step_id != live.original.contract.steps[live.next_index].step_id
+            or payload["owner_revision"] != live.next_index + 1
+            or payload["state_generation"] != live.next_index + 1
+            or payload["plan_version"] != contract.plan_version
+            or payload["command_seq"] != contract.command_seq
+            or dict(live.original.source_hashes) != protocol["source_hashes"]
+            or any(
+                protocol["source_hashes"].get(name) != value
+                for name, value in payload["grounding_source_hashes"].items()
+            )
+        ):
+            raise RuntimeError("registered dispatch original/step/source identity changed")
+        registered_collection_effect_conditions(live.original, binding)
+        observation = recorder.last_captured_frame.observation
+        capture = recorder.current_capture()
+        if (
+            capture != context["capture"]
+            or observation.observation_id != payload["observation_id"]
+            or observation.checksum_sha256 != payload["observation_checksum_sha256"]
+            or observation.calibration_version != payload["calibration_version"]
+            or observation.episode_id != live.original.identity.episode_id
+            or round(observation.sim_time_s * 240) != live.backend.total_physics_steps
+        ):
+            raise RuntimeError("registered dispatch PRE acquisition changed")
+        # Genuine cancellation/origin/fencing and lease reads precede final source hashing.
+        self.check_active()
+        lease = _registered_lease(live.repository, live.original.identity)
+        if lease.identity(
+            episode_id=live.original.identity.episode_id,
+            task_id=live.original.identity.task_id,
+            plan_id=live.original.identity.plan_id,
+            robot_id=live.original.identity.robot_id,
+        ) != live.original.identity:
+            raise RuntimeError("registered dispatch lease epoch changed")
+        _check_protocol_sources(protocol)
+        reason, _ = live.registered_tracker._provider._recheck_current(observation)
+        origin_current = live.owner.read_current(after=live.origin_token)
+        capture_current = live.owner.read_current(after=capture[1])
+        if (
+            reason
+            or not live.owner.before_deadline(live.deadline, origin_current)
+            or not live.owner.within_age(
+                capture[2], capture_current, max_age_ns=protocol["settings"]["ordinary_max_age_ns"]
+            )
+            or recorder.current_capture() != capture
+            or recorder.last_captured_frame.observation is not observation
+            or round(observation.sim_time_s * 240) != live.backend.total_physics_steps
+        ):
+            raise RuntimeError("registered dispatch source/capture/operational deadline changed")
+        until = min(
+            bound_until,
+            lease.expires_at,
+            _registered_preparation_deadline(
+                live.original, original_step_id=step.step_id, observation=observation
+            ),
+        )
+        earliest = max(
+            live.original.registered_at, observation.captured_at, created, lease.observed_at
+        )
+        # Nothing that reparses, reads a source/lease or calls user code follows this clock.
+        now = datetime.now(UTC)
+        if not earliest <= now < until:
+            raise RuntimeError("registered dispatch final frame/lease deadline expired")
+
     def _execute_horizon(
         self, session: Any, *, index: int, contract: Any, step: Any, binding: Any
     ) -> Any:
@@ -1511,25 +1745,70 @@ class NativeCollectionApplication:
         live = _live(self)
         if session is not live.session or index != live.next_index or index != len(live.completed):
             raise RuntimeError("private ordered horizon capability required")
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            RegisteredCollectionStepBinding,
+            StepGroundingBinding,
+        )
+
+        expected_type = (
+            RegisteredCollectionStepBinding
+            if self.protocol["schema_version"] == "native.calibration.operational.v7"
+            else StepGroundingBinding
+        )
+        if type(binding) is not expected_type:
+            raise TypeError("exact protocol collection binding required before dispatch")
         self._consume_capture()
         expected = (index, digest(step.model_dump(mode="json")), binding.digest())
         if live.pending != expected:
             raise RuntimeError("one unconsumed actual pre-admission required")
         live.pending = None
+        if self.protocol["schema_version"] == "native.calibration.operational.v7":
+            from cloud_edge_robot_arm.vision.owner_registration import (
+                RegisteredCollectionStepBinding,
+            )
+
+            _check_protocol_sources(self.protocol)
+            _registered_lease(live.repository, live.original.identity)
+            if type(binding) is not RegisteredCollectionStepBinding:
+                raise TypeError("registered collection dispatch requires exact new binding")
+            payload = binding.prepared.to_payload()
+            if (
+                payload["original_plan_hash"] != live.original.digest()
+                or payload["current_identity"] != live.original.identity.to_payload()
+                or not datetime.fromisoformat(payload["created_at"])
+                <= datetime.now(UTC)
+                < binding.valid_until
+            ):
+                raise RuntimeError("registered collection dispatch original/lease/frame expired")
         row = self.protocol["actions"][index]
         if step.skill.value != row["skill"] or binding.grounded_step != step:
             raise RuntimeError("fixed original step/payload mismatch")
-        receipt = _run_registered_horizon(
-            backend=live.backend,
-            robot=live.robot,
-            executor=live.executor,
-            recorder=live.recorder,
-            contract=contract,
-            step=step,
-            grounding=binding,
-            horizon=completion_horizon_rational_v1(row["skill"], **row["recipe"]),
-            check_active=self.check_active,
-        )
+        if expected_type is RegisteredCollectionStepBinding:
+            live.registered_dispatch = dict(
+                session=session,
+                index=index,
+                original=live.original,
+                binding=binding,
+                binding_hash=binding.digest(),
+                step_hash=digest(step.model_dump(mode="json")),
+                contract_hash=digest(contract.model_dump(mode="json")),
+                capture=live.recorder.current_capture(),
+                protocol_json=live.protocol_json,
+            )
+        try:
+            receipt = _run_registered_horizon(
+                backend=live.backend,
+                robot=live.robot,
+                executor=live.executor,
+                recorder=live.recorder,
+                contract=contract,
+                step=step,
+                grounding=binding,
+                horizon=completion_horizon_rational_v1(row["skill"], **row["recipe"]),
+                check_active=self.check_active,
+            )
+        finally:
+            live.registered_dispatch = None
         if not receipt.complete:
             raise RuntimeError("controller or registered horizon incomplete")
         return receipt
@@ -1666,6 +1945,32 @@ class NativeCollectionApplication:
                         self.protocol,
                         consume_capture=self._consume_capture,
                     )
+                    if self.protocol["schema_version"] == "native.calibration.operational.v7":
+                        from cloud_edge_robot_arm.research.native_collection_grounding import (
+                            bootstrap_registered_collection_tracker_v1,
+                        )
+                        from cloud_edge_robot_arm.vision.native_calibration import (
+                            NativeGeometryRegistration,
+                        )
+
+                        registered_started = datetime.now(UTC)
+                        live.registered_tracker = bootstrap_registered_collection_tracker_v1(
+                            observation,
+                            NativeGeometryRegistration(self.protocol["geometry"]),
+                            source_root=ROOT,
+                            source_hashes=live.original.source_hashes,
+                        )
+                        registered_finished = datetime.now(UTC)
+                        recorder._write_original(
+                            "registered-tracker-bootstrap.json",
+                            dict(
+                                schema_version="native.registered.tracker-bootstrap.v1",
+                                acquisition=recorder.acquisition_source(),
+                                started_at=registered_started.isoformat(),
+                                finished_at=registered_finished.isoformat(),
+                                source_generation=self.protocol["source_generation"],
+                            ),
+                        )
                     live.session = _issue_collection_session(self)
                     shield = research_safety_shield(self.policy["task_timeout_s"])
                     recorder.record_shield_config(shield)
@@ -1739,7 +2044,16 @@ class NativeCollectionApplication:
                         post, post_source = recorder.check_shield(
                             shield, post_context, index=index, phase="POST"
                         )
-                        conditions = grounded_worker_effect_conditions(live.original, binding)
+                        if self.protocol["schema_version"] == "native.calibration.operational.v7":
+                            from cloud_edge_robot_arm.vision.worker_owner import (
+                                registered_collection_effect_conditions,
+                            )
+
+                            conditions = registered_collection_effect_conditions(
+                                live.original, binding
+                            )
+                        else:
+                            conditions = grounded_worker_effect_conditions(live.original, binding)
                         self._evaluate_collection_admission(
                             phase="POST",
                             step=step,

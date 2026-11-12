@@ -21,6 +21,7 @@ def main() -> None:
     modes.add_argument("--collect-once", action="store_true")
     modes.add_argument("--verify", action="store_true")
     modes.add_argument("--prepare-registered-protocol", action="store_true")
+    modes.add_argument("--prepare-registered-collection-protocol", action="store_true")
     modes.add_argument("--prepare-registered-step", action="store_true")
     modes.add_argument("--verify-registered-step", action="store_true")
     parser.add_argument("--config", type=Path)
@@ -33,6 +34,7 @@ def main() -> None:
     args = parser.parse_args()
     registered = (
         args.prepare_registered_protocol
+        or args.prepare_registered_collection_protocol
         or args.prepare_registered_step
         or args.verify_registered_step
     )
@@ -45,7 +47,7 @@ def main() -> None:
             regular,
         )
 
-        if args.prepare_registered_protocol:
+        if args.prepare_registered_protocol or args.prepare_registered_collection_protocol:
             if any(
                 value is not None
                 for value in (
@@ -58,7 +60,14 @@ def main() -> None:
                 )
             ):
                 parser.error("registered protocol preparation requires only output")
-            result = prepare_registered_grounding_protocol(output=args.output)
+            if args.prepare_registered_collection_protocol:
+                from cloud_edge_robot_arm.research.native_calibration_collection import (
+                    prepare_registered_collection_protocol,
+                )
+
+                result = prepare_registered_collection_protocol(output=args.output)
+            else:
+                result = prepare_registered_grounding_protocol(output=args.output)
         else:
             if (
                 args.protocol is None

@@ -500,6 +500,15 @@ def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]
     protocol = load_json(path / "protocol.json")
     if (
         isinstance(protocol, dict)
+        and protocol.get("schema_version") == REGISTERED_COLLECTION_SCHEMA
+    ):
+        sources = protocol.get("source_hashes")
+        expected = _registered_collection_protocol(None if current_sources else sources)
+        if canonical(protocol) != canonical(expected):
+            raise ValueError("registered collection recipe/source/zero-release identity changed")
+        return protocol
+    if (
+        isinstance(protocol, dict)
         and protocol.get("schema_version") == REGISTERED_PREPARATION_SCHEMA
     ):
         sources = protocol.get("source_hashes")
@@ -544,6 +553,60 @@ def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]
 
 
 REGISTERED_PREPARATION_SCHEMA = "native.calibration.operational.v6"
+REGISTERED_COLLECTION_SCHEMA = "native.calibration.operational.v7"
+
+
+def _registered_collection_protocol(historical_sources=None):
+    base = _protocol(
+        ROOT / _PREPARE_POLICIES[SIDE_PREPARE_ONLY_FAMILY].config,
+        historical_sources=historical_sources,
+    )
+    base.update(
+        schema_version=REGISTERED_COLLECTION_SCHEMA,
+        scope="REGISTERED_MODEL_COLLECTION_INTERFACES",
+        settings={
+            **base["settings"],
+            "schema_version": REGISTERED_COLLECTION_SCHEMA,
+            "assigned_groups": 0,
+            "first_seed": None,
+            "released_assignment": None,
+            "admission_version": "teacher.registered.collection.admission.v1",
+        },
+        collection_policy_id="registered-model-collection-v1",
+        geometry_basis="REGISTERED_RIGID_MODEL",
+        support_basis="REGISTERED_NOMINAL",
+        input_schema="registered.grounding.inputs.v1",
+        binding_schema="registered.collection.binding.v1",
+        action_span_schema="native.registered.action-span.v1",
+        record_schema="native.registered.full-horizon.originals.v1",
+        condition_version="registered-model-condition-v1",
+        assignments=[],
+        released_assignments=[],
+        execution_release="PREPARE_ONLY_NOT_RELEASED",
+        execution_allowed=False,
+        prepare_only=True,
+        admission={
+            **base["admission"],
+            "version": "teacher.registered.collection.admission.v1",
+            "registered_pose_is_supplemental": True,
+            "original_conditions_retained": True,
+        },
+    )
+    return base
+
+
+def prepare_registered_collection_protocol(*, output: Path) -> dict[str, Any]:
+    """生成原采集路径的独立注册模型协议；不释放实际任务或额度。"""
+    protocol = _registered_collection_protocol()
+    destination = fresh_directory(output)
+    save_exclusive(destination / "protocol.json", protocol)
+    return dict(
+        status="REGISTERED_COLLECTION_INTERFACES_PREPARED",
+        protocol=str(destination),
+        protocol_sha256=digest(protocol),
+        execution_admitted=False,
+        formal="NOT_ACCEPTED",
+    )
 
 
 def _registered_grounding_protocol(historical_sources=None):
@@ -631,6 +694,8 @@ def verify_native_calibration_collection(protocol: Path, *, output: Path) -> dic
     )
 
     data = read_protocol(protocol, current_sources=False)
+    if data["schema_version"] == REGISTERED_COLLECTION_SCHEMA:
+        raise ValueError("registered collection has no released full-horizon groups")
     if data["schema_version"] == REGISTERED_PREPARATION_SCHEMA:
         raise ValueError(
             "v6 preparation requires its current-frame reader; no full-horizon release"

@@ -701,6 +701,11 @@ class VisualRawRecorderV3:
             self._audit_failures.append(_error(transform_error))
             raise
 
+    def _before_executor_attempt(
+        self, *, contract: TaskContract, step: TaskStep, attempt: int, grounding: Any
+    ) -> None:
+        """保留现有执行语义；专用采集器可在最后入口核验自己的单次上下文。"""
+
     def execute_attempt(
         self,
         *,
@@ -739,6 +744,9 @@ class VisualRawRecorderV3:
         result = None
         error = None
         try:
+            self._before_executor_attempt(
+                contract=contract, step=step, attempt=attempt, grounding=grounding
+            )
             result = self.executor.execute_attempt(contract=contract, step=step, attempt=attempt)
             return result
         except BaseException as operation_error:

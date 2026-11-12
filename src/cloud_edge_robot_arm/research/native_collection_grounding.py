@@ -401,6 +401,30 @@ def build_collection_contract(
     return freeze_original_visual_plan(**{**original.freeze_inputs(), "requirements": requirements})
 
 
+def _collection_checkpoint(original, index, state, now):
+    """复用原有有序采集检查点，仅生成来源数据。"""
+    contract = original.contract
+    source_step = contract.steps[index]
+    checkpoint = ExecutionCheckpoint(
+        checkpoint_id=f"{original.identity.plan_id}:checkpoint-{index}",
+        task_id=contract.task_id,
+        plan_id=original.identity.plan_id,
+        plan_version=1,
+        command_seq=1,
+        robot_id=original.identity.robot_id,
+        current_step_id=source_step.step_id,
+        current_step_index=index,
+        completed_step_ids=[s.step_id for s in contract.steps[:index]],
+        pending_step_ids=[s.step_id for s in contract.steps[index:]],
+        created_at=now,
+        updated_at=now,
+        robot_state=state.model_dump(mode="json"),
+        execution_state="STARTED",
+    )
+    checkpoint.checkpoint_hash = checkpoint_digest(checkpoint)
+    return checkpoint
+
+
 def grounded_collection_step(
     original: VisualOriginalPlan,
     *,
@@ -425,23 +449,7 @@ def grounded_collection_step(
     contract = original.contract
     source_step = contract.steps[index]
     now = datetime.now(UTC)
-    checkpoint = ExecutionCheckpoint(
-        checkpoint_id=f"{original.identity.plan_id}:checkpoint-{index}",
-        task_id=contract.task_id,
-        plan_id=original.identity.plan_id,
-        plan_version=1,
-        command_seq=1,
-        robot_id=original.identity.robot_id,
-        current_step_id=source_step.step_id,
-        current_step_index=index,
-        completed_step_ids=[s.step_id for s in contract.steps[:index]],
-        pending_step_ids=[s.step_id for s in contract.steps[index:]],
-        created_at=now,
-        updated_at=now,
-        robot_state=state.model_dump(mode="json"),
-        execution_state="STARTED",
-    )
-    checkpoint.checkpoint_hash = checkpoint_digest(checkpoint)
+    checkpoint = _collection_checkpoint(original, index, state, now)
     online = OnlineEvidenceSnapshot(
         observation, state, tracker.facts(observation, state), 1, 1, checkpoint.checkpoint_hash
     )
@@ -695,6 +703,11 @@ def registered_collection_grounding_preview_v1(
         or type(robot_state) is not RobotState
     ):
         raise TypeError("exact owned registered collection tracker, observation and state required")
+    return _shared_registered_collection_preview(tracker, observation, robot_state)
+
+
+def _shared_registered_collection_preview(tracker, observation, robot_state):
+    """共用纯计算；live入口与独立历史adapter各自验证其来源类型。"""
     current = RGBDObservation.model_validate(observation.model_dump())
     state = RobotState.model_validate(robot_state.model_dump())
     track = tracker._provider.update(current)
@@ -747,3 +760,105 @@ def registered_collection_grounding_preview_v1(
         if geometry is None
         else current.checksum_sha256,
     )
+
+
+def registered_collection_step(
+    original, *, index, observation, state, tracker, lease_source, evidence_sink=None
+):
+    """把当前模型坐标绑定到原采集步骤；原条件仍由采集应用核验。"""
+    from cloud_edge_robot_arm.vision.owner_registration import (
+        RegisteredCollectionStepBinding,
+        RegisteredGroundingFrameInputs,
+        RegisteredGroundingPolicy,
+        prepare_registered_step_binding,
+    )
+
+    started = datetime.now(UTC)
+    if (
+        type(original) is not VisualOriginalPlan
+        or type(index) is not int
+        or not (0 <= index < len(original.contract.steps))
+    ):
+        raise ValueError("exact original collection pending index required")
+    if type(tracker) is not RegisteredCollectionPreviewTrackerV1:
+        raise TypeError("owned live registered collection tracker required")
+    if dict(original.source_hashes) != tracker._provider._source_hashes:
+        raise ValueError("registered collection source inventory differs from original")
+    contract = original.contract
+    source_step = contract.steps[index]
+    checkpoint = _collection_checkpoint(original, index, state, started)
+    preview = registered_collection_grounding_preview_v1(tracker, observation, state)
+    if preview.status != "DERIVED":
+        raise ValueError("registered collection geometry unavailable: " + preview.reason)
+    inputs = RegisteredGroundingFrameInputs.from_preview(
+        preview, observation, tracker._provider._registration
+    )
+    policy = RegisteredGroundingPolicy.for_original(original, original.source_hashes)
+    online = OnlineEvidenceSnapshot(
+        observation,
+        state,
+        {},
+        contract.plan_version,
+        contract.command_seq,
+        checkpoint.checkpoint_hash,
+    )
+    now = datetime.now(UTC)
+    prepared = prepare_registered_step_binding(
+        original,
+        original_step_id=source_step.step_id,
+        online=online,
+        source_checkpoint=checkpoint,
+        current_identity=original.identity,
+        owner_revision=index + 1,
+        state_generation=index + 1,
+        grounding_inputs=inputs,
+        grounding_policy=policy,
+        lease_source=lease_source,
+        now=now,
+    )
+    binding = RegisteredCollectionStepBinding.from_prepared(
+        prepared, collection_policy_id="registered-model-collection-v1"
+    )
+    step = binding.grounded_step
+    executed = contract.model_copy(
+        update={"steps": [step if s.step_id == step.step_id else s for s in contract.steps]},
+        deep=True,
+    )
+    reason, finished = tracker._provider._recheck_current(observation)
+    if reason or not observation.captured_at <= started <= now <= finished < binding.valid_until:
+        raise ValueError("registered collection final frame/deadline invalid")
+    if evidence_sink is not None:
+        evidence_sink(
+            dict(
+                schema_version="native.registered.grounding.v1",
+                original_plan_sha256=original.digest(),
+                identity=original.identity.to_payload(),
+                index=index,
+                step_id=source_step.step_id,
+                source_generation=digest(dict(original.source_hashes)),
+                checkpoint=checkpoint.model_dump(mode="json"),
+                checkpoint_sha256=checkpoint.checkpoint_hash,
+                binding_now=now.isoformat(),
+                tracker_evaluated_at=preview.evaluated_at.isoformat(),
+                inputs=inputs.to_payload(),
+                inputs_sha256=inputs.digest(),
+                policy=policy.to_payload(),
+                policy_sha256=policy.digest(),
+                binding=binding.to_payload(),
+                binding_sha256=binding.digest(),
+                lease_source=lease_source.to_payload(),
+                registered_preview=preview.to_payload(),
+                executed_contract=executed.model_dump(mode="json"),
+                grounded_step=step.model_dump(mode="json"),
+                online=dict(
+                    robot_state=state.model_dump(mode="json"),
+                    visual_facts={},
+                    plan_version=online.plan_version,
+                    command_seq=online.command_seq,
+                    context_hash=online.context_hash,
+                ),
+                observation_id=observation.observation_id,
+                checksum_sha256=observation.checksum_sha256,
+            )
+        )
+    return executed, step, binding, online, checkpoint

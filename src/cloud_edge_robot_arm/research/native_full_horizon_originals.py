@@ -16,7 +16,7 @@ import struct
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -570,6 +570,37 @@ class _Audit:
         self.tracker_clock_end_utc: datetime | None = None
         self.tracker_clock_end_ns: int | None = None
         self.tracker_clock_keys: set[tuple[str, int | None, str | None]] = set()
+        self.registered_collection = (
+            protocol.get("schema_version") == "native.calibration.operational.v7"
+        )
+        self.registered_tracker = None
+        self.registered_preview_finished = None
+
+    def action_span(self, payload):
+        """按协议版本读取独立span，不跨版本解码或替换全局身份。"""
+        if self.registered_collection:
+            from cloud_edge_robot_arm.research.raw_episode_v3 import (
+                RegisteredCollectionActionSpanV1,
+            )
+
+            _same(
+                payload.get("identity"),
+                self.identity.to_payload(),
+                "registered span global identity differs",
+            )
+            return RegisteredCollectionActionSpanV1.from_payload(payload)
+        return TypedActionSpanV3.from_json(
+            json.dumps(dict(identity=self.identity.to_payload(), **payload))
+        )
+
+    def grounding_binding(self, payload):
+        if self.registered_collection:
+            from cloud_edge_robot_arm.vision.owner_registration import (
+                RegisteredCollectionStepBinding,
+            )
+
+            return RegisteredCollectionStepBinding.from_payload(payload)
+        return _owner_decode(StepGroundingBinding, payload)
 
     def issue(self, message: str) -> None:
         if message not in self.reasons:
@@ -582,7 +613,12 @@ class _Audit:
         manifest = self.read("inventory.json")
         self.manifest = manifest
         _require(
-            manifest["schema_version"] == "native.full-horizon.inventory.v1",
+            manifest["schema_version"]
+            == (
+                "native.registered.full-horizon.inventory.v1"
+                if self.registered_collection
+                else "native.full-horizon.inventory.v1"
+            ),
             "inventory schema mismatch",
         )
         _same(
@@ -617,7 +653,21 @@ class _Audit:
             self.protocol["source_hashes"],
             "original source generation differs",
         )
-        _require(self.raw["source_scope"] == "TEACHER_COLLECTION", "foreign source scope")
+        _require(
+            self.raw["source_scope"]
+            == (
+                "REGISTERED_MODEL_TEACHER_COLLECTION"
+                if self.registered_collection
+                else "TEACHER_COLLECTION"
+            ),
+            "foreign source scope",
+        )
+        if self.registered_collection:
+            _same(
+                self.raw["schema_version"],
+                "native.registered.full-horizon.originals.v1",
+                "registered originals schema differs",
+            )
 
     def source(self) -> None:
         raw = self.raw
@@ -636,7 +686,9 @@ class _Audit:
         )
         _same(
             source["control_source"],
-            "PIXELS_PROPRIO_REGISTERED_CONSTANTS",
+            "PIXELS_PROPRIO_REGISTERED_MODEL"
+            if self.registered_collection
+            else "PIXELS_PROPRIO_REGISTERED_CONSTANTS",
             "control provenance unavailable",
         )
         _same(source["truth"], "OFFLINE_LABELS_ONLY", "truth leaked into control source")
@@ -1123,9 +1175,7 @@ class _Audit:
         for action, receipt, registered in zip(
             raw["actions"], raw["horizons"], self.protocol["actions"], strict=True
         ):
-            span = TypedActionSpanV3.from_json(
-                json.dumps(dict(identity=self.identity.to_payload(), **action))
-            )
+            span = self.action_span(action)
             self.sequences.append(action["record_seq"])
             interval = self.intervals[action["interval_id"]]
             _same(span.original_plan.digest(), self.original.digest(), "action original changed")
@@ -1617,6 +1667,202 @@ class _Audit:
         )
         return bootstraps[1]
 
+    def registered_preview(self, payload, observation, state):
+        """重算原时间的像素/模型计算；不证明过去授权或当前freshness。"""
+        from cloud_edge_robot_arm.research.native_archived_tracker import (
+            _ArchivedRegisteredCollectionTracker,
+        )
+        from cloud_edge_robot_arm.research.native_calibration_collection import ROOT
+        from cloud_edge_robot_arm.vision.owner_registration import RegisteredGroundingFrameInputs
+
+        if self.registered_tracker is None:
+            bootstrap = self.read("registered-tracker-bootstrap.json")
+            _same(
+                bootstrap["schema_version"],
+                "native.registered.tracker-bootstrap.v1",
+                "registered bootstrap schema differs",
+            )
+            _same(
+                bootstrap["source_generation"],
+                self.protocol["source_generation"],
+                "registered bootstrap source differs",
+            )
+            acquisition = bootstrap["acquisition"]
+            timeline = self.read("registration-timeline.json")
+            _same(
+                acquisition,
+                timeline["dispatch"]["acquisition"],
+                "registered reference is not dispatch bootstrap",
+            )
+            self.reference(acquisition)
+            reference, _, _ = self.frame(acquisition["acquisition_id"])
+            started = _validated_utc(datetime.fromisoformat(bootstrap["started_at"]))
+            finished = _validated_utc(datetime.fromisoformat(bootstrap["finished_at"]))
+            _require(
+                reference.captured_at
+                <= started
+                <= finished
+                < min(
+                    self.original.effective_deadline_at,
+                    reference.captured_at + timedelta(seconds=5),
+                ),
+                "registered bootstrap original time invalid",
+            )
+            self.registered_tracker = _ArchivedRegisteredCollectionTracker(
+                reference,
+                self.scope,
+                source_root=ROOT,
+                source_hashes=self.original.source_hashes,
+                initialized_at=finished,
+            )
+            self.registered_preview_finished = finished
+        evaluated = _validated_utc(datetime.fromisoformat(payload["track"]["evaluated_at"]))
+        finished = _validated_utc(datetime.fromisoformat(payload["evaluated_at"]))
+        _require(
+            self.registered_preview_finished <= evaluated <= finished,
+            "registered preview original sequence reversed",
+        )
+        rebuilt = self.registered_tracker.preview_at(
+            observation, state, evaluated_at=evaluated, finished_at=finished
+        )
+        _same(rebuilt.to_payload(), payload, "registered preview original pixels/source differ")
+        self.registered_preview_finished = finished
+        return (
+            RegisteredGroundingFrameInputs.from_preview(rebuilt, observation, self.scope)
+            if rebuilt.status == "DERIVED"
+            else None
+        )
+
+    def registered_grounding(self, grounding, observation, state, step, binding, index):
+        """严格重建新绑定；所有时效只解释原记录，不发放当前执行权限。"""
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            RegisteredCollectionStepBinding,
+            RegisteredGroundingPolicy,
+            prepare_registered_step_binding,
+        )
+
+        _same(
+            grounding["schema_version"],
+            "native.registered.grounding.v1",
+            "registered grounding schema differs",
+        )
+        inputs = self.registered_preview(grounding["registered_preview"], observation, state)
+        _require(inputs is not None, "registered grounding has no derived current model/region")
+        _same(
+            inputs.to_payload(),
+            grounding["inputs"],
+            "registered inputs differ from reconstructed pixels",
+        )
+        _same(inputs.digest(), grounding["inputs_sha256"], "registered inputs digest differs")
+        policy = RegisteredGroundingPolicy.for_original(self.original, self.original.source_hashes)
+        _same(policy.to_payload(), grounding["policy"], "registered collection policy differs")
+        _same(policy.digest(), grounding["policy_sha256"], "registered policy digest differs")
+        checkpoint = ExecutionCheckpoint.model_validate(grounding["checkpoint"])
+        _same(
+            checkpoint_digest(checkpoint),
+            grounding["checkpoint_sha256"],
+            "registered checkpoint hash differs",
+        )
+        _same(
+            checkpoint.robot_state,
+            state.model_dump(mode="json"),
+            "registered checkpoint proprioception differs",
+        )
+        clock = grounding["tracker_clock"]
+        preview_time = self.tracker_clock(
+            clock, observation, purpose="GROUNDING", index=index, step_id=step.step_id
+        )
+        _same(
+            grounding["tracker_evaluated_at"],
+            clock["evaluated_at"],
+            "registered tracker original time differs",
+        )
+        created = _validated_utc(datetime.fromisoformat(grounding["binding_now"]))
+        final = _validated_utc(datetime.fromisoformat(grounding["final_validation_at"]))
+        _require(
+            datetime.fromisoformat(clock["started_at"])
+            <= checkpoint.created_at
+            <= checkpoint.updated_at
+            <= preview_time
+            <= created
+            <= final
+            <= datetime.fromisoformat(clock["finished_at"]),
+            "registered binding original chronology differs",
+        )
+        lease = _registered_lease_from_payload(grounding["lease_source"])
+        for source in (clock["consumption_before"], clock["consumption_after"]):
+            actual = source["live_owner"]["lease"]
+            for name in ("job_id", "run_id", "worker_id", "lease_id", "attempt", "acquired_at"):
+                _same(
+                    lease.to_payload()[name],
+                    actual[name],
+                    "registered grounding lease changed:" + name,
+                )
+        _require(
+            lease.observed_at <= created <= final < lease.expires_at,
+            "registered grounding lease expired",
+        )
+        online = OnlineEvidenceSnapshot(
+            observation,
+            state,
+            {},
+            self.original.contract.plan_version,
+            self.original.contract.command_seq,
+            checkpoint.checkpoint_hash,
+        )
+        _same(
+            grounding["online"],
+            dict(
+                robot_state=state.model_dump(mode="json"),
+                visual_facts={},
+                plan_version=online.plan_version,
+                command_seq=online.command_seq,
+                context_hash=online.context_hash,
+            ),
+            "registered online source differs",
+        )
+        prepared = prepare_registered_step_binding(
+            self.original,
+            original_step_id=step.step_id,
+            online=online,
+            source_checkpoint=checkpoint,
+            current_identity=self.original.identity,
+            owner_revision=index + 1,
+            state_generation=index + 1,
+            grounding_inputs=inputs,
+            grounding_policy=policy,
+            lease_source=lease,
+            now=created,
+        )
+        replay = RegisteredCollectionStepBinding.from_prepared(
+            prepared, collection_policy_id="registered-model-collection-v1"
+        )
+        _require(final < replay.valid_until, "registered grounding final original deadline expired")
+        _same(
+            replay.to_payload(), binding.to_payload(), "registered grounding binding replay differs"
+        )
+        _same(replay.digest(), grounding["binding_sha256"], "registered binding digest differs")
+        _same(
+            step.model_dump(mode="json"),
+            grounding["grounded_step"],
+            "registered grounded payload differs",
+        )
+        _same(
+            step.model_dump(mode="json"),
+            replay.grounded_step.model_dump(mode="json"),
+            "registered executed payload differs",
+        )
+        self.policies[step.skill.value] = policy
+
+    def effect_conditions(self, binding):
+        if self.registered_collection:
+            from cloud_edge_robot_arm.vision.worker_owner import (
+                registered_collection_effect_conditions,
+            )
+
+            return registered_collection_effect_conditions(self.original, binding)
+        return grounded_worker_effect_conditions(self.original, binding)
+
     def admissions(self) -> None:
         from cloud_edge_robot_arm.edge.safety.models import SafetyContext
         from cloud_edge_robot_arm.vision.execution import research_safety_shield
@@ -1666,7 +1912,7 @@ class _Audit:
             )
             self.consumption(item["capture"])
             step = TaskStep.model_validate(item["step"])
-            binding = _owner_decode(StepGroundingBinding, item["grounding"])
+            binding = self.grounding_binding(item["grounding"])
             _same(
                 binding.to_payload(),
                 self.raw["actions"][index]["grounding"],
@@ -1701,115 +1947,134 @@ class _Audit:
                     physical["tcp_position_m"],
                     "grounding proprioception differs",
                 )
-                inputs = collection_grounding_inputs(
-                    observation,
-                    ground_state,
-                    self.protocol["geometry"],
-                    tracker=tracker,
-                    evidence=evidence,
-                    source_hashes=self.original.source_hashes,
-                )
-                _same(
-                    inputs.to_payload(),
-                    grounding["inputs"],
-                    "saved grounding does not come from actual pixels",
-                )
-                _same(
-                    inputs.digest(), grounding["inputs_sha256"], "grounding inputs digest differs"
-                )
-                policy = DeterministicGroundingPolicy(**grounding["policy"])
-                expected_policy = DeterministicGroundingPolicy(
-                    "rgbd-top-grasp-v1",
-                    "worker-rgbd-top-grasp-v1",
-                    self.original.source_hashes,
-                    min(0.15, self.original.contract.safety_constraints.max_tcp_velocity),
-                    0.5,
-                    0.10,
-                    max(0.16, self.original.contract.safety_constraints.minimum_safe_height),
-                )
-                _same(policy, expected_policy, "nonregistered grounding policy")
-                _same(
-                    policy.digest(), grounding["policy_sha256"], "grounding policy digest differs"
-                )
-                checkpoint = ExecutionCheckpoint.model_validate(grounding["checkpoint"])
-                _same(
-                    checkpoint_digest(checkpoint),
-                    grounding["checkpoint_sha256"],
-                    "source checkpoint hash differs",
-                )
-                _same(
-                    checkpoint.robot_state,
-                    ground_state.model_dump(mode="json"),
-                    "checkpoint proprioception differs",
-                )
-                ground_clock = grounding["tracker_clock"]
-                ground_time = self.tracker_clock(
-                    ground_clock,
-                    observation,
-                    purpose="GROUNDING",
-                    index=index,
-                    step_id=step.step_id,
-                )
-                _same(
-                    grounding["tracker_evaluated_at"],
-                    ground_clock["evaluated_at"],
-                    "grounding tracker time differs from actual source",
-                )
-                _require(
-                    datetime.fromisoformat(ground_clock["started_at"])
-                    <= datetime.fromisoformat(grounding["binding_now"])
-                    <= ground_time
-                    and datetime.fromisoformat(ground_clock["started_at"])
-                    <= checkpoint.created_at
-                    <= checkpoint.updated_at
-                    <= ground_time,
-                    "grounding checkpoint or binding time outside tracker call",
-                )
-                ground_facts = tracker.facts_at(observation, ground_state, evaluated_at=ground_time)
-                online = OnlineEvidenceSnapshot(
-                    observation, ground_state, ground_facts, 1, 1, checkpoint.checkpoint_hash
-                )
-                _same(
-                    grounding["online"],
-                    dict(
-                        robot_state=ground_state.model_dump(mode="json"),
-                        visual_facts=ground_facts,
-                        plan_version=1,
-                        command_seq=1,
-                        context_hash=checkpoint.checkpoint_hash,
-                    ),
-                    "online grounding input differs",
-                )
-                source_step = self.original.contract.steps[index]
-                resolved = _resolved_parameters(source_step, self.original, online, inputs, policy)
-                _same(
-                    resolved,
-                    step.parameters,
-                    "compiled payload differs from pixel/proprioceptive grounding",
-                )
-                replay = bind_step_grounding(
-                    self.original,
-                    original_step_id=step.step_id,
-                    grounded_step=step,
-                    online=online,
-                    source_checkpoint=checkpoint,
-                    current_identity=self.original.identity,
-                    owner_revision=index + 1,
-                    state_generation=index + 1,
-                    grounding_inputs=inputs,
-                    grounding_policy=policy,
-                    now=datetime.fromisoformat(grounding["binding_now"]),
-                )
-                _same(replay.to_payload(), binding.to_payload(), "grounding binding replay differs")
-                _same(
-                    grounding["binding_sha256"], replay.digest(), "grounding binding digest differs"
-                )
-                _same(
-                    grounding["grounded_step"],
-                    step.model_dump(mode="json"),
-                    "grounded original step differs",
-                )
-                self.policies[step.skill.value] = policy
+                if self.registered_collection:
+                    self.registered_grounding(
+                        grounding, observation, ground_state, step, binding, index
+                    )
+                else:
+                    inputs = collection_grounding_inputs(
+                        observation,
+                        ground_state,
+                        self.protocol["geometry"],
+                        tracker=tracker,
+                        evidence=evidence,
+                        source_hashes=self.original.source_hashes,
+                    )
+                    _same(
+                        inputs.to_payload(),
+                        grounding["inputs"],
+                        "saved grounding does not come from actual pixels",
+                    )
+                    _same(
+                        inputs.digest(),
+                        grounding["inputs_sha256"],
+                        "grounding inputs digest differs",
+                    )
+                    policy = DeterministicGroundingPolicy(**grounding["policy"])
+                    expected_policy = DeterministicGroundingPolicy(
+                        "rgbd-top-grasp-v1",
+                        "worker-rgbd-top-grasp-v1",
+                        self.original.source_hashes,
+                        min(0.15, self.original.contract.safety_constraints.max_tcp_velocity),
+                        0.5,
+                        0.10,
+                        max(0.16, self.original.contract.safety_constraints.minimum_safe_height),
+                    )
+                    _same(policy, expected_policy, "nonregistered grounding policy")
+                    _same(
+                        policy.digest(),
+                        grounding["policy_sha256"],
+                        "grounding policy digest differs",
+                    )
+                    checkpoint = ExecutionCheckpoint.model_validate(grounding["checkpoint"])
+                    _same(
+                        checkpoint_digest(checkpoint),
+                        grounding["checkpoint_sha256"],
+                        "source checkpoint hash differs",
+                    )
+                    _same(
+                        checkpoint.robot_state,
+                        ground_state.model_dump(mode="json"),
+                        "checkpoint proprioception differs",
+                    )
+                    ground_clock = grounding["tracker_clock"]
+                    ground_time = self.tracker_clock(
+                        ground_clock,
+                        observation,
+                        purpose="GROUNDING",
+                        index=index,
+                        step_id=step.step_id,
+                    )
+                    _same(
+                        grounding["tracker_evaluated_at"],
+                        ground_clock["evaluated_at"],
+                        "grounding tracker time differs from actual source",
+                    )
+                    _require(
+                        datetime.fromisoformat(ground_clock["started_at"])
+                        <= datetime.fromisoformat(grounding["binding_now"])
+                        <= ground_time
+                        and datetime.fromisoformat(ground_clock["started_at"])
+                        <= checkpoint.created_at
+                        <= checkpoint.updated_at
+                        <= ground_time,
+                        "grounding checkpoint or binding time outside tracker call",
+                    )
+                    ground_facts = tracker.facts_at(
+                        observation, ground_state, evaluated_at=ground_time
+                    )
+                    online = OnlineEvidenceSnapshot(
+                        observation, ground_state, ground_facts, 1, 1, checkpoint.checkpoint_hash
+                    )
+                    _same(
+                        grounding["online"],
+                        dict(
+                            robot_state=ground_state.model_dump(mode="json"),
+                            visual_facts=ground_facts,
+                            plan_version=1,
+                            command_seq=1,
+                            context_hash=checkpoint.checkpoint_hash,
+                        ),
+                        "online grounding input differs",
+                    )
+                    source_step = self.original.contract.steps[index]
+                    resolved = _resolved_parameters(
+                        source_step, self.original, online, inputs, policy
+                    )
+                    _same(
+                        resolved,
+                        step.parameters,
+                        "compiled payload differs from pixel/proprioceptive grounding",
+                    )
+                    replay = bind_step_grounding(
+                        self.original,
+                        original_step_id=step.step_id,
+                        grounded_step=step,
+                        online=online,
+                        source_checkpoint=checkpoint,
+                        current_identity=self.original.identity,
+                        owner_revision=index + 1,
+                        state_generation=index + 1,
+                        grounding_inputs=inputs,
+                        grounding_policy=policy,
+                        now=datetime.fromisoformat(grounding["binding_now"]),
+                    )
+                    _same(
+                        replay.to_payload(),
+                        binding.to_payload(),
+                        "grounding binding replay differs",
+                    )
+                    _same(
+                        grounding["binding_sha256"],
+                        replay.digest(),
+                        "grounding binding digest differs",
+                    )
+                    _same(
+                        grounding["grounded_step"],
+                        step.model_dump(mode="json"),
+                        "grounded original step differs",
+                    )
+                    self.policies[step.skill.value] = policy
             admission_clock = item["tracker_clock"]
             admission_time = self.tracker_clock(
                 admission_clock,
@@ -1834,11 +2099,54 @@ class _Audit:
             conditions = (
                 self.original.requirements[step.step_id].preconditions
                 if phase == "PRE"
-                else grounded_worker_effect_conditions(self.original, binding)
+                else self.effect_conditions(binding)
             )
             _same(conditions, item["conditions"], "canonical condition requirements changed")
             online = OnlineEvidenceSnapshot(observation, state, facts, 1, 1, self.original.digest())
             when = datetime.fromisoformat(item["evaluation_at"])
+            if self.registered_collection:
+                from cloud_edge_robot_arm.edge.evidence.conditions import (
+                    evaluate_registered_pose_available,
+                )
+
+                registered_inputs = self.registered_preview(
+                    item["registered_preview"], observation, state
+                )
+                _same(
+                    registered_inputs.to_payload() if registered_inputs is not None else None,
+                    item["registered_inputs"],
+                    "registered admission model inputs differ",
+                )
+                pose_time = _validated_utc(
+                    datetime.fromisoformat(item["registered_pose_evaluated_at"])
+                )
+                _require(
+                    datetime.fromisoformat(item["capture"]["live_owner"]["lease"]["observed_at"])
+                    <= datetime.fromisoformat(item["registered_preview"]["evaluated_at"])
+                    <= pose_time
+                    <= datetime.fromisoformat(admission_clock["started_at"]),
+                    "registered supplemental condition outside original chronology",
+                )
+                pose = evaluate_registered_pose_available(
+                    registered_inputs,
+                    observation,
+                    target_id=self.original.contract.task_target.object_id,
+                    now=pose_time,
+                )
+                _same(
+                    pose, item["registered_pose_verdict"], "registered supplemental verdict differs"
+                )
+                _require(pose.status.value == "PASS", "registered current pose unavailable")
+                _same(
+                    recorded["schema_version"],
+                    "teacher.registered.collection.admission.v1",
+                    "registered admission schema differs",
+                )
+                _require(
+                    recorded["execution_admitted"] is False
+                    and recorded["native_qualification"] == "UNKNOWN",
+                    "registered admission falsely claims authority",
+                )
             verdicts = evaluate_conditions(conditions, online, now=when)
             supplemental = evaluate_conditions(
                 [
@@ -2180,6 +2488,10 @@ def read_native_full_horizon_group(
     protocol: Path, *, assignment_id: str, root: Path
 ) -> FullHorizonGroupDiagnostics:
     registration = read_protocol(protocol)
+    if registration["schema_version"] == "native.calibration.operational.v7":
+        raise ValueError(
+            "registered collection has zero released groups; actual release requires a new run plan"
+        )
     if registration["schema_version"] == "native.calibration.operational.v6":
         raise ValueError("v6 preparation has no full-horizon action release or raw action spans")
     assigned = [r for r in registration["assignments"] if r["assignment_id"] == assignment_id]
@@ -2246,6 +2558,8 @@ def reconstruct_native_full_horizon_registry(
     protocol: Path, *, roots: Mapping[str, Path], group_sink: Any = None
 ) -> CompletionCalibrationDiagnosticsV2:
     registration = read_protocol(protocol)
+    if registration["schema_version"] == "native.calibration.operational.v7":
+        raise ValueError("registered collection has no released full-horizon registry")
     if registration["schema_version"] == "native.calibration.operational.v6":
         raise ValueError(
             "v6 preparation requires its current-frame reader, not full-horizon verification"
