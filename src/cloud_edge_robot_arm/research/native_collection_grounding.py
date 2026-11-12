@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import itertools
+import json
 import math
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
 import cv2
 import numpy as np
@@ -50,6 +52,10 @@ from cloud_edge_robot_arm.vision.owner_registration import (
     _resolved_parameters,
     bind_step_grounding,
     freeze_original_visual_plan,
+)
+from cloud_edge_robot_arm.vision.registered_object_tracking import (
+    RegisteredObjectTrackerV1,
+    RegisteredObjectTrackV1,
 )
 from cloud_edge_robot_arm.vision.registered_objects import derive_registered_object_geometry
 from cloud_edge_robot_arm.vision.top_grasp import (
@@ -595,3 +601,149 @@ def collection_unknown_row(
         if condition == "placement_stable" and continuity:
             return "TERMINAL_CONTINUITY"
     return None
+@dataclass(frozen=True, slots=True)
+class RegisteredCollectionGroundingPreviewV1:
+    """仅供准备的当前几何结果，不产生动作绑定或准入事实。"""
+
+    status: Literal["DERIVED", "UNKNOWN"]
+    reason: str
+    track: RegisteredObjectTrackV1
+    evaluated_at: datetime
+    source_sha256: str
+    registration_sha256: str
+    grasp_tcp_world_m: tuple[float, float, float] | None
+    object_center_world_m: tuple[float, float, float] | None
+    rotation_object_to_world: tuple[float, ...] | None
+    destination_world_m: tuple[float, float, float] | None
+    destination_observation_id: str | None
+    destination_observation_checksum_sha256: str | None
+    schema_version: Literal["native.collection.registered-preview.v1"] = (
+        "native.collection.registered-preview.v1"
+    )
+    prepare_only: Literal[True] = True
+    execution_allowed: Literal[False] = False
+    geometry_basis: Literal["REGISTERED_RIGID_MODEL"] = "REGISTERED_RIGID_MODEL"
+    region_basis: Literal["RGBD_COLOR_REGION_UNCALIBRATED"] = "RGBD_COLOR_REGION_UNCALIBRATED"
+    object_surface_visibility: Literal["UNKNOWN"] = "UNKNOWN"
+    geometric_error_bound_m: None = None
+    region_geometric_error_bound_m: None = None
+    native_authority: Literal["UNAVAILABLE"] = "UNAVAILABLE"
+
+    def to_payload(self) -> dict[str, Any]:
+        """导出独立JSON值，保留版本、推导来源及不可执行标记。"""
+        payload = asdict(self)
+        payload["track"] = self.track.to_payload()
+        return json.loads(
+            json.dumps(payload, default=lambda value: value.isoformat(), allow_nan=False)
+        )
+
+    def digest(self) -> str:
+        """将准备接口的当前帧、来源和未知量一起绑定。"""
+        return digest(self.to_payload())
+
+
+class RegisteredCollectionPreviewTrackerV1:
+    """组合自有标记跟踪器和完整颜色参考，颜色只用于当前目标区域。"""
+
+    def __init__(
+        self,
+        observation: RGBDObservation,
+        registration: NativeGeometryRegistration,
+        *,
+        source_root: Path,
+        source_hashes: Mapping[str, str],
+    ) -> None:
+        self._provider = RegisteredObjectTrackerV1(
+            observation, registration, source_root=source_root, source_hashes=source_hashes
+        )
+        reference = RGBDObservation.model_validate(observation.model_dump())
+        self._region_tracker, _ = bootstrap_collection_tracker(
+            reference, self._provider._registration.to_payload()
+        )
+        assert self._region_tracker.destination is not None
+        footprint = np.asarray(self._region_tracker.destination["mask"], dtype=bool)
+        self._reference_region_footprint = (tuple(footprint.shape), footprint.tobytes(order="C"))
+        reason, _ = self._provider._recheck_current(reference)
+        if reason:
+            raise ValueError("registered collection bootstrap unavailable: " + reason)
+
+
+def bootstrap_registered_collection_tracker_v1(
+    observation: RGBDObservation,
+    registration: NativeGeometryRegistration,
+    *,
+    source_root: Path,
+    source_hashes: Mapping[str, str],
+) -> RegisteredCollectionPreviewTrackerV1:
+    """用完整颜色参考创建准备接口；不配置旧执行器或发放动作权限。"""
+    return RegisteredCollectionPreviewTrackerV1(
+        observation, registration, source_root=source_root, source_hashes=source_hashes
+    )
+
+
+def registered_collection_grounding_preview_v1(
+    tracker: RegisteredCollectionPreviewTrackerV1,
+    observation: RGBDObservation,
+    robot_state: RobotState,
+) -> RegisteredCollectionGroundingPreviewV1:
+    """结合当前标记模型姿态和独立完整区域，只返回不可执行的准备结果。"""
+    if (
+        type(tracker) is not RegisteredCollectionPreviewTrackerV1
+        or type(tracker._provider) is not RegisteredObjectTrackerV1
+        or type(tracker._region_tracker) is not OpenCVTargetTracker
+        or type(observation) is not RGBDObservation
+        or type(robot_state) is not RobotState
+    ):
+        raise TypeError("exact owned registered collection tracker, observation and state required")
+    current = RGBDObservation.model_validate(observation.model_dump())
+    state = RobotState.model_validate(robot_state.model_dump())
+    track = tracker._provider.update(current)
+    reason = track.reason if track.status != "DERIVED" else None
+    region = None
+    if reason is None and (not state.connected or state.estop_engaged or state.collision_detected):
+        reason = "current_robot_state_unavailable"
+    if reason is None:
+        region, region_reason = tracker._region_tracker._geometry(
+            current,
+            tracker._region_tracker.destination_color,
+            target=False,
+            occlusion_geometry=None,
+        )
+        if region is None:
+            reason = "independent_current_region_unavailable:" + str(region_reason)
+        else:
+            footprint = np.asarray(region["mask"], dtype=bool)
+            if (tuple(footprint.shape), footprint.tobytes(order="C")) != (
+                tracker._reference_region_footprint
+            ):
+                reason = "independent_current_region_footprint_changed"
+    post_reason, evaluated_at = tracker._provider._recheck_current(current)
+    reason = post_reason or reason
+    if reason:
+        track = replace(
+            track,
+            status="UNKNOWN",
+            reason=reason,
+            geometry=None,
+            evaluated_at=evaluated_at,
+            wrapper_freshness="REJECTED" if post_reason else track.wrapper_freshness,
+        )
+    geometry = None if reason else track.geometry
+    if geometry is not None:
+        assert region is not None
+    return RegisteredCollectionGroundingPreviewV1(
+        status="UNKNOWN" if reason else "DERIVED",
+        reason=reason or "prepare_only_uncalibrated_registered_geometry",
+        track=track,
+        evaluated_at=evaluated_at,
+        source_sha256=track.source_sha256,
+        registration_sha256=track.registration_sha256,
+        grasp_tcp_world_m=None if geometry is None else geometry.grasp_tcp_world_m,
+        object_center_world_m=None if geometry is None else geometry.object_center_world_m,
+        rotation_object_to_world=None if geometry is None else geometry.rotation_object_to_world,
+        destination_world_m=None if geometry is None else tuple(float(v) for v in region["center"]),
+        destination_observation_id=None if geometry is None else current.observation_id,
+        destination_observation_checksum_sha256=None
+        if geometry is None
+        else current.checksum_sha256,
+    )
