@@ -28,6 +28,25 @@ def _validated_depth_mask(depth: bytes) -> bytes:
         if any(not math.isfinite(value) or value < 0 for value in depths):
             raise ValueError("depth must be finite nonnegative metres (zero = invalid)")
         return bytes(int(value > 0) for value in depths)
+    # 320x240 is the smallest measured beneficial size; smaller buffers keep scalar work.
+    if (
+        type(depth) is bytes
+        and len(depth) >= 307_200
+        and len(depth) % 4 == 0
+        and sys.byteorder == "little"
+    ):
+        numpy = sys.modules.get("numpy")
+        if numpy is not None and getattr(
+            getattr(numpy, "__spec__", None), "_initializing", True
+        ) is False:
+            # Classify original IEEE words: signed zero stays valid; NaNs never enter FP work.
+            words = numpy.frombuffer(depth, dtype="<u4")
+            magnitude = words & 0x7FFFFFFF
+            if (magnitude >= 0x7F800000).any() or (
+                ((words & 0x80000000) != 0) & (magnitude != 0)
+            ).any():
+                raise ValueError("depth must be finite nonnegative metres (zero = invalid)")
+            return (magnitude > 0).astype(numpy.uint8).tobytes()
     values.frombytes(depth)
     if sys.byteorder == "big":
         values.byteswap()

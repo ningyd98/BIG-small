@@ -125,6 +125,270 @@ def wire_payload(bits=(0, 0x80000000, 1, 0x007FFFFF, 0x00800000, 0x3F800000, 0x7
     )
 
 
+def test_loaded_numpy_validates_depth_without_per_pixel_python_loop(monkeypatch):
+    """Losing the optional vector path must fail even when masks remain semantically equal."""
+    raw = struct.pack("<4I", 0, 0x80000000, 1, 0x3F800000) * (320 * 240 // 4)
+    frombuffer = np.frombuffer
+    calls = []
+
+    def observed_buffer(data, *, dtype):
+        calls.append((data is raw, len(data), dtype))
+        return frombuffer(data, dtype=dtype)
+
+    monkeypatch.setattr(np, "frombuffer", observed_buffer)
+    assert observations._validated_depth_mask(raw) == bytes((0, 0, 1, 1)) * (320 * 240 // 4)
+    assert calls == [(True, 307200, "<u4")], "eligible depth still traverses Python float scalars"
+
+
+def test_tiny_depth_keeps_scalar_work_even_when_numpy_loaded(monkeypatch):
+    """Vector setup must not be imposed on the measured four-pixel regression case."""
+    raw = struct.pack("<4I", 0, 0x80000000, 1, 0x3F800000)
+    frombuffer = np.frombuffer
+    calls = []
+
+    def observed_buffer(data, *, dtype):
+        calls.append((len(data), dtype))
+        return frombuffer(data, dtype=dtype)
+
+    monkeypatch.setattr(np, "frombuffer", observed_buffer)
+    assert observations._validated_depth_mask(raw) == bytes((0, 0, 1, 1))
+    assert calls == [], "four-pixel validation still pays for vector setup"
+
+
+def scalar_depth_mask(raw):
+    """Independent little-endian float oracle, including negative-zero acceptance."""
+    mask = []
+    for value, in struct.iter_unpack("<f", raw):
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("depth must be finite nonnegative metres (zero = invalid)")
+        mask.append(int(value > 0))
+    return bytes(mask)
+
+
+def depth_result(function, raw):
+    try:
+        return "mask", function(raw)
+    except (ValueError, struct.error) as error:
+        return "error", type(error), str(error)
+
+
+@pytest.mark.parametrize("loaded", [False, True])
+def test_depth_paths_match_independent_fixed_seed_bit_corpus(monkeypatch, loaded):
+    import random
+
+    monkeypatch.setattr(
+        observations, "sys",
+        SimpleNamespace(byteorder="little", modules={"numpy": np} if loaded else {}),
+    )
+    rng = random.Random(636001)
+    with np.errstate(all="raise"):
+        for _ in range(16):
+            accepted = [rng.randrange(0x7F800000) for _ in range(4096)]
+            accepted[-2:] = [0, 0x80000000]
+            for words in (
+                [rng.getrandbits(32) for _ in range(4096)],
+                accepted,
+            ):
+                raw = struct.pack("<" + "I" * len(words), *words)
+                assert depth_result(observations._validated_depth_mask, raw) == depth_result(
+                    scalar_depth_mask, raw
+                )
+        assert observations._validated_depth_mask(b"") == b""
+
+
+@pytest.mark.parametrize("loaded", [False, True])
+@pytest.mark.parametrize("position", [0, 2, 4])
+@pytest.mark.parametrize(
+    "invalid", [0x80000001, 0xBF800000, 0xFF7FFFFF, 0x7F800000, 0xFF800000,
+                0x7FC00001, 0xFFC00001, 0x7F800001, 0xFF800001],
+)
+def test_invalid_ieee_word_rejects_in_any_position(monkeypatch, loaded, position, invalid):
+    monkeypatch.setattr(
+        observations, "sys",
+        SimpleNamespace(byteorder="little", modules={"numpy": np} if loaded else {}),
+    )
+    words = [0, 0x80000000, 1, 0x007FFFFF, 0x7F7FFFFF]
+    words[position] = invalid
+    raw = struct.pack("<5I", *words)
+    with np.errstate(all="raise"), pytest.raises(
+        ValueError, match="^depth must be finite nonnegative metres \\(zero = invalid\\)$"
+    ):
+        observations._validated_depth_mask(raw)
+
+
+@pytest.mark.parametrize("length", [1, 2, 3, 5, 7, 307201])
+def test_malformed_float_bytes_keep_original_array_exception(monkeypatch, length):
+    def original_array(raw):
+        values = native_array("f")
+        values.frombytes(raw)
+
+    raw = bytes(length)
+    expected = depth_result(original_array, raw)
+    assert expected[0] == "error"
+    assert depth_result(observations._validated_depth_mask, raw) == expected
+
+
+@pytest.mark.parametrize("available", ["absent", "initializing"])
+def test_unavailable_numpy_keeps_fallback_without_optional_import(monkeypatch, available):
+    import builtins
+
+    imports = []
+    import_module = builtins.__import__
+
+    def record_import(name, *args, **kwargs):
+        if name.split(".")[0] == "numpy":
+            imports.append(name)
+            pytest.fail("depth validation introduced an optional dependency import")
+        return import_module(name, *args, **kwargs)
+
+    modules = {}
+    if available == "initializing":
+        modules["numpy"] = SimpleNamespace(__spec__=SimpleNamespace(_initializing=True))
+    monkeypatch.setattr(observations, "sys", SimpleNamespace(byteorder="little", modules=modules))
+    monkeypatch.setattr(builtins, "__import__", record_import)
+    raw = struct.pack("<5I", 0, 0x80000000, 1, 0x00800000, 0x7F7FFFFF) * (76800 // 5)
+    assert observations._validated_depth_mask(raw) == bytes((0, 0, 1, 1, 1)) * (76800 // 5)
+    assert imports == []
+
+
+@pytest.mark.parametrize("loaded", [False, True])
+def test_each_depth_path_preserves_wire_checksum_and_validation_order(monkeypatch, loaded):
+    monkeypatch.setattr(
+        observations, "sys",
+        SimpleNamespace(byteorder="little", modules={"numpy": np} if loaded else {}),
+    )
+    for supplied in (False, True):
+        test_wire_bits_mask_checksum_and_roundtrip_are_preserved(supplied)
+    bad = wire_payload((0xFF800001,))
+    bad.update(valid_mask_base64="bad mask", intrinsics=(0, 0, 0, 0), checksum_sha256="wrong")
+    with np.errstate(all="raise"), pytest.raises(ValidationError, match="finite nonnegative"):
+        observations.RGBDObservation.model_validate(bad)
+
+
+@pytest.mark.parametrize(
+    "pixels,vector", [(4, False), (76799, False), (76800, True), (307200, True)]
+)
+def test_depth_vector_gate_uses_measured_frame_sizes(monkeypatch, pixels, vector):
+    raw = struct.pack("<4I", 0, 0x80000000, 1, 0x3F800000)
+    raw += struct.pack("<I", 0x3F800000) * (pixels - 4)
+    frombuffer = np.frombuffer
+    calls = []
+
+    def observed_buffer(data, *, dtype):
+        calls.append((data is raw, len(data), dtype))
+        return frombuffer(data, dtype=dtype)
+
+    monkeypatch.setattr(np, "frombuffer", observed_buffer)
+    assert observations._validated_depth_mask(raw) == (
+        bytes((0, 0, 1, 1)) + bytes([1]) * (pixels - 4)
+    )
+    assert calls == ([(True, pixels * 4, "<u4")] if vector else [])
+
+
+@pytest.mark.parametrize("loaded", [False, True])
+def test_qualifying_depth_corpus_keeps_scalar_semantics(monkeypatch, loaded):
+    import random
+
+    monkeypatch.setattr(
+        observations, "sys",
+        SimpleNamespace(byteorder="little", modules={"numpy": np} if loaded else {}),
+    )
+    rng = random.Random(637001)
+    accepted = [rng.randrange(0x7F800000) for _ in range(76800)]
+    accepted[-2:] = [0, 0x80000000]
+    arbitrary = [rng.getrandbits(32) for _ in range(76800)]
+    with np.errstate(all="raise"):
+        for words in (accepted, arbitrary):
+            raw = struct.pack("<76800I", *words)
+            assert depth_result(observations._validated_depth_mask, raw) == depth_result(
+                scalar_depth_mask, raw
+            )
+
+
+@pytest.mark.parametrize("position", [0, 38400, 76799])
+@pytest.mark.parametrize(
+    "word", [0, 0x80000000, 1, 0x007FFFFF, 0x00800000, 0x7F7FFFFF,
+             0x80000001, 0xBF800000, 0xFF7FFFFF, 0x7F800000, 0xFF800000,
+             0x7FC00001, 0xFFC00001, 0x7F800001, 0xFF800001],
+)
+def test_large_vector_ieee_classes_match_oracle_at_each_position(monkeypatch, position, word):
+    raw = bytearray(struct.pack("<I", 0x3F800000) * 76800)
+    struct.pack_into("<I", raw, position * 4, word)
+    raw = bytes(raw)
+    frombuffer = np.frombuffer
+    calls = []
+
+    def observed_buffer(data, *, dtype):
+        calls.append((data is raw, len(data), dtype))
+        return frombuffer(data, dtype=dtype)
+
+    monkeypatch.setattr(np, "frombuffer", observed_buffer)
+    with np.errstate(all="raise"):
+        assert depth_result(observations._validated_depth_mask, raw) == depth_result(
+            scalar_depth_mask, raw
+        )
+    assert calls == [(True, 307200, "<u4")]
+
+
+def qualifying_wire_payload():
+    """Fresh measured-size PNG/depth, not a historical camera or registry source."""
+    body = wire_payload()
+    image = io.BytesIO()
+    Image.new("RGB", (320, 240), (17, 29, 43)).save(image, format="PNG")
+    raw = struct.pack("<8I", 0, 0x80000000, 1, 0x007FFFFF,
+                      0x00800000, 0x3F800000, 0x7F7FFFFF, 0) * 9600
+    body.update(
+        frame_id="synthetic-r637-wire", width=320, height=240,
+        rgb_png_base64=base64.b64encode(image.getvalue()).decode(),
+        depth_float32_base64=base64.b64encode(raw).decode(),
+    )
+    return body, bytes((0, 0, 1, 1, 1, 1, 1, 0)) * 9600
+
+
+@pytest.mark.parametrize("loaded", [False, True])
+@pytest.mark.parametrize("supplied", [False, True])
+def test_large_wire_keeps_original_bits_mask_identity_and_checksum(monkeypatch, loaded, supplied):
+    monkeypatch.setattr(
+        observations, "sys",
+        SimpleNamespace(byteorder="little", modules={"numpy": np} if loaded else {}),
+    )
+    body, mask = qualifying_wire_payload()
+    if supplied:
+        body["valid_mask_base64"] = base64.b64encode(mask).decode()
+    result = observations.RGBDObservation.model_validate(body)
+    assert result.depth_float32_base64 == body["depth_float32_base64"]
+    assert result.valid_mask_bytes() == mask
+    assert result.checksum_sha256 == independent_checksum(body, mask)
+    assert math.copysign(1, result.depth_values()[1]) == -1
+    assert observations.RGBDObservation.model_validate_json(result.model_dump_json()) == result
+    changed_raw = bytearray(base64.b64decode(body["depth_float32_base64"]))
+    struct.pack_into("<I", changed_raw, 4, 0)
+    body["depth_float32_base64"] = base64.b64encode(changed_raw).decode()
+    changed = observations.RGBDObservation.model_validate(body)
+    assert changed.valid_mask_bytes() == mask and changed.checksum_sha256 != result.checksum_sha256
+
+
+@pytest.mark.parametrize("problem,message", [
+    ("rgb", "invalid RGB-D image encoding"),
+    ("shape", "depth size must equal"),
+    ("depth", "depth must be finite nonnegative metres"),
+    ("mask", "invalid depth mask encoding"),
+])
+def test_large_wire_preserves_rejection_order(problem, message):
+    body, _ = qualifying_wire_payload()
+    body.update(valid_mask_base64="bad", intrinsics=(0, 0, 0, 0), checksum_sha256="bad")
+    if problem in ("rgb", "depth"):
+        raw = bytearray(base64.b64decode(body["depth_float32_base64"]))
+        struct.pack_into("<I", raw, 38400 * 4, 0xFF800001)
+        body["depth_float32_base64"] = base64.b64encode(raw).decode()
+    if problem == "rgb":
+        body["rgb_png_base64"] = "bad"
+    elif problem == "shape":
+        body["depth_float32_base64"] = "AAAA"
+    with np.errstate(all="raise"), pytest.raises(ValidationError, match=message):
+        observations.RGBDObservation.model_validate(body)
+
+
 def test_supported_depth_validation_avoids_scalar_unpack(monkeypatch):
     payload = wire_payload()
 
