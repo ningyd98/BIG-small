@@ -41,6 +41,9 @@ from cloud_edge_robot_arm.research.native_calibration_collection import (
     digest,
     regular,
 )
+from cloud_edge_robot_arm.research.native_calibration_collection import (
+    detached as _detached_geometry,
+)
 from cloud_edge_robot_arm.vision.marker_families import LEGACY_FAMILY, marker_family
 from cloud_edge_robot_arm.vision.native_calibration import NativeGeometryRegistration
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
@@ -609,6 +612,8 @@ def collection_unknown_row(
         if condition == "placement_stable" and continuity:
             return "TERMINAL_CONTINUITY"
     return None
+
+
 @dataclass(frozen=True, slots=True)
 class RegisteredCollectionGroundingPreviewV1:
     """仅供准备的当前几何结果，不产生动作绑定或准入事实。"""
@@ -862,3 +867,815 @@ def registered_collection_step(
             )
         )
     return executed, step, binding, online, checkpoint
+
+
+@dataclass(frozen=True, slots=True)
+class RegisteredCollectionGroundingPreviewV2:
+    """仅供准备的当前几何结果，不产生动作绑定或准入事实。"""
+
+    status: Literal["DERIVED", "UNKNOWN"]
+    reason: str
+    track: RegisteredObjectTrackV1
+    evaluated_at: datetime
+    source_sha256: str
+    registration_sha256: str
+    grasp_tcp_world_m: tuple[float, float, float] | None
+    object_center_world_m: tuple[float, float, float] | None
+    rotation_object_to_world: tuple[float, ...] | None
+    destination_world_m: tuple[float, float, float] | None
+    destination_observation_id: str | None
+    destination_observation_checksum_sha256: str | None
+    region_evidence_json: str | None
+    schema_version: Literal["native.collection.registered-preview.v2"] = (
+        "native.collection.registered-preview.v2"
+    )
+    prepare_only: Literal[True] = True
+    execution_allowed: Literal[False] = False
+    geometry_basis: Literal["REGISTERED_RIGID_MODEL"] = "REGISTERED_RIGID_MODEL"
+    region_basis: Literal["FIXED_REFERENCE_CURRENT_RGBD_UNCALIBRATED"] = (
+        "FIXED_REFERENCE_CURRENT_RGBD_UNCALIBRATED"
+    )
+    object_surface_visibility: Literal["UNKNOWN"] = "UNKNOWN"
+    geometric_error_bound_m: None = None
+    region_geometric_error_bound_m: None = None
+    native_authority: Literal["UNAVAILABLE"] = "UNAVAILABLE"
+
+    def to_payload(self) -> dict[str, Any]:
+        """导出独立JSON值，保留版本、推导来源及不可执行标记。"""
+        payload = asdict(self)
+        payload.pop("region_evidence_json")
+        payload["region_evidence"] = self.region_evidence
+        payload["track"] = self.track.to_payload()
+        return json.loads(
+            json.dumps(payload, default=lambda value: value.isoformat(), allow_nan=False)
+        )
+
+    def digest(self) -> str:
+        """将准备接口的当前帧、来源和未知量一起绑定。"""
+        return digest(self.to_payload())
+
+    @property
+    def region_evidence(self):
+        """返回参考区域与当前支持的独立值，不暴露内部可变证据。"""
+        return None if self.region_evidence_json is None else json.loads(self.region_evidence_json)
+
+
+class RegisteredCollectionPreviewTrackerV2:
+    """以完整参考和当前深度核对内部遮挡，失败时不借用旧物体姿态。"""
+
+    def __init__(
+        self, observation, registration, *, source_root, source_hashes, nominal_policy=None
+    ):
+        self._provider = RegisteredObjectTrackerV1(
+            observation, registration, source_root=source_root, source_hashes=source_hashes
+        )
+        reference = RGBDObservation.model_validate(observation.model_dump())
+        self._region_tracker, _ = bootstrap_collection_tracker(
+            reference, self._provider._registration.to_payload()
+        )
+        region = self._region_tracker.destination
+        if region is None:
+            raise ValueError("complete original region reference required")
+        self._reference_observation = reference
+        self._reference_checksum = reference.checksum_sha256
+        self._reference_region_footprint = (
+            (reference.height, reference.width),
+            np.asarray(region["mask"], dtype=bool).tobytes(order="C"),
+        )
+        self._reference_depth = np.asarray(reference.depth_values(), dtype="<f4").tobytes()
+        self._reference_destination = tuple(float(v) for v in region["center"])
+        reason, _ = self._provider._recheck_current(reference)
+        if reason:
+            raise ValueError("registered v2 reference unavailable: " + reason)
+
+        self._nominal_policy = None
+        self._primitives = None
+        if nominal_policy is not None:
+            expected = registered_nominal_region_policy_v1(source_hashes)
+            if type(nominal_policy) is not dict or nominal_policy != expected:
+                raise ValueError("exact source-bound nominal region policy required")
+            self._nominal_policy = json.dumps(expected, sort_keys=True, separators=(",", ":"))
+            self._primitives = _registered_opaque_primitives_v1(
+                registration, source_root=source_root, source_hashes=source_hashes
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class _RegisteredOpaquePrimitivesV1:
+    """仅保存已核对源码中的物体局部几何，不持有世界状态或执行权限。"""
+
+    payload_json: str
+
+    def to_payload(self):
+        """返回独立几何描述，调用方不能改写冻结的原件。"""
+        return json.loads(self.payload_json)
+
+    def digest(self):
+        """绑定局部基元、注册、资产和源码代际。"""
+        return digest(self.to_payload())
+
+
+def _registered_opaque_primitives_v1(registration, *, source_root, source_hashes):
+    """从精确注册资产提取局部不透明盒体；不读取初始世界位置。"""
+    from cloud_edge_robot_arm.vision.worker_owner import pin_worker_source_inventory
+
+    if type(registration) is not NativeGeometryRegistration:
+        raise TypeError("exact registered geometry required for opaque primitives")
+    data = registration.to_payload()
+    asset = data["asset_path"]
+    sources = dict(
+        pin_worker_source_inventory(
+            Path(source_root),
+            source_hashes,
+            required_paths={
+                asset,
+                "src/cloud_edge_robot_arm/research/native_collection_grounding.py",
+            },
+        )
+    )
+    registration.validate_asset(Path(source_root))
+    raw = regular(Path(source_root) / asset).read_bytes()
+    asset_sha = hashlib.sha256(raw).hexdigest()
+    if sources[asset] != asset_sha or registration.pose_marker.marked_asset_sha256 != asset_sha:
+        raise ValueError("opaque primitive asset/source binding changed")
+    body = ET.fromstring(raw).find("./worldbody/body[@name='object']")
+    if body is None or body.findall("body"):
+        raise ValueError("registered direct object-local boxes required")
+    boxes = []
+    for geom in body.findall("geom"):
+        if geom.get("type") != "box" or any(
+            key in geom.attrib
+            for key in ("quat", "euler", "axisangle", "xyaxes", "zaxis", "fromto")
+        ):
+            raise ValueError("unsupported registered opaque primitive")
+        rgba = tuple(float(v) for v in geom.attrib["rgba"].split())
+        center = tuple(float(v) for v in geom.get("pos", "0 0 0").split())
+        half = tuple(float(v) for v in geom.attrib["size"].split())
+        if (
+            len(rgba) != 4
+            or rgba[3] != 1
+            or not all(math.isfinite(v) for v in rgba)
+            or len(center) != 3
+            or len(half) != 3
+            or not all(math.isfinite(v) for v in (*center, *half))
+            or any(v <= 0 for v in half)
+            or not geom.get("name")
+        ):
+            raise ValueError("finite named opaque boxes required")
+        boxes.append(
+            {
+                "name": geom.attrib["name"],
+                "center_object_m": list(center),
+                "half_extent_m": list(half),
+            }
+        )
+    if len(boxes) != 38 or len({b["name"] for b in boxes}) != 38:
+        raise ValueError("complete selected registered object/plate/cell set required")
+    payload = {
+        "schema_version": "registered.opaque-primitives.v1",
+        "asset_path": asset,
+        "asset_sha256": asset_sha,
+        "registration_sha256": digest(data),
+        "source_generation": digest(sources),
+        "frame_convention": "OBJECT_LOCAL_BOXES",
+        "initial_world_pose_used": False,
+        "boxes": boxes,
+        "native_authority": "UNAVAILABLE",
+    }
+    return _RegisteredOpaquePrimitivesV1(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    )
+
+
+def _registered_model_depth_v1(observation, geometry, primitives, pixels):
+    """对当前注册刚体求最近正向光轴深度，不认证表面身份或测量精度。"""
+    from cloud_edge_robot_arm.vision.registered_objects import RegisteredObjectGeometry
+
+    if (
+        type(observation) is not RGBDObservation
+        or type(geometry) is not RegisteredObjectGeometry
+        or geometry.status != "DERIVED"
+        or type(primitives) is not _RegisteredOpaquePrimitivesV1
+    ):
+        raise TypeError("exact current frame, model geometry and source primitives required")
+    payload = primitives.to_payload()
+    if (
+        geometry.observation_id != observation.observation_id
+        or geometry.observation_checksum_sha256 != observation.checksum_sha256
+        or payload["registration_sha256"] != geometry.geometry_sha256
+        or payload["asset_sha256"] != geometry.asset_sha256
+        or payload["asset_path"] != geometry.asset_path
+    ):
+        raise ValueError("current marker/asset/primitive frame binding mismatch")
+    xy = np.asarray(pixels, dtype=float)
+    if (
+        xy.ndim != 2
+        or xy.shape[1] != 2
+        or not np.isfinite(xy).all()
+        or not (
+            (xy >= 0).all()
+            and (xy[:, 0] < observation.width).all()
+            and (xy[:, 1] < observation.height).all()
+            and (xy == np.floor(xy)).all()
+        )
+    ):
+        raise ValueError("in-frame pixel-center rays required")
+    fx, fy, cx, cy = observation.intrinsics
+    camera = np.asarray(observation.camera_to_world).reshape(4, 4)
+    rotation = np.asarray(geometry.rotation_object_to_world).reshape(3, 3)
+    center = np.asarray(geometry.object_center_world_m)
+    origin = rotation.T @ (camera[:3, 3] - center)
+    camera_rays = np.column_stack(((xy[:, 0] - cx) / fx, (xy[:, 1] - cy) / fy, np.ones(len(xy))))
+    directions = camera_rays @ camera[:3, :3].T @ rotation
+    moving = np.abs(directions) > 1e-12  # Numerical parallel-ray guard, not a metric tolerance.
+    answer = np.full(len(xy), np.inf)
+    for box in payload["boxes"]:
+        low = np.asarray(box["center_object_m"]) - np.asarray(box["half_extent_m"])
+        high = np.asarray(box["center_object_m"]) + np.asarray(box["half_extent_m"])
+        first = np.full_like(directions, -np.inf)
+        second = np.full_like(directions, np.inf)
+        np.divide(low - origin, directions, out=first, where=moving)
+        np.divide(high - origin, directions, out=second, where=moving)
+        enter = np.minimum(first, second).max(axis=1)
+        leave = np.maximum(first, second).min(axis=1)
+        parallel_outside = ((~moving) & ((origin < low) | (origin > high))).any(axis=1)
+        hit = (~parallel_outside) & np.isfinite(enter) & (enter > 0) & (leave >= enter)
+        answer = np.minimum(answer, np.where(hit, enter, np.inf))
+    return answer
+
+
+def bootstrap_registered_collection_tracker_v2(
+    observation, registration, *, source_root, source_hashes, nominal_policy=None
+):
+    """建立固定参考的独立 v2 跟踪器，不授予执行或研究资格。"""
+    return RegisteredCollectionPreviewTrackerV2(
+        observation,
+        registration,
+        source_root=source_root,
+        source_hashes=source_hashes,
+        nominal_policy=nominal_policy,
+    )
+
+
+def _legacy_registered_region_evidence_v2(tracker, current):
+    """只分类当前真实像素的支持关系，不填补颜色、深度或放置空间。"""
+    from cloud_edge_robot_arm.vision.tracking import _rgb
+
+    reference = RGBDObservation.model_validate(tracker._reference_observation.model_dump())
+    if reference.checksum_sha256 != tracker._reference_checksum:
+        return None, "registered_region_reference_changed"
+    shape, footprint = tracker._reference_region_footprint
+    expected = np.frombuffer(footprint, dtype=bool).reshape(shape)
+    rgb = _rgb(current).astype(float)
+    chroma = rgb / np.maximum(rgb.sum(axis=2, keepdims=True), 1.0)
+    selected = (
+        np.linalg.norm(chroma - tracker._region_tracker.destination_color, axis=2) < 0.14
+    ) & (np.ptp(rgb, axis=2) > 30)
+    if selected.shape != expected.shape or np.any(selected & ~expected):
+        return None, "registered_region_extra_or_moved_color"
+    count, _, _, _ = cv2.connectedComponentsWithStats(selected.astype(np.uint8), connectivity=8)
+    if count != 2:
+        return None, "registered_region_color_identity_ambiguous"
+    boundary = expected & (cv2.erode(expected.astype(np.uint8), np.ones((3, 3), np.uint8)) == 0)
+    if not np.all(selected[boundary]):
+        return None, "registered_region_outer_boundary_unavailable"
+    depth = np.asarray(current.depth_values(), dtype="<f4").reshape(shape)
+    prior = np.frombuffer(tracker._reference_depth, dtype="<f4").reshape(shape)
+    valid = np.frombuffer(current.valid_mask_bytes(), dtype=np.uint8).reshape(shape)
+    if not np.all((valid[expected] > 0) & np.isfinite(depth[expected]) & (depth[expected] > 0)):
+        return None, "registered_region_current_depth_unavailable"
+    # This is a conservative nominal comparison, not a calibrated error bound.
+    # No tolerance is invented: changing visible support or same-plane repaint
+    # remains unavailable. Noisy real support requires separate calibration.
+    if not np.array_equal(depth[selected], prior[selected]):
+        return None, "registered_region_visible_reference_depth_changed"
+    missing = expected & ~selected
+    if missing.any() and not np.all(depth[missing] < prior[missing]):
+        return None, "registered_region_missing_color_not_foreground_supported"
+
+    def sha(array):
+        return hashlib.sha256(array.tobytes(order="C")).hexdigest()
+
+    return {
+        "schema_version": "registered.region.reference-evidence.v2",
+        "policy_id": "fixed-reference-internal-foreground-v2",
+        "depth_policy": "EXACT_VISIBLE_REFERENCE_STRICT_POSITIVE_FOREGROUND",
+        "status": "PARTIAL_FOREGROUND_SUPPORTED" if missing.any() else "FULL",
+        "reference_observation_id": reference.observation_id,
+        "reference_observation_checksum_sha256": reference.checksum_sha256,
+        "reference_captured_at": reference.captured_at.isoformat(),
+        "reference_region_mask_sha256": sha(expected),
+        "reference_region_depth_sha256": sha(prior[expected]),
+        "reference_camera_sha256": digest(
+            {
+                n: getattr(reference, n)
+                for n in (
+                    "source",
+                    "width",
+                    "height",
+                    "intrinsics",
+                    "camera_to_world",
+                    "calibration_version",
+                )
+            }
+        ),
+        "current_observation_id": current.observation_id,
+        "current_observation_checksum_sha256": current.checksum_sha256,
+        "current_visible_mask_sha256": sha(selected),
+        "current_missing_mask_sha256": sha(missing),
+        "region_pixels": int(expected.sum()),
+        "visible_pixels": int(selected.sum()),
+        "missing_pixels": int(missing.sum()),
+        "destination_world_m": list(tracker._reference_destination),
+        "geometric_error_bound_m": None,
+        "placement_clearance": "UNKNOWN",
+    }, None
+
+
+def registered_nominal_region_policy_v1(source_hashes):
+    """冻结实验比较门限；这些数值不是标定误差或物理安全保证。"""
+    return dict(
+        policy_id="registered-self-occlusion-nominal-v1",
+        source_generation=digest(dict(source_hashes)),
+        tau_visible_m=0.010,
+        tau_model_m=0.010,
+        min_foreground_separation_m=0.020,
+        tolerance_basis="R643_ENGINEERING_EXPERIMENT_NOT_CALIBRATED",
+    )
+
+
+def _registered_region_evidence_v2(tracker, current, *, object_geometry=None, nominal_policy=None):
+    """逐像素核对注册投影；隐藏表面和物理净空仍未知。"""
+    if nominal_policy is None:
+        return _legacy_registered_region_evidence_v2(tracker, current)
+    from cloud_edge_robot_arm.vision.tracking import _rgb
+
+    if nominal_policy != registered_nominal_region_policy_v1(tracker._provider._source_hashes):
+        raise ValueError("nominal comparison policy/source mismatch")
+    reference = RGBDObservation.model_validate(tracker._reference_observation.model_dump())
+    if reference.checksum_sha256 != tracker._reference_checksum:
+        return None, "registered_region_reference_changed"
+    shape, blob = tracker._reference_region_footprint
+    expected = np.frombuffer(blob, dtype=bool).reshape(shape)
+    rgb = _rgb(current).astype(float)
+    chroma = rgb / np.maximum(rgb.sum(axis=2, keepdims=True), 1.0)
+    selected = (
+        np.linalg.norm(chroma - tracker._region_tracker.destination_color, axis=2) < 0.14
+    ) & (np.ptp(rgb, axis=2) > 30)
+    if selected.shape != expected.shape or np.any(selected & ~expected):
+        return None, "registered_region_extra_or_moved_color"
+    if cv2.connectedComponentsWithStats(selected.astype(np.uint8), connectivity=8)[0] != 2:
+        return None, "registered_region_color_identity_ambiguous"
+    ys, xs = np.where(expected)
+    x0, x1, y0, y1 = int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
+    if x0 == 0 or y0 == 0 or x1 == shape[1] - 1 or y1 == shape[0] - 1:
+        return None, "registered_region_reference_cropped"
+    # The bounded side/corner branch requires a registered rectangular reference.
+    rectangle = np.zeros_like(expected)
+    rectangle[y0 : y1 + 1, x0 : x1 + 1] = True
+    if not np.array_equal(rectangle, expected):
+        return None, "registered_region_reference_not_rectangular"
+    corners = sum(bool(selected[y, x]) for y, x in ((y0, x0), (y0, x1), (y1, x0), (y1, x1)))
+    sides = [
+        bool(selected[y0, x0 : x1 + 1].any()),
+        bool(selected[y1, x0 : x1 + 1].any()),
+        bool(selected[y0 : y1 + 1, x0].any()),
+        bool(selected[y0 : y1 + 1, x1].any()),
+    ]
+    if corners < 3 or not all(sides):
+        return None, "registered_region_anchors_unavailable"
+    boundary = expected & (cv2.erode(expected.astype(np.uint8), np.ones((3, 3), np.uint8)) == 0)
+    prior = np.frombuffer(tracker._reference_depth, dtype="<f4").reshape(shape)
+    depth = np.asarray(current.depth_values(), dtype="<f4").reshape(shape)
+    valid = np.frombuffer(current.valid_mask_bytes(), dtype=np.uint8).reshape(shape)
+    if not np.all((valid[expected] > 0) & np.isfinite(depth[expected]) & (depth[expected] > 0)):
+        return None, "registered_region_current_depth_unavailable"
+    visible_residual = np.abs(depth[selected].astype(float) - prior[selected])
+    if np.any(visible_residual > nominal_policy["tau_visible_m"]):
+        return None, "registered_region_visible_reference_depth_changed"
+    missing = expected & ~selected
+    model = _registered_model_depth_v1(
+        current, object_geometry, tracker._primitives, np.column_stack((xs, ys))
+    )
+    foreground = np.isfinite(model) & (
+        (prior[expected].astype(float) - model) > nominal_policy["min_foreground_separation_m"]
+    )
+    if not np.array_equal(foreground, missing[expected]):
+        return None, "registered_region_projection_mask_mismatch"
+    attributed = model[missing[expected]]
+    observed = depth[missing].astype(float)
+    residual = np.abs(observed - attributed)
+    if np.any(residual > nominal_policy["tau_model_m"]) or np.any(
+        prior[missing].astype(float) - observed <= nominal_policy["min_foreground_separation_m"]
+    ):
+        return None, "registered_region_foreground_depth_mismatch"
+
+    def sha(array):
+        return hashlib.sha256(array.tobytes(order="C")).hexdigest()
+
+    return dict(
+        schema_version="registered.region.reference-evidence.v2",
+        policy_id="registered-self-occlusion-nominal-v1",
+        depth_policy="ALL_PIXELS_NOMINAL_REGISTERED_FIRST_HIT",
+        status="PARTIAL_REGISTERED_NOMINAL" if missing.any() else "FULL_NOMINAL",
+        reference_observation_id=reference.observation_id,
+        reference_observation_checksum_sha256=reference.checksum_sha256,
+        reference_captured_at=reference.captured_at.isoformat(),
+        reference_region_mask_sha256=sha(expected),
+        reference_region_depth_sha256=sha(prior[expected]),
+        reference_camera_sha256=digest(
+            {
+                n: getattr(reference, n)
+                for n in (
+                    "source",
+                    "width",
+                    "height",
+                    "intrinsics",
+                    "camera_to_world",
+                    "calibration_version",
+                )
+            }
+        ),
+        current_observation_id=current.observation_id,
+        current_observation_checksum_sha256=current.checksum_sha256,
+        current_visible_mask_sha256=sha(selected),
+        current_missing_mask_sha256=sha(missing),
+        region_pixels=int(expected.sum()),
+        visible_pixels=int(selected.sum()),
+        missing_pixels=int(missing.sum()),
+        destination_world_m=list(tracker._reference_destination),
+        geometric_error_bound_m=None,
+        placement_clearance="UNKNOWN",
+        nominal_policy=nominal_policy,
+        primitive_sha256=tracker._primitives.digest(),
+        object_geometry_sha256=digest(_detached_geometry(asdict(object_geometry))),
+        predicted_depth_sha256=sha(model.astype("<f8")),
+        predicted_foreground_mask_sha256=sha(foreground),
+        maximum_visible_residual_m=float(visible_residual.max()),
+        maximum_model_residual_m=float(residual.max()) if len(residual) else 0.0,
+        missing_boundary_pixels=int((boundary & missing).sum()),
+        visible_corners=corners,
+        visible_sides=sides,
+    ), None
+
+
+def registered_collection_grounding_preview_v2(tracker, observation, robot_state):
+    """仅接受自有实时类型；当前标记与固定区域模型可用性分别记录。"""
+    if (
+        type(tracker) is not RegisteredCollectionPreviewTrackerV2
+        or type(tracker._provider) is not RegisteredObjectTrackerV1
+        or type(tracker._region_tracker) is not OpenCVTargetTracker
+        or type(observation) is not RGBDObservation
+        or type(robot_state) is not RobotState
+    ):
+        raise TypeError("exact owned v2 tracker, current frame and state required")
+    return _shared_registered_collection_preview_v2(tracker, observation, robot_state)
+
+
+def _shared_registered_collection_preview_v2(tracker, observation, robot_state):
+    """共用确定性计算；历史适配器由独立入口约束，不获得实时权限。"""
+    current = RGBDObservation.model_validate(observation.model_dump())
+    state = RobotState.model_validate(robot_state.model_dump())
+    provider = tracker._provider
+    reason, _ = provider._recheck_current(current)
+    evaluated_at = datetime.now(UTC)
+    fresh = current.captured_at <= evaluated_at < current.captured_at + timedelta(seconds=5)
+    if not fresh:
+        reason = "capture_time_not_fresh"
+    region = None
+    post_reason = None
+    if reason is None and (not state.connected or state.estop_engaged or state.collision_detected):
+        reason = "current_robot_state_unavailable"
+    if reason:
+        track = provider._result(
+            current,
+            evaluated_at=evaluated_at,
+            is_new=current.observation_id != provider._last_seen.observation_id,
+            reason=reason,
+        )
+    else:
+        anchors = (provider._last_successful_observation, provider._last_successful_geometry)
+        try:
+            track = provider.update(current)
+            reason = track.reason if track.status != "DERIVED" else None
+            if reason is None:
+                region, reason = _registered_region_evidence_v2(
+                    tracker,
+                    current,
+                    object_geometry=track.geometry,
+                    nominal_policy=None
+                    if tracker._nominal_policy is None
+                    else json.loads(tracker._nominal_policy),
+                )
+            post_reason, _ = provider._recheck_current(current)
+            evaluated_at = datetime.now(UTC)
+        except BaseException:
+            provider._last_successful_observation, provider._last_successful_geometry = anchors
+            raise
+        fresh = current.captured_at <= evaluated_at < current.captured_at + timedelta(seconds=5)
+        reason = post_reason or reason
+        if not fresh:
+            reason = "capture_time_not_fresh"
+        if reason:
+            provider._last_successful_observation, provider._last_successful_geometry = anchors
+    if reason:
+        track = replace(
+            track,
+            status="UNKNOWN",
+            reason=reason,
+            geometry=None,
+            evaluated_at=evaluated_at,
+            wrapper_freshness="REJECTED" if post_reason or not fresh else track.wrapper_freshness,
+        )
+    geometry = None if reason else track.geometry
+    return RegisteredCollectionGroundingPreviewV2(
+        status="UNKNOWN" if reason else "DERIVED",
+        reason=reason or "uncalibrated_current_marker_and_reference_region_model",
+        track=track,
+        evaluated_at=evaluated_at,
+        source_sha256=track.source_sha256,
+        registration_sha256=track.registration_sha256,
+        grasp_tcp_world_m=None if geometry is None else geometry.grasp_tcp_world_m,
+        object_center_world_m=None if geometry is None else geometry.object_center_world_m,
+        rotation_object_to_world=None if geometry is None else geometry.rotation_object_to_world,
+        destination_world_m=None if geometry is None else tracker._reference_destination,
+        destination_observation_id=None if geometry is None else current.observation_id,
+        destination_observation_checksum_sha256=None
+        if geometry is None
+        else current.checksum_sha256,
+        region_evidence_json=None
+        if geometry is None
+        else json.dumps(region, sort_keys=True, separators=(",", ":"), allow_nan=False),
+    )
+
+
+def build_collection_contract_v2(
+    *,
+    assignment: Mapping[str, Any],
+    current_owner: Mapping[str, Any],
+    geometry: Mapping[str, Any],
+    source_hashes: Mapping[str, str],
+    observation: RGBDObservation,
+) -> VisualOriginalPlan:
+    validate_camera(observation, geometry)
+    horizons = action_horizons()
+    issued = current_owner["issued_at"]
+    contract = TaskContract(
+        task_id=current_owner["task_id"],
+        plan_version=1,
+        command_seq=1,
+        timestamp=issued,
+        issued_at=issued,
+        valid_until=current_owner["deadline_at"],
+        control_mode=ControlMode.PERIODIC_CLOUD_SUPERVISION,
+        user_instruction="Move the red block to the green region.",
+        scene_version=0,
+        expected_scene_version=0,
+        task_target=TaskTarget(
+            object_id="object", object_class="cube", target_region_id="target_region"
+        ),
+        steps=[
+            TaskStep(
+                step_id=f"step-{i + 1}",
+                skill=SkillName(row["skill"]),
+                expected_duration_ms=row["original_timeout_ms"],
+                timeout_ms=row["original_timeout_ms"],
+                retry_limit=0,
+            )
+            for i, row in enumerate(horizons)
+        ],
+        safety_constraints=SafetyConstraints(
+            max_joint_velocity=3.0,
+            max_tcp_velocity=0.15,
+            minimum_safe_height=0.0,
+            workspace_id="mujoco-t7-v1",
+            collision_check_required=True,
+        ),
+        failure_policy=FailurePolicy(
+            local_retry_limit=0,
+            on_timeout="STOP",
+            on_safety_rejection="STOP",
+            on_network_loss="STOP",
+        ),
+        completion_criteria=["object_placed", "placement_stable"],
+    )
+    lease = current_owner["lease"]
+    identity = lease.identity(
+        episode_id=observation.episode_id,
+        task_id=contract.task_id,
+        plan_id=current_owner["plan_id"],
+        robot_id="native-collection-panda",
+    )
+    from cloud_edge_robot_arm.vision.worker_owner import compile_worker_original_plan_v2
+
+    original = compile_worker_original_plan_v2(
+        lease_source=lease,
+        identity=identity,
+        contract=contract,
+        observation=observation,
+        proposal_hash=digest(dict(assignment)),
+        role_bundle_hash=current_owner["role_sha256"],
+        source_hashes=source_hashes,
+        registered_at=datetime.now(UTC),
+        task_deadline_at=current_owner["deadline_at"],
+        verification_deadline_at=current_owner["deadline_at"],
+    )
+    requirements = {
+        step.step_id: replace(
+            original.requirements[step.step_id],
+            expected_duration_s=row["horizon"]["total_steps"] / 240,
+        )
+        for step, row in zip(contract.steps, horizons, strict=True)
+    }
+    # The draft has not been published or issued. Only this complete full-H original is bound.
+    return freeze_original_visual_plan(**{**original.freeze_inputs(), "requirements": requirements})
+
+
+def registered_collection_step_v2(
+    original, *, index, observation, state, tracker, lease_source, evidence_sink=None
+):
+    """把当前模型坐标绑定到原采集步骤；原条件仍由采集应用核验。"""
+    from cloud_edge_robot_arm.vision.owner_registration import (
+        RegisteredCollectionStepBindingV2,
+        RegisteredGroundingFrameInputsV2,
+        RegisteredGroundingPolicyV2,
+        prepare_registered_step_binding_v2,
+    )
+
+    started = datetime.now(UTC)
+    if (
+        type(original) is not VisualOriginalPlan
+        or type(index) is not int
+        or not (0 <= index < len(original.contract.steps))
+    ):
+        raise ValueError("exact original collection pending index required")
+    if type(tracker) is not RegisteredCollectionPreviewTrackerV2:
+        raise TypeError("owned live registered collection tracker required")
+    if dict(original.source_hashes) != tracker._provider._source_hashes:
+        raise ValueError("registered collection source inventory differs from original")
+    contract = original.contract
+    source_step = contract.steps[index]
+    checkpoint = _collection_checkpoint(original, index, state, started)
+    preview = registered_collection_grounding_preview_v2(tracker, observation, state)
+    if preview.status != "DERIVED":
+        raise ValueError("registered collection geometry unavailable: " + preview.reason)
+    inputs = RegisteredGroundingFrameInputsV2.from_preview(
+        preview, observation, tracker._provider._registration
+    )
+    policy = RegisteredGroundingPolicyV2.for_original(
+        original,
+        original.source_hashes,
+        region_policy=json.loads(tracker._nominal_policy)
+        if tracker._nominal_policy is not None
+        else None,
+    )
+    online = OnlineEvidenceSnapshot(
+        observation,
+        state,
+        {},
+        contract.plan_version,
+        contract.command_seq,
+        checkpoint.checkpoint_hash,
+    )
+    now = datetime.now(UTC)
+    prepared = prepare_registered_step_binding_v2(
+        original,
+        original_step_id=source_step.step_id,
+        online=online,
+        source_checkpoint=checkpoint,
+        current_identity=original.identity,
+        owner_revision=index + 1,
+        state_generation=index + 1,
+        grounding_inputs=inputs,
+        grounding_policy=policy,
+        lease_source=lease_source,
+        now=now,
+    )
+    binding = RegisteredCollectionStepBindingV2.from_prepared(
+        prepared, collection_policy_id="registered-model-collection-v2"
+    )
+    step = binding.grounded_step
+    executed = contract.model_copy(
+        update={"steps": [step if s.step_id == step.step_id else s for s in contract.steps]},
+        deep=True,
+    )
+    reason, finished = tracker._provider._recheck_current(observation)
+    if reason or not observation.captured_at <= started <= now <= finished < binding.valid_until:
+        raise ValueError("registered collection final frame/deadline invalid")
+    if evidence_sink is not None:
+        evidence_sink(
+            dict(
+                schema_version="native.registered.grounding.v2",
+                original_plan_sha256=original.digest(),
+                identity=original.identity.to_payload(),
+                index=index,
+                step_id=source_step.step_id,
+                source_generation=digest(dict(original.source_hashes)),
+                checkpoint=checkpoint.model_dump(mode="json"),
+                checkpoint_sha256=checkpoint.checkpoint_hash,
+                binding_now=now.isoformat(),
+                tracker_evaluated_at=preview.evaluated_at.isoformat(),
+                inputs=inputs.to_payload(),
+                inputs_sha256=inputs.digest(),
+                policy=policy.to_payload(),
+                policy_sha256=policy.digest(),
+                binding=binding.to_payload(),
+                binding_sha256=binding.digest(),
+                lease_source=lease_source.to_payload(),
+                registered_preview=preview.to_payload(),
+                executed_contract=executed.model_dump(mode="json"),
+                grounded_step=step.model_dump(mode="json"),
+                online=dict(
+                    robot_state=state.model_dump(mode="json"),
+                    visual_facts={},
+                    plan_version=online.plan_version,
+                    command_seq=online.command_seq,
+                    context_hash=online.context_hash,
+                ),
+                observation_id=observation.observation_id,
+                checksum_sha256=observation.checksum_sha256,
+            )
+        )
+    return executed, step, binding, online, checkpoint
+
+
+def registered_expected_conditions_v2(original, binding, phase):
+    """从冻结原件重建条件及来源，拒绝调用方删减或伪装显式断言。"""
+    from cloud_edge_robot_arm.vision.worker_owner import registered_collection_effect_conditions_v2
+
+    step = binding.grounded_step
+    original_step = next(s for s in original.contract.steps if s.step_id == step.step_id)
+    if phase == "PRE":
+        expected = original.requirements[step.step_id].preconditions
+    elif phase in {"POST", "TERMINAL"}:
+        expected = registered_collection_effect_conditions_v2(original, binding)
+    else:
+        raise ValueError("exact collection phase required")
+    for condition in expected:
+        if phase == "PRE":
+            origin = (
+                "EXPLICIT_PRECONDITION"
+                if condition.name in original_step.preconditions
+                else "DEFAULT_PRECONDITION"
+            )
+        elif condition.name in original_step.success_conditions:
+            origin = "EXPLICIT_SUCCESS"
+        elif (
+            original_step.step_id == original.contract.steps[-1].step_id
+            and condition.name in original.contract.completion_criteria
+        ):
+            origin = "EXPLICIT_COMPLETION"
+        else:
+            origin = "DEFAULT_POSTCONDITION"
+        if condition.tolerances.get("requirement_origin") != origin:
+            raise ValueError("condition origin differs from immutable original")
+    return expected
+
+
+def collection_unknown_row_v2(
+    *,
+    original,
+    phase,
+    step,
+    condition,
+    verdict,
+    proof,
+    feedback,
+    receipt,
+    nominal_release=False,
+    **legacy,
+):
+    """仅隐式条件可查实验例外表；原显式条件必须独立 PASS。"""
+    source = next(s for s in original.contract.steps if s.step_id == step.step_id)
+    explicit = (
+        condition.name in source.preconditions
+        if phase == "PRE"
+        else condition.name in source.success_conditions
+        or (
+            source.step_id == original.contract.steps[-1].step_id
+            and condition.name in original.contract.completion_criteria
+        )
+    )
+    if explicit or verdict.get("status") != "UNKNOWN":
+        return None
+    if (
+        phase == "PRE"
+        and step.skill.value == "RELEASE"
+        and condition.name == "object_inside_target_region"
+        and tuple(verdict.get("reasons", ())) == ("registered_nominal_inside_only",)
+        and proof is not None
+        and proof.get("status") in {"FULL_NOMINAL", "PARTIAL_REGISTERED_NOMINAL"}
+        and nominal_release
+        and feedback.connected
+        and not feedback.gripper_open
+        and feedback.holding_object_id == original.contract.task_target.object_id
+    ):
+        return "PRE_RELEASE_REGISTERED_NOMINAL_V1"
+    return collection_unknown_row(
+        phase=phase,
+        skill=step.skill.value,
+        condition=condition.name,
+        verdict=verdict,
+        nominal_release=False,
+        **legacy,
+    )

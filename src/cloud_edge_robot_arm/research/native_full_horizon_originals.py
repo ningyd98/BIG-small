@@ -570,9 +570,11 @@ class _Audit:
         self.tracker_clock_end_utc: datetime | None = None
         self.tracker_clock_end_ns: int | None = None
         self.tracker_clock_keys: set[tuple[str, int | None, str | None]] = set()
-        self.registered_collection = (
-            protocol.get("schema_version") == "native.calibration.operational.v7"
-        )
+        self.registered_v2 = protocol.get("schema_version") == "native.calibration.operational.v8"
+        self.registered_collection = protocol.get("schema_version") in {
+            "native.calibration.operational.v7",
+            "native.calibration.operational.v8",
+        }
         self.registered_tracker = None
         self.registered_preview_finished = None
 
@@ -588,6 +590,12 @@ class _Audit:
                 self.identity.to_payload(),
                 "registered span global identity differs",
             )
+            if self.registered_v2:
+                from cloud_edge_robot_arm.research.raw_episode_v3 import (
+                    RegisteredCollectionActionSpanV2,
+                )
+
+                return RegisteredCollectionActionSpanV2.from_payload(payload)
             return RegisteredCollectionActionSpanV1.from_payload(payload)
         return TypedActionSpanV3.from_json(
             json.dumps(dict(identity=self.identity.to_payload(), **payload))
@@ -599,6 +607,12 @@ class _Audit:
                 RegisteredCollectionStepBinding,
             )
 
+            if self.registered_v2:
+                from cloud_edge_robot_arm.vision.owner_registration import (
+                    RegisteredCollectionStepBindingV2,
+                )
+
+                return RegisteredCollectionStepBindingV2.from_payload(payload)
             return RegisteredCollectionStepBinding.from_payload(payload)
         return _owner_decode(StepGroundingBinding, payload)
 
@@ -615,7 +629,9 @@ class _Audit:
         _require(
             manifest["schema_version"]
             == (
-                "native.registered.full-horizon.inventory.v1"
+                "native.registered.full-horizon.inventory.v2"
+                if self.registered_v2
+                else "native.registered.full-horizon.inventory.v1"
                 if self.registered_collection
                 else "native.full-horizon.inventory.v1"
             ),
@@ -665,7 +681,9 @@ class _Audit:
         if self.registered_collection:
             _same(
                 self.raw["schema_version"],
-                "native.registered.full-horizon.originals.v1",
+                "native.registered.full-horizon.originals.v2"
+                if self.registered_v2
+                else "native.registered.full-horizon.originals.v1",
                 "registered originals schema differs",
             )
 
@@ -1669,6 +1687,8 @@ class _Audit:
 
     def registered_preview(self, payload, observation, state):
         """重算原时间的像素/模型计算；不证明过去授权或当前freshness。"""
+        if self.registered_v2:
+            return self.registered_preview_v2(payload, observation, state)
         from cloud_edge_robot_arm.research.native_archived_tracker import (
             _ArchivedRegisteredCollectionTracker,
         )
@@ -1733,8 +1753,77 @@ class _Audit:
             else None
         )
 
+    def registered_preview_v2(self, payload, observation, state):
+        """重算原时间的像素/模型计算；不证明过去授权或当前freshness。"""
+        from cloud_edge_robot_arm.research.native_archived_tracker import (
+            _ArchivedRegisteredCollectionTrackerV2,
+        )
+        from cloud_edge_robot_arm.research.native_calibration_collection import ROOT
+        from cloud_edge_robot_arm.vision.owner_registration import RegisteredGroundingFrameInputsV2
+
+        if self.registered_tracker is None:
+            bootstrap = self.read("registered-tracker-bootstrap.json")
+            _same(
+                bootstrap["schema_version"],
+                "native.registered.tracker-bootstrap.v2",
+                "registered bootstrap schema differs",
+            )
+            _same(
+                bootstrap["source_generation"],
+                self.protocol["source_generation"],
+                "registered bootstrap source differs",
+            )
+            acquisition = bootstrap["acquisition"]
+            timeline = self.read("registration-timeline.json")
+            _same(
+                acquisition,
+                timeline["dispatch"]["acquisition"],
+                "registered reference is not dispatch bootstrap",
+            )
+            self.reference(acquisition)
+            reference, _, _ = self.frame(acquisition["acquisition_id"])
+            started = _validated_utc(datetime.fromisoformat(bootstrap["started_at"]))
+            finished = _validated_utc(datetime.fromisoformat(bootstrap["finished_at"]))
+            _require(
+                reference.captured_at
+                <= started
+                <= finished
+                < min(
+                    self.original.effective_deadline_at,
+                    reference.captured_at + timedelta(seconds=5),
+                ),
+                "registered bootstrap original time invalid",
+            )
+            self.registered_tracker = _ArchivedRegisteredCollectionTrackerV2(
+                reference,
+                self.scope,
+                source_root=ROOT,
+                source_hashes=self.original.source_hashes,
+                initialized_at=finished,
+                nominal_policy=self.protocol["region_policy"],
+            )
+            self.registered_preview_finished = finished
+        evaluated = _validated_utc(datetime.fromisoformat(payload["track"]["evaluated_at"]))
+        finished = _validated_utc(datetime.fromisoformat(payload["evaluated_at"]))
+        _require(
+            self.registered_preview_finished <= evaluated <= finished,
+            "registered preview original sequence reversed",
+        )
+        rebuilt = self.registered_tracker.preview_at(
+            observation, state, evaluated_at=evaluated, finished_at=finished
+        )
+        _same(rebuilt.to_payload(), payload, "registered preview original pixels/source differ")
+        self.registered_preview_finished = finished
+        return (
+            RegisteredGroundingFrameInputsV2.from_preview(rebuilt, observation, self.scope)
+            if rebuilt.status == "DERIVED"
+            else None
+        )
+
     def registered_grounding(self, grounding, observation, state, step, binding, index):
         """严格重建新绑定；所有时效只解释原记录，不发放当前执行权限。"""
+        if self.registered_v2:
+            return self.registered_grounding_v2(grounding, observation, state, step, binding, index)
         from cloud_edge_robot_arm.vision.owner_registration import (
             RegisteredCollectionStepBinding,
             RegisteredGroundingPolicy,
@@ -1854,7 +1943,136 @@ class _Audit:
         )
         self.policies[step.skill.value] = policy
 
+    def registered_grounding_v2(self, grounding, observation, state, step, binding, index):
+        """严格重建新绑定；所有时效只解释原记录，不发放当前执行权限。"""
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            RegisteredCollectionStepBindingV2,
+            RegisteredGroundingPolicyV2,
+            prepare_registered_step_binding_v2,
+        )
+
+        _same(
+            grounding["schema_version"],
+            "native.registered.grounding.v2",
+            "registered grounding schema differs",
+        )
+        inputs = self.registered_preview(grounding["registered_preview"], observation, state)
+        _require(inputs is not None, "registered grounding has no derived current model/region")
+        _same(
+            inputs.to_payload(),
+            grounding["inputs"],
+            "registered inputs differ from reconstructed pixels",
+        )
+        _same(inputs.digest(), grounding["inputs_sha256"], "registered inputs digest differs")
+        policy = RegisteredGroundingPolicyV2.for_original(
+            self.original, self.original.source_hashes, region_policy=self.protocol["region_policy"]
+        )
+        _same(policy.to_payload(), grounding["policy"], "registered collection policy differs")
+        _same(policy.digest(), grounding["policy_sha256"], "registered policy digest differs")
+        checkpoint = ExecutionCheckpoint.model_validate(grounding["checkpoint"])
+        _same(
+            checkpoint_digest(checkpoint),
+            grounding["checkpoint_sha256"],
+            "registered checkpoint hash differs",
+        )
+        _same(
+            checkpoint.robot_state,
+            state.model_dump(mode="json"),
+            "registered checkpoint proprioception differs",
+        )
+        clock = grounding["tracker_clock"]
+        preview_time = self.tracker_clock(
+            clock, observation, purpose="GROUNDING", index=index, step_id=step.step_id
+        )
+        _same(
+            grounding["tracker_evaluated_at"],
+            clock["evaluated_at"],
+            "registered tracker original time differs",
+        )
+        created = _validated_utc(datetime.fromisoformat(grounding["binding_now"]))
+        final = _validated_utc(datetime.fromisoformat(grounding["final_validation_at"]))
+        _require(
+            datetime.fromisoformat(clock["started_at"])
+            <= checkpoint.created_at
+            <= checkpoint.updated_at
+            <= preview_time
+            <= created
+            <= final
+            <= datetime.fromisoformat(clock["finished_at"]),
+            "registered binding original chronology differs",
+        )
+        lease = _registered_lease_from_payload(grounding["lease_source"])
+        for source in (clock["consumption_before"], clock["consumption_after"]):
+            actual = source["live_owner"]["lease"]
+            for name in ("job_id", "run_id", "worker_id", "lease_id", "attempt", "acquired_at"):
+                _same(
+                    lease.to_payload()[name],
+                    actual[name],
+                    "registered grounding lease changed:" + name,
+                )
+        _require(
+            lease.observed_at <= created <= final < lease.expires_at,
+            "registered grounding lease expired",
+        )
+        online = OnlineEvidenceSnapshot(
+            observation,
+            state,
+            {},
+            self.original.contract.plan_version,
+            self.original.contract.command_seq,
+            checkpoint.checkpoint_hash,
+        )
+        _same(
+            grounding["online"],
+            dict(
+                robot_state=state.model_dump(mode="json"),
+                visual_facts={},
+                plan_version=online.plan_version,
+                command_seq=online.command_seq,
+                context_hash=online.context_hash,
+            ),
+            "registered online source differs",
+        )
+        prepared = prepare_registered_step_binding_v2(
+            self.original,
+            original_step_id=step.step_id,
+            online=online,
+            source_checkpoint=checkpoint,
+            current_identity=self.original.identity,
+            owner_revision=index + 1,
+            state_generation=index + 1,
+            grounding_inputs=inputs,
+            grounding_policy=policy,
+            lease_source=lease,
+            now=created,
+        )
+        replay = RegisteredCollectionStepBindingV2.from_prepared(
+            prepared, collection_policy_id="registered-model-collection-v2"
+        )
+        _require(final < replay.valid_until, "registered grounding final original deadline expired")
+        _same(
+            replay.to_payload(), binding.to_payload(), "registered grounding binding replay differs"
+        )
+        _same(replay.digest(), grounding["binding_sha256"], "registered binding digest differs")
+        _same(
+            step.model_dump(mode="json"),
+            grounding["grounded_step"],
+            "registered grounded payload differs",
+        )
+        _same(
+            step.model_dump(mode="json"),
+            replay.grounded_step.model_dump(mode="json"),
+            "registered executed payload differs",
+        )
+        self.policies[step.skill.value] = policy
+
     def effect_conditions(self, binding):
+        if self.registered_v2:
+            from cloud_edge_robot_arm.vision.worker_owner import (
+                registered_collection_effect_conditions_v2,
+            )
+
+            return registered_collection_effect_conditions_v2(self.original, binding)
         if self.registered_collection:
             from cloud_edge_robot_arm.vision.worker_owner import (
                 registered_collection_effect_conditions,
@@ -2488,7 +2706,10 @@ def read_native_full_horizon_group(
     protocol: Path, *, assignment_id: str, root: Path
 ) -> FullHorizonGroupDiagnostics:
     registration = read_protocol(protocol)
-    if registration["schema_version"] == "native.calibration.operational.v7":
+    if registration["schema_version"] in {
+        "native.calibration.operational.v7",
+        "native.calibration.operational.v8",
+    }:
         raise ValueError(
             "registered collection has zero released groups; actual release requires a new run plan"
         )
@@ -2558,7 +2779,10 @@ def reconstruct_native_full_horizon_registry(
     protocol: Path, *, roots: Mapping[str, Path], group_sink: Any = None
 ) -> CompletionCalibrationDiagnosticsV2:
     registration = read_protocol(protocol)
-    if registration["schema_version"] == "native.calibration.operational.v7":
+    if registration["schema_version"] in {
+        "native.calibration.operational.v7",
+        "native.calibration.operational.v8",
+    }:
         raise ValueError("registered collection has no released full-horizon registry")
     if registration["schema_version"] == "native.calibration.operational.v6":
         raise ValueError(
@@ -2692,3 +2916,915 @@ def _release_points(
     r = vertices @ reference[:3, :3].T + reference[:3, 3]
     x = vertices @ actual_rotation.T + np.asarray(current["object_geom_position_m"])
     return p.tolist(), r.tolist(), r.tolist(), x.tolist()
+
+
+def verify_registered_occlusion_trace_v2(protocol: Path, *, root: Path) -> dict[str, Any]:
+    """重建部分记录的像素、条件与反馈读数一致性，不认证过去授权或完整物理执行。"""
+    from dataclasses import replace
+
+    from cloud_edge_robot_arm.edge.evidence.conditions import evaluate_registered_conditions_v2
+    from cloud_edge_robot_arm.edge.safety.models import SafetyContext
+    from cloud_edge_robot_arm.research.native_archived_tracker import (
+        _ArchivedRegisteredCollectionTrackerV2,
+        _ArchivedTargetTracker,
+    )
+    from cloud_edge_robot_arm.research.native_calibration_collection import ROOT
+    from cloud_edge_robot_arm.research.native_collection_grounding import (
+        collection_bootstrap_evidence,
+    )
+    from cloud_edge_robot_arm.research.native_full_horizon_recorder import (
+        _v2_exact,
+        _v2_feedback,
+        _v2_receipt,
+        _v2_reference,
+        _v2_same,
+        _v2_utc,
+    )
+    from cloud_edge_robot_arm.vision.execution import research_safety_shield
+    from cloud_edge_robot_arm.vision.owner_registration import (
+        RegisteredCollectionStepBindingV2,
+        RegisteredGroundingFrameInputsV2,
+        RegisteredGroundingPolicyV2,
+        freeze_original_visual_plan,
+        prepare_registered_step_binding_v2,
+    )
+    from cloud_edge_robot_arm.vision.worker_owner import (
+        compile_worker_original_plan_v2,
+        registered_collection_effect_conditions_v2,
+    )
+
+    registration = read_protocol(protocol)
+    _require(
+        registration["schema_version"] == "native.calibration.operational.v8",
+        "exact v8 trace required",
+    )
+    audit = _Audit(registration, {}, Path(root))
+    audit.inventory()
+    audit.original = _owner_decode(VisualOriginalPlan, audit.read("original-plan.json"))
+    audit.identity = RawEpisodeIdentityV3.from_json(json.dumps(audit.raw["identity"]))
+    original = audit.original
+    _same(
+        dict(original.source_hashes),
+        registration["source_hashes"],
+        "partial original source differs",
+    )
+    _same(
+        dict(audit.identity.source_hashes),
+        dict(original.source_hashes),
+        "partial identity source differs",
+    )
+    _same(audit.identity.owner_identity, original.identity, "partial owner identity differs")
+    rows = audit.raw["decisions"]
+    _require(type(rows) is list and 0 < len(rows) <= 17, "finite partial decision prefix required")
+    frame_cache = {}
+
+    def frame(aid):
+        # Read originals afresh on each use; immutable view preserves tracker repeat semantics.
+        name = audit.raw["frame_sources"][aid]
+        metadata = audit.read(name)
+        stored = _restore_frame(audit.directory, metadata)
+        FrameAcquisitionV3.from_json(
+            json.dumps(dict(identity=audit.identity.to_payload(), **stored))
+        )
+        obs = RGBDObservation.model_validate(stored["observation_payload"])
+        validate_camera(obs, registration["geometry"])
+        source = metadata["capture_source"]
+        _same(
+            source,
+            audit.raw["capture_source_roles"][str(source["operation_id"])],
+            "partial capture source differs",
+        )
+        _require(
+            source["role"] == "REGISTERED_ACTION_BOUNDARY"
+            and source["physics_step"] == round(obs.sim_time_s * 240),
+            "partial capture step/role differs",
+        )
+        _same(stored["acquisition_id"], aid, "partial acquisition identity differs")
+        _require(
+            stored["source_acquisition_id"] is None, "transformed partial acquisition forbidden"
+        )
+        events = [e for e in audit.raw["operational_events"] if e["acquisition_id"] == aid]
+        _require(
+            len(events) == 1 and events[0]["error_type"] is None,
+            "partial acquisition event unavailable",
+        )
+        _require(
+            events[0]["begin_step"] == events[0]["end_step"] == source["physics_step"],
+            "partial acquisition crossed a step",
+        )
+        audit.frames[aid] = {"step": source["physics_step"], "interval_id": stored["interval_id"]}
+        if aid in frame_cache:
+            _same(
+                obs.model_dump(mode="json"),
+                frame_cache[aid].model_dump(mode="json"),
+                "partial cached bytes changed",
+            )
+        else:
+            frame_cache[aid] = obs
+        return frame_cache[aid]
+
+    bootstrap = audit.read("registered-tracker-bootstrap.json")
+    _same(
+        bootstrap["schema_version"],
+        "native.registered.tracker-bootstrap.v2",
+        "partial bootstrap version differs",
+    )
+    _same(
+        bootstrap["source_generation"],
+        registration["source_generation"],
+        "partial bootstrap source differs",
+    )
+    acquisition = bootstrap["acquisition"]
+    audit.reference(acquisition)
+    reference = frame(acquisition["acquisition_id"])
+    compiler_acquisition = bootstrap["compiler_reference_acquisition"]
+    audit.reference(compiler_acquisition)
+    compiler_reference = frame(compiler_acquisition["acquisition_id"])
+    _require(
+        compiler_acquisition["acquisition_id"] != acquisition["acquisition_id"],
+        "compiler/tracker acquisitions must be distinct",
+    )
+    for dependency in original.dependencies:
+        _same(
+            dependency.evidence_ids,
+            (compiler_reference.observation_id,),
+            "compiler dependency reference differs",
+        )
+    initialized = _validated_utc(datetime.fromisoformat(bootstrap["finished_at"]))
+    _require(
+        reference.captured_at
+        <= datetime.fromisoformat(bootstrap["started_at"])
+        <= initialized
+        < reference.captured_at + timedelta(seconds=5),
+        "partial bootstrap chronology differs",
+    )
+    first = audit.read("grounding/step-1.json")
+    action_lease = _registered_lease_from_payload(first["lease_source"])
+    lease = _registered_lease_from_payload(bootstrap["registration_lease_source"])
+    _same(
+        lease.identity(
+            episode_id=original.identity.episode_id,
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+        ),
+        original.identity,
+        "registration lease owner differs",
+    )
+    for field in ("job_id", "run_id", "worker_id", "lease_id", "attempt", "acquired_at"):
+        _same(
+            lease.to_payload()[field],
+            action_lease.to_payload()[field],
+            "registration/action lease epoch differs",
+        )
+    validate_registration_handoff(
+        original,
+        lease.to_payload(),
+        compiler_reference,
+        reference,
+        step_before=round(compiler_reference.sim_time_s * 240),
+        step_after=round(reference.sim_time_s * 240),
+        now=initialized,
+    )
+    rebuilt = compile_worker_original_plan_v2(
+        lease_source=lease,
+        identity=original.identity,
+        contract=original.contract,
+        observation=compiler_reference,
+        proposal_hash=original.proposal_hash,
+        role_bundle_hash=original.role_bundle_hash,
+        source_hashes=original.source_hashes,
+        registered_at=original.registered_at,
+        task_deadline_at=original.task_deadline_at,
+        verification_deadline_at=original.verification_deadline_at,
+    )
+    requirements = {
+        s.step_id: replace(
+            rebuilt.requirements[s.step_id], expected_duration_s=r["horizon"]["total_steps"] / 240
+        )
+        for s, r in zip(rebuilt.contract.steps, registration["actions"], strict=True)
+    }
+    rebuilt = freeze_original_visual_plan(
+        **{**rebuilt.freeze_inputs(), "requirements": requirements}
+    )
+    _same(
+        original.to_payload(), rebuilt.to_payload(), "partial compiler/original requirements differ"
+    )
+    registered = _ArchivedRegisteredCollectionTrackerV2(
+        reference,
+        audit.scope,
+        source_root=ROOT,
+        source_hashes=original.source_hashes,
+        initialized_at=initialized,
+        nominal_policy=registration["region_policy"],
+    )
+    evidence = collection_bootstrap_evidence(reference, registration["geometry"])
+    tracker = _ArchivedTargetTracker(reference, evidence, evaluated_at=initialized)
+    owner = first["tracker_clock"]["consumption_before"]["live_owner"]
+    audit.domain = owner["current"]["domain"]
+    audit.deadline = owner["original_deadline_ns"]
+    last_utc = initialized
+    last_ns = None
+
+    def clock(item, obs, purpose, index, step_id):
+        nonlocal last_utc, last_ns
+        value = item["tracker_clock"]
+        _v2_exact(
+            value,
+            {
+                "schema_version",
+                "purpose",
+                "index",
+                "step_id",
+                "acquisition",
+                "observation_id",
+                "checksum_sha256",
+                "source_generation",
+                "started_at",
+                "evaluated_at",
+                "finished_at",
+                "consumption_before",
+                "consumption_after",
+            },
+        )
+        _require(type(value["index"]) is int, "partial clock index type differs")
+        _v2_reference(value["acquisition"], acquisition=True)
+        aid = value["acquisition"]["acquisition_id"]
+        _v2_same(value["acquisition"]["path"], audit.raw["frame_sources"][aid])
+        for k, v in dict(
+            schema_version="native.tracker.clock.v1",
+            purpose=purpose,
+            index=index,
+            step_id=step_id,
+            observation_id=obs.observation_id,
+            checksum_sha256=obs.checksum_sha256,
+            source_generation=registration["source_generation"],
+        ).items():
+            _same(value[k], v, "partial clock differs:" + k)
+        audit.reference(value["acquisition"])
+        _same(
+            frame(value["acquisition"]["acquisition_id"]).checksum_sha256,
+            obs.checksum_sha256,
+            "partial clock acquisition differs",
+        )
+        start, evaluated, finish = (
+            _v2_utc(value[k]) for k in ("started_at", "evaluated_at", "finished_at")
+        )
+        _require(
+            last_utc
+            <= start
+            <= evaluated
+            <= finish
+            < min(original.effective_deadline_at, obs.captured_at + timedelta(seconds=5))
+            and obs.captured_at <= start,
+            "partial clock sequence/freshness invalid",
+        )
+        for consumed in (value["consumption_before"], value["consumption_after"]):
+            _v2_exact(consumed, {"acquisition_id", "capture", "consumed", "step", "live_owner"})
+            _require(
+                type(consumed["step"]) is int and consumed["step"] == audit.frames[aid]["step"],
+                "partial consumption physics step differs",
+            )
+            audit.consumption(consumed)
+            _require(
+                consumed["consumed"]["upper_ns"] - consumed["capture"]["lower_ns"] < 5 * 10**9,
+                "partial strict OC1 age expired",
+            )
+            _same(
+                consumed["acquisition_id"],
+                value["acquisition"]["acquisition_id"],
+                "partial consumption mixed acquisition",
+            )
+            source = consumed["live_owner"]
+            _same(source["task_origin"], owner["task_origin"], "partial worker origin changed")
+            for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt", "acquired_at"):
+                _same(source["lease"][key], owner["lease"][key], "partial lease epoch changed")
+        before, after = value["consumption_before"], value["consumption_after"]
+        _require(
+            datetime.fromisoformat(before["live_owner"]["lease"]["observed_at"])
+            <= start
+            <= finish
+            <= datetime.fromisoformat(after["live_owner"]["lease"]["observed_at"]),
+            "partial clock source UTC differs",
+        )
+        _require(
+            last_ns is None or last_ns <= before["live_owner"]["current"]["lower_ns"],
+            "partial operational order reversed",
+        )
+        _require(
+            before["consumed"]["upper_ns"] <= after["live_owner"]["current"]["lower_ns"],
+            "partial clock enclosure reversed",
+        )
+        last_utc = finish
+        last_ns = after["consumed"]["upper_ns"]
+        return evaluated
+
+    def partial_interval(interval_id):
+        matching = [r for r in audit.raw["intervals"] if r["interval_id"] == interval_id]
+        _require(len(matching) == 1, "partial unique interval required")
+        descriptor = ClockDescriptorV3.from_json(json.dumps(audit.raw["descriptor"]))
+        _v2_same(descriptor.clock_domain_id, audit.identity.clock_domain_id)
+        _v2_same(dict(descriptor.source_hashes), dict(original.source_hashes))
+        interval_payload = dict(matching[0])
+        for side in ("start", "end"):
+            clock_pair = interval_payload[side]
+            if clock_pair is not None:
+                _require(
+                    type(clock_pair) is list and len(clock_pair) == 4,
+                    "native recorded clock array required",
+                )
+                _v2_utc(clock_pair[2])
+                interval_payload[side] = dict(
+                    clock_domain_id=descriptor.clock_domain_id,
+                    descriptor_hash=descriptor.digest(),
+                    sequence=clock_pair[0],
+                    mono_before_ns=clock_pair[1],
+                    utc_at=clock_pair[2],
+                    mono_after_ns=clock_pair[3],
+                )
+        interval = RawIntervalV3.from_json(
+            json.dumps(dict(identity=audit.identity.to_payload(), **interval_payload))
+        )
+        _require(
+            interval.end is not None and interval.start.utc_at <= interval.end.utc_at,
+            "partial recorded interval UTC reversed",
+        )
+        return interval
+
+    def receipt_for(item, phase, index, step, binding):
+        value = item["receipt"]
+        if phase == "PRE":
+            _require(
+                value is None and item["complete_horizon"] is False, "partial PRE receipt forbidden"
+            )
+            return False
+        controller = _v2_receipt(
+            value, registration["actions"][index], task_id=original.contract.task_id, step=step
+        )
+        _v2_same(value["step_id"], step.step_id)
+        _v2_same(value["skill"], step.skill.value)
+        _v2_same(value["original_plan_sha256"], original.digest())
+        _v2_same(value["executed_step_sha256"], digest(step.model_dump(mode="json")))
+        _v2_same(value["terminal_acquisition_id"], item["capture"]["acquisition_id"])
+        _v2_same(value["terminal_step"], item["capture"]["step"])
+        horizons = [r for r in audit.raw["horizons"] if r["step_id"] == step.step_id]
+        _require(len(horizons) == 1, "partial unique recorded receipt required")
+        _v2_same(value, horizons[0])
+        matching = [p for p in audit.raw["actions"] if p["step_id"] == step.step_id]
+        _require(len(matching) == 1, "partial unique executed action required")
+        span = audit.action_span(matching[0])
+        _v2_same(span.identity.to_payload(), audit.identity.to_payload())
+        _v2_same(span.original_plan.digest(), original.digest())
+        _v2_same(span.grounding.to_payload(), binding.to_payload())
+        _v2_same(span.executed_step_payload, step.model_dump(mode="json"))
+        interval = partial_interval(span.interval_id)
+        _require(
+            interval.kind == "EXECUTOR_ATTEMPT"
+            and interval.disposition == "COMPLETE"
+            and span.disposition == "RETURNED",
+            "partial returned executor interval required",
+        )
+        _v2_same(value["dispatch_step"], interval.start_step)
+        _v2_same(value["controller_return_step"], interval.end_step)
+        pre = rows[index * 2]["inputs"]
+        _v2_same(pre["capture"]["step"], value["dispatch_step"])
+        _v2_same(pre["grounding"], binding.to_payload())
+        pre_acquisition = partial_interval(
+            audit.frames[pre["capture"]["acquisition_id"]]["interval_id"]
+        )
+        terminal_acquisition = partial_interval(
+            audit.frames[item["capture"]["acquisition_id"]]["interval_id"]
+        )
+        _require(
+            pre_acquisition.kind == terminal_acquisition.kind == "ACQUISITION",
+            "partial acquisition interval kind differs",
+        )
+        _require(
+            pre_acquisition.end.mono_after_ns <= interval.start.mono_before_ns
+            and interval.end.mono_after_ns <= terminal_acquisition.start.mono_before_ns,
+            "partial executor/acquisition monotonic chronology differs",
+        )
+        nested = controller["action_result"]
+        terminal_obs = frame(item["capture"]["acquisition_id"])
+        _require(
+            _v2_utc(pre["tracker_clock"]["finished_at"])
+            <= interval.start.utc_at
+            <= _v2_utc(nested["started_at"])
+            <= _v2_utc(nested["finished_at"])
+            <= _v2_utc(controller["timestamp"])
+            <= interval.end.utc_at
+            <= terminal_acquisition.start.utc_at
+            <= terminal_obs.captured_at
+            <= terminal_acquisition.end.utc_at
+            <= _v2_utc(item["feedback_source"]["observed_at"])
+            <= _v2_utc(item["tracker_clock"]["started_at"]),
+            "partial executor/callback/terminal UTC chronology differs",
+        )
+        for record in (pre_acquisition, interval, terminal_acquisition):
+            _require(
+                round(record.start_sim_time_s * 240) == record.start_step
+                and round(record.end_sim_time_s * 240) == record.end_step,
+                "partial executor/acquisition simulation grid differs",
+            )
+        result = value["controller_result_json"]
+        _v2_same(
+            json.loads(result)["action_result"] if result is not None else None,
+            span.returned_result,
+        )
+        if phase == "TERMINAL":
+            _require(len(completed) == 8, "partial TERMINAL requires eight accepted POSTs")
+            _v2_same(value, completed[-1][1])
+            _v2_same(value, rows[15]["inputs"]["receipt"])
+        return True
+
+    def preview(payload, obs, state):
+        result = registered.preview_at(
+            obs,
+            state,
+            evaluated_at=datetime.fromisoformat(payload["track"]["evaluated_at"]),
+            finished_at=datetime.fromisoformat(payload["evaluated_at"]),
+        )
+        _same(result.to_payload(), payload, "partial registered pixels/model attribution differ")
+        return (
+            RegisteredGroundingFrameInputsV2.from_preview(result, obs, audit.scope)
+            if result.status == "DERIVED"
+            else None
+        )
+
+    completed = []
+    destination = 0
+    shield = research_safety_shield(registration["settings"]["task_timeout_s"])
+    config = audit.read("shield/config.json")
+    expected_config = _shield_recipe(shield, registration["source_generation"])
+    _same(
+        {k: v for k, v in config.items() if k != "policy_hash"},
+        expected_config,
+        "partial Shield configuration differs",
+    )
+    _require(
+        config["policy_hash"] in _legacy_shield_hashes(config), "partial Shield policy hash invalid"
+    )
+    for n, row in enumerate(rows):
+        index = min(n // 2, 7)
+        phase = "TERMINAL" if n == 16 else "PRE" if n % 2 == 0 else "POST"
+        _v2_exact(row, {"inputs", "decision", "decision_kind", "semantic_effect_status"})
+        item, decision = row["inputs"], row["decision"]
+        _v2_exact(
+            item,
+            {
+                "phase",
+                "skill",
+                "step",
+                "conditions",
+                "verdicts",
+                "supplemental",
+                "facts",
+                "robot_state",
+                "shield",
+                "shield_source",
+                "capture",
+                "tracker_clock",
+                "source_generation",
+                "original_plan_sha256",
+                "nominal_collection_position_check",
+                "complete_horizon",
+                "receipt",
+                "grounding",
+                "feedback_source",
+                "evaluation_at",
+                "registered_preview",
+                "registered_inputs",
+            },
+        )
+        _v2_exact(
+            decision,
+            {
+                "phase",
+                "step_id",
+                "allowed",
+                "retained_unknown_conditions",
+                "whitelist_rows",
+                "reasons",
+                "original_inputs_sha256",
+                "schema_version",
+                "execution_admitted",
+                "native_qualification",
+            },
+        )
+        _same(item["phase"], phase, "partial phase order differs")
+        _v2_same(item["source_generation"], registration["source_generation"])
+        _v2_same(item["original_plan_sha256"], original.digest())
+        step = TaskStep.model_validate(item["step"])
+        _v2_same(step.model_dump(mode="json"), item["step"])
+        _v2_same(item["skill"], step.skill.value)
+        _same(step.step_id, original.contract.steps[index].step_id, "partial step order differs")
+        _same(step.skill.value, registration["actions"][index]["skill"], "partial skill differs")
+        binding = RegisteredCollectionStepBindingV2.from_payload(item["grounding"])
+        _same(binding.grounded_step, step, "partial binding step differs")
+        obs = frame(item["capture"]["acquisition_id"])
+        state = RobotState.model_validate(item["robot_state"])
+        _v2_same(state.model_dump(mode="json"), item["robot_state"])
+        feedback = audit.read(f"frames/{item['capture']['acquisition_id']}/feedback.json")
+        _v2_feedback(
+            feedback,
+            observation=obs,
+            acquisition=item["tracker_clock"]["acquisition"],
+            physics_step=audit.frames[item["capture"]["acquisition_id"]]["step"],
+            robot_state=item["robot_state"],
+        )
+        _same(feedback, item["feedback_source"], "partial recorded feedback source differs")
+        _same(
+            feedback["acquisition"],
+            item["tracker_clock"]["acquisition"],
+            "partial feedback acquisition differs",
+        )
+        _same(
+            feedback["robot_state"], state.model_dump(mode="json"), "partial feedback read differs"
+        )
+        _same(feedback["checksum_sha256"], obs.checksum_sha256, "partial feedback frame differs")
+        _require(
+            obs.captured_at
+            <= datetime.fromisoformat(feedback["observed_at"])
+            < obs.captured_at + timedelta(seconds=5),
+            "partial feedback age invalid",
+        )
+        if phase == "PRE":
+            ground = audit.read(f"grounding/step-{index + 1}.json")
+            ground_state = RobotState.model_validate(ground["online"]["robot_state"])
+            _same(ground_state, state, "partial PRE feedback differs from binding read")
+            clock(ground, obs, "GROUNDING", index, step.step_id)
+            _require(
+                _v2_utc(ground["tracker_clock"]["started_at"])
+                <= _v2_utc(ground["registered_preview"]["track"]["evaluated_at"])
+                <= _v2_utc(ground["registered_preview"]["evaluated_at"])
+                == _v2_utc(ground["tracker_clock"]["evaluated_at"])
+                <= _v2_utc(ground["final_validation_at"])
+                == _v2_utc(ground["tracker_clock"]["finished_at"]),
+                "partial grounding preview enclosure differs",
+            )
+            ground_inputs = preview(ground["registered_preview"], obs, ground_state)
+            _require(ground_inputs is not None, "partial binding has no registered proof")
+            _same(ground_inputs.to_payload(), ground["inputs"], "partial grounding inputs differ")
+            cp = ExecutionCheckpoint.model_validate(ground["checkpoint"])
+            lease = _registered_lease_from_payload(ground["lease_source"])
+            policy = RegisteredGroundingPolicyV2.for_original(
+                original, original.source_hashes, region_policy=registration["region_policy"]
+            )
+            _same(policy.to_payload(), ground["policy"], "partial policy differs")
+            prepared = prepare_registered_step_binding_v2(
+                original,
+                original_step_id=step.step_id,
+                online=OnlineEvidenceSnapshot(
+                    obs,
+                    state,
+                    {},
+                    original.contract.plan_version,
+                    original.contract.command_seq,
+                    cp.checkpoint_hash,
+                ),
+                source_checkpoint=cp,
+                current_identity=original.identity,
+                owner_revision=index + 1,
+                state_generation=index + 1,
+                lease_source=lease,
+                grounding_inputs=ground_inputs,
+                grounding_policy=policy,
+                now=datetime.fromisoformat(ground["binding_now"]),
+            )
+            replay = RegisteredCollectionStepBindingV2.from_prepared(
+                prepared, collection_policy_id="registered-model-collection-v2"
+            )
+            _same(
+                replay.to_payload(), binding.to_payload(), "partial binding reconstruction differs"
+            )
+        _v2_same(item["capture"], item["tracker_clock"]["consumption_before"])
+        _require(
+            obs.captured_at
+            <= _v2_utc(feedback["observed_at"])
+            <= _v2_utc(item["tracker_clock"]["started_at"])
+            <= _v2_utc(item["registered_preview"]["track"]["evaluated_at"])
+            <= _v2_utc(item["registered_preview"]["evaluated_at"])
+            <= _v2_utc(item["tracker_clock"]["evaluated_at"])
+            <= _v2_utc(item["evaluation_at"])
+            <= _v2_utc(item["tracker_clock"]["finished_at"]),
+            "partial admission evaluation enclosure differs",
+        )
+        evaluated = clock(item, obs, "ADMISSION_" + phase, index, step.step_id)
+        inputs = preview(item["registered_preview"], obs, state)
+        _same(
+            inputs.to_payload() if inputs is not None else None,
+            item["registered_inputs"],
+            "partial admission input differs",
+        )
+        facts = tracker.facts_at(obs, state, evaluated_at=evaluated)
+        _same(facts, item["facts"], "partial colour facts differ")
+        conditions = (
+            original.requirements[step.step_id].preconditions
+            if phase == "PRE"
+            else registered_collection_effect_conditions_v2(original, binding)
+        )
+        _same(detached(conditions), item["conditions"], "partial original condition/origin differs")
+        snapshot = OnlineEvidenceSnapshot(obs, state, facts, 1, 1, original.digest())
+        verdicts = evaluate_registered_conditions_v2(
+            conditions,
+            snapshot,
+            grounding_inputs=inputs,
+            now=datetime.fromisoformat(item["evaluation_at"]),
+        )
+        supplemental = evaluate_conditions(
+            [
+                ConditionSpec("gripper_holding", "object"),
+                ConditionSpec("gripper_released", "object"),
+                ConditionSpec("robot_in_safe_pose", "object", {"minimum_safe_height": 0.0}),
+            ],
+            snapshot,
+            now=datetime.fromisoformat(item["evaluation_at"]),
+        )
+        status = {v.condition_name: v.status.value for v in [*verdicts, *supplemental]}
+        proof = inputs.to_payload()["region_evidence"] if inputs is not None else None
+        full = receipt_for(item, phase, index, step, binding)
+        _v2_same(item["complete_horizon"], full)
+        nominal = False
+        if (
+            phase == "PRE"
+            and step.skill.value == "RELEASE"
+            and completed
+            and completed[-1][0].skill.value == "PLACE"
+            and inputs is not None
+        ):
+            from math import dist
+
+            import numpy as np
+
+            p = inputs.to_payload()
+            region = registered._region_tracker.destination
+            cube = next(
+                b
+                for b in registered._primitives.to_payload()["boxes"]
+                if b["name"] == "object_geom"
+            )
+            center = np.asarray(p["object_center_world_m"])
+            r = np.asarray(p["rotation_object_to_world"]).reshape(3, 3)
+            extent = np.abs(r) @ np.asarray(cube["half_extent_m"])
+            nominal = bool(
+                all(
+                    center[i] - extent[i] >= region["inner_min"][i]
+                    and center[i] + extent[i] <= region["inner_max"][i]
+                    for i in (0, 1)
+                )
+                and abs(center[2] - p["destination_world_m"][2] - cube["half_extent_m"][2]) <= 0.012
+                and dist(
+                    (state.tcp_pose.x, state.tcp_pose.y, state.tcp_pose.z),
+                    [completed[-1][0].parameters["target_pose"][k] for k in "xyz"],
+                )
+                <= 0.020
+            )
+        source = item["shield_source"]
+        _v2_exact(
+            source,
+            {"input", "result", "grounding", "reused_from"}
+            if phase == "TERMINAL"
+            else {"input", "result", "grounding"},
+        )
+        if phase == "TERMINAL":
+            _v2_same(source["reused_from"], "POST")
+        for key in ("input", "result", "grounding"):
+            _v2_reference(source[key])
+        context_source = audit.reference(source["input"])
+        output = audit.reference(source["result"])
+        _v2_exact(
+            context_source,
+            {
+                "method",
+                "index",
+                "step_id",
+                "context",
+                "config",
+                "source_generation",
+                "acquisition",
+                "grounding",
+            },
+        )
+        _v2_exact(output, {"input_sha256", "result", "error_type", "error"})
+        _v2_same(context_source["method"], "pre_check" if phase == "PRE" else "post_check")
+        _v2_same(context_source["index"], index)
+        _v2_same(context_source["step_id"], step.step_id)
+        _v2_same(context_source["source_generation"], registration["source_generation"])
+        _v2_same(context_source["acquisition"], item["tracker_clock"]["acquisition"])
+        _v2_same(context_source["grounding"], source["grounding"])
+        ground_path = f"grounding/step-{index + 1}.json"
+        _v2_same(
+            source["grounding"],
+            dict(path=ground_path, sha256=audit.manifest["files"][ground_path]["sha256"]),
+        )
+        _v2_reference(context_source["config"])
+        _v2_same(
+            context_source["config"],
+            dict(
+                path="shield/config.json",
+                sha256=audit.manifest["files"]["shield/config.json"]["sha256"],
+            ),
+        )
+        _v2_same(output["input_sha256"], source["input"]["sha256"])
+        _require(
+            output["error_type"] is None and output["error"] is None,
+            "partial successful Shield result required",
+        )
+        _same(
+            context_source["acquisition"]["acquisition_id"],
+            item["capture"]["acquisition_id"],
+            "partial Shield capture differs",
+        )
+        context = SafetyContext.model_validate(context_source["context"])
+        _v2_exact(context_source["context"], set(SafetyContext.model_fields))
+        _v2_same(context.model_dump(mode="json"), context_source["context"])
+        expected_contract = original.contract.model_copy(
+            update={
+                "steps": [step if s.step_id == step.step_id else s for s in original.contract.steps]
+            },
+            deep=True,
+        )
+        expected_context = shield.context_builder.build(
+            contract=expected_contract,
+            step=step,
+            robot_state=state,
+            scene_version=expected_contract.scene_version,
+            resolved_parameters=dict(step.parameters),
+            scene_updated_at=obs.captured_at,
+            telemetry_timestamp=context.telemetry_timestamp,
+            step_started_at_mono=context.step_started_at,
+            task_started_at_mono=context.task_started_at_mono,
+            monotonic_now=context.monotonic_now,
+            requested_velocity=float(step.parameters.get("tcp_velocity", 0.0)),
+            requested_acceleration=float(step.parameters.get("acceleration", 0.0)),
+            requested_joint_velocities=list(context.joint_velocities),
+            wall_clock_now=context.wall_clock_now,
+        )
+        _v2_same(context.model_dump(mode="json"), expected_context.model_dump(mode="json"))
+        for time_key in ("telemetry_timestamp", "wall_clock_now"):
+            _require(
+                _v2_utc(feedback["observed_at"])
+                <= _v2_utc(context_source["context"][time_key])
+                <= _v2_utc(item["tracker_clock"]["started_at"]),
+                "partial Shield UTC source enclosure differs",
+            )
+        times = (context.task_started_at_mono, context.step_started_at, context.monotonic_now)
+        _require(
+            all(type(t) in {int, float} and math.isfinite(t) for t in times)
+            and times[0] <= times[1] <= times[2],
+            "partial Shield monotonic inputs differ",
+        )
+        _same(context.parameters, step.parameters, "partial Shield command differs")
+        _same(
+            [context.tcp_x, context.tcp_y, context.tcp_z],
+            [state.tcp_pose.x, state.tcp_pose.y, state.tcp_pose.z],
+            "partial Shield feedback differs",
+        )
+        result = getattr(shield, "pre_check" if phase == "PRE" else "post_check")(context)
+        _same(detached(result), item["shield"], "partial Shield replay differs")
+        _same(detached(result), output["result"], "partial Shield output differs")
+        reasons = []
+        if (
+            proof is None
+            or proof["status"] not in {"FULL_NOMINAL", "PARTIAL_REGISTERED_NOMINAL"}
+            or canonical(proof["nominal_policy"]) != canonical(registration["region_policy"])
+        ):
+            reasons.append("current_nominal_registered_region_unavailable")
+        if (
+            not state.connected
+            or state.estop_engaged
+            or state.collision_detected
+            or not result.allowed
+            or result.limited_parameters
+            and result.limited_parameters != step.parameters
+        ):
+            reasons.append("common_proprioception_or_shield_gate")
+        if phase != "PRE" and not full:
+            reasons.append("complete_ordered_horizon_required")
+        if phase == "TERMINAL" and (
+            status["gripper_released"] != "PASS" or status["robot_in_safe_pose"] != "PASS"
+        ):
+            reasons.append("terminal_proprioception_unconfirmed")
+        unknowns = []
+        whitelist = []
+        source_step = original.contract.steps[index]
+        for k, (condition, verdict) in enumerate(zip(conditions, verdicts, strict=True)):
+            if verdict.status.value == "PASS":
+                continue
+            explicit = (
+                condition.name in source_step.preconditions
+                if phase == "PRE"
+                else condition.name in source_step.success_conditions
+                or (index == 7 and condition.name in original.contract.completion_criteria)
+            )
+            allowed_row = None
+            legacy = facts.get(condition.name, {})
+            colour_identity_unknown = (
+                tuple(verdict.reasons) == ("target_identity_uncertain",)
+                and legacy.get("source") == "rgbd_estimate"
+                and legacy.get("observation_id") == obs.observation_id
+                and legacy.get("observation_sha256") == obs.checksum_sha256
+                and legacy.get("target_id") == original.contract.task_target.object_id
+                and legacy.get("identity_confirmed") is False
+                and tuple(legacy.get("reasons", ()))
+                in {
+                    ("target_missing",),
+                    ("target_extent_missing",),
+                    ("target_extent_changed_or_partially_occluded",),
+                }
+            )
+            if (
+                verdict.status.value == "UNKNOWN"
+                and nominal
+                and not explicit
+                and phase == "PRE"
+                and step.skill.value == "RELEASE"
+                and condition.name == "object_inside_target_region"
+                and status["gripper_holding"] == "PASS"
+                and (
+                    tuple(verdict.reasons)
+                    in {("visual_fact_not_boolean",), ("visual_fact_missing_or_untrusted_source",)}
+                    or colour_identity_unknown
+                )
+            ):
+                verdict = replace(verdict, reasons=("registered_nominal_inside_only",))
+                verdicts[k] = verdict
+                if status["gripper_holding"] == "PASS":
+                    allowed_row = "PRE_RELEASE_REGISTERED_NOMINAL_V1"
+            if allowed_row is None and not explicit:
+                allowed_row = collection_unknown_row(
+                    phase=phase,
+                    skill=step.skill.value,
+                    condition=condition.name,
+                    verdict=detached(verdict),
+                    facts=facts,
+                    holding=status["gripper_holding"] == "PASS",
+                    tcp_reached=status.get("tcp_at_resolved_target") == "PASS",
+                    full_horizon=full,
+                    nominal_release=False,
+                    released=status["gripper_released"] == "PASS",
+                    tracker_has_no_held=True,
+                    depth_bound_missing=tracker.depth_error_bound_m is None,
+                )
+            unknowns.append(condition.name)
+            if allowed_row is None:
+                reasons.append("condition_not_admitted:" + condition.name)
+            else:
+                whitelist.append(allowed_row)
+        _same(detached(verdicts), item["verdicts"], "partial verdict reconstruction differs")
+        _same(detached(supplemental), item["supplemental"], "partial feedback predicates differ")
+        _same(
+            item["nominal_collection_position_check"], nominal, "partial release position differs"
+        )
+        _v2_same(item["nominal_collection_position_check"], nominal)
+        _same(
+            decision["schema_version"],
+            "teacher.registered.collection.admission.v2",
+            "partial admission version differs",
+        )
+        _same(decision["original_inputs_sha256"], digest(item), "partial decision digest differs")
+        _same(decision["allowed"], not reasons, "partial decision permission differs")
+        _same(decision["reasons"], reasons, "partial stop reasons differ")
+        _same(decision["retained_unknown_conditions"], unknowns, "partial UNKNOWN changed")
+        _same(decision["whitelist_rows"], whitelist, "partial allowance row differs")
+        _v2_same(
+            decision,
+            dict(
+                phase=phase,
+                step_id=step.step_id,
+                allowed=not reasons,
+                retained_unknown_conditions=unknowns,
+                whitelist_rows=whitelist,
+                reasons=reasons,
+                original_inputs_sha256=digest(item),
+                schema_version="teacher.registered.collection.admission.v2",
+                execution_admitted=False,
+                native_qualification="UNKNOWN",
+            ),
+        )
+        _v2_same(row["decision_kind"], "CONTINUE_EXPERIMENT" if not reasons else "STOP")
+        _v2_same(row["semantic_effect_status"], "UNKNOWN" if unknowns else "PASS")
+        if step.skill.value in {"MOVE_TO_REGION", "PLACE"}:
+            destination += 1
+        if phase == "POST" and not reasons:
+            completed.append((step, item["receipt"]))
+        if reasons:
+            _require(n == len(rows) - 1, "partial trace continues after STOP")
+    actions = [audit.action_span(p) for p in audit.raw["actions"]]
+    _require(
+        len({a.step_id for a in actions}) == len(actions) and all(a.attempt == 1 for a in actions),
+        "partial action retry or duplicate",
+    )
+    return dict(
+        status="PARTIAL_SEMANTICS_RECONSTRUCTED",
+        decisions=len(rows),
+        destination_decisions=destination,
+        completed_software_prefix=len(completed),
+        native_authority="UNAVAILABLE",
+        execution_admitted=False,
+        qualified_score_m=None,
+        formal="NOT_ACCEPTED",
+        past_authorization="NOT_AUTHENTICATED",
+        feedback_basis="ACQUISITION_LINKED_RECORDED_READS",
+        full_group_complete=False,
+    )

@@ -478,13 +478,170 @@ def compile_worker_original_plan(
     )
 
 
+REGISTERED_CONDITION_REGISTRY_VERSION_V2 = "registered-model-condition-v2"
+REGISTERED_CONDITION_REGISTRY_V2 = MappingProxyType(
+    {
+        **WORKER_CONDITION_REGISTRY,
+        "registered_object_pose_available": "object",
+        "registered_region_model_available": "region",
+    }
+)
+_PRE_V2 = {
+    skill: (
+        ("registered_object_pose_available", "gripper_open")
+        if skill in {SkillName.MOVE_ABOVE, SkillName.APPROACH, SkillName.GRASP}
+        else defaults
+    )
+    + ("registered_region_model_available",)
+    for skill, defaults in _PRE.items()
+}
+
+
+def compile_worker_original_plan_v2(
+    *,
+    lease_source: WorkerLeaseObservation,
+    identity: VisualOwnerIdentity,
+    contract: TaskContract,
+    observation: RGBDObservation,
+    proposal_hash: str,
+    role_bundle_hash: str,
+    source_hashes: Mapping[str, str],
+    registered_at: datetime,
+    task_deadline_at: datetime,
+    verification_deadline_at: datetime,
+) -> VisualOriginalPlan:
+    """Freeze v2 defaults while retaining every explicit original requirement.
+
+    TCP coordinates are registered templates; only the bound grounded step may
+    instantiate them. Unknown/unsupported semantics cannot be silently removed.
+    Supplied source hashes are consistency inputs, not actual-source admission.
+    """
+    if (
+        type(lease_source) is not WorkerLeaseObservation
+        or type(identity) is not VisualOwnerIdentity
+    ):
+        raise ValueError("concrete lease observation and owner identity required")
+    contract = TaskContract.model_validate_json(_model_json(contract, TaskContract))
+    observation = RGBDObservation.model_validate_json(_model_json(observation, RGBDObservation))
+    start = _aware(registered_at)
+    episode_id, calibration_version = observation.episode_id, observation.calibration_version
+    if not episode_id or not calibration_version:
+        raise ValueError("explicit episode and calibration source required")
+    if (
+        identity
+        != lease_source.identity(
+            episode_id=episode_id,
+            task_id=contract.task_id,
+            plan_id=identity.plan_id,
+            robot_id=identity.robot_id,
+        )
+        or not lease_source.observed_at <= start < lease_source.expires_at
+        or not lease_source.acquired_at <= _aware(observation.captured_at) <= start
+    ):
+        raise ValueError("current identity/acquisition/calibration/source time mismatch")
+    sources = _plain_worker_sources(source_hashes)
+    if not REQUIRED_COMPILER_SOURCES <= sources.keys():
+        raise ValueError("complete compiler/policy source inventory required")
+    requirements: dict[str, OriginalActionRequirements] = {}
+    graph = []
+    for index, step in enumerate(contract.steps):
+        if step.skill not in _PRE_V2:
+            raise ValueError("unsupported visual skill has no registered original requirements")
+
+        def condition(name: str, origin: str) -> ConditionSpec:
+            if name not in REGISTERED_CONDITION_REGISTRY_V2:
+                raise ValueError("original condition has no versioned online mapping")
+            tolerances: dict[str, str | float] = {
+                "max_age_s": 5.0,
+                "calibration_version": calibration_version,
+                "minimum_safe_height": contract.safety_constraints.minimum_safe_height,
+                "condition_registry_version": REGISTERED_CONDITION_REGISTRY_VERSION_V2,
+                "requirement_origin": origin,
+            }
+            if name == "object_held":
+                # This source-worker v1 requirement joins visual identity with
+                # proprioception. Existing unversioned LEGACY specs retain their
+                # historical evaluator contract.
+                tolerances["holding_feedback_required"] = True
+            if name == "tcp_at_resolved_target":
+                tolerances.update(
+                    target_reference="grounded_step.parameters.target_pose",
+                    max_distance_m=0.02,
+                )
+            target_id = (
+                contract.task_target.target_region_id
+                if REGISTERED_CONDITION_REGISTRY_V2[name] == "region"
+                else contract.task_target.object_id
+            )
+            return ConditionSpec(name, target_id, tolerances, ("rgbd",))
+
+        requirements[step.step_id] = OriginalActionRequirements(
+            step,
+            tuple(
+                condition(
+                    name,
+                    "EXPLICIT_PRECONDITION"
+                    if name in step.preconditions
+                    else "DEFAULT_PRECONDITION",
+                )
+                for name in dict.fromkeys((*step.preconditions, *_PRE_V2[step.skill]))
+            ),
+            tuple(
+                condition(
+                    name,
+                    "EXPLICIT_SUCCESS"
+                    if name in step.success_conditions
+                    else "EXPLICIT_COMPLETION"
+                    if index == len(contract.steps) - 1 and name in contract.completion_criteria
+                    else "DEFAULT_POSTCONDITION",
+                )
+                for name in dict.fromkeys(
+                    (
+                        *step.success_conditions,
+                        *_POST[step.skill],
+                        *(contract.completion_criteria if index == len(contract.steps) - 1 else ()),
+                    )
+                )
+            ),
+            0.01,
+            ("rgbd",),
+            5.0,
+            max(step.timeout_ms, step.expected_duration_ms) / 1000,
+            sources,
+        )
+        graph.append(
+            StepDependency(
+                step.step_id,
+                () if index == 0 else (contract.steps[index - 1].step_id,),
+                (observation.observation_id,),
+                f"{step.step_id}:effect",
+                False,
+            )
+        )
+    return freeze_original_visual_plan(
+        identity=identity,
+        contract=contract,
+        proposal_hash=proposal_hash,
+        role_bundle_hash=role_bundle_hash,
+        compiler_source_hashes=sources,
+        source_hashes=sources,
+        requirements=requirements,
+        dependencies=graph,
+        task_deadline_at=task_deadline_at,
+        verification_deadline_at=verification_deadline_at,
+        registered_at=start,
+    )
+
+
 def _local_worker_policy(contract, observation, source_hashes):
     """Pure compiler values shared by staged production and detached audit."""
     from cloud_edge_robot_arm.vision.local_temporal import _camera_descriptor
 
     sources = _plain_worker_sources(source_hashes)
-    if (not REQUIRED_COMPILER_SOURCES <= sources.keys()
-            or "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py" not in sources):
+    if (
+        not REQUIRED_COMPILER_SOURCES <= sources.keys()
+        or "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py" not in sources
+    ):
         raise ValueError("complete local compiler source inventory required")
     descriptor = _camera_descriptor(observation.model_dump(mode="json"))
     requirements, graph = {}, []
@@ -496,7 +653,8 @@ def _local_worker_policy(contract, observation, source_hashes):
             if name not in WORKER_CONDITION_REGISTRY:
                 raise ValueError("original local condition has no versioned mapping")
             tolerances = {
-                "max_age_s": 5.0, "calibration_version": observation.calibration_version,
+                "max_age_s": 5.0,
+                "calibration_version": observation.calibration_version,
                 "minimum_safe_height": contract.safety_constraints.minimum_safe_height,
                 "condition_registry_version": WORKER_CONDITION_REGISTRY_VERSION,
                 "camera_source_descriptor_sha256": descriptor,
@@ -504,21 +662,46 @@ def _local_worker_policy(contract, observation, source_hashes):
             if name == "object_held":
                 tolerances["holding_feedback_required"] = True
             if name == "tcp_at_resolved_target":
-                tolerances.update(target_reference="grounded_step.parameters.target_pose", max_distance_m=0.02)
-            target = (contract.task_target.target_region_id if WORKER_CONDITION_REGISTRY[name] == "region"
-                      else contract.task_target.object_id)
+                tolerances.update(
+                    target_reference="grounded_step.parameters.target_pose", max_distance_m=0.02
+                )
+            target = (
+                contract.task_target.target_region_id
+                if WORKER_CONDITION_REGISTRY[name] == "region"
+                else contract.task_target.object_id
+            )
             return ConditionSpec(name, target, tolerances, ("rgbd",))
 
         requirements[step.step_id] = OriginalActionRequirements(
-            step, tuple(condition(name) for name in dict.fromkeys((*step.preconditions, *_PRE[step.skill]))),
-            tuple(condition(name) for name in dict.fromkeys((*step.success_conditions, *_POST[step.skill],
-                  *(contract.completion_criteria if index == len(contract.steps) - 1 else ())))),
-            0.01, ("rgbd",), 5.0, max(step.timeout_ms, step.expected_duration_ms) / 1000, sources,
+            step,
+            tuple(
+                condition(name) for name in dict.fromkeys((*step.preconditions, *_PRE[step.skill]))
+            ),
+            tuple(
+                condition(name)
+                for name in dict.fromkeys(
+                    (
+                        *step.success_conditions,
+                        *_POST[step.skill],
+                        *(contract.completion_criteria if index == len(contract.steps) - 1 else ()),
+                    )
+                )
+            ),
+            0.01,
+            ("rgbd",),
+            5.0,
+            max(step.timeout_ms, step.expected_duration_ms) / 1000,
+            sources,
         )
-        graph.append({"step_id": step.step_id,
-                      "depends_on": [] if index == 0 else [contract.steps[index - 1].step_id],
-                      "evidence_ids": [observation.observation_id],
-                      "physical_effect_id": f"{step.step_id}:effect", "completed": False})
+        graph.append(
+            {
+                "step_id": step.step_id,
+                "depends_on": [] if index == 0 else [contract.steps[index - 1].step_id],
+                "evidence_ids": [observation.observation_id],
+                "physical_effect_id": f"{step.step_id}:effect",
+                "completed": False,
+            }
+        )
     return requirements, graph
 
 
@@ -588,6 +771,10 @@ def registered_collection_effect_conditions(original, grounding) -> tuple[Condit
     ):
         raise ValueError("concrete registered collection source binding required")
     original = freeze_original_visual_plan(**original.freeze_inputs())
+    from cloud_edge_robot_arm.vision.owner_registration import _registered_requirement_family
+
+    for requirement in original.requirements.values():
+        _registered_requirement_family(requirement, v2=False)
     grounding = RegisteredCollectionStepBinding.from_payload(grounding.to_payload())
     payload = grounding.prepared.to_payload()
     step = grounding.grounded_step
@@ -678,8 +865,81 @@ def grounded_worker_execution_effect_conditions(
         raise ValueError("full effect execution payload differs from exact original binding")
     step = next(s for s in contract.steps if s.step_id == step_id)
     from cloud_edge_robot_arm.vision.owner_registration import LocalStepGroundingBinding
+
     if type(grounding) is LocalStepGroundingBinding:
         return grounded_worker_effect_conditions(original, grounding)
     return grounded_worker_effect_conditions(
         original, replace(grounding, _grounded_step_json=step.model_dump_json())
     )
+
+
+def _registered_original_family_v2(original):
+    from cloud_edge_robot_arm.vision.owner_registration import _registered_requirement_family
+
+    for index, step in enumerate(original.contract.steps):
+        requirement = original.requirements[step.step_id]
+        _registered_requirement_family(requirement, v2=True)
+        pre = list(dict.fromkeys((*step.preconditions, *_PRE_V2[step.skill])))
+        post = list(
+            dict.fromkeys(
+                (
+                    *step.success_conditions,
+                    *_POST[step.skill],
+                    *(
+                        original.contract.completion_criteria
+                        if index == len(original.contract.steps) - 1
+                        else ()
+                    ),
+                )
+            )
+        )
+        if [c.name for c in requirement.preconditions] != pre or [
+            c.name for c in requirement.postconditions
+        ] != post:
+            raise ValueError("v2 original requirement registry differs")
+        for condition in requirement.postconditions:
+            expected = (
+                "EXPLICIT_SUCCESS"
+                if condition.name in step.success_conditions
+                else "EXPLICIT_COMPLETION"
+                if index == len(original.contract.steps) - 1
+                and condition.name in original.contract.completion_criteria
+                else "DEFAULT_POSTCONDITION"
+            )
+            if condition.tolerances.get("requirement_origin") != expected:
+                raise ValueError("v2 original completion origin differs")
+
+
+def registered_collection_effect_conditions_v2(original, grounding) -> tuple[ConditionSpec, ...]:
+    """按新采集来源实例化原效果模板，不删除条件或授予执行权限。"""
+    from cloud_edge_robot_arm.vision.owner_registration import RegisteredCollectionStepBindingV2
+
+    if (
+        type(original) is not VisualOriginalPlan
+        or type(grounding) is not RegisteredCollectionStepBindingV2
+    ):
+        raise ValueError("concrete registered collection source binding required")
+    original = freeze_original_visual_plan(**original.freeze_inputs())
+    _registered_original_family_v2(original)
+    grounding = RegisteredCollectionStepBindingV2.from_payload(grounding.to_payload())
+    payload = grounding.prepared.to_payload()
+    step = grounding.grounded_step
+    requirement = original.requirements.get(step.step_id)
+    if (
+        requirement is None
+        or payload["original_plan_hash"] != original.digest()
+        or payload["current_identity"] != original.identity.to_payload()
+        or (payload["plan_version"], payload["command_seq"])
+        != (original.contract.plan_version, original.contract.command_seq)
+        or payload["original_requirements"] != requirement.to_payload()
+        or any(
+            original.source_hashes.get(k) != v
+            for k, v in payload["grounding_source_hashes"].items()
+        )
+        or not original.registered_at
+        <= datetime.fromisoformat(payload["created_at"])
+        < grounding.valid_until
+        <= original.effective_deadline_at
+    ):
+        raise ValueError("registered collection effect original/source binding mismatch")
+    return _bound_effect_conditions(requirement, step)

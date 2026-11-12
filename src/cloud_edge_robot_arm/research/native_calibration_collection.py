@@ -500,6 +500,16 @@ def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]
     protocol = load_json(path / "protocol.json")
     if (
         isinstance(protocol, dict)
+        and protocol.get("schema_version") == "native.calibration.operational.v8"
+    ):
+        expected = _registered_collection_protocol_v2(
+            None if current_sources else protocol.get("source_hashes")
+        )
+        if canonical(protocol) != canonical(expected):
+            raise ValueError("registered occlusion recipe/source/zero-release identity changed")
+        return protocol
+    if (
+        isinstance(protocol, dict)
         and protocol.get("schema_version") == REGISTERED_COLLECTION_SCHEMA
     ):
         sources = protocol.get("source_hashes")
@@ -593,6 +603,50 @@ def _registered_collection_protocol(historical_sources=None):
         },
     )
     return base
+
+
+def _registered_collection_protocol_v2(historical_sources=None):
+    """版本分离的遮挡实验接口；实际任务和额度保持零释放。"""
+    from cloud_edge_robot_arm.research.native_collection_grounding import (
+        registered_nominal_region_policy_v1,
+    )
+
+    base = _registered_collection_protocol(historical_sources)
+    base.update(
+        schema_version="native.calibration.operational.v8",
+        collection_policy_id="registered-model-collection-v2",
+        input_schema="registered.grounding.inputs.v2",
+        binding_schema="registered.collection.binding.v2",
+        action_span_schema="native.registered.action-span.v2",
+        record_schema="native.registered.full-horizon.originals.v2",
+        condition_version="registered-model-condition-v2",
+        region_policy=registered_nominal_region_policy_v1(base["source_hashes"]),
+    )
+    base["settings"].update(
+        schema_version=base["schema_version"],
+        admission_version="teacher.registered.collection.admission.v2",
+    )
+    base["admission"].update(
+        version="teacher.registered.collection.admission.v2",
+        registered_pose_is_supplemental=False,
+        explicit_assertions_require_pass=True,
+        nominal_region_is_clearance=False,
+    )
+    return base
+
+
+def prepare_registered_collection_protocol_v2(*, output: Path) -> dict[str, Any]:
+    """保存未释放的 v8 遮挡接口配方，不创建运行任务。"""
+    protocol = _registered_collection_protocol_v2()
+    destination = fresh_directory(output)
+    save_exclusive(destination / "protocol.json", protocol)
+    return dict(
+        status="REGISTERED_OCCLUSION_INTERFACES_PREPARED",
+        protocol=str(destination),
+        protocol_sha256=digest(protocol),
+        execution_admitted=False,
+        formal="NOT_ACCEPTED",
+    )
 
 
 def prepare_registered_collection_protocol(*, output: Path) -> dict[str, Any]:

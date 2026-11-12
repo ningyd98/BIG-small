@@ -6,15 +6,6 @@ is created here. JSON-backed model properties return fresh detached copies.
 
 from __future__ import annotations
 
-from cloud_edge_robot_arm.vision.local_temporal import (
-    JSONValue,
-    LocalDomainEnvelope,
-    _array as local_array,
-    _integer as local_integer,
-    _object as local_object,
-    _text as local_text,
-)
-
 import hashlib
 import json
 import math
@@ -40,6 +31,22 @@ from cloud_edge_robot_arm.edge.evidence.conditions import (
     OnlineEvidenceSnapshot,
 )
 from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+from cloud_edge_robot_arm.vision.local_temporal import (
+    JSONValue,
+    LocalDomainEnvelope,
+)
+from cloud_edge_robot_arm.vision.local_temporal import (
+    _array as local_array,
+)
+from cloud_edge_robot_arm.vision.local_temporal import (
+    _integer as local_integer,
+)
+from cloud_edge_robot_arm.vision.local_temporal import (
+    _object as local_object,
+)
+from cloud_edge_robot_arm.vision.local_temporal import (
+    _text as local_text,
+)
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
 
 
@@ -200,9 +207,33 @@ def _model_json(value: BaseModel, model: type[BaseModel]) -> str:
 
 
 def _condition(condition: ConditionSpec) -> ConditionSpec:
-    if not isinstance(condition, ConditionSpec) or condition.name not in (
-        _VISUAL_CONDITIONS | _ROBOT_CONDITIONS
-    ):
+    if not isinstance(condition, ConditionSpec):
+        raise ValueError("canonical declared condition required")
+    name = condition.name
+    if type(name) is str and name in {
+        "registered_object_pose_available",
+        "registered_region_model_available",
+    }:
+        tolerances = condition.tolerances
+        if not isinstance(tolerances, Mapping):
+            raise ValueError("canonical declared condition required")
+        version = tolerances.get("condition_registry_version")
+        origin = tolerances.get("requirement_origin")
+        if (
+            type(version) is not str
+            or version != "registered-model-condition-v2"
+            or type(origin) is not str
+            or origin
+            not in {
+                "DEFAULT_PRECONDITION",
+                "EXPLICIT_PRECONDITION",
+                "DEFAULT_POSTCONDITION",
+                "EXPLICIT_SUCCESS",
+                "EXPLICIT_COMPLETION",
+            }
+        ):
+            raise ValueError("canonical declared condition required")
+    elif name not in (_VISUAL_CONDITIONS | _ROBOT_CONDITIONS):
         raise ValueError("canonical declared condition required")
     if condition.target_id is not None and (
         not isinstance(condition.target_id, str) or not condition.target_id
@@ -472,15 +503,27 @@ class VisualOriginalPlan:
         return _digest(self.to_payload())
 
 
-
 def local_owner_identity(payload: Mapping[str, JSONValue]) -> VisualOwnerIdentity:
-    values = local_object(payload, frozenset("job_id run_id attempt worker_id lease_id owner_epoch episode_id task_id plan_id robot_id".split()))
+    values = local_object(
+        payload,
+        frozenset(
+            (
+                "job_id run_id attempt worker_id lease_id owner_epoch "
+                "episode_id task_id plan_id robot_id"
+            ).split()
+        ),
+    )
     return VisualOwnerIdentity(
-        local_text(values["job_id"]), local_text(values["run_id"]),
-        local_integer(values["attempt"], positive=True), local_text(values["worker_id"]),
-        local_text(values["lease_id"]), local_text(values["owner_epoch"]),
-        local_text(values["episode_id"]), local_text(values["task_id"]),
-        local_text(values["plan_id"]), local_text(values["robot_id"]),
+        local_text(values["job_id"]),
+        local_text(values["run_id"]),
+        local_integer(values["attempt"], positive=True),
+        local_text(values["worker_id"]),
+        local_text(values["lease_id"]),
+        local_text(values["owner_epoch"]),
+        local_text(values["episode_id"]),
+        local_text(values["task_id"]),
+        local_text(values["plan_id"]),
+        local_text(values["robot_id"]),
     )
 
 
@@ -513,10 +556,14 @@ class LocalVisualOriginalPlan(LocalDomainEnvelope, VisualOriginalPlan):
 
     @property
     def requirements(self) -> Mapping[str, OriginalActionRequirements]:
-        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import requirement_from_payload
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
+            requirement_from_payload,
+        )
 
-        return {key: requirement_from_payload(local_object(value))
-                for key, value in self.object("requirements").items()}
+        return {
+            key: requirement_from_payload(local_object(value))
+            for key, value in self.object("requirements").items()
+        }
 
     @property
     def dependencies(self) -> tuple[StepDependency, ...]:
@@ -527,13 +574,15 @@ class LocalVisualOriginalPlan(LocalDomainEnvelope, VisualOriginalPlan):
             if type(completed) is not bool:
                 raise ValueError("strict dependency completion flag required")
             effect = item["physical_effect_id"]
-            result.append(StepDependency(
-                local_text(item["step_id"]),
-                tuple(local_text(value) for value in local_array(item["depends_on"])),
-                tuple(local_text(value) for value in local_array(item["evidence_ids"])),
-                None if effect is None else local_text(effect),
-                completed,
-            ))
+            result.append(
+                StepDependency(
+                    local_text(item["step_id"]),
+                    tuple(local_text(value) for value in local_array(item["depends_on"])),
+                    tuple(local_text(value) for value in local_array(item["evidence_ids"])),
+                    None if effect is None else local_text(effect),
+                    completed,
+                )
+            )
         return tuple(result)
 
     @property
@@ -551,6 +600,7 @@ class LocalVisualOriginalPlan(LocalDomainEnvelope, VisualOriginalPlan):
     @property
     def effective_deadline_at(self) -> datetime:
         return self.legacy_deadline()
+
 
 def freeze_original_visual_plan(
     *,
@@ -866,7 +916,6 @@ class StepGroundingBinding:
         return _digest(self.to_payload())
 
 
-
 class LocalStepGroundingBinding(LocalDomainEnvelope, StepGroundingBinding):
     _tag = "visual.owner.grounding.local.v1"
 
@@ -876,7 +925,9 @@ class LocalStepGroundingBinding(LocalDomainEnvelope, StepGroundingBinding):
 
     @property
     def original_requirements(self) -> OriginalActionRequirements:
-        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import requirement_from_payload
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
+            requirement_from_payload,
+        )
 
         return requirement_from_payload(self.object("original_requirements"))
 
@@ -1354,6 +1405,53 @@ class RegisteredGroundingPolicy(_RegisteredPayload):
         return self.to_payload()["minimum_height_m"]
 
 
+def _registered_requirement_family(requirement, *, v2):
+    """Version tags on a binding cannot change the retained requirement family."""
+    step = requirement.original_step
+    for phase, conditions in (
+        ("PRE", requirement.preconditions),
+        ("POST", requirement.postconditions),
+    ):
+        for condition in conditions:
+            version = condition.tolerances.get("condition_registry_version")
+            origin = condition.tolerances.get("requirement_origin")
+            if not v2:
+                if version == "registered-model-condition-v2" or origin in {
+                    "DEFAULT_PRECONDITION",
+                    "EXPLICIT_PRECONDITION",
+                    "DEFAULT_POSTCONDITION",
+                    "EXPLICIT_SUCCESS",
+                    "EXPLICIT_COMPLETION",
+                }:
+                    raise ValueError("v2 requirement cannot be relabeled as legacy")
+                continue
+            if (
+                type(version) is not str
+                or version != "registered-model-condition-v2"
+                or type(origin) is not str
+            ):
+                raise ValueError("v2 condition family and origin required")
+            if phase == "PRE":
+                expected = (
+                    "EXPLICIT_PRECONDITION"
+                    if condition.name in step.preconditions
+                    else "DEFAULT_PRECONDITION"
+                )
+                if origin != expected:
+                    raise ValueError("v2 PRE requirement origin differs")
+            elif condition.name in step.success_conditions:
+                if origin != "EXPLICIT_SUCCESS":
+                    raise ValueError("v2 explicit success origin differs")
+            elif origin not in {"DEFAULT_POSTCONDITION", "EXPLICIT_COMPLETION"}:
+                raise ValueError("v2 POST requirement origin differs")
+    if v2:
+        mandatory = {"registered_region_model_available"}
+        if step.skill.value in {"MOVE_ABOVE", "APPROACH", "GRASP"}:
+            mandatory.add("registered_object_pose_available")
+        if not mandatory <= {condition.name for condition in requirement.preconditions}:
+            raise ValueError("v2 mandatory registered-model requirement missing")
+
+
 class RegisteredPreparedStepBinding(_RegisteredPayload):
     """保存原始约束和候选步骤的纯准备绑定，旧执行绑定不接受此类型。"""
 
@@ -1394,6 +1492,7 @@ class RegisteredPreparedStepBinding(_RegisteredPayload):
         p = _registered_object(payload, cls._keys, cls._constants)
         identity = VisualOwnerIdentity(**p["current_identity"])
         requirement = requirement_from_payload(p["original_requirements"])
+        _registered_requirement_family(requirement, v2=False)
         step = _from_json(_json(p["grounded_step"]), TaskStep)
         source = requirement.original_step
         if (
@@ -1701,13 +1800,20 @@ def bind_step_grounding(
     required_duration_s: float | None = None,
     duration_check: GroundingDurationCheck | None = None,
 ) -> StepGroundingBinding:
-    if (type(grounding_inputs) is not GroundingFrameInputs
-            or type(grounding_policy) is not DeterministicGroundingPolicy):
+    if (
+        type(grounding_inputs) is not GroundingFrameInputs
+        or type(grounding_policy) is not DeterministicGroundingPolicy
+    ):
         raise TypeError("exact legacy grounding input and policy family required")
     original, now, cp, contract, observation, requirement, local = _current_grounding_context(
-        original, original_step_id=original_step_id, online=online,
-        source_checkpoint=source_checkpoint, current_identity=current_identity,
-        owner_revision=owner_revision, state_generation=state_generation, now=now,
+        original,
+        original_step_id=original_step_id,
+        online=online,
+        source_checkpoint=source_checkpoint,
+        current_identity=current_identity,
+        owner_revision=owner_revision,
+        state_generation=state_generation,
+        now=now,
     )
     cp_hash = checkpoint_digest(cp)
     inputs, policy = grounding_inputs, grounding_policy
@@ -1750,8 +1856,10 @@ def bind_step_grounding(
         for c in (*requirement.preconditions, *requirement.postconditions)
     ]
     if not local:
-        expires = min(original.effective_deadline_at,
-            observation.captured_at + timedelta(seconds=min(requirement.ordinary_ttl_s, *max_ages)))
+        expires = min(
+            original.effective_deadline_at,
+            observation.captured_at + timedelta(seconds=min(requirement.ordinary_ttl_s, *max_ages)),
+        )
         if not original.registered_at <= observation.captured_at <= now < expires:
             raise ValueError("original absolute/frame deadline expired or future")
     duration = (
@@ -1783,59 +1891,101 @@ def bind_step_grounding(
         bound_sources.update(calculation.source_hashes)
     if local:
         import threading
+
         from cloud_edge_robot_arm.vision.operational_windows import (
-            OperationalWindowOwner, _LOCAL_RUNTIMES, _LOCAL_ORIGINALS, _OWNERS,
+            _LOCAL_ORIGINALS,
+            _LOCAL_RUNTIMES,
+            _OWNERS,
+            OperationalWindowOwner,
+        )
+        from cloud_edge_robot_arm.vision.operational_windows import (
             _json as _window_json,
         )
         from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
 
         desired = _window_json(original.local_time.to_payload())
-        candidates = [(owner, runtime) for owner, runtime in tuple(_LOCAL_RUNTIMES.items())
-                      if _LOCAL_ORIGINALS.get(owner) == desired]
+        candidates = [
+            (owner, runtime)
+            for owner, runtime in tuple(_LOCAL_RUNTIMES.items())
+            if _LOCAL_ORIGINALS.get(owner) == desired
+        ]
         if len(candidates) != 1:
             raise ValueError("grounding requires the unique original private runtime")
         owner, runtime = candidates[0]
-        if (type(owner) is not OperationalWindowOwner or type(runtime) is not VisualWorkerRuntime
-                or runtime._operational_owner is not owner or owner._closed
-                or _LOCAL_RUNTIMES.get(owner) is not runtime or _LOCAL_ORIGINALS.get(owner) != desired):
+        if (
+            type(owner) is not OperationalWindowOwner
+            or type(runtime) is not VisualWorkerRuntime
+            or runtime._operational_owner is not owner
+            or owner._closed
+            or _LOCAL_RUNTIMES.get(owner) is not runtime
+            or _LOCAL_ORIGINALS.get(owner) != desired
+        ):
             raise ValueError("grounding selected original owner/runtime registry changed")
         startup = owner._startup
         worker = startup.worker
-        if (_OWNERS.get(worker) is not owner or startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1"
-                or startup.thread_id != threading.get_ident()
-                or (startup.job_id, startup.run_id, startup.attempt, startup.lease_id, worker.worker_id)
-                != (current_identity.job_id, current_identity.run_id, current_identity.attempt,
-                    current_identity.lease_id, current_identity.worker_id)
-                or worker.repository is not startup.repository
-                or runtime.source.job_repository is not startup.repository
-                or (runtime.source.job_id, runtime.source.run_id, runtime.source.worker_id, runtime.source.lease_id)
-                != (startup.job_id, startup.run_id, worker.worker_id, startup.lease_id)
-                or runtime.role_binding is not startup.binding or worker.visual_role_binding is not startup.binding
-                or runtime._local_session is not worker._operational_lease_session
-                or _window_json(owner._local_original) != desired
-                or _window_json(runtime._local_original) != desired
-                or dict(original.source_hashes) != dict(runtime.source.source_hashes)):
+        if (
+            _OWNERS.get(worker) is not owner
+            or startup.mode != "LOCAL_TEMPORAL_PUBLICATION_V1"
+            or startup.thread_id != threading.get_ident()
+            or (startup.job_id, startup.run_id, startup.attempt, startup.lease_id, worker.worker_id)
+            != (
+                current_identity.job_id,
+                current_identity.run_id,
+                current_identity.attempt,
+                current_identity.lease_id,
+                current_identity.worker_id,
+            )
+            or worker.repository is not startup.repository
+            or runtime.source.job_repository is not startup.repository
+            or (
+                runtime.source.job_id,
+                runtime.source.run_id,
+                runtime.source.worker_id,
+                runtime.source.lease_id,
+            )
+            != (startup.job_id, startup.run_id, worker.worker_id, startup.lease_id)
+            or runtime.role_binding is not startup.binding
+            or worker.visual_role_binding is not startup.binding
+            or runtime._local_session is not worker._operational_lease_session
+            or _window_json(owner._local_original) != desired
+            or _window_json(runtime._local_original) != desired
+            or dict(original.source_hashes) != dict(runtime.source.source_hashes)
+        ):
             raise ValueError("grounding selected original startup/source/thread differs")
         owner._check_app_live()
         selected_original = runtime.original
-        if (type(selected_original) is not LocalVisualOriginalPlan
-                or selected_original.identity != current_identity or selected_original.identity != original.identity
-                or selected_original.digest() != original.digest()
-                or _window_json(selected_original.local_time.to_payload()) != desired
-                or dict(selected_original.source_hashes) != dict(original.source_hashes)):
+        if (
+            type(selected_original) is not LocalVisualOriginalPlan
+            or selected_original.identity != current_identity
+            or selected_original.identity != original.identity
+            or selected_original.digest() != original.digest()
+            or _window_json(selected_original.local_time.to_payload()) != desired
+            or dict(selected_original.source_hashes) != dict(original.source_hashes)
+        ):
             raise ValueError("grounding selected durable original source differs")
-        return runtime._local_bind_grounding({
-            "binding_scope": "SOURCE_BINDING_ONLY", "original_plan_hash": original.digest(),
-            "current_identity": current_identity.to_payload(), "original_requirements": requirement.to_payload(),
-            "owner_revision": owner_revision, "state_generation": state_generation,
-            "source_checkpoint_hash": cp_hash, "observation_id": observation.observation_id,
-            "observation_checksum_sha256": observation.checksum_sha256,
-            "calibration_version": observation.calibration_version or "", "plan_version": contract.plan_version,
-            "command_seq": contract.command_seq, "grounding_policy_hash": policy.digest(),
-            "grounding_inputs_hash": grounding_inputs.digest(),
-            "duration_check_hash": calculation.digest() if calculation is not None else None,
-            "grounding_source_hashes": bound_sources, "grounded_step": json.loads(stored),
-            "expected_duration_s": duration}, observation)
+        return runtime._local_bind_grounding(
+            {
+                "binding_scope": "SOURCE_BINDING_ONLY",
+                "original_plan_hash": original.digest(),
+                "current_identity": current_identity.to_payload(),
+                "original_requirements": requirement.to_payload(),
+                "owner_revision": owner_revision,
+                "state_generation": state_generation,
+                "source_checkpoint_hash": cp_hash,
+                "observation_id": observation.observation_id,
+                "observation_checksum_sha256": observation.checksum_sha256,
+                "calibration_version": observation.calibration_version or "",
+                "plan_version": contract.plan_version,
+                "command_seq": contract.command_seq,
+                "grounding_policy_hash": policy.digest(),
+                "grounding_inputs_hash": grounding_inputs.digest(),
+                "duration_check_hash": calculation.digest() if calculation is not None else None,
+                "grounding_source_hashes": bound_sources,
+                "grounded_step": json.loads(stored),
+                "expected_duration_s": duration,
+            },
+            observation,
+        )
     return StepGroundingBinding(
         original.digest(),
         current_identity,
@@ -1856,4 +2006,743 @@ def bind_step_grounding(
         duration,
         now,
         expires,
+    )
+
+
+def _validate_registered_region_evidence_v2(evidence, frame):
+    """校验独立参考与当前帧的结构关联，不将序列化声明认证为真实观测。"""
+    keys = {
+        "schema_version",
+        "policy_id",
+        "depth_policy",
+        "status",
+        "reference_observation_id",
+        "reference_observation_checksum_sha256",
+        "reference_captured_at",
+        "reference_region_mask_sha256",
+        "reference_region_depth_sha256",
+        "reference_camera_sha256",
+        "current_observation_id",
+        "current_observation_checksum_sha256",
+        "current_visible_mask_sha256",
+        "current_missing_mask_sha256",
+        "region_pixels",
+        "visible_pixels",
+        "missing_pixels",
+        "destination_world_m",
+        "geometric_error_bound_m",
+        "placement_clearance",
+    }
+    nominal = (
+        type(evidence) is dict
+        and evidence.get("policy_id") == "registered-self-occlusion-nominal-v1"
+    )
+    if nominal:
+        keys |= {
+            "nominal_policy",
+            "primitive_sha256",
+            "object_geometry_sha256",
+            "predicted_depth_sha256",
+            "predicted_foreground_mask_sha256",
+            "maximum_visible_residual_m",
+            "maximum_model_residual_m",
+            "missing_boundary_pixels",
+            "visible_corners",
+            "visible_sides",
+        }
+    if type(evidence) is not dict or set(evidence) != keys:
+        raise ValueError("complete v2 reference/current region evidence required")
+    expected = {
+        "schema_version": "registered.region.reference-evidence.v2",
+        "policy_id": "fixed-reference-internal-foreground-v2",
+        "depth_policy": "EXACT_VISIBLE_REFERENCE_STRICT_POSITIVE_FOREGROUND",
+        "geometric_error_bound_m": None,
+        "placement_clearance": "UNKNOWN",
+    }
+    if nominal:
+        from cloud_edge_robot_arm.research.native_collection_grounding import (
+            registered_nominal_region_policy_v1,
+        )
+
+        policy = registered_nominal_region_policy_v1(frame["source_hashes"])
+        if (
+            type(evidence["nominal_policy"]) is not dict
+            or set(evidence["nominal_policy"]) != set(policy)
+            or any(
+                type(evidence["nominal_policy"][k]) is not type(v)
+                or evidence["nominal_policy"][k] != v
+                for k, v in policy.items()
+            )
+        ):
+            raise ValueError("source-bound nominal policy changed")
+        expected.update(
+            policy_id="registered-self-occlusion-nominal-v1",
+            depth_policy="ALL_PIXELS_NOMINAL_REGISTERED_FIRST_HIT",
+        )
+        for key in (
+            "primitive_sha256",
+            "object_geometry_sha256",
+            "predicted_depth_sha256",
+            "predicted_foreground_mask_sha256",
+        ):
+            _sha(evidence[key])
+        for key, maximum in (
+            ("maximum_visible_residual_m", 0.010),
+            ("maximum_model_residual_m", 0.010),
+        ):
+            value = evidence[key]
+            if (
+                type(value) not in (int, float)
+                or not math.isfinite(value)
+                or not 0 <= value <= maximum
+            ):
+                raise ValueError("nominal residual outside experiment policy")
+        if (
+            type(evidence["missing_boundary_pixels"]) is not int
+            or not 0 <= evidence["missing_boundary_pixels"] <= evidence["missing_pixels"]
+            or type(evidence["visible_corners"]) is not int
+            or not 3 <= evidence["visible_corners"] <= 4
+            or type(evidence["visible_sides"]) is not list
+            or len(evidence["visible_sides"]) != 4
+            or any(type(v) is not bool or not v for v in evidence["visible_sides"])
+        ):
+            raise ValueError("nominal reference anchors invalid")
+    if any(type(evidence[k]) is not type(v) or evidence[k] != v for k, v in expected.items()):
+        raise ValueError("v2 region evidence cannot confer measured clearance or accuracy")
+    for key in (
+        "reference_observation_checksum_sha256",
+        "reference_region_mask_sha256",
+        "reference_region_depth_sha256",
+        "reference_camera_sha256",
+        "current_observation_checksum_sha256",
+        "current_visible_mask_sha256",
+        "current_missing_mask_sha256",
+    ):
+        _sha(evidence[key])
+    for key in ("reference_observation_id", "current_observation_id", "reference_captured_at"):
+        if type(evidence[key]) is not str or not evidence[key]:
+            raise ValueError("v2 region reference identity/time required")
+    if (
+        evidence["current_observation_id"] != frame["observation_id"]
+        or evidence["current_observation_checksum_sha256"] != frame["observation_checksum_sha256"]
+        or evidence["destination_world_m"] != frame["destination_world_m"]
+        or evidence["reference_camera_sha256"]
+        != _digest({**frame["camera"], "calibration_version": frame["calibration_version"]})
+        or _aware(datetime.fromisoformat(evidence["reference_captured_at"]))
+        > _aware(datetime.fromisoformat(frame["captured_at"]))
+    ):
+        raise ValueError("v2 region reference/current frame crosslink mismatch")
+    if evidence["reference_observation_id"] == frame["observation_id"] and (
+        evidence["reference_observation_checksum_sha256"] != frame["observation_checksum_sha256"]
+    ):
+        raise ValueError("v2 same-frame reference checksum mismatch")
+    _registered_vector(evidence["destination_world_m"], 3)
+    total, visible, missing = (
+        evidence[n] for n in ("region_pixels", "visible_pixels", "missing_pixels")
+    )
+    if (
+        any(type(n) is not int for n in (total, visible, missing))
+        or total < 8
+        or visible < 1
+        or missing < 0
+        or total != visible + missing
+        or total > frame["camera"]["width"] * frame["camera"]["height"]
+        or evidence["status"]
+        != (
+            ("FULL_NOMINAL" if missing == 0 else "PARTIAL_REGISTERED_NOMINAL")
+            if nominal
+            else ("FULL" if missing == 0 else "PARTIAL_FOREGROUND_SUPPORTED")
+        )
+    ):
+        raise ValueError("v2 region evidence pixel classification invalid")
+
+
+class RegisteredGroundingFrameInputsV2(_RegisteredPayload):
+    """注册刚体模型与当前区域的准备输入，不冒充完整表面测量。"""
+
+    __slots__ = ()
+    _constants = {
+        **_REGISTERED_FLAGS,
+        "schema_version": "registered.grounding.inputs.v2",
+        "condition_registry_version": "registered-model-condition-v2",
+        "support_basis": "REGISTERED_NOMINAL",
+        "region_basis": "FIXED_REFERENCE_CURRENT_RGBD_UNCALIBRATED",
+        "wrapper_freshness": "CHECKED",
+        "wrapper_asset_validation": "VERIFIED_LOCAL_BYTES",
+        "source_validation": "LOCAL_BYTE_CONSISTENCY_ONLY",
+    }
+    _keys = {
+        "observation_id",
+        "observation_checksum_sha256",
+        "captured_at",
+        "scene_id",
+        "object_id",
+        "target_region_id",
+        "episode_id",
+        "calibration_version",
+        "camera",
+        "source_hashes",
+        "source_generation",
+        "asset_path",
+        "asset_sha256",
+        "marker_family_id",
+        "registration_sha256",
+        "marker_registration_hash",
+        "marker_estimate_sha256",
+        "preview_sha256",
+        "grasp_tcp_world_m",
+        "object_center_world_m",
+        "rotation_object_to_world",
+        "destination_world_m",
+        "nominal_support_height_m",
+        "region_evidence",
+    }
+
+    @classmethod
+    def _validate(cls, payload):
+        p = _registered_object(payload, cls._keys, cls._constants)
+        for name in (
+            "observation_id",
+            "scene_id",
+            "episode_id",
+            "calibration_version",
+            "object_id",
+            "target_region_id",
+            "asset_path",
+            "marker_family_id",
+        ):
+            if type(p[name]) is not str or not p[name]:
+                raise ValueError("explicit registered frame/asset identity required")
+        for name in (
+            "observation_checksum_sha256",
+            "source_generation",
+            "asset_sha256",
+            "registration_sha256",
+            "marker_registration_hash",
+            "marker_estimate_sha256",
+            "preview_sha256",
+        ):
+            _sha(p[name])
+        _aware(datetime.fromisoformat(p["captured_at"]))
+        sources = _sources(p["source_hashes"])
+        if (
+            _digest(sources) != p["source_generation"]
+            or sources.get(p["asset_path"]) != p["asset_sha256"]
+        ):
+            raise ValueError("registered source/asset generation mismatch")
+        camera = p["camera"]
+        if type(camera) is not dict or set(camera) != {
+            "source",
+            "width",
+            "height",
+            "intrinsics",
+            "camera_to_world",
+        }:
+            raise ValueError("complete registered camera descriptor required")
+        if (
+            type(camera["source"]) is not str
+            or not camera["source"]
+            or any(type(camera[n]) is not int or camera[n] < 1 for n in ("width", "height"))
+        ):
+            raise ValueError("strict registered camera identity required")
+        _registered_vector(camera["intrinsics"], 4)
+        _registered_vector(camera["camera_to_world"], 16)
+        for name in ("grasp_tcp_world_m", "object_center_world_m", "destination_world_m"):
+            _registered_vector(p[name], 3)
+        r = p["rotation_object_to_world"]
+        _registered_vector(r, 9)
+        if any(
+            abs(sum(r[3 * i + k] * r[3 * j + k] for k in range(3)) - (i == j)) > 1e-6
+            for i in range(3)
+            for j in range(3)
+        ):
+            raise ValueError("registered rotation must be orthonormal")
+        determinant = (
+            r[0] * (r[4] * r[8] - r[5] * r[7])
+            - r[1] * (r[3] * r[8] - r[5] * r[6])
+            + r[2] * (r[3] * r[7] - r[4] * r[6])
+        )
+        if abs(determinant - 1) > 1e-6:
+            raise ValueError("registered rotation must be proper")
+        value = p["nominal_support_height_m"]
+        if type(value) not in {int, float} or not math.isfinite(value):
+            raise ValueError("finite registered nominal support required")
+        _validate_registered_region_evidence_v2(p["region_evidence"], p)
+        return p
+
+    @classmethod
+    def from_preview(cls, preview, observation, registration):
+        """仅从精确当前准备结果构建输入，并检查帧、注册和区域关联。"""
+        from dataclasses import asdict
+
+        from cloud_edge_robot_arm.research.native_collection_grounding import (
+            RegisteredCollectionGroundingPreviewV2,
+        )
+        from cloud_edge_robot_arm.vision.native_calibration import NativeGeometryRegistration
+
+        if (
+            type(preview) is not RegisteredCollectionGroundingPreviewV2
+            or type(observation) is not RGBDObservation
+            or type(registration) is not NativeGeometryRegistration
+        ):
+            raise TypeError("exact current registered preview, frame and registration required")
+        obs = RGBDObservation.model_validate_json(_model_json(observation, RGBDObservation))
+        reg = NativeGeometryRegistration(registration.to_payload())
+        registration_sha256 = _digest(reg.to_payload())
+        p, track = preview.to_payload(), preview.track
+        geometry = track.geometry
+        if (
+            p["schema_version"] != "native.collection.registered-preview.v2"
+            or p["region_basis"] != cls._constants["region_basis"]
+            or preview.status != "DERIVED"
+            or track.status != "DERIVED"
+            or geometry is None
+            or geometry.status != "DERIVED"
+            or track.wrapper_freshness != "CHECKED"
+            or track.wrapper_asset_validation != "VERIFIED_LOCAL_BYTES"
+            or track.source_validation != "LOCAL_BYTE_CONSISTENCY_ONLY"
+            or any(
+                type(p.get(k)) is not type(v) or p.get(k) != v for k, v in _REGISTERED_FLAGS.items()
+            )
+            or preview.registration_sha256 != registration_sha256
+            or track.registration_sha256 != registration_sha256
+            or preview.source_sha256 != track.source_sha256
+            or preview.grasp_tcp_world_m != geometry.grasp_tcp_world_m
+            or preview.object_center_world_m != geometry.object_center_world_m
+            or preview.rotation_object_to_world != geometry.rotation_object_to_world
+            or preview.destination_observation_id != obs.observation_id
+            or preview.destination_observation_checksum_sha256 != obs.checksum_sha256
+        ):
+            raise ValueError("current registered preview unavailable or relabelled")
+        camera = {
+            n: getattr(obs, n)
+            for n in ("source", "width", "height", "intrinsics", "camera_to_world")
+        }
+        if (
+            any(
+                getattr(track, n) != getattr(obs, n)
+                for n in (
+                    "observation_id",
+                    "captured_at",
+                    "scene_id",
+                    "episode_id",
+                    "calibration_version",
+                )
+            )
+            or track.observation_checksum_sha256 != obs.checksum_sha256
+            or any(_plain(getattr(track, n)) != _plain(v) for n, v in camera.items())
+            or any(_plain(v) != reg.to_payload()["camera"][n] for n, v in camera.items())
+            or geometry.observation_id != obs.observation_id
+            or geometry.observation_checksum_sha256 != obs.checksum_sha256
+            or geometry.object_id != reg.to_payload()["object_id"]
+            or geometry.marker_estimate is None
+            or geometry.marker_estimate.status != "OBSERVED"
+            or geometry.marker_estimate.observed_marker_ids
+            != (reg.to_payload()["pose_marker"]["marker_id"],)
+            or geometry.marker_estimate.registration_hash != track.marker_registration_hash
+        ):
+            raise ValueError("registered preview frame/camera/marker cross-link mismatch")
+        return cls(
+            {
+                **cls._constants,
+                "observation_id": obs.observation_id,
+                "observation_checksum_sha256": obs.checksum_sha256,
+                "captured_at": obs.captured_at.isoformat(),
+                "scene_id": obs.scene_id,
+                "object_id": reg.to_payload()["object_id"],
+                "target_region_id": reg.to_payload()["target_region_id"],
+                "episode_id": obs.episode_id,
+                "calibration_version": obs.calibration_version,
+                "camera": _plain(camera),
+                "source_hashes": dict(track.source_hashes),
+                "source_generation": track.source_sha256,
+                "asset_path": track.asset_path,
+                "asset_sha256": track.asset_sha256,
+                "marker_family_id": track.marker_family_id,
+                "registration_sha256": registration_sha256,
+                "marker_registration_hash": track.marker_registration_hash,
+                "marker_estimate_sha256": _digest(asdict(geometry.marker_estimate)),
+                "preview_sha256": preview.digest(),
+                "grasp_tcp_world_m": list(preview.grasp_tcp_world_m),
+                "object_center_world_m": list(preview.object_center_world_m),
+                "rotation_object_to_world": list(preview.rotation_object_to_world),
+                "destination_world_m": list(preview.destination_world_m),
+                "nominal_support_height_m": reg.to_payload()["support_height_m"],
+                "region_evidence": p["region_evidence"],
+            }
+        )
+
+    def matches_observation(self, observation):
+        """比对完整帧与相机身份；不把散列一致解释为来源认证。"""
+        p = self.to_payload()
+        return (
+            type(observation) is RGBDObservation
+            and all(
+                p[n] == _plain(getattr(observation, n))
+                for n in (
+                    "observation_id",
+                    "captured_at",
+                    "episode_id",
+                    "scene_id",
+                    "calibration_version",
+                )
+            )
+            and p["observation_checksum_sha256"] == observation.checksum_sha256
+            and all(p["camera"][n] == _plain(getattr(observation, n)) for n in p["camera"])
+        )
+
+    @property
+    def source_hashes(self):
+        return _sources(self.to_payload()["source_hashes"])
+
+    @property
+    def grasp_tcp(self):
+        return dict(zip("xyz", self.to_payload()["grasp_tcp_world_m"], strict=True))
+
+    @property
+    def destination(self):
+        return dict(zip("xyz", self.to_payload()["destination_world_m"], strict=True))
+
+    @property
+    def support_height_m(self):
+        return self.to_payload()["nominal_support_height_m"]
+
+
+class RegisteredGroundingPolicyV2(_RegisteredPayload):
+    """固定版本的准备数值配方，不配置控制器或授予动作权限。"""
+
+    __slots__ = ()
+    _constants = {
+        "policy_id": "registered-model-grounding-prepare-v2",
+        "version": "registered-model-grounding-prepare-v2",
+    }
+
+    @classmethod
+    def _validate(cls, payload):
+        extra = {"region_policy"} if type(payload) is dict and "region_policy" in payload else set()
+        p = _registered_object(
+            payload,
+            {"source_hashes", "tcp_velocity", "acceleration", "clearance_m", "minimum_height_m"}
+            | extra,
+            cls._constants,
+        )
+        _sources(p["source_hashes"])
+        for n in ("tcp_velocity", "acceleration", "clearance_m", "minimum_height_m"):
+            _positive(p[n])
+        if extra:
+            from cloud_edge_robot_arm.research.native_collection_grounding import (
+                registered_nominal_region_policy_v1,
+            )
+
+            expected = registered_nominal_region_policy_v1(p["source_hashes"])
+            if (
+                type(p["region_policy"]) is not dict
+                or set(p["region_policy"]) != set(expected)
+                or any(
+                    type(p["region_policy"][k]) is not type(v) or p["region_policy"][k] != v
+                    for k, v in expected.items()
+                )
+            ):
+                raise ValueError("exact nominal region policy required")
+        return p
+
+    @classmethod
+    def for_original(cls, original, source_hashes, *, region_policy=None):
+        """按原始安全上限生成固定准备配方，保留最小高度。"""
+        if type(original) is not VisualOriginalPlan:
+            raise TypeError("UTC original source plan required; no local runtime authority")
+        for requirement in original.requirements.values():
+            if "registered_region_model_available" not in {
+                c.name for c in requirement.preconditions
+            } or any(
+                c.tolerances.get("condition_registry_version") != "registered-model-condition-v2"
+                for c in (*requirement.preconditions, *requirement.postconditions)
+            ):
+                raise ValueError("explicit v2 original condition recipe required")
+        safety = original.contract.safety_constraints
+        return cls(
+            {
+                **cls._constants,
+                **({"region_policy": region_policy} if region_policy is not None else {}),
+                "source_hashes": dict(_sources(source_hashes)),
+                "tcp_velocity": min(0.15, safety.max_tcp_velocity),
+                "acceleration": 0.5,
+                "clearance_m": 0.10,
+                "minimum_height_m": max(0.16, safety.minimum_safe_height),
+            }
+        )
+
+    @property
+    def source_hashes(self):
+        return _sources(self.to_payload()["source_hashes"])
+
+    @property
+    def tcp_velocity(self):
+        return self.to_payload()["tcp_velocity"]
+
+    @property
+    def acceleration(self):
+        return self.to_payload()["acceleration"]
+
+    @property
+    def clearance_m(self):
+        return self.to_payload()["clearance_m"]
+
+    @property
+    def minimum_height_m(self):
+        return self.to_payload()["minimum_height_m"]
+
+
+class RegisteredPreparedStepBindingV2(_RegisteredPayload):
+    """保存原始约束和候选步骤的纯准备绑定，旧执行绑定不接受此类型。"""
+
+    __slots__ = ()
+    _constants = {
+        **_REGISTERED_FLAGS,
+        "schema_version": "registered.grounding.prepared-step.v2",
+        "binding_scope": "REGISTERED_MODEL_PREPARATION_ONLY",
+    }
+    _keys = {
+        "original_plan_hash",
+        "original_requirements",
+        "current_identity",
+        "owner_revision",
+        "state_generation",
+        "lease_source_hash",
+        "source_checkpoint_hash",
+        "observation_id",
+        "observation_checksum_sha256",
+        "calibration_version",
+        "plan_version",
+        "command_seq",
+        "grounding_policy_hash",
+        "grounding_inputs_hash",
+        "grounding_source_hashes",
+        "grounded_step",
+        "expected_duration_s",
+        "created_at",
+        "valid_until",
+    }
+
+    @classmethod
+    def _validate(cls, payload):
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
+            requirement_from_payload,
+        )
+
+        p = _registered_object(payload, cls._keys, cls._constants)
+        identity = VisualOwnerIdentity(**p["current_identity"])
+        requirement = requirement_from_payload(p["original_requirements"])
+        _registered_requirement_family(requirement, v2=True)
+        step = _from_json(_json(p["grounded_step"]), TaskStep)
+        source = requirement.original_step
+        if (
+            step.step_id != source.step_id
+            or step.skill != source.skill
+            or step.timeout_ms != source.timeout_ms
+            or step.retry_limit != source.retry_limit
+            or step.expected_duration_ms != source.expected_duration_ms
+            or step.preconditions
+            or step.success_conditions
+        ):
+            raise ValueError("prepared step cannot replace original action policy")
+        for n in ("owner_revision", "state_generation", "plan_version", "command_seq"):
+            _counter(p[n])
+        for n in (
+            "original_plan_hash",
+            "lease_source_hash",
+            "source_checkpoint_hash",
+            "observation_checksum_sha256",
+            "grounding_policy_hash",
+            "grounding_inputs_hash",
+        ):
+            _sha(p[n])
+        _sources(p["grounding_source_hashes"])
+        if (
+            not p["observation_id"]
+            or not p["calibration_version"]
+            or identity.episode_id == ""
+            or _positive(p["expected_duration_s"]) != requirement.expected_duration_s
+            or _aware(datetime.fromisoformat(p["created_at"]))
+            >= _aware(datetime.fromisoformat(p["valid_until"]))
+        ):
+            raise ValueError("prepared binding duration/frame/time invalid")
+        return p
+
+    @property
+    def grounded_step(self):
+        return TaskStep.model_validate(self.to_payload()["grounded_step"])
+
+    @property
+    def valid_until(self):
+        return datetime.fromisoformat(self.to_payload()["valid_until"])
+
+
+class RegisteredCollectionStepBindingV2(_RegisteredPayload):
+    """注册模型采集来源绑定；不提供普通执行或native权限。"""
+
+    __slots__ = ()
+    _constants = {
+        "schema_version": "registered.collection.binding.v2",
+        "binding_scope": "REGISTERED_MODEL_COLLECTION_SOURCE_ONLY",
+        "collection_policy_id": "registered-model-collection-v2",
+        "execution_authority": False,
+        "ordinary_execution_allowed": False,
+        "native_authority": "UNAVAILABLE",
+    }
+
+    @classmethod
+    def _validate(cls, payload):
+        p = _registered_object(payload, {"prepared"}, cls._constants)
+        prepared = RegisteredPreparedStepBindingV2.from_payload(p["prepared"])
+        if prepared.to_payload() != p["prepared"]:
+            raise ValueError("exact registered preparation payload required")
+        return p
+
+    @classmethod
+    def from_prepared(cls, prepared, *, collection_policy_id):
+        """保留内层准备语义；实际采集许可仍由私有应用独立判定。"""
+        if type(prepared) is not RegisteredPreparedStepBindingV2:
+            raise TypeError("exact registered preparation binding required")
+        return cls(
+            {
+                **cls._constants,
+                "collection_policy_id": collection_policy_id,
+                "prepared": prepared.to_payload(),
+            }
+        )
+
+    @property
+    def prepared(self):
+        return RegisteredPreparedStepBindingV2.from_payload(self.to_payload()["prepared"])
+
+    @property
+    def grounded_step(self):
+        return self.prepared.grounded_step
+
+    @property
+    def valid_until(self):
+        return self.prepared.valid_until
+
+
+def prepare_registered_step_binding_v2(
+    original,
+    *,
+    original_step_id,
+    online,
+    source_checkpoint,
+    current_identity,
+    owner_revision,
+    state_generation,
+    lease_source,
+    grounding_inputs,
+    grounding_policy,
+    now,
+):
+    """以当前租约和原始检查点准备候选步骤；不创建任何可执行能力。"""
+    from cloud_edge_robot_arm.vision.worker_owner import WorkerLeaseObservation
+
+    if (
+        type(original) is not VisualOriginalPlan
+        or type(grounding_inputs) is not RegisteredGroundingFrameInputsV2
+        or type(grounding_policy) is not RegisteredGroundingPolicyV2
+        or type(lease_source) is not WorkerLeaseObservation
+        or type(current_identity) is not VisualOwnerIdentity
+        or type(online) is not OnlineEvidenceSnapshot
+    ):
+        raise TypeError("exact registered preparation source types required")
+    original, now, cp, contract, observation, requirement, _ = _current_grounding_context(
+        original,
+        original_step_id=original_step_id,
+        online=online,
+        source_checkpoint=source_checkpoint,
+        current_identity=current_identity,
+        owner_revision=owner_revision,
+        state_generation=state_generation,
+        now=now,
+    )
+    inputs = RegisteredGroundingFrameInputsV2.from_payload(grounding_inputs.to_payload())
+    policy = RegisteredGroundingPolicyV2.from_payload(grounding_policy.to_payload())
+    identities = inputs.to_payload()
+    if (
+        identities["object_id"] != contract.task_target.object_id
+        or identities["target_region_id"] != contract.task_target.target_region_id
+    ):
+        raise ValueError("registered preparation target identity mismatch")
+    lease = WorkerLeaseObservation(**vars(lease_source))
+    if (
+        lease.identity(
+            episode_id=current_identity.episode_id,
+            task_id=current_identity.task_id,
+            plan_id=current_identity.plan_id,
+            robot_id=current_identity.robot_id,
+        )
+        != current_identity
+        or not lease.observed_at <= now < lease.expires_at
+        or not inputs.matches_observation(observation)
+    ):
+        raise ValueError("registered current frame or lease owner mismatch/expired")
+    if any(
+        c.tolerances.get("calibration_version", observation.calibration_version)
+        != observation.calibration_version
+        for c in (*requirement.preconditions, *requirement.postconditions)
+    ):
+        raise ValueError("original calibrated frame differs")
+    for sources in (inputs.source_hashes, policy.source_hashes):
+        if any(original.source_hashes.get(k) != v for k, v in sources.items()):
+            raise ValueError("registered preparation source identity mismatch")
+    if (
+        policy.to_payload()
+        != RegisteredGroundingPolicyV2.for_original(
+            original, policy.source_hashes, region_policy=policy.to_payload().get("region_policy")
+        ).to_payload()
+    ):
+        raise ValueError("registered preparation fixed safety recipe changed")
+    if inputs.to_payload()["region_evidence"].get("nominal_policy") != policy.to_payload().get(
+        "region_policy"
+    ):
+        raise ValueError("registered input and policy comparison recipe differ")
+    expires = _registered_preparation_deadline(
+        original,
+        original_step_id=original_step_id,
+        observation=observation,
+        lease_source=lease,
+    )
+    if not original.registered_at <= observation.captured_at <= now < expires:
+        raise ValueError("registered original/frame deadline expired or future")
+    source = requirement.original_step
+    step = source.model_copy(
+        update={
+            "parameters": _resolved_parameters(source, original, online, inputs, policy),
+            "preconditions": [],
+            "success_conditions": [],
+        },
+        deep=True,
+    )
+    return RegisteredPreparedStepBindingV2(
+        {
+            **RegisteredPreparedStepBindingV2._constants,
+            "original_plan_hash": original.digest(),
+            "original_requirements": requirement.to_payload(),
+            "current_identity": current_identity.to_payload(),
+            "owner_revision": owner_revision,
+            "state_generation": state_generation,
+            "lease_source_hash": lease.digest(),
+            "source_checkpoint_hash": checkpoint_digest(cp),
+            "observation_id": observation.observation_id,
+            "observation_checksum_sha256": observation.checksum_sha256,
+            "calibration_version": observation.calibration_version,
+            "plan_version": contract.plan_version,
+            "command_seq": contract.command_seq,
+            "grounding_policy_hash": policy.digest(),
+            "grounding_inputs_hash": inputs.digest(),
+            "grounding_source_hashes": {
+                **inputs.source_hashes,
+                **policy.source_hashes,
+            },
+            "grounded_step": step.model_dump(mode="json"),
+            "expected_duration_s": requirement.expected_duration_s,
+            "created_at": now.isoformat(),
+            "valid_until": expires.isoformat(),
+        }
     )

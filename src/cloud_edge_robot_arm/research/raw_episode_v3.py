@@ -36,6 +36,7 @@ from cloud_edge_robot_arm.vision.observations import RGBDObservation
 from cloud_edge_robot_arm.vision.owner_registration import (
     OriginalActionRequirements,
     RegisteredCollectionStepBinding,
+    RegisteredCollectionStepBindingV2,
     StepGroundingBinding,
     VisualOriginalPlan,
     VisualOwnerIdentity,
@@ -783,6 +784,55 @@ class RegisteredCollectionActionSpanV1(_RegisteredPayload):
         value = self.to_payload()[name]
         if name == "grounding":
             return RegisteredCollectionStepBinding.from_payload(value)
+        if name == "original_plan":
+            return _owner_decode(VisualOriginalPlan, value)
+        if name == "identity":
+            return RawEpisodeIdentityV3.from_json(_json(value))
+        return value
+
+
+class RegisteredCollectionActionSpanV2(_RegisteredPayload):
+    """独立注册模型动作记录；旧raw-v3解码器不接受此版本。"""
+
+    __slots__ = ()
+    _constants = {"schema_version": "native.registered.action-span.v2"}
+    _keys = frozenset(f.name for f in fields(TypedActionSpanV3))
+
+    @classmethod
+    def _validate(cls, payload):
+        p = _registered_object(payload, cls._keys, cls._constants)
+        binding = RegisteredCollectionStepBindingV2.from_payload(p["grounding"])
+        # Reuse only the common record validation, with no legacy grounding.
+        common = {k: p[k] for k in cls._keys}
+        common["grounding"] = None
+        span = TypedActionSpanV3.from_json(_json(common))
+        from cloud_edge_robot_arm.vision.worker_owner import (
+            registered_collection_effect_conditions_v2,
+        )
+
+        registered_collection_effect_conditions_v2(span.original_plan, binding)
+        if (
+            span.identity.owner_identity != span.original_plan.identity
+            or dict(span.identity.source_hashes) != dict(span.original_plan.source_hashes)
+            or span.step_id != binding.grounded_step.step_id
+            or _plain(span.executed_step_payload) != binding.grounded_step.model_dump(mode="json")
+        ):
+            raise ValueError("registered action span original/identity/executed binding differs")
+        return p
+
+    @classmethod
+    def from_json(cls, stored):
+        return cls.from_payload(_load(stored))
+
+    def to_json(self):
+        return self._payload_json
+
+    def __getattr__(self, name):
+        if name not in self._keys:
+            raise AttributeError(name)
+        value = self.to_payload()[name]
+        if name == "grounding":
+            return RegisteredCollectionStepBindingV2.from_payload(value)
         if name == "original_plan":
             return _owner_decode(VisualOriginalPlan, value)
         if name == "identity":

@@ -497,3 +497,179 @@ def test_original_compiler_rejects_subclass_source_registration(running):
     sources[key] = PermissiveSourceString(sources[key])
     with pytest.raises(ValueError, match="plain source"):
         api().compile_worker_original_plan(**{**data, "source_hashes": sources})
+
+
+@pytest.mark.parametrize(
+    "skill,defaults",
+    [
+        (SkillName.MOVE_ABOVE, {"registered_object_pose_available", "gripper_open"}),
+        (SkillName.APPROACH, {"registered_object_pose_available", "gripper_open"}),
+        (SkillName.GRASP, {"registered_object_pose_available", "gripper_open"}),
+        (SkillName.LIFT, {"gripper_holding"}),
+        (SkillName.MOVE_TO_REGION, {"gripper_holding"}),
+        (SkillName.PLACE, {"gripper_holding"}),
+        (SkillName.RELEASE, {"object_inside_target_region", "gripper_holding"}),
+        (SkillName.RETREAT, {"gripper_released"}),
+    ],
+)
+@pytest.mark.parametrize("explicit", ["none", "pre", "post", "completion", "overlap"])
+def test_v2_defaults_preserve_explicit_requirements(running, skill, defaults, explicit):
+    data = compilation(running)
+    contract = data["contract"]
+    pre = ["target_visible", "target_reachable"] if explicit == "pre" else []
+    if explicit == "overlap":
+        pre = ["registered_region_model_available"]
+    post = ["object_stable"] if explicit == "post" else []
+    completion = ["placement_stable"] if explicit == "completion" else ["gripper_released"]
+    step = contract.steps[0].model_copy(
+        update={"skill": skill, "preconditions": pre, "success_conditions": post}, deep=True
+    )
+    data["contract"] = contract.model_copy(
+        update={"steps": [step], "completion_criteria": completion}, deep=True
+    )
+    before = data["contract"].model_dump(mode="json")
+    compiler = getattr(api(), "compile_worker_original_plan_v2", None)
+    assert callable(compiler), "explicit v2 compiler missing"
+    result = compiler(**data)
+    requirement = result.requirements[step.step_id]
+    actual_pre = {c.name: c for c in requirement.preconditions}
+    actual_post = {c.name: c for c in requirement.postconditions}
+    assert set(actual_pre) == defaults | {"registered_region_model_available"} | set(pre)
+    assert set(post + completion) <= set(actual_post)
+    assert result.contract.model_dump(mode="json") == before
+    assert result.effective_deadline_at == data["verification_deadline_at"]
+    for name in pre:
+        assert actual_pre[name].tolerances["requirement_origin"] == "EXPLICIT_PRECONDITION"
+    for name in post:
+        assert actual_post[name].tolerances["requirement_origin"] == "EXPLICIT_SUCCESS"
+    for name in completion:
+        assert actual_post[name].tolerances["requirement_origin"] == "EXPLICIT_COMPLETION"
+    for condition in (*requirement.preconditions, *requirement.postconditions):
+        assert condition.tolerances["condition_registry_version"] == "registered-model-condition-v2"
+    if explicit != "overlap":
+        legacy = api().compile_worker_original_plan(**data)
+        if skill in {SkillName.MOVE_ABOVE, SkillName.APPROACH, SkillName.GRASP}:
+            assert {"target_visible", "target_reachable"} <= {
+                c.name for c in legacy.requirements[step.step_id].preconditions
+            }
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["target_visible", "registered_object_pose_available", "registered_region_model_available"],
+)
+def test_v2_condition_dispatch_preserves_legacy_unknown(name):
+    from cloud_edge_robot_arm.edge.evidence import conditions
+
+    snapshot = replace(values()["online"], visual_facts={})
+    spec = conditions.ConditionSpec(
+        name, "object", {"condition_registry_version": "registered-model-condition-v2"}
+    )
+    evaluate = getattr(conditions, "evaluate_registered_conditions_v2", None)
+    assert callable(evaluate), "v2 typed condition dispatcher missing"
+    verdict = evaluate(
+        [spec], snapshot, grounding_inputs={"value": True}, now=snapshot.observation.captured_at
+    )[0]
+    assert verdict.status.value == "UNKNOWN"
+    assert verdict.condition_name == name
+    assert (
+        conditions.evaluate_conditions([spec], snapshot, now=snapshot.observation.captured_at)[
+            0
+        ].status.value
+        == "UNKNOWN"
+    )
+
+
+@pytest.mark.parametrize(
+    "name", ["registered_object_pose_available", "registered_region_model_available"]
+)
+@pytest.mark.parametrize("position", ["preconditions", "postconditions"])
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "DEFAULT_PRECONDITION",
+        "EXPLICIT_PRECONDITION",
+        "DEFAULT_POSTCONDITION",
+        "EXPLICIT_SUCCESS",
+        "EXPLICIT_COMPLETION",
+    ],
+)
+def test_v2_canonical_requirement_constructor(name, position, origin):
+    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+
+    base = values()["original"].requirements["move"]
+    condition = ConditionSpec(
+        name,
+        "object",
+        {
+            "condition_registry_version": "registered-model-condition-v2",
+            "requirement_origin": origin,
+        },
+    )
+    result = replace(base, **{position: (*getattr(base, position), condition)})
+    admitted = getattr(result, position)[-1]
+    assert admitted.name == name
+    assert admitted.tolerances["requirement_origin"] == origin
+    with pytest.raises(TypeError):
+        admitted.tolerances["requirement_origin"] = "changed"
+
+
+@pytest.mark.parametrize(
+    "name", ["registered_object_pose_available", "registered_region_model_available"]
+)
+@pytest.mark.parametrize("position", ["preconditions", "postconditions"])
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "missing_version",
+        "old_version",
+        "unknown_version",
+        "version_bool",
+        "version_subclass",
+        "missing_origin",
+        "unknown_origin",
+        "origin_bool",
+        "origin_subclass",
+        "tolerance_list",
+        "tolerance_none",
+        "name_subclass",
+        "unknown_name",
+    ],
+)
+def test_v2_canonical_requirement_rejects_metadata(name, position, problem):
+    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+
+    base = values()["original"].requirements["move"]
+    tolerances = {
+        "condition_registry_version": "registered-model-condition-v2",
+        "requirement_origin": "DEFAULT_PRECONDITION",
+    }
+    valid = ConditionSpec(name, "object", dict(tolerances))
+    if problem == "missing_version":
+        tolerances.pop("condition_registry_version")
+    elif problem in {"old_version", "unknown_version", "version_bool", "version_subclass"}:
+        tolerances["condition_registry_version"] = {
+            "old_version": "registered-model-condition-v1",
+            "unknown_version": "unknown",
+            "version_bool": True,
+            "version_subclass": PermissiveSourceString("spoof"),
+        }[problem]
+    elif problem == "missing_origin":
+        tolerances.pop("requirement_origin")
+    elif problem in {"unknown_origin", "origin_bool", "origin_subclass"}:
+        tolerances["requirement_origin"] = {
+            "unknown_origin": "CLAIMED_AUTHORITY",
+            "origin_bool": True,
+            "origin_subclass": PermissiveSourceString("spoof"),
+        }[problem]
+    elif problem == "tolerance_list":
+        tolerances = []
+    elif problem == "tolerance_none":
+        tolerances = None
+    elif problem == "name_subclass":
+        name = PermissiveSourceString(name)
+    elif problem == "unknown_name":
+        name = "unregistered_model_claim"
+    invalid = ConditionSpec(name, "object", tolerances)
+    with pytest.raises(ValueError, match="canonical declared condition"):
+        replace(base, **{position: (*getattr(base, position), valid, invalid)})

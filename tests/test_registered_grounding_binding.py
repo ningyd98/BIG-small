@@ -150,6 +150,169 @@ def binding_data(tmp_path, monkeypatch, skill=SkillName.MOVE_ABOVE):
     )
 
 
+def binding_data_v2(tmp_path, monkeypatch, skill=SkillName.MOVE_ABOVE):
+    from cloud_edge_robot_arm.research import native_collection_application as application
+    from cloud_edge_robot_arm.research.native_calibration_collection import read_protocol
+    from cloud_edge_robot_arm.vision import worker_owner
+    from cloud_edge_robot_arm.vision.native_calibration import NativeGeometryRegistration
+    from tests.test_registered_grounding_preparation import ROOT, context, v2_region_observation
+
+    protocol_path, args, clock = context(tmp_path, monkeypatch, skill)
+    monkeypatch.setattr(collection, "datetime", application.datetime)
+    prior = args["original"]
+    clock[0] = prior.registered_at
+    lease = application._registered_lease(args["repository"], prior.identity)
+    original = worker_owner.compile_worker_original_plan_v2(
+        lease_source=lease,
+        identity=prior.identity,
+        contract=prior.contract,
+        observation=args["reference_observation"],
+        proposal_hash=prior.proposal_hash,
+        role_bundle_hash=prior.role_bundle_hash,
+        source_hashes=prior.source_hashes,
+        registered_at=prior.registered_at,
+        task_deadline_at=prior.task_deadline_at,
+        verification_deadline_at=prior.verification_deadline_at,
+    )
+    reg = NativeGeometryRegistration(read_protocol(protocol_path)["geometry"])
+    tracker = collection.bootstrap_registered_collection_tracker_v2(
+        args["reference_observation"], reg, source_root=ROOT, source_hashes=original.source_hashes
+    )
+    current = v2_region_observation(args["reference_observation"])
+    clock[0] = current.captured_at
+    preview = collection.registered_collection_grounding_preview_v2(
+        tracker, current, args["robot_state"]
+    )
+    assert preview.status == "DERIVED"
+    input_type = getattr(owner, "RegisteredGroundingFrameInputsV2", None)
+    assert input_type is not None, "independent v2 frame inputs missing"
+    inputs = input_type.from_preview(preview, current, reg)
+    policy = owner.RegisteredGroundingPolicyV2.for_original(original, original.source_hashes)
+    online = OnlineEvidenceSnapshot(
+        current,
+        args["robot_state"],
+        {},
+        original.contract.plan_version,
+        original.contract.command_seq,
+        args["source_checkpoint"].checkpoint_hash,
+    )
+    return dict(
+        original=original,
+        original_step_id="move",
+        online=online,
+        source_checkpoint=args["source_checkpoint"],
+        current_identity=original.identity,
+        owner_revision=1,
+        state_generation=2,
+        lease_source=lease,
+        grounding_inputs=inputs,
+        grounding_policy=policy,
+        now=current.captured_at,
+    )
+
+
+@pytest.mark.parametrize(
+    "skill",
+    [
+        SkillName.MOVE_ABOVE,
+        SkillName.APPROACH,
+        SkillName.GRASP,
+        SkillName.LIFT,
+        SkillName.MOVE_TO_REGION,
+        SkillName.PLACE,
+        SkillName.RELEASE,
+        SkillName.RETREAT,
+    ],
+)
+def test_v2_binding_keeps_model_basis_and_original_effects(tmp_path, monkeypatch, skill):
+    from cloud_edge_robot_arm.edge.evidence.conditions import (
+        ConditionSpec,
+        evaluate_conditions,
+        evaluate_registered_conditions_v2,
+    )
+    from cloud_edge_robot_arm.vision import worker_owner
+
+    data = binding_data_v2(tmp_path, monkeypatch, skill)
+    prepared = owner.prepare_registered_step_binding_v2(**data)
+    binding = owner.RegisteredCollectionStepBindingV2.from_prepared(
+        prepared, collection_policy_id="registered-model-collection-v2"
+    )
+    assert not isinstance(prepared, owner.RegisteredPreparedStepBinding)
+    assert not isinstance(binding, owner.RegisteredCollectionStepBinding)
+    assert binding.to_payload()["execution_authority"] is False
+    assert (
+        prepared.to_payload()["original_requirements"]
+        == data["original"].requirements["move"].to_payload()
+    )
+    assert binding.grounded_step.preconditions == []
+    assert binding.grounded_step.timeout_ms == data["original"].contract.steps[0].timeout_ms
+    result = worker_owner.registered_collection_effect_conditions_v2(data["original"], binding)
+    assert [c.name for c in result] == [
+        c.name for c in data["original"].requirements["move"].postconditions
+    ]
+    for condition in result:
+        if condition.name == "tcp_at_resolved_target":
+            assert [condition.tolerances["target_" + a] for a in "xyz"] == [
+                binding.grounded_step.parameters["target_pose"][a] for a in "xyz"
+            ]
+    with pytest.raises(TypeError):
+        owner.RegisteredCollectionStepBinding.from_prepared(
+            prepared, collection_policy_id="registered-model-collection-v1"
+        )
+    with pytest.raises(ValueError):
+        owner.RegisteredGroundingFrameInputs.from_payload(data["grounding_inputs"].to_payload())
+    specs = [
+        ConditionSpec(
+            name,
+            target,
+            {
+                "condition_registry_version": "registered-model-condition-v2",
+                "requirement_origin": "DEFAULT_PRECONDITION",
+            },
+        )
+        for name, target in [
+            ("registered_object_pose_available", "object"),
+            ("registered_region_model_available", "target_region"),
+        ]
+    ]
+    verdicts = evaluate_registered_conditions_v2(
+        specs, data["online"], grounding_inputs=data["grounding_inputs"], now=data["now"]
+    )
+    assert [v.status.value for v in verdicts] == ["PASS", "PASS"]
+    assert all(v.measured_values["placement_clearance"] == "UNKNOWN" for v in verdicts)
+    assert (
+        evaluate_conditions(
+            [ConditionSpec("target_visible", "object")], data["online"], now=data["now"]
+        )[0].status.value
+        == "UNKNOWN"
+    )
+
+
+@pytest.mark.parametrize("problem", ["frame", "source", "camera", "basis", "schema", "status"])
+def test_v2_binding_rejects_resealed_provenance(tmp_path, monkeypatch, problem):
+    from cloud_edge_robot_arm.research.native_calibration_collection import digest
+
+    data = binding_data_v2(tmp_path, monkeypatch)
+    payload = data["grounding_inputs"].to_payload()
+    if problem == "frame":
+        payload["observation_id"] = "foreign-current"
+    elif problem == "source":
+        key = "src/cloud_edge_robot_arm/edge/evidence/conditions.py"
+        payload["source_hashes"][key] = "a" * 64
+        payload["source_generation"] = digest(payload["source_hashes"])
+    elif problem == "camera":
+        payload["camera"]["width"] += 1
+    elif problem == "basis":
+        payload["region_basis"] = "RGBD_COLOR_REGION_UNCALIBRATED"
+    elif problem == "schema":
+        payload["schema_version"] = "registered.grounding.inputs.v1"
+    elif problem == "status":
+        payload["region_evidence"]["status"] = "FULL"
+    with pytest.raises((ValueError, TypeError)):
+        inputs = owner.RegisteredGroundingFrameInputsV2.from_payload(payload)
+        owner.prepare_registered_step_binding_v2(**{**data, "grounding_inputs": inputs})
+
+
 def test_binding_api_has_distinct_types():
     assert hasattr(owner, "RegisteredGroundingFrameInputs"), "registered typed inputs missing"
     assert hasattr(owner, "prepare_registered_step_binding"), "preparation binder missing"
@@ -377,3 +540,80 @@ def test_binding_pose_wrong_target_remains_unknown(tmp_path, monkeypatch):
         now=data["now"],
     )
     assert result.status == "UNKNOWN"
+
+
+@pytest.mark.parametrize("source_v2", [False, True])
+def test_r668_relabelled_prepared_and_collection_families_rejected(
+    tmp_path, monkeypatch, source_v2
+):
+    data = (binding_data_v2 if source_v2 else binding_data)(tmp_path, monkeypatch)
+    prepare = (
+        owner.prepare_registered_step_binding_v2
+        if source_v2
+        else owner.prepare_registered_step_binding
+    )
+    prepared = prepare(**data)
+    source_collection = (
+        owner.RegisteredCollectionStepBindingV2
+        if source_v2
+        else owner.RegisteredCollectionStepBinding
+    )
+    target_prepared = (
+        owner.RegisteredPreparedStepBinding if source_v2 else owner.RegisteredPreparedStepBindingV2
+    )
+    target_collection = (
+        owner.RegisteredCollectionStepBinding
+        if source_v2
+        else owner.RegisteredCollectionStepBindingV2
+    )
+    policy = "registered-model-collection-v2" if source_v2 else "registered-model-collection-v1"
+    collection = source_collection.from_prepared(prepared, collection_policy_id=policy)
+    assert (
+        source_collection.from_payload(collection.to_payload()).to_payload()
+        == collection.to_payload()
+    )
+    renamed = prepared.to_payload()
+    renamed["schema_version"] = (
+        "registered.grounding.prepared-step.v1"
+        if source_v2
+        else "registered.grounding.prepared-step.v2"
+    )
+    with pytest.raises((ValueError, TypeError)):
+        target_prepared.from_payload(renamed)
+    renamed = collection.to_payload()
+    renamed.update(
+        schema_version="registered.collection.binding.v1"
+        if source_v2
+        else "registered.collection.binding.v2",
+        collection_policy_id="registered-model-collection-v1"
+        if source_v2
+        else "registered-model-collection-v2",
+    )
+    renamed["prepared"]["schema_version"] = (
+        "registered.grounding.prepared-step.v1"
+        if source_v2
+        else "registered.grounding.prepared-step.v2"
+    )
+    with pytest.raises((ValueError, TypeError)):
+        target_collection.from_payload(renamed)
+
+
+@pytest.mark.parametrize("mutation", ["post_origin", "post_registry", "mandatory_model"])
+def test_r668_v2_requirement_provenance_is_structural(tmp_path, monkeypatch, mutation):
+    data = binding_data_v2(tmp_path, monkeypatch)
+    payload = owner.prepare_registered_step_binding_v2(**data).to_payload()
+    requirement = payload["original_requirements"]
+    if mutation == "post_origin":
+        requirement["postconditions"][0]["tolerances"]["requirement_origin"] = (
+            "DEFAULT_PRECONDITION"
+        )
+    elif mutation == "post_registry":
+        requirement["postconditions"][0]["tolerances"]["condition_registry_version"] = "foreign"
+    else:
+        requirement["preconditions"] = [
+            c
+            for c in requirement["preconditions"]
+            if c["name"] != "registered_region_model_available"
+        ]
+    with pytest.raises((ValueError, TypeError)):
+        owner.RegisteredPreparedStepBindingV2.from_payload(payload)

@@ -13,6 +13,7 @@ import json
 import struct
 from contextlib import contextmanager
 from dataclasses import asdict, fields
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from cloud_edge_robot_arm.research.native_calibration_collection import canonical, digest
@@ -30,16 +31,171 @@ ENCODED_FIELDS = {
 }
 
 
+def _v2_exact(value, keys):
+    if type(value) is not dict or set(value) != set(keys) or any(type(k) is not str for k in value):
+        raise ValueError("exact registered v2 envelope required")
+    return value
+
+
+def _v2_same(actual, expected):
+    if canonical(actual) != canonical(expected):
+        raise ValueError("registered v2 source association differs")
+
+
+def _v2_utc(value):
+    if type(value) is not str:
+        raise ValueError("registered UTC string required")
+    stamp = datetime.fromisoformat(value)
+    if stamp.utcoffset() != timedelta(0):
+        raise ValueError("registered aware UTC required")
+    return stamp
+
+
+def _v2_sha(value):
+    if (
+        type(value) is not str
+        or len(value) != 64
+        or any(c not in "0123456789abcdef" for c in value)
+    ):
+        raise ValueError("registered SHA256 required")
+
+
+def _v2_reference(value, *, acquisition=False):
+    _v2_exact(value, {"path", "sha256", "acquisition_id"} if acquisition else {"path", "sha256"})
+    _v2_sha(value["sha256"])
+    if any(type(value[k]) is not str or not value[k] for k in value if k != "sha256"):
+        raise ValueError("registered reference identifiers required")
+
+
+def _v2_feedback(value, *, observation, acquisition, physics_step, robot_state):
+    _v2_exact(
+        value,
+        {
+            "schema_version",
+            "acquisition",
+            "observation_id",
+            "checksum_sha256",
+            "physics_step",
+            "observed_at",
+            "robot_state",
+            "scope",
+        },
+    )
+    _v2_reference(value["acquisition"], acquisition=True)
+    _v2_same(value["acquisition"], acquisition)
+    _v2_same(value["schema_version"], "native.registered.capture-feedback.v2")
+    _v2_same(value["scope"], "RECORDED_GRIPPER_TCP_READ_ONLY")
+    _v2_same(value["observation_id"], observation.observation_id)
+    _v2_same(value["checksum_sha256"], observation.checksum_sha256)
+    _v2_sha(value["checksum_sha256"])
+    if (
+        type(value["physics_step"]) is not int
+        or value["physics_step"] < 0
+        or value["physics_step"] != physics_step
+        or physics_step != round(observation.sim_time_s * 240)
+    ):
+        raise ValueError("registered feedback physics step differs")
+    _v2_same(value["robot_state"], robot_state)
+    if (
+        not observation.captured_at
+        <= _v2_utc(value["observed_at"])
+        < observation.captured_at + timedelta(seconds=5)
+    ):
+        raise ValueError("registered feedback UTC expired")
+
+
+def _v2_receipt(value, action, *, task_id, step):
+    """仅严格解码回执及注册配方；调用方独立核对其采集和执行来源。"""
+    from cloud_edge_robot_arm.contracts import ActionResult
+    from cloud_edge_robot_arm.edge.runtime.skill_executor import StepExecutionResult
+    from cloud_edge_robot_arm.vision.native_completion_horizon import completion_horizon_rational_v1
+
+    _v2_exact(value, {f.name for f in fields(FullHorizonExecutionReceipt)})
+    _v2_same(value["schema_version"], "native.full-horizon.execution.v1")
+    _v2_same(value["native_authority"], "UNAVAILABLE")
+    for key in ("original_plan_sha256", "executed_step_sha256"):
+        _v2_sha(value[key])
+    for key in ("step_id", "skill", "terminal_acquisition_id"):
+        if type(value[key]) is not str or not value[key]:
+            raise ValueError("registered receipt identity required")
+    if (
+        value["complete"] is not True
+        or type(value["reasons"]) is not list
+        or value["reasons"]
+        or value["failure_type"] is not None
+        or value["failure_message"] is not None
+    ):
+        raise ValueError("registered complete receipt required")
+    if type(value["horizon_json"]) is not str:
+        raise ValueError("registered receipt recipe required")
+    expected = _plain(asdict(completion_horizon_rational_v1(action["skill"], **action["recipe"])))
+    _v2_same(expected, action["horizon"])
+    _v2_same(json.loads(value["horizon_json"]), expected)
+    d, r, t = (value[k] for k in ("dispatch_step", "controller_return_step", "terminal_step"))
+    if (
+        not all(type(s) is int for s in (d, r, t))
+        or not 0 <= d <= r <= t <= d + expected["total_steps"]
+    ):
+        raise ValueError("registered receipt window invalid")
+    if value["padding_interval_id"] is not None and type(value["padding_interval_id"]) is not str:
+        raise ValueError("registered receipt padding identifier invalid")
+    result = value["controller_result_json"]
+    if type(result) is not str:
+        raise ValueError("registered controller result invalid")
+    controller = _v2_exact(json.loads(result), {f.name for f in fields(StepExecutionResult)})
+    for name, expected_value in dict(
+        task_id=task_id, step_id=step.step_id, skill=step.skill.value, attempt=1
+    ).items():
+        _v2_same(controller[name], expected_value)
+    if (
+        controller["success"] is not True
+        or controller["error"] is not None
+        or type(controller["duration_ms"]) is not int
+        or controller["duration_ms"] < 0
+        or type(controller["post_safety_decision"]) is not str
+        or controller["post_safety_decision"] not in {"", "ALLOW", "LIMIT"}
+        or controller["post_safety_details"] is not None
+        and type(controller["post_safety_details"]) is not dict
+    ):
+        raise ValueError("registered successful error-free controller result required")
+    _v2_utc(controller["timestamp"])
+    nested = _v2_exact(controller["action_result"], set(ActionResult.model_fields))
+    typed = ActionResult.model_validate(nested)
+    _v2_same(nested, typed.model_dump(mode="json"))
+    if (
+        nested["success"] is not True
+        or nested["error"] is not None
+        or nested["error_code"] is not None
+        or nested["error_message"] is not None
+        or nested["action_type"] != step.skill.value
+        or not nested["action_id"]
+        or type(nested["duration_ms"]) is not int
+        or nested["duration_ms"] < 0
+        or nested["duration_ms"] != controller["duration_ms"]
+        or not _v2_utc(nested["started_at"])
+        <= _v2_utc(nested["finished_at"])
+        <= _v2_utc(controller["timestamp"])
+    ):
+        raise ValueError("registered successful matching action result required")
+    return controller
+
+
 class NativeFullHorizonRecorder(VisualRawRecorderV3):
     def _before_executor_attempt(
         self, *, contract: Any, step: Any, attempt: int, grounding: Any
     ) -> None:
         """仅 v7 在真实执行器入口消费应用绑定的 PRE；旧采集路径保持原样。"""
-        from cloud_edge_robot_arm.vision.owner_registration import RegisteredCollectionStepBinding
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            RegisteredCollectionStepBinding,
+            RegisteredCollectionStepBindingV2,
+        )
 
-        if type(grounding) is RegisteredCollectionStepBinding or (
+        if type(grounding) in {
+            RegisteredCollectionStepBinding,
+            RegisteredCollectionStepBindingV2,
+        } or (
             getattr(self.application, "protocol", {}).get("schema_version")
-            == "native.calibration.operational.v7"
+            in {"native.calibration.operational.v7", "native.calibration.operational.v8"}
         ):
             self.application._validate_registered_dispatch(
                 self, contract=contract, step=step, attempt=attempt, binding=grounding
@@ -62,6 +218,8 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
         self.horizons: list[dict[str, Any]] = []
         self.hold_mappings: list[dict[str, Any]] = []
         self.decisions: list[dict[str, Any]] = []
+        self._captured_feedback_json: str | None = None
+        self._captured_feedback_owner: Any = None
         self.failures: list[dict[str, str]] = []
         self.bytes_written = self.render_passes = 0
         # R439's registered explicit + implicit capture budget, including failures.
@@ -533,29 +691,111 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
             yield interval
 
     def capture(self) -> Any:
+        v2 = (
+            getattr(self.application, "protocol", {}).get("schema_version")
+            == "native.calibration.operational.v8"
+        )
+        if v2:
+            self._captured_feedback_json = self._captured_feedback_owner = None
         self.application.check_active()
         observation = super().capture()
-        self.application.check_active()
+        if v2:
+            state = self.executor._robot.get_state()
+            acquisition = self.acquisition_source()
+            observed = datetime.now(UTC)
+            if (
+                not observation.captured_at
+                <= observed
+                < observation.captured_at + timedelta(seconds=5)
+            ):
+                raise RuntimeError("registered capture feedback expired")
+            payload = dict(
+                schema_version="native.registered.capture-feedback.v2",
+                acquisition=acquisition,
+                observation_id=observation.observation_id,
+                checksum_sha256=observation.checksum_sha256,
+                physics_step=self.backend.total_physics_steps,
+                observed_at=observed.isoformat(),
+                robot_state=state.model_dump(mode="json"),
+                scope="RECORDED_GRIPPER_TCP_READ_ONLY",
+            )
+            self._write_original(f"frames/{acquisition['acquisition_id']}/feedback.json", payload)
+            self.application.check_active()
+            self._captured_feedback_json = json.dumps(
+                payload, sort_keys=True, separators=(",", ":")
+            )
+            self._captured_feedback_owner = (
+                self.current_capture(),
+                observation,
+                canonical(acquisition),
+                self.backend.total_physics_steps,
+                canonical(payload["robot_state"]),
+            )
+        else:
+            self.application.check_active()
         return observation
+
+    def captured_feedback(self):
+        """返回当前原始采集的反馈读数，不认证其物理误差或产生执行许可。"""
+        if self._captured_feedback_json is None:
+            raise RuntimeError("current registered capture feedback unavailable")
+        payload = json.loads(self._captured_feedback_json)
+        owned = self._captured_feedback_owner
+        observation = self.last_captured_frame.observation
+        acquisition = self.acquisition_source()
+        if (
+            owned is None
+            or owned[0] != self.current_capture()
+            or owned[1] is not observation
+            or owned[2] != canonical(acquisition)
+            or owned[3] != self.backend.total_physics_steps
+            or owned[4] != canonical(payload.get("robot_state"))
+        ):
+            raise RuntimeError("registered feedback acquisition changed")
+        _, token, bracket = self.current_capture()
+        current = self.owner.read_current(after=token)
+        if (
+            not observation.captured_at
+            <= datetime.now(UTC)
+            < observation.captured_at + timedelta(seconds=5)
+            or _plain(current)["upper_ns"] - _plain(bracket)["lower_ns"] >= 5 * 10**9
+        ):
+            raise RuntimeError("registered feedback current frame expired")
+        _v2_feedback(
+            payload,
+            observation=observation,
+            acquisition=acquisition,
+            physics_step=self.backend.total_physics_steps,
+            robot_state=json.loads(owned[4]),
+        )
+        return payload
 
     def freeze(self) -> dict[str, Any]:
         self._require_open()
         if self._published:
             raise RuntimeError("collection originals already frozen")
-        registered = (
+        v2 = (
             getattr(self.application, "protocol", {}).get("schema_version")
-            == "native.calibration.operational.v7"
+            == "native.calibration.operational.v8"
         )
+        registered = getattr(self.application, "protocol", {}).get("schema_version") in {
+            "native.calibration.operational.v7",
+            "native.calibration.operational.v8",
+        }
         actions = self._actions
         if registered:
             from cloud_edge_robot_arm.research.raw_episode_v3 import (
                 RegisteredCollectionActionSpanV1,
+                RegisteredCollectionActionSpanV2,
             )
 
+            codec = RegisteredCollectionActionSpanV2 if v2 else RegisteredCollectionActionSpanV1
             actions = [
-                RegisteredCollectionActionSpanV1.from_payload(
+                codec.from_payload(
                     dict(
-                        schema_version="native.registered.action-span.v1",
+                        schema_version="native.registered.action-span.v2"
+                        if v2
+                        else "native.registered.action-span.v1",
                         identity=self._identity.to_payload(),
                         **_plain(row),
                     )
@@ -566,7 +806,9 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
             "partial-originals.json",
             dict(
                 schema_version=(
-                    "native.registered.full-horizon.originals.v1"
+                    "native.registered.full-horizon.originals.v2"
+                    if v2
+                    else "native.registered.full-horizon.originals.v1"
                     if registered
                     else "native.full-horizon.originals.v1"
                 ),
@@ -608,7 +850,9 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
         )
         manifest = dict(
             schema_version=(
-                "native.registered.full-horizon.inventory.v1"
+                "native.registered.full-horizon.inventory.v2"
+                if v2
+                else "native.registered.full-horizon.inventory.v1"
                 if registered
                 else "native.full-horizon.inventory.v1"
             ),

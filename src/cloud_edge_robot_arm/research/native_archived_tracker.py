@@ -151,3 +151,140 @@ class _ArchivedRegisteredCollectionTracker(RegisteredCollectionPreviewTrackerV1)
             return _shared_registered_collection_preview(self, observation, state)
         finally:
             self._provider._recorded_times = None
+
+
+class _ArchivedRegisteredCollectionTrackerV2:
+    """独立记录时间入口，只共享注册几何计算，不持有实时准入权限。"""
+
+    def __init__(
+        self, reference, registration, *, source_root, source_hashes, initialized_at, nominal_policy
+    ):
+        import json
+
+        import numpy as np
+
+        from cloud_edge_robot_arm.research.native_collection_grounding import (
+            _registered_opaque_primitives_v1,
+            collection_bootstrap_evidence,
+            registered_nominal_region_policy_v1,
+        )
+        from cloud_edge_robot_arm.vision.worker_owner import pin_worker_source_inventory
+
+        pin_worker_source_inventory(
+            source_root,
+            source_hashes,
+            required_paths=frozenset(
+                {"src/cloud_edge_robot_arm/research/native_archived_tracker.py"}
+            ),
+        )
+        if nominal_policy != registered_nominal_region_policy_v1(source_hashes):
+            raise ValueError("recorded nominal source policy differs")
+        self._provider = _ArchivedRegisteredObjectTracker(
+            reference,
+            registration,
+            source_root=source_root,
+            source_hashes=source_hashes,
+            initialized_at=initialized_at,
+        )
+        reference = RGBDObservation.model_validate(reference.model_dump())
+        evidence = collection_bootstrap_evidence(reference, registration.to_payload())
+        self._region_tracker = _ArchivedTargetTracker(
+            reference, evidence, evaluated_at=initialized_at
+        )
+        region = self._region_tracker.destination
+        if region is None:
+            raise ValueError("complete recorded region reference required")
+        mask = np.asarray(region["mask"], dtype=bool)
+        self._reference_observation = reference
+        self._reference_checksum = reference.checksum_sha256
+        self._reference_region_footprint = (tuple(mask.shape), mask.tobytes(order="C"))
+        self._reference_depth = np.asarray(reference.depth_values(), dtype="<f4").tobytes()
+        self._reference_destination = tuple(float(v) for v in region["center"])
+        self._nominal_policy = json.dumps(nominal_policy, sort_keys=True, separators=(",", ":"))
+        self._primitives = _registered_opaque_primitives_v1(
+            registration, source_root=source_root, source_hashes=source_hashes
+        )
+        self._last_finished = _validated_utc(initialized_at)
+
+    def preview_at(self, observation, state, *, evaluated_at, finished_at):
+        import json
+        from dataclasses import replace
+
+        from cloud_edge_robot_arm.research.native_collection_grounding import (
+            RegisteredCollectionGroundingPreviewV2,
+            _registered_region_evidence_v2,
+        )
+
+        start, finish = _validated_utc(evaluated_at), _validated_utc(finished_at)
+        if (
+            type(self) is not _ArchivedRegisteredCollectionTrackerV2
+            or self._provider._recorded_times is not None
+            or self._last_finished > start
+            or not observation.captured_at
+            <= start
+            <= finish
+            < observation.captured_at + timedelta(seconds=5)
+        ):
+            raise ValueError("recorded v2 preview chronology/freshness invalid")
+        current = RGBDObservation.model_validate(observation.model_dump())
+        state = RobotState.model_validate(state.model_dump())
+        provider = self._provider
+        anchors = (provider._last_successful_observation, provider._last_successful_geometry)
+        provider._recorded_times = (start, finish)
+        region = None
+        try:
+            reason, _ = provider._recheck_current(current)
+            if not state.connected or state.estop_engaged or state.collision_detected:
+                reason = "current_robot_state_unavailable"
+            if reason:
+                track = provider._result(
+                    current,
+                    evaluated_at=start,
+                    is_new=current.observation_id != provider._last_seen.observation_id,
+                    reason=reason,
+                )
+            else:
+                track = provider.update(current)
+                reason = track.reason if track.status != "DERIVED" else None
+                if reason is None:
+                    region, reason = _registered_region_evidence_v2(
+                        self,
+                        current,
+                        object_geometry=track.geometry,
+                        nominal_policy=json.loads(self._nominal_policy),
+                    )
+                post_reason, _ = provider._recheck_current(current)
+                reason = post_reason or reason
+            if reason:
+                provider._last_successful_observation, provider._last_successful_geometry = anchors
+                track = replace(
+                    track, status="UNKNOWN", reason=reason, geometry=None, evaluated_at=finish
+                )
+            geometry = None if reason else track.geometry
+            self._last_finished = finish
+            return RegisteredCollectionGroundingPreviewV2(
+                status="UNKNOWN" if reason else "DERIVED",
+                reason=reason or "uncalibrated_current_marker_and_reference_region_model",
+                track=track,
+                evaluated_at=finish,
+                source_sha256=track.source_sha256,
+                registration_sha256=track.registration_sha256,
+                grasp_tcp_world_m=None if geometry is None else geometry.grasp_tcp_world_m,
+                object_center_world_m=None if geometry is None else geometry.object_center_world_m,
+                rotation_object_to_world=None
+                if geometry is None
+                else geometry.rotation_object_to_world,
+                destination_world_m=None if geometry is None else self._reference_destination,
+                destination_observation_id=None if geometry is None else current.observation_id,
+                destination_observation_checksum_sha256=None
+                if geometry is None
+                else current.checksum_sha256,
+                region_evidence_json=None
+                if geometry is None
+                else json.dumps(region, sort_keys=True, separators=(",", ":"), allow_nan=False),
+            )
+        except BaseException:
+            provider._last_successful_observation, provider._last_successful_geometry = anchors
+            raise
+        finally:
+            provider._recorded_times = None

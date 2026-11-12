@@ -159,6 +159,279 @@ def context(tmp_path, monkeypatch, skill=SkillName.MOVE_ABOVE):
     return protocol, args, clock
 
 
+def v2_region_observation(reference, mode="foreground", *, index=1):
+    """生成内部遮挡或反例；不修改参考帧和历史像素。"""
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    current = later(reference, index=index, fragment=True)
+    with Image.open(io.BytesIO(base64.b64decode(current.rgb_png_base64))) as image:
+        rgb = np.array(image)
+    depth = np.asarray(current.depth_values(), dtype="<f4").reshape(240, 320).copy()
+    if mode != "full":
+        rgb[169:172, 108:112] = (255, 255, 255)
+        depth[169:172, 108:112] = {
+            "zero": 0.0,
+            "repaint": 1.4,
+            "behind": 1.5,
+            "nan": float("nan"),
+        }.get(mode, 1.3)
+    if mode == "boundary":
+        rgb[160:180, 100] = (255, 255, 255)
+    if mode == "moved":
+        rgb[160:180, 100:120] = (255, 255, 255)
+        rgb[160:180, 101:121] = (0, 255, 0)
+    if mode == "ambiguous":
+        rgb[190:205, 130:145] = (0, 255, 0)
+    output = io.BytesIO()
+    Image.fromarray(rgb).save(output, format="PNG")
+    return revised(
+        current,
+        rgb_png_base64=base64.b64encode(output.getvalue()).decode(),
+        depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
+        valid_mask_base64=None,
+    )
+
+
+def v2_preview_environment(tmp_path, monkeypatch):
+    from cloud_edge_robot_arm.research import native_collection_grounding as collection
+    from tests.test_registered_object_tracking import environment
+
+    _, ref, reg, root, hashes, clock = environment(tmp_path, monkeypatch)
+    monkeypatch.setattr(collection, "datetime", registered_object_tracking.datetime)
+    bootstrap = getattr(collection, "bootstrap_registered_collection_tracker_v2", None)
+    assert callable(bootstrap), "v2 occlusion tracker missing"
+    tracker = bootstrap(ref, reg, source_root=root, source_hashes=hashes)
+    return collection, tracker, ref, reg, root, hashes, clock, values()["online"].robot_state
+
+
+def test_v2_preview_full_and_internal_foreground_gap(tmp_path, monkeypatch):
+    module, tracker, ref, _, _, _, clock, state = v2_preview_environment(tmp_path, monkeypatch)
+    full = v2_region_observation(ref, "full")
+    clock[0] = full.captured_at
+    normal = module.registered_collection_grounding_preview_v2(tracker, full, state)
+    current = v2_region_observation(ref, index=2)
+    clock[0] = current.captured_at
+    partial = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert normal.status == partial.status == "DERIVED"
+    assert partial.destination_world_m == normal.destination_world_m
+    assert partial.object_surface_visibility == "UNKNOWN"
+    assert partial.geometric_error_bound_m is partial.region_geometric_error_bound_m is None
+    proof = partial.to_payload()["region_evidence"]
+    assert proof["status"] == "PARTIAL_FOREGROUND_SUPPORTED"
+    assert proof["visible_pixels"] == 388 and proof["missing_pixels"] == 12
+    assert proof["reference_observation_id"] == ref.observation_id
+    assert proof["reference_observation_checksum_sha256"] == ref.checksum_sha256
+    assert proof["current_observation_id"] == current.observation_id
+    assert proof["current_observation_checksum_sha256"] == current.checksum_sha256
+    assert proof["placement_clearance"] == "UNKNOWN"
+    proof["visible_pixels"] = 0
+    assert partial.to_payload()["region_evidence"]["visible_pixels"] == 388
+    assert normal.to_payload()["region_evidence"]["status"] == "FULL"
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "zero",
+        "nan",
+        "repaint",
+        "behind",
+        "boundary",
+        "moved",
+        "ambiguous",
+        "camera",
+        "expired",
+        "future",
+        "source",
+    ],
+)
+def test_v2_preview_rejects_unsupported_region(tmp_path, monkeypatch, problem):
+    module, tracker, ref, _, root, hashes, clock, state = v2_preview_environment(
+        tmp_path, monkeypatch
+    )
+    if problem == "nan":
+        with pytest.raises(ValueError):
+            v2_region_observation(ref, problem)
+        return
+    current = v2_region_observation(ref, problem)
+    clock[0] = current.captured_at
+    if problem == "camera":
+        current = revised(current, calibration_version="foreign")
+    elif problem == "expired":
+        clock[0] += timedelta(seconds=5)
+    elif problem == "future":
+        clock[0] -= timedelta(seconds=1)
+    elif problem == "source":
+        path = root / next(iter(hashes))
+        path.write_bytes(path.read_bytes() + b"\n")
+        with pytest.raises(ValueError):
+            module.registered_collection_grounding_preview_v2(tracker, current, state)
+        return
+    preview = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert preview.status == "UNKNOWN"
+    assert preview.grasp_tcp_world_m is None and preview.destination_world_m is None
+
+
+@pytest.mark.parametrize("fault", ["missing", "foreign", "duplicate", "zero_depth"])
+def test_v2_marker_failure_never_reuses_pose(tmp_path, monkeypatch, fault):
+    module, tracker, ref, _, _, _, clock, state = v2_preview_environment(tmp_path, monkeypatch)
+    first = v2_region_observation(ref)
+    clock[0] = first.captured_at
+    assert (
+        module.registered_collection_grounding_preview_v2(tracker, first, state).status == "DERIVED"
+    )
+    current = later(ref, index=2, fault=fault)
+    clock[0] = current.captured_at
+    unknown = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert unknown.status == "UNKNOWN" and unknown.object_center_world_m is None
+    assert unknown.grasp_tcp_world_m is None
+
+
+@pytest.mark.parametrize(
+    "age,expected", [(0, "DERIVED"), (4.999, "DERIVED"), (5, "UNKNOWN"), (-0.01, "UNKNOWN")]
+)
+def test_v2_preview_strict_entry_age_preserves_success_anchor(tmp_path, monkeypatch, age, expected):
+    module, tracker, ref, _, _, _, clock, state = v2_preview_environment(tmp_path, monkeypatch)
+    first = v2_region_observation(ref)
+    clock[0] = first.captured_at
+    assert (
+        module.registered_collection_grounding_preview_v2(tracker, first, state).status == "DERIVED"
+    )
+    provider = tracker._provider
+    anchors = (provider._last_successful_observation, provider._last_successful_geometry)
+    real_update = provider.update
+    calls = []
+
+    def update(observation):
+        calls.append(observation.observation_id)
+        return real_update(observation)
+
+    monkeypatch.setattr(provider, "update", update)
+    current = v2_region_observation(ref, index=2)
+    clock[0] = current.captured_at + timedelta(seconds=age)
+    result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert result.status == expected
+    if expected == "UNKNOWN":
+        assert calls == []
+        assert provider._last_successful_observation is anchors[0]
+        assert provider._last_successful_geometry is anchors[1]
+        assert result.track.wrapper_freshness == "REJECTED"
+        assert result.grasp_tcp_world_m is result.destination_world_m is None
+        assert result.to_payload()["region_evidence"] is None
+
+
+@pytest.mark.parametrize("delay", ["region", "source", "source_error"])
+def test_v2_preview_rechecks_after_slow_work_and_restores_anchor(tmp_path, monkeypatch, delay):
+    module, tracker, ref, _, _, _, clock, state = v2_preview_environment(tmp_path, monkeypatch)
+    first = v2_region_observation(ref)
+    clock[0] = first.captured_at
+    assert (
+        module.registered_collection_grounding_preview_v2(tracker, first, state).status == "DERIVED"
+    )
+    provider = tracker._provider
+    anchors = (provider._last_successful_observation, provider._last_successful_geometry)
+    current = v2_region_observation(ref, index=2)
+    clock[0] = current.captured_at
+    if delay == "region":
+        real_region = module._registered_region_evidence_v2
+
+        def region(*args, **kwargs):
+            result = real_region(*args, **kwargs)
+            clock[0] = current.captured_at + timedelta(seconds=5)
+            return result
+
+        monkeypatch.setattr(module, "_registered_region_evidence_v2", region)
+    else:
+        real_check = provider._recheck_current
+
+        def recheck(observation):
+            result = real_check(observation)
+            if provider._last_successful_observation.observation_id == current.observation_id:
+                if delay == "source_error":
+                    raise ValueError("synthetic source verification failed after update")
+                clock[0] = current.captured_at + timedelta(seconds=5)
+            return result
+
+        monkeypatch.setattr(provider, "_recheck_current", recheck)
+    if delay == "source_error":
+        with pytest.raises(ValueError, match="source verification failed"):
+            module.registered_collection_grounding_preview_v2(tracker, current, state)
+    else:
+        result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+        assert result.status == "UNKNOWN" and result.evaluated_at == clock[0]
+        assert result.track.wrapper_freshness == "REJECTED"
+        assert (
+            result.grasp_tcp_world_m
+            is result.object_center_world_m
+            is result.destination_world_m
+            is None
+        )
+        assert (
+            result.destination_observation_id
+            is result.destination_observation_checksum_sha256
+            is None
+        )
+        assert result.to_payload()["region_evidence"] is None
+    assert provider._last_successful_observation is anchors[0]
+    assert provider._last_successful_geometry is anchors[1]
+
+
+@pytest.mark.parametrize("rotation", [0, 1])
+@pytest.mark.parametrize("shift", [(0.0, 0.0), (-0.15, 0.2)])
+def test_r643_registered_box_depth_attribution(tmp_path, monkeypatch, rotation, shift):
+    import numpy as np
+
+    from cloud_edge_robot_arm.research import native_collection_grounding as collection
+    from cloud_edge_robot_arm.vision.registered_objects import derive_registered_object_geometry
+    from tests.test_registered_object_tracking import environment
+
+    _, ref, reg, root, hashes, _ = environment(tmp_path, monkeypatch)
+    parser = getattr(collection, "_registered_opaque_primitives_v1", None)
+    assert callable(parser), "registered opaque primitive parser missing"
+    primitives = parser(reg, source_root=root, source_hashes=hashes)
+    payload = primitives.to_payload()
+    assert len(payload["boxes"]) == 38
+    assert {b["name"] for b in payload["boxes"]} >= {
+        "object_geom",
+        "pose_marker_outboard_v3_quiet",
+        "pose_marker_outboard_v3_r0c0",
+    }
+    geometry = derive_registered_object_geometry(ref, reg)
+    center = np.asarray(geometry.object_center_world_m) + (shift[0], shift[1], 0.0)
+    r = np.array(
+        ((1, 0, 0), (0, 1, 0), (0, 0, 1)) if rotation == 0 else ((0, -1, 0), (1, 0, 0), (0, 0, 1)),
+        dtype=float,
+    )
+    geometry = replace(
+        geometry,
+        object_center_world_m=tuple(center),
+        rotation_object_to_world=tuple(r.ravel()),
+        grasp_tcp_world_m=tuple(center + (0, 0, 0.01)),
+    )
+    camera = np.asarray(ref.camera_to_world).reshape(4, 4)
+    fx, fy, cx, cy = ref.intrinsics
+    probes = [(0.0, 0.0, 0.035), (0.045, 0.1, 0.03503), (0.0, 0.1, 0.03505)]
+    pixels = []
+    for point in probes:
+        world = center + r @ np.asarray(point)
+        optical = camera[:3, :3].T @ (world - camera[:3, 3])
+        pixels.append(
+            (round(cx + fx * optical[0] / optical[2]), round(cy + fy * optical[1] / optical[2]))
+        )
+    depths = collection._registered_model_depth_v1(ref, geometry, primitives, pixels + [(0, 0)])
+    # Horizontal faces give these independent literal local heights under either yaw.
+    expected = [camera[2, 3] - center[2] - h for h in (0.035, 0.03503, 0.03505)]
+    assert depths[:3] == pytest.approx(expected, abs=1e-10)
+    assert np.isinf(depths[3])
+    copied = primitives.to_payload()
+    copied["boxes"][0]["half_extent_m"][0] = 99
+    assert primitives.to_payload()["boxes"][0]["half_extent_m"] == [0.035, 0.035, 0.035]
+
+
 def prepare(tmp_path, monkeypatch, skill=SkillName.MOVE_ABOVE):
     protocol, args, clock = context(tmp_path, monkeypatch, skill)
     app = application.RegisteredGroundingPreparationApplication.from_protocol(
@@ -751,3 +1024,251 @@ def test_review_normal_nonzero_times_are_honest_and_readable(tmp_path, monkeypat
         output=tmp_path / "nonzero-read",
     )
     assert result["status"] == "PREPARED_CANDIDATE_RECONSTRUCTED"
+
+
+def nominal_scene(tmp_path, monkeypatch, *, center=None, yaw=0):
+    """Fresh pixel fixture; independent ray/triangle rasterizer, no simulator state online."""
+    import base64
+    import io
+    import xml.etree.ElementTree as ET
+
+    import numpy as np
+    from PIL import Image
+
+    from cloud_edge_robot_arm.research import native_collection_grounding as module
+    from tests.test_registered_object_tracking import environment
+
+    _, ref, reg, root, hashes, clock = environment(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "datetime", registered_object_tracking.datetime)
+    with Image.open(io.BytesIO(base64.b64decode(ref.rgb_png_base64))) as image:
+        rgb = np.array(image)
+    rgb[160:180, 100:120] = 255
+    rgb[60:90, 118:148] = (0, 255, 0)
+    depth = np.array(ref.depth_values(), dtype="<f4").reshape(ref.height, ref.width)
+    depth[60:90, 118:148] = 1.396
+
+    def encode(template, colors, depths, **changes):
+        stream = io.BytesIO()
+        Image.fromarray(colors).save(stream, format="PNG")
+        return revised(
+            template,
+            rgb_png_base64=base64.b64encode(stream.getvalue()).decode(),
+            depth_float32_base64=base64.b64encode(depths.astype("<f4").tobytes()).decode(),
+            valid_mask_base64=None,
+            **changes,
+        )
+
+    ref = encode(ref, rgb, depth)
+    current_rgb = np.full_like(rgb, 255)
+    current_rgb[60:90, 118:148] = (0, 255, 0)
+    current_depth = np.full_like(depth, 1.4)
+    current_depth[60:90, 118:148] = 1.396
+    camera = np.asarray(ref.camera_to_world).reshape(4, 4)
+    fx, fy, cx, cy = ref.intrinsics
+    if center is None:
+        center = np.array(
+            [
+                camera[0, 3] + (132.5 - cx) * 1.396 / fx,
+                camera[1, 3] - (74.5 - cy) * 1.396 / fy,
+                0.039,
+            ]
+        )
+    center = np.asarray(center)
+    rotation = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]) if yaw else np.eye(3)
+    yy, xx = np.indices(current_depth.shape)
+    rays = (
+        np.stack(((xx.ravel() - cx) / fx, (yy.ravel() - cy) / fy, np.ones(xx.size)), axis=1)
+        @ camera[:3, :3].T
+    )
+    origin = camera[:3, 3]
+    nearest = np.full(xx.size, np.inf)
+    colors = current_rgb.reshape(-1, 3)
+    corners = np.array(
+        [
+            [-1, -1, -1],
+            [-1, -1, 1],
+            [-1, 1, -1],
+            [-1, 1, 1],
+            [1, -1, -1],
+            [1, -1, 1],
+            [1, 1, -1],
+            [1, 1, 1],
+        ]
+    )
+    faces = [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)]
+    node = ET.fromstring((root / reg.to_payload()["asset_path"]).read_bytes()).find(
+        ".//body[@name='object']"
+    )
+    for geom in node.findall("geom"):
+        half = np.fromstring(geom.attrib["size"], sep=" ")
+        local = np.fromstring(geom.attrib.get("pos", "0 0 0"), sep=" ")
+        vertices = (corners * half + local) @ rotation.T + center
+        rgba = np.fromstring(geom.attrib["rgba"], sep=" ")
+        for a, b, c, d in faces:
+            for indices in ((a, b, c), (a, c, d)):
+                v0, v1, v2 = vertices[list(indices)]
+                edge1, edge2 = v1 - v0, v2 - v0
+                h = np.cross(rays, edge2)
+                det = h @ edge1
+                inv = np.zeros_like(det)
+                np.divide(1.0, det, out=inv, where=np.abs(det) > 1e-12)
+                displacement = origin - v0
+                u = (h @ displacement) * inv
+                q = np.cross(displacement, edge1)
+                v = (rays @ q) * inv
+                t = (edge2 @ q) * inv
+                hit = (
+                    (np.abs(det) > 1e-12)
+                    & (u >= 0)
+                    & (v >= 0)
+                    & (u + v <= 1)
+                    & (t > 0)
+                    & (t < nearest)
+                    & (t < current_depth.ravel())
+                )
+                nearest[hit] = t[hit]
+                colors[hit] = np.rint(rgba[:3] * 255).astype(np.uint8)
+    hits = np.isfinite(nearest)
+    current_depth.ravel()[hits] = nearest[hits]
+    current = encode(
+        ref,
+        current_rgb,
+        current_depth,
+        observation_id="nominal-current",
+        frame_id="nominal-current",
+        captured_at=ref.captured_at + timedelta(seconds=0.5),
+        sim_time_s=ref.sim_time_s + 0.5,
+    )
+    return module, ref, current, reg, root, hashes, clock, values()["online"].robot_state
+
+
+@pytest.mark.parametrize("yaw", [0, 1])
+def test_r643_plate_crosses_region_boundary(tmp_path, monkeypatch, yaw):
+    module, ref, current, reg, root, hashes, clock, state = nominal_scene(
+        tmp_path, monkeypatch, yaw=yaw
+    )
+    make_policy = getattr(module, "registered_nominal_region_policy_v1", None)
+    assert callable(make_policy), "source-bound nominal region policy missing"
+    policy = make_policy(hashes)
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref, reg, source_root=root, source_hashes=hashes, nominal_policy=policy
+    )
+    clock[0] = current.captured_at
+    result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    if yaw == 1:
+        # R658 retains this finite-pixel side-face counterexample: 10.2102mm > 10mm.
+        # This is an unsupported pose under the nominal rule, not rotation robustness.
+        assert result.status == "UNKNOWN"
+        assert result.reason == "registered_region_foreground_depth_mismatch"
+        assert result.region_evidence is result.destination_world_m is None
+        assert result.object_center_world_m is result.grasp_tcp_world_m is None
+        assert result.execution_allowed is False and result.native_authority == "UNAVAILABLE"
+        return
+    assert result.status == "DERIVED", result.reason
+    proof = result.region_evidence
+    assert proof["status"] == "PARTIAL_REGISTERED_NOMINAL"
+    assert proof["missing_boundary_pixels"] > 0
+    assert proof["visible_corners"] >= 3 and all(proof["visible_sides"])
+    assert proof["placement_clearance"] == "UNKNOWN"
+    assert proof["geometric_error_bound_m"] is None
+    assert proof["nominal_policy"] == policy
+
+
+def test_r643_resealed_region_binding(tmp_path, monkeypatch):
+    module, ref, current, reg, root, hashes, clock, state = nominal_scene(tmp_path, monkeypatch)
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref,
+        reg,
+        source_root=root,
+        source_hashes=hashes,
+        nominal_policy=module.registered_nominal_region_policy_v1(hashes),
+    )
+    clock[0] = current.captured_at
+    preview = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    inputs = owner.RegisteredGroundingFrameInputsV2.from_preview(preview, current, reg)
+    assert inputs.to_payload()["region_evidence"]["status"] == "PARTIAL_REGISTERED_NOMINAL"
+    for change in ("threshold", "primitive", "mask", "status", "frame"):
+        payload = inputs.to_payload()
+        proof = payload["region_evidence"]
+        if change == "threshold":
+            proof["nominal_policy"]["tau_model_m"] = 0.011
+        elif change == "primitive":
+            proof["primitive_sha256"] = "invalid"
+        elif change == "mask":
+            proof["missing_pixels"] += 1
+        elif change == "frame":
+            proof["current_observation_checksum_sha256"] = "e" * 64
+        else:
+            proof["status"] = "FULL_NOMINAL"
+        with pytest.raises((ValueError, TypeError)):
+            owner.RegisteredGroundingFrameInputsV2.from_payload(payload)
+
+
+@pytest.mark.parametrize(
+    "change,expected",
+    [
+        ("visible_inside", "DERIVED"),
+        ("visible_outside", "UNKNOWN"),
+        ("foreign_depth", "UNKNOWN"),
+        ("same_plane_repaint", "UNKNOWN"),
+        ("lost_corners", "UNKNOWN"),
+        ("zero", "UNKNOWN"),
+        ("projection_hole", "UNKNOWN"),
+    ],
+)
+def test_r643_nominal_residual_boundaries(tmp_path, monkeypatch, change, expected):
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    module, ref, current, reg, root, hashes, clock, state = nominal_scene(tmp_path, monkeypatch)
+    with Image.open(io.BytesIO(base64.b64decode(current.rgb_png_base64))) as image:
+        rgb = np.array(image)
+    depth = np.array(current.depth_values(), dtype="<f4").reshape(current.height, current.width)
+    region = np.zeros(depth.shape, dtype=bool)
+    region[60:90, 118:148] = True
+    green = (rgb[:, :, 1] > 200) & (rgb[:, :, 0] < 30) & (rgb[:, :, 2] < 30)
+    visible = region & green
+    missing = region & ~green
+    if change.startswith("visible_"):
+        prior = float(np.float32(1.396))
+        upper = np.float32(prior + 0.010)
+        if float(upper) - prior > 0.010:
+            upper = np.nextafter(upper, np.float32(-np.inf))
+        depth[visible] = (
+            upper if change == "visible_inside" else np.nextafter(upper, np.float32(np.inf))
+        )
+    elif change == "foreign_depth":
+        depth[missing] -= 0.03
+    elif change == "same_plane_repaint":
+        depth[missing] = 1.396
+    elif change == "lost_corners":
+        rgb[60, 118] = rgb[60, 147] = 255
+        depth[60, 118] = depth[60, 147] = 1.3
+    elif change == "projection_hole":
+        rgb[75, 120] = 255
+        depth[75, 120] = 1.3
+    else:
+        depth[missing] = 0
+    stream = io.BytesIO()
+    Image.fromarray(rgb).save(stream, format="PNG")
+    current = revised(
+        current,
+        rgb_png_base64=base64.b64encode(stream.getvalue()).decode(),
+        depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
+        valid_mask_base64=None,
+    )
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref,
+        reg,
+        source_root=root,
+        source_hashes=hashes,
+        nominal_policy=module.registered_nominal_region_policy_v1(hashes),
+    )
+    clock[0] = current.captured_at
+    result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert result.status == expected, result.reason
+    if expected == "UNKNOWN":
+        assert result.region_evidence is result.destination_world_m is None

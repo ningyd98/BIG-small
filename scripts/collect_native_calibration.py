@@ -22,6 +22,7 @@ def main() -> None:
     modes.add_argument("--verify", action="store_true")
     modes.add_argument("--prepare-registered-protocol", action="store_true")
     modes.add_argument("--prepare-registered-collection-protocol", action="store_true")
+    modes.add_argument("--prepare-registered-occlusion-collection-protocol", action="store_true")
     modes.add_argument("--prepare-registered-step", action="store_true")
     modes.add_argument("--verify-registered-step", action="store_true")
     parser.add_argument("--config", type=Path)
@@ -35,6 +36,7 @@ def main() -> None:
     registered = (
         args.prepare_registered_protocol
         or args.prepare_registered_collection_protocol
+        or args.prepare_registered_occlusion_collection_protocol
         or args.prepare_registered_step
         or args.verify_registered_step
     )
@@ -47,7 +49,11 @@ def main() -> None:
             regular,
         )
 
-        if args.prepare_registered_protocol or args.prepare_registered_collection_protocol:
+        if (
+            args.prepare_registered_protocol
+            or args.prepare_registered_collection_protocol
+            or args.prepare_registered_occlusion_collection_protocol
+        ):
             if any(
                 value is not None
                 for value in (
@@ -60,7 +66,13 @@ def main() -> None:
                 )
             ):
                 parser.error("registered protocol preparation requires only output")
-            if args.prepare_registered_collection_protocol:
+            if args.prepare_registered_occlusion_collection_protocol:
+                from cloud_edge_robot_arm.research.native_calibration_collection import (
+                    prepare_registered_collection_protocol_v2,
+                )
+
+                result = prepare_registered_collection_protocol_v2(output=args.output)
+            elif args.prepare_registered_collection_protocol:
                 from cloud_edge_robot_arm.research.native_calibration_collection import (
                     prepare_registered_collection_protocol,
                 )

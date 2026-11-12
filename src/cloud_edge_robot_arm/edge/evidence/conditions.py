@@ -138,6 +138,93 @@ def evaluate_registered_pose_available(inputs, observation, *, target_id, now) -
     )
 
 
+def evaluate_registered_conditions_v2(
+    conditions, evidence, *, grounding_inputs, now
+) -> list[ConditionVerdict]:
+    """分别核验当前模型可用性与原条件，不将推导冒充表面或放置证据。"""
+    from cloud_edge_robot_arm.vision import owner_registration
+
+    result = []
+    for condition in conditions:
+        if condition.name not in {
+            "registered_object_pose_available",
+            "registered_region_model_available",
+        }:
+            result.extend(evaluate_conditions([condition], evidence, now=now))
+            continue
+        observation = evidence.observation
+
+        def unknown(reason, condition=condition, observation=observation):
+            return ConditionVerdict(
+                ConditionStatus.UNKNOWN,
+                condition.name,
+                getattr(observation, "observation_id", ""),
+                reasons=(reason,),
+            )
+
+        input_type = getattr(owner_registration, "RegisteredGroundingFrameInputsV2", None)
+        if input_type is None or type(grounding_inputs) is not input_type:
+            result.append(unknown("registered_v2_exact_inputs_required"))
+            continue
+        if (
+            type(evidence) is not OnlineEvidenceSnapshot
+            or type(observation) is not RGBDObservation
+            or type(condition) is not ConditionSpec
+            or condition.tolerances.get("condition_registry_version")
+            != "registered-model-condition-v2"
+            or not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.utcoffset() is None
+        ):
+            result.append(unknown("registered_v2_condition_context_invalid"))
+            continue
+        try:
+            current = RGBDObservation.model_validate(observation.model_dump())
+            inputs = input_type.from_payload(grounding_inputs.to_payload())
+            payload = inputs.to_payload()
+            age = (now - current.captured_at).total_seconds()
+            max_age = condition.tolerances.get("max_age_s", 5.0)
+            identity = (
+                "object_id"
+                if condition.name == "registered_object_pose_available"
+                else "target_region_id"
+            )
+            valid = (
+                _number(max_age)
+                and max_age > 0
+                and 0 <= age < min(5.0, max_age)
+                and inputs.matches_observation(current)
+                and type(condition.target_id) is str
+                and condition.target_id == payload[identity]
+                and condition.tolerances.get("calibration_version", current.calibration_version)
+                == current.calibration_version
+                and set(condition.sensor_requirements) <= {"rgbd", "rgb", "depth", "robot_state"}
+                and bool(set(condition.sensor_requirements) & {"rgbd", "depth"})
+            )
+        except (ValueError, TypeError, AttributeError, OverflowError):
+            valid = False
+        if not valid:
+            result.append(unknown("registered_v2_current_source_unavailable"))
+            continue
+        result.append(
+            ConditionVerdict(
+                ConditionStatus.PASS,
+                condition.name,
+                current.observation_id,
+                {
+                    "condition_version": "registered-model-condition-v2",
+                    "geometry_basis": "REGISTERED_RIGID_MODEL",
+                    "geometric_error_bound_m": None,
+                    "object_surface_visibility": "UNKNOWN",
+                    "placement_clearance": "UNKNOWN",
+                    "input_sha256": inputs.digest(),
+                },
+                ("current_registered_model_availability_only",),
+            )
+        )
+    return result
+
+
 def evaluate_conditions(
     conditions: Sequence[ConditionSpec],
     evidence: OnlineEvidenceSnapshot,
@@ -363,6 +450,8 @@ def _operational_freshness(evidence: OnlineEvidenceSnapshot, max_age: object) ->
     from cloud_edge_robot_arm.vision.operational_windows import _check_observation
 
     return _check_observation(
-        evidence.observation, "condition", max_age_s=max_age,
+        evidence.observation,
+        "condition",
+        max_age_s=max_age,
         reference=dict(evidence.operational_reference),
     )
