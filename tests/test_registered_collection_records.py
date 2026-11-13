@@ -788,12 +788,11 @@ def test_r675_recorded_measured_reference_matches_live_scope(tmp_path, monkeypat
         current, state, evaluated_at=current.captured_at, finished_at=current.captured_at
     )
     assert result.to_payload() == live.to_payload()
-    assert result.status == ("UNKNOWN" if partial else "DERIVED")
-    if partial:
-        assert result.reason == "registered_region_reference_not_rectangular"
-    else:
-        assert result.region_evidence["status"] == "FULL_NOMINAL"
-        assert result.region_evidence["region_pixels"] == 899
+    assert result.status == "DERIVED", result.reason
+    assert result.region_evidence["status"] == (
+        "PARTIAL_REGISTERED_NOMINAL" if partial else "FULL_NOMINAL"
+    )
+    assert result.region_evidence["region_pixels"] == 899
     assert result.execution_allowed is False and result.native_authority == "UNAVAILABLE"
 
 

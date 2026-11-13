@@ -1236,16 +1236,12 @@ def _registered_region_evidence_v2(tracker, current, *, object_geometry=None, no
     if x0 == 0 or y0 == 0 or x1 == shape[1] - 1 or y1 == shape[0] - 1:
         return None, "registered_region_reference_cropped"
     missing = expected & ~selected
-    if missing.any():
-        # Partial attribution still requires the complete rectangular reference.
-        rectangle = np.zeros_like(expected)
-        rectangle[y0 : y1 + 1, x0 : x1 + 1] = True
-        supported_reference = np.array_equal(rectangle, expected)
-    else:
-        # FULL retains every measured pixel and the bootstrap's complete inset.
-        supported_reference = (
-            x0 + 1 < x1 - 1 and y0 + 1 < y1 - 1 and expected[y0 + 1 : y1, x0 + 1 : x1].all()
-        )
+    # Keep the bootstrap's complete inset and the exact measured footprint for
+    # FULL and PARTIAL alike. Unmeasured border pixels never become evidence;
+    # every missing measured pixel still requires registered first-hit support.
+    supported_reference = (
+        x0 + 1 < x1 - 1 and y0 + 1 < y1 - 1 and expected[y0 + 1 : y1, x0 + 1 : x1].all()
+    )
     if not supported_reference:
         return None, "registered_region_reference_not_rectangular"
     corners = sum(bool(selected[y, x]) for y, x in ((y0, x0), (y0, x1), (y1, x0), (y1, x1)))

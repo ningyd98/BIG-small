@@ -1488,10 +1488,19 @@ def test_r675_full_measured_reference_keeps_exact_support(tmp_path, monkeypatch,
     assert inputs.to_payload()["region_evidence"]["region_pixels"] == int(expected.sum())
 
 
-def test_r675_nonrectangular_partial_remains_unknown(tmp_path, monkeypatch):
-    module, ref, current, reg, root, hashes, clock, state = _r675_scene(
-        tmp_path, monkeypatch, partial=True
+@pytest.mark.parametrize("yaw", [0, 1])
+@pytest.mark.parametrize("corner", ["tl", "tr", "bl", "br"])
+def test_measured_reference_partial_keeps_exact_support(tmp_path, monkeypatch, yaw, corner):
+    import hashlib
+
+    import numpy as np
+
+    module, ref, current, reg, root, hashes, clock, state = nominal_scene(
+        tmp_path, monkeypatch, yaw=yaw
     )
+    y, x = {"tl": (60, 118), "tr": (60, 147), "bl": (89, 118), "br": (89, 147)}[corner]
+    ref = _r675_repaint(ref, [(y, x, 255)])
+    current = _r675_repaint(current, [(y, x, 255)])
     tracker = module.bootstrap_registered_collection_tracker_v2(
         ref,
         reg,
@@ -1501,10 +1510,67 @@ def test_r675_nonrectangular_partial_remains_unknown(tmp_path, monkeypatch):
     )
     clock[0] = current.captured_at
     result = module.registered_collection_grounding_preview_v2(tracker, current, state)
-    assert result.status == "UNKNOWN"
-    assert result.reason == "registered_region_reference_not_rectangular"
+    assert result.status == "DERIVED", result.reason
+    proof = result.region_evidence
+    expected = np.zeros((ref.height, ref.width), dtype=bool)
+    expected[60:90, 118:148] = True
+    expected[y, x] = False
+    assert proof["status"] == "PARTIAL_REGISTERED_NOMINAL"
+    assert proof["region_pixels"] == 899
+    assert proof["visible_pixels"] + proof["missing_pixels"] == 899
+    assert proof["missing_pixels"] > 0 and proof["missing_boundary_pixels"] > 0
+    assert proof["reference_region_mask_sha256"] == hashlib.sha256(expected.tobytes()).hexdigest()
+    assert proof["visible_corners"] == 3 and all(proof["visible_sides"])
+    assert proof["placement_clearance"] == "UNKNOWN" and proof["geometric_error_bound_m"] is None
+    assert result.execution_allowed is False and result.native_authority == "UNAVAILABLE"
+
+
+@pytest.mark.parametrize(
+    "fault,reason",
+    [
+        ("restored_corner", "registered_region_extra_or_moved_color"),
+        ("lost_corner", "registered_region_anchors_unavailable"),
+        ("foreign_depth", "registered_region_foreground_depth_mismatch"),
+        ("invalid_depth", "registered_region_current_depth_unavailable"),
+        ("projection_hole", "registered_region_projection_mask_mismatch"),
+    ],
+)
+def test_measured_partial_reference_keeps_rejection_gates(tmp_path, monkeypatch, fault, reason):
+    import base64
+
+    import numpy as np
+
+    module, ref, current, reg, root, hashes, clock, state = _r675_scene(
+        tmp_path, monkeypatch, partial=True
+    )
+    if fault == "restored_corner":
+        current = _r675_repaint(current, [(60, 118, (0, 255, 0))])
+    elif fault == "lost_corner":
+        current = _r675_repaint(current, [(60, 147, 255)])
+    elif fault == "projection_hole":
+        assert tuple(tracking._rgb(current)[75, 120]) == (0, 255, 0)
+        current = _r675_repaint(current, [(75, 120, 255)])
+    else:
+        depth = np.array(current.depth_values(), dtype="<f4").reshape(current.height, current.width)
+        # The registered plate crosses the center of the top boundary here.
+        depth[60, 132] = 0 if fault == "invalid_depth" else depth[60, 132] - 0.03
+        current = revised(
+            current,
+            depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
+            valid_mask_base64=None,
+        )
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref,
+        reg,
+        source_root=root,
+        source_hashes=hashes,
+        nominal_policy=module.registered_nominal_region_policy_v1(hashes),
+    )
+    clock[0] = current.captured_at
+    result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert result.status == "UNKNOWN" and result.reason == reason
     assert (
-        result.object_center_world_m is result.destination_world_m is result.region_evidence is None
+        result.region_evidence is result.destination_world_m is result.object_center_world_m is None
     )
 
 
