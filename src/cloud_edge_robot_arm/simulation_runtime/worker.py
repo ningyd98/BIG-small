@@ -320,6 +320,12 @@ class SimulationWorker:
                     terminal = RuntimeJobStatus.BLOCKED_BY_ENV
                 elif result.get("task_success") is not True:
                     terminal = RuntimeJobStatus.FAILED
+            if (
+                isinstance(result, dict)
+                and result.get("evaluation_scope") == "MUJOCO_COMPONENT_DIAGNOSTIC"
+            ):
+                if result.get("diagnostic_complete") is not True:
+                    terminal = RuntimeJobStatus.FAILED
             with self.repository.publication_guard():
                 self._raise_if_cancelled_or_timed_out(job_id, job, start_monotonic)
                 if self._active_job_cancelled(job):
@@ -911,6 +917,19 @@ class SimulationWorker:
     def _run_visual_closed_loop(
         self, job: SimulationJobRecord, draft: ExperimentDraft, *, start_monotonic: float
     ) -> tuple[dict[str, Any], list[TimelineEvent], list[SimulationMetric]]:
+        component = job.draft.get("parameter_overrides", {}).get(
+            "sol_molmo_component_diagnostic", False
+        )
+        if type(component) is not bool:
+            raise ValueError("strict component diagnostic flag required")
+        if component:
+            from cloud_edge_robot_arm.research.sol_molmo_components import run_component_episode
+
+            if self._native_collection_application is not None:
+                raise ValueError(
+                    "component diagnostic cannot share a native collection application"
+                )
+            return run_component_episode(self, job, draft, start_monotonic=start_monotonic)
         collection_application = getattr(self, "_native_collection_application", None)
         if collection_application is not None:
             from cloud_edge_robot_arm.research.native_collection_application import (

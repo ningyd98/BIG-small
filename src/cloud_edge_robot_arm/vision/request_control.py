@@ -21,6 +21,41 @@ class ModelCallTimedOut(TimeoutError):
     """The caller's deadline expired, including time spent waiting for capacity."""
 
 
+def bounded_owner_model_call[T](
+    call: Callable[[], T],
+    *,
+    timeout_s: float,
+    cancelled: Callable[[], bool] | None = None,
+    resource_key: str = "visual-provider",
+) -> T:
+    """主线程原生模型调用；前后检查期限，实际结束前不释放provider槽。"""
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError("native model call requires the process main thread")
+    if not math.isfinite(timeout_s) or timeout_s <= 0:
+        raise ModelCallTimedOut("visual request deadline expired")
+    deadline = time.monotonic() + timeout_s
+
+    def check() -> None:
+        if cancelled is not None and cancelled():
+            raise ModelCallCancelled("visual request cancelled; result discarded")
+        if time.monotonic() >= deadline:
+            raise ModelCallTimedOut("visual request deadline expired; result discarded")
+
+    with _registry_lock:
+        slot = _provider_slots.setdefault(resource_key, threading.BoundedSemaphore(1))
+    while True:
+        check()
+        if slot.acquire(timeout=min(0.025, max(0, deadline - time.monotonic()))):
+            break
+    try:
+        check()
+        result = call()
+        check()
+        return result
+    finally:
+        slot.release()
+
+
 def bounded_model_call[T](
     call: Callable[[], T],
     *,

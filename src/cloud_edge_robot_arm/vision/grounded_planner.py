@@ -113,6 +113,17 @@ class _NativePerceptionFailure(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class _OwnedRefreshPlan:
+    binding: _PlanBinding
+    decision: SkillDecision
+    raw: str
+    reference: dict[str, Any]
+    cloud_started: dict[str, Any]
+    cloud_returned: dict[str, Any]
+    not_before: datetime
+
+
 class MolmoGroundedPlannerAdapter:
     """显式启用的新规划入口；无硬件派发权限，输出仍经过原规划管线。"""
 
@@ -126,6 +137,7 @@ class MolmoGroundedPlannerAdapter:
         cloud: RGBDPlannerAdapter,
         task: GroundingTaskDescriptor,
         post_cloud_observation_supplier: Callable[[], RGBDObservation] | None = None,
+        worker_owned_refresh: bool = False,
     ) -> None:
         if cloud.provider != "openai_compatible" or cloud.model_snapshot is None:
             raise ValueError("grounded planning requires an explicit compatible cloud snapshot")
@@ -133,6 +145,13 @@ class MolmoGroundedPlannerAdapter:
             post_cloud_observation_supplier
         ):
             raise ValueError("post-cloud observation supplier must be callable")
+        if type(worker_owned_refresh) is not bool or (
+            worker_owned_refresh and post_cloud_observation_supplier is not None
+        ):
+            raise ValueError("worker-owned refresh requires its own capture protocol")
+        self.worker_owned_refresh = worker_owned_refresh
+        self._owned_refresh: _OwnedRefreshPlan | None = None
+        self._owned_started = False
         self.post_cloud_observation_supplier = post_cloud_observation_supplier
         self.point_provider = point_provider
         self.cloud = cloud
@@ -143,7 +162,77 @@ class MolmoGroundedPlannerAdapter:
     @property
     def requires_final_plan_admission(self) -> bool:
         """显式补帧结果必须在最终合同及缓存返回前检查。"""
-        return self.post_cloud_observation_supplier is not None
+        return self.post_cloud_observation_supplier is not None or self.worker_owned_refresh
+
+    @property
+    def awaiting_owned_refresh(self) -> bool:
+        """仅待worker真实补帧时为真，不包含派发权限。"""
+        return self._owned_refresh is not None
+
+    def _resume_owned(
+        self, request: InitialPlanningRequest, pending: _OwnedRefreshPlan
+    ) -> PlannerDraft:
+        raw = pending.raw
+        evidence = copy.deepcopy(pending.reference)
+        try:
+            self._context(pending.binding)
+            reference = pending.binding.request.observation
+            fresh = request.observation
+            if reference is None or fresh is None:
+                raise ValueError("owned_refresh_rgbd_required")
+            if request.user_instruction != pending.binding.task.instruction:
+                raise ValueError("owned_refresh_task_changed")
+            policy = validate_post_cloud_observation(
+                reference, fresh, not_before=pending.not_before
+            )
+            binding = _PlanBinding(
+                request,
+                configuration_hash(request.model_dump(mode="json")),
+                pending.binding.task,
+                pending.binding.task_hash,
+                pending.binding.points,
+                pending.binding.cloud,
+                pending.binding.supplier,
+                pending.binding.role,
+                pending.binding.role_hash,
+                pending.binding.cloud_hash,
+            )
+            evidence = self._evidence(fresh, binding)
+            evidence.update(
+                cloud_reference=copy.deepcopy(pending.reference),
+                cloud_request_invoked=True,
+                cloud_messages_sha256=pending.reference["cloud_messages_sha256"],
+                cloud_response_content_sha256=pending.reference["cloud_response_content_sha256"],
+                post_cloud_revalidation={
+                    "status": "STARTED",
+                    "capture_protocol": "WORKER_OWNED_REOBSERVATION",
+                    "cloud_started": pending.cloud_started,
+                    "cloud_returned": pending.cloud_returned,
+                    "not_before": pending.not_before.isoformat(),
+                    "policy": policy,
+                },
+                model_image_count=2,
+                perception_model_image_count=2,
+            )
+            measured = self._ground(request, binding.task, binding, evidence)
+            if (
+                evidence["opencv_support_mask_sha256"]
+                != pending.reference["opencv_support_mask_sha256"]
+            ):
+                raise ValueError("post_cloud_support_mask_changed")
+            draft = build_grounded_contract(
+                request, measured, pending.decision.skills, raw_text=raw
+            )
+            self._fresh(fresh, binding)
+            evidence["post_cloud_revalidation"]["status"] = "PASSED"
+            evidence["perception_query_count"] = len(evidence["native_results"]) + len(
+                pending.reference["native_results"]
+            )
+            draft.observation_evidence = evidence
+            draft._final_plan_admission = self._make_final_plan_admission(binding, fresh)
+            return draft
+        except (_NativePerceptionFailure, ValueError) as exc:
+            return RGBDPlannerAdapter._more_observation(raw, str(exc), evidence)
 
     def _make_final_plan_admission(
         self, binding: _PlanBinding, observation: RGBDObservation
@@ -210,6 +299,8 @@ class MolmoGroundedPlannerAdapter:
         snapshot = binding.cloud.model_snapshot
         return {
             **(observation.evidence() if observation else {}),
+            "acquisition_schema": "RGBD_SOURCE_AND_MODEL_INPUTS_V1",
+            "acquisition_evidence": observation.evidence() if observation else {},
             "model_image_count": 1,
             "perception_model_image_count": 1,
             "cloud_model_image_count": 0,
@@ -329,6 +420,13 @@ class MolmoGroundedPlannerAdapter:
 
     def plan(self, request: InitialPlanningRequest) -> PlannerDraft:
         """一次云端技能意图；可选真实新采集及独立定位后再构造候选。"""
+        if self.worker_owned_refresh:
+            pending, self._owned_refresh = self._owned_refresh, None
+            if pending is not None:
+                return self._resume_owned(request, pending)
+            if self._owned_started:
+                return PlannerDraft(raw_text="", parse_error="owned planning budget exhausted")
+            self._owned_started = True
         role = getattr(self.cloud, "role_snapshot", None)
         binding = _PlanBinding(
             request=request,
@@ -373,8 +471,14 @@ class MolmoGroundedPlannerAdapter:
                 "content": (
                     "Plan a pick-and-place using the supplied measured geometry. "
                     "Return only a JSON object with skills and reason. "
-                    "Skills must be HOME, MOVE_ABOVE, APPROACH, GRASP, LIFT, MOVE_TO_REGION, "
-                    "PLACE, RELEASE, RETREAT, HOME in that order. "
+                    "Skills must be "
+                    + (
+                        "MOVE_ABOVE, APPROACH, GRASP, LIFT, MOVE_TO_REGION, PLACE, RELEASE, RETREAT"
+                        if self.worker_owned_refresh
+                        else "HOME, MOVE_ABOVE, APPROACH, GRASP, LIFT, MOVE_TO_REGION, "
+                        "PLACE, RELEASE, RETREAT, HOME"
+                    )
+                    + " in that order. "
                     "If uncertain return skills []. Do not output coordinates, targets, "
                     "confidence, safety overrides, identity, timestamps or low-level controls. "
                     "Schema: " + json.dumps(SkillDecision.model_json_schema())
@@ -413,7 +517,7 @@ class MolmoGroundedPlannerAdapter:
             if not isinstance(raw, str):
                 raise TypeError("cloud content must be text")
             evidence["cloud_response_content_sha256"] = hashlib.sha256(raw.encode()).hexdigest()
-            if binding.supplier is None:
+            if binding.supplier is None and not self.worker_owned_refresh:
                 self._fresh(observation, binding)
             else:
                 self._context(binding)
@@ -432,11 +536,27 @@ class MolmoGroundedPlannerAdapter:
                     raw, decision.reason or "cloud requests observation", evidence
                 )
             validate_grounded_skill_order(decision.skills)
+            if self.worker_owned_refresh and "HOME" in decision.skills:
+                raise ValueError("worker requires core skills without optional HOME")
         except (ValidationError, ValueError):
             return PlannerDraft(
                 raw_text=raw,
                 parse_error="invalid cloud skill-only decision or sequence",
                 observation_evidence=evidence,
+            )
+        if self.worker_owned_refresh:
+            evidence["owned_refresh_required"] = True
+            self._owned_refresh = _OwnedRefreshPlan(
+                binding,
+                decision,
+                raw,
+                copy.deepcopy(evidence),
+                cloud_started,
+                cloud_returned,
+                _utcnow(),
+            )
+            return RGBDPlannerAdapter._more_observation(
+                raw, "WORKER_OWNED_POST_CLOUD_CAPTURE_REQUIRED", evidence
             )
         refresh = None
         try:
@@ -528,6 +648,7 @@ def build_molmo_grounded_planner(
     grasp_profile: str,
     allow_paid: bool = False,
     post_cloud_observation_supplier: Callable[[], RGBDObservation] | None = None,
+    worker_owned_refresh: bool = False,
 ) -> MolmoGroundedPlannerAdapter:
     """复用既有 profile 与密钥服务，保持所选云端身份；默认不允许付费调用。"""
     if calibration_asset_sha256(grasp_profile) is None:
@@ -567,4 +688,5 @@ def build_molmo_grounded_planner(
         cloud=cloud,
         task=task,
         post_cloud_observation_supplier=post_cloud_observation_supplier,
+        worker_owned_refresh=worker_owned_refresh,
     )

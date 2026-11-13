@@ -1,4 +1,4 @@
-"""单场景配置、标记与真实规划入口；完整物理执行尚受原资格门阻塞。"""
+"""单场景配置、标记、真实规划与显式MuJoCo组件诊断入口。"""
 
 from __future__ import annotations
 
@@ -39,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
         help="追加已有应用环境依赖；保留 Molmo 运行时依赖的优先级，不安装软件包",
     )
     parser.add_argument("--allow-paid", action="store_true")
+    parser.add_argument("--component-diagnostic", action="store_true",
+                        help="与--execute共同启用已授权的MuJoCo组件诊断；不代表T10/G1验收")
     args = parser.parse_args(argv)
     if args.application_site_packages is not None:
         dependency_path = args.application_site_packages.resolve()
@@ -67,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
             asset_manifest=args.asset_manifest,
             gpu_lock=args.gpu_lock,
             allow_paid=args.allow_paid,
+            component_diagnostic=args.component_diagnostic,
         )
     except (ValueError, OSError) as error:
         print(json.dumps({"status": "NOT_STARTED", "error_type": type(error).__name__}))
@@ -78,7 +81,10 @@ def main(argv: list[str] | None = None) -> int:
                 for key in (
                     "status",
                     "mode",
+                    "execution_scope",
                     "success",
+                    "component_success",
+                    "physical_success",
                     "planning_passed",
                     "marker_endpoints_observed",
                     "model_calls",
@@ -95,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         if result["status"] == "BLOCKED"
         else 0
         if result["status"] in {"PREPARED", "MARKER_CHECKED", "PLANNED"}
+        or (result["status"] == "COMPONENTS_COMPLETED" and result["component_success"])
         else 2
     )
 

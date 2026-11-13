@@ -63,18 +63,139 @@ def test_unknown_marker_family_has_no_output_side_effect(tmp_path):
     assert not (tmp_path / "out").exists()
 
 
-def test_execute_blocks_before_models_and_never_uses_legacy_runtime(tmp_path, monkeypatch):
+def test_execute_requires_explicit_paid_model_configuration_before_side_effects(
+    tmp_path, monkeypatch
+):
     module = api()
     monkeypatch.setattr(
         module, "_run_observed_scene", lambda *a, **k: pytest.fail("unqualified execution")
     )
-    result = module.run_single_episode(output=tmp_path / "out", mode="execute")
+    with pytest.raises(ValueError, match="execute.*allow-paid"):
+        module.run_single_episode(output=tmp_path / "out", mode="execute")
+    assert not (tmp_path / "out").exists()
+
+
+def test_registered_asset_and_bridge_preflight_is_not_a_hardcoded_refusal():
+    assignment = api().scene_assignment(42001, "outboard_id7_45mm_v3")
+    assert api().execution_blockers(assignment) == []
+    assignment["grasp_profile"] = "mujoco_upright_box_v1"
+    assert api().execution_blockers(assignment)
+
+
+def test_component_diagnostic_cannot_be_enabled_outside_execute(tmp_path):
+    with pytest.raises(ValueError, match="component.*execute"):
+        api().run_single_episode(output=tmp_path / "out", component_diagnostic=True)
+    assert not (tmp_path / "out").exists()
+
+
+def test_component_success_is_revoked_when_final_source_check_fails(tmp_path, monkeypatch):
+    module = api()
+    original_sha = module._sha
+    finished = False
+
+    def observed(assignment, output, result, **kwargs):
+        nonlocal finished
+        result.update(
+            status="COMPONENTS_COMPLETED",
+            physical_success=True,
+            outcome={"diagnostic_complete": True},
+        )
+        finished = True
+
+    def changed_sha(path):
+        return "0" * 64 if finished else original_sha(path)
+
+    monkeypatch.setattr(module, "_run_observed_scene", observed)
+    monkeypatch.setattr(module, "_sha", changed_sha)
+    result = module.run_single_episode(
+        output=tmp_path / "out",
+        mode="execute",
+        component_diagnostic=True,
+        profile_id="software-only",
+        model_control_db=tmp_path / "db",
+        model_directory=tmp_path / "model",
+        asset_manifest=tmp_path / "manifest",
+        allow_paid=True,
+    )
+    assert result["status"] == "FAILED"
+    assert result["physical_success"] is True
+    assert result["component_success"] is False
+
+
+def test_completed_component_file_cannot_override_failed_real_worker(tmp_path, monkeypatch):
+    from cloud_edge_robot_arm.model_control.service import ModelControlService
+    from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
+    from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker, TimedOut
+    from tests.test_sol_molmo_worker_integration import RGBPointFixture
+
+    module = api()
+    database, profile, secrets = selected_profile(tmp_path)
+    service = ModelControlService(
+        repository=SQLiteModelProfileRepository(database), secret_store=secrets
+    )
+    assignment = module.scene_assignment(42001, "side_y_plus_id7_75mm_component_v1")
+    assignment["component_diagnostic"] = True
+    output = tmp_path / "out"
+    output.mkdir()
+    planner, binding = module.create_molmo_opencv_bridge(
+        service=service,
+        profile_id=profile.profile_id,
+        points=RGBPointFixture(),
+        assignment=assignment,
+        output=output,
+        asset_manifest_sha256="a" * 64,
+    )
+
+    def failed_after_component(self, job, *, start_monotonic):
+        module._write(
+            output / "component/episode.json",
+            {
+                "success": False,
+                "physical_success": True,
+                "diagnostic_complete": True,
+                "online_reported_complete": None,
+                "executed_actions": 8,
+                "model_calls": 5,
+                "terminal_reason": None,
+                "observation_count": 20,
+                "execution_scope": "MUJOCO_COMPONENT_DIAGNOSTIC",
+                "status": "COMPONENTS_COMPLETED",
+                "physics_steps": 5000,
+                "episode_id": "SOFTWARE_ONLY_STATUS_FIXTURE",
+            },
+        )
+        raise TimedOut("injected timeout after component archive")
+
+    monkeypatch.setattr(SimulationWorker, "_run", failed_after_component)
+    result = {}
+    module.run_worker_episode(assignment, output, result, planner=planner, binding=binding)
+    assert result["worker_status"] == "TIMED_OUT"
+    assert result["physical_success"] is True
+    assert result["status"] == "FAILED"
+    assert result["terminal_reason"] == "WORKER_TERMINAL_TIMED_OUT"
+
+
+def test_qualified_execute_does_not_spend_on_known_missing_native_qualification(
+    tmp_path, monkeypatch
+):
+    module = api()
+    monkeypatch.setattr(
+        module, "_run_observed_scene", lambda *a, **k: pytest.fail("unqualified paid attempt")
+    )
+    result = module.run_single_episode(
+        output=tmp_path / "out",
+        mode="execute",
+        profile_id="explicit-profile",
+        model_control_db=tmp_path / "db",
+        model_directory=tmp_path / "model",
+        asset_manifest=tmp_path / "manifest",
+        allow_paid=True,
+    )
     assert result["status"] == "BLOCKED"
-    assert "marked_asset_not_qualified_for_visual_episode" in result["blocking_reasons"]
-    assert "molmo_live_opencv_worker_handoff_not_integrated" in result["blocking_reasons"]
-    assert result["executed_actions"] == result["model_calls"] == 0
-    assert result["physical_success"] is None
-    assert result["online_reported_complete"] is None
+    assert result["blocking_reasons"] == [
+        "native_action_metric_and_motion_qualification_unavailable"
+    ]
+    assert result["model_calls"] == result["executed_actions"] == 0
 
 
 class CaptureFixture:

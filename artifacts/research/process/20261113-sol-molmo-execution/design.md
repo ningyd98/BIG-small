@@ -1,0 +1,21 @@
+# Sol/Molmo开发仿真执行桥接设计
+
+用户2026-11-13攻坚计划为需求。当前模型设计，非Astra；沿用持续开发授权，内联实施。
+
+经源码核实，原生动作还缺T10几何/运动误差证书和连续稳定性证据。用户已选择execution-scope-decision.md的选项一：显式--execute --component-diagnostic由真实SQLite SimulationWorker领取和持有租约，经OpenCVTargetTracker、SafetyShield及SkillExecutor执行。组件分支不经正式VisualWorkerRuntime的证书准入，不声称同等资格。默认--execute仍明确BLOCKED，原正式路径保持原样。正式B0/G1/T8资格不升级。
+
+开发失败已保留：旧45mm初始检测未知；旧75mm/100mm外伸资产在放置后失去当前目标支持，6动作后停止。新增75mm/140mm外伸的side_y_plus_id7_75mm_component_v1仅登记为组件诊断变体，不加入原生prepare/release许可。相同相机、控制器、物理物体和目标。固定S01、不同seed不形成独立成功率。
+
+实际模型预算在最终代码软件验证及独立审查后启用：新140mm变体一例，最多1load/4定位/1cloud、0重试/修复；仅在发现并修复真实根因后允许第二个新版本，合计最多2例。软件集成中的外部云与点位替身不计作真实模型证据。结果分别记录component_success、physical_success、online_reported_complete=null、success=false、qualified_groups_added=0。
+
+不匹配源于视觉标记添加，不是注册SHA过期。为本入口增加显式development_marker_family执行策略：先核对原scene.xml v2和所选注册资产的精确SHA，检查37个标记均直接附着于object且零质量、零接触；移除标记后XML规范结构必须与原场景相等，夹爪和控制器XML参数保持相同。该策略只用于MuJoCo开发仿真；现有校准SHA、native协议和prepare-only正式释放保持原样。不做通用跳过。
+
+Molmo必须在进程主线程。新增明确的同步有界调用，仅该适配器可选；调用前后检查deadline/cancel并持有原provider槽，原生SIGALRM仍有独立期限；结果过期禁止动作。现有HTTP模型仍用原后台调用。
+
+两阶段规划：第一次2次定位+1次Sol，保存已验证技能意图并返回明确补帧请求；组件worker在同一暂停模拟时刻真实重采集一次；第二次只做2次定位和新帧绑定、完整PlanningPipeline校验，不再请求Sol。原始输入、云后新帧、精确模型/资产/关键代码身份均归档，旧帧不改时间。第二阶段失败或重复均不重新调用云。云端只请求8个核心技能；HOME不属于本次执行范围，返回时拒绝，不静默删除。
+
+每个动作前必须有当前RGB-D身份支持；完整几何或登记标记支持初始接近，搬运阶段允许当前可见色块和机器人抓取反馈，但明确没有完整尺度误差证书。目的地区域仍需当前可见支持；保留中心被明确标为参考值。离线实例分割和物体真值仅保存/独立评价，不参与在线动作路由。硬安全每物理步检查；具体租约及固定首个attempt在动作边界和每50ms墙钟轮询检查，派发前再次核对。身份丢失、租约/来源改变、控制器失败或硬安全异常即停止。最终worker终态和来源核验优先于组件文件，失败不能保留component_success。
+
+组件执行视图使用现有resolved_step的参数与超时，同时传给SkillExecutor和SafetyShield，避免模板3秒与实际10秒执行视图不一致。原合同和原条件保存，组件视图不宣称完整前后条件已认证。场景TTL仍检查真实采集时间；控制器返回后立即POST检查，再单独保存观察等待。任务120秒、物理最多16000步；关节位置、速度、工作空间、急停、连接与碰撞反馈均保留。同步模型截止是协作式前后检查，不能硬中断原生模型内部调用，超时返回禁止动作。
+
+标记按每个在线采样解码并保存；首尾另取真实观测。UNKNOWN保留原因，不假称OCCLUDED或连续可见。原始RGB-D、数据库、完整模型回复和raw_v3留本地。无真实机械臂接口。

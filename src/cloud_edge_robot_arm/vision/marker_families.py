@@ -12,6 +12,7 @@ from xml.etree import ElementTree as ET
 LEGACY_FAMILY = "outboard_id7_45mm_v3"
 PREPARE_ONLY_FAMILY = "outboard_id7_75mm_r579"
 SIDE_PREPARE_ONLY_FAMILY = "side_y_plus_id7_75mm_r593"
+COMPONENT_DIAGNOSTIC_FAMILY = "side_y_plus_id7_75mm_component_v1"
 _PREFIX = "pose_marker_outboard_v3_"
 _ATTACHMENT = (1, 0, 0, 0.1, 0, 1, 0, 0, 0, 0, 1, 0.03505, 0, 0, 0, 1)
 _SIDE_ATTACHMENT = (1, 0, 0, 0, 0, 1, 0, 0.1, 0, 0, 1, 0.03505, 0, 0, 0, 1)
@@ -63,6 +64,14 @@ _FAMILIES = MappingProxyType(
             0.075,
             "native-r593-side-y-plus-75mm",
             _SIDE_ATTACHMENT,
+        ),
+        # Component-only variant: deliberately absent from native prepare/release policies.
+        COMPONENT_DIAGNOSTIC_FAMILY: MarkerFamily(
+            COMPONENT_DIAGNOSTIC_FAMILY,
+            "assets/robots/franka_panda/scene_pose_marker_side_y_plus_75mm_component_v1.xml",
+            "18049666e288ce3992d44e8a520ee5b4101a4fa89dc825bcd75f78e408a198f0",
+            7, "DICT_4X4_50", 0.075, "component-side-y-plus-75mm-140mm-v1",
+            (1, 0, 0, 0, 0, 1, 0, 0.14, 0, 0, 1, 0.03505, 0, 0, 0, 1),
         ),
     }
 )

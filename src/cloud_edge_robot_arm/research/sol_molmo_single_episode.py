@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from cloud_edge_robot_arm.vision.marker_families import LEGACY_FAMILY, marker_family
 from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerRegistration, detect_pose_marker
-from cloud_edge_robot_arm.vision.top_grasp import calibration_asset_sha256
 
 if TYPE_CHECKING:
     from cloud_edge_robot_arm.vision.observations import RGBDObservation
@@ -36,6 +35,11 @@ SOURCE_PATHS = (
     "src/cloud_edge_robot_arm/vision/execution.py",
     "src/cloud_edge_robot_arm/research/native_collection_application.py",
     "src/cloud_edge_robot_arm/cloud/planning/pipeline.py",
+    "src/cloud_edge_robot_arm/research/sol_molmo_components.py",
+    "src/cloud_edge_robot_arm/vision/molmo_worker.py",
+    "src/cloud_edge_robot_arm/vision/marked_asset.py",
+    "src/cloud_edge_robot_arm/vision/request_control.py",
+    "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
 )
 
 
@@ -70,7 +74,7 @@ def scene_assignment(seed: int, marker_family_id: str) -> dict[str, Any]:
         "seed": seed,
         "scene_sampling": "FIXED_REGISTERED_SCENE",
         "independent_random_scene": False,
-        "instruction": "Pick up the red block and place it in the green region.",
+        "instruction": "Move the red block to the green region.",
         "model_path": family.asset_path,
         "asset_sha256": family.asset_sha256,
         "marker_family_id": family.family_id,
@@ -95,16 +99,22 @@ def scene_assignment(seed: int, marker_family_id: str) -> dict[str, Any]:
 
 
 def execution_blockers(assignment: dict[str, Any]) -> list[str]:
-    """报告真实接口缺口，不将配置或几何预览升级为执行能力。"""
-    blockers = []
-    if assignment["asset_sha256"] != calibration_asset_sha256(assignment["grasp_profile"]):
-        blockers.append("marked_asset_not_qualified_for_visual_episode")
-    # The current OpenCV path requires a concrete VisualWorkerRuntime. The
-    # Molmo planning adapter has no accepted live worker/source handoff yet.
-    blockers.append("molmo_live_opencv_worker_handoff_not_integrated")
-    if assignment["marker_family_id"] != LEGACY_FAMILY:
-        blockers.append("prepare_only_marker_family_no_execution_release")
-    return blockers
+    """仅检查开发资产与软件桥接；T10动作资格仍由真实运行时核对。"""
+    from cloud_edge_robot_arm.vision.marked_asset import validate_development_marker_asset
+    from cloud_edge_robot_arm.vision.molmo_worker import MolmoWorkerPlanner
+
+    try:
+        receipt = validate_development_marker_asset(
+            ROOT / assignment["model_path"],
+            assignment["grasp_profile"],
+            assignment["marker_family_id"],
+        )
+        if receipt["marked_asset_sha256"] != assignment["asset_sha256"]:
+            return ["registered_development_asset_binding_changed"]
+    except (ValueError, OSError):
+        return ["registered_development_asset_not_equivalent"]
+    assert callable(MolmoWorkerPlanner.plan)
+    return []
 
 
 def validate_marker_visibility(
@@ -288,6 +298,196 @@ def _plan(
         result["cloud_requests"] = ledger.snapshot().cloud_model_requests
 
 
+def create_molmo_opencv_bridge(
+    *,
+    service: Any,
+    profile_id: str,
+    points: Any,
+    assignment: dict[str, Any],
+    output: Path,
+    asset_manifest_sha256: str,
+) -> tuple[Any, Any]:
+    """创建真实worker消费的规划器及角色绑定；runtime由SimulationWorker创建。"""
+    from cloud_edge_robot_arm.research.cost_ledger import CostLedger
+    from cloud_edge_robot_arm.vision.grounded_planner import (
+        GroundingTaskDescriptor,
+        build_molmo_grounded_planner,
+    )
+    from cloud_edge_robot_arm.vision.molmo_worker import MolmoWorkerPlanner, make_worker_binding
+
+    grounded = build_molmo_grounded_planner(
+        service=service,
+        profile_id=profile_id,
+        point_provider=points,
+        task=GroundingTaskDescriptor(
+            instruction=assignment["instruction"],
+            target_phrase="red block",
+            destination_phrase="green region",
+            target_label="red block",
+        ),
+        grasp_profile=assignment["grasp_profile"],
+        allow_paid=True,
+        worker_owned_refresh=True,
+    )
+    grounded.cloud.cost_ledger = CostLedger()
+    reservations = 0
+
+    def wire(phase: str, path: str, data: bytes) -> None:
+        nonlocal reservations
+        if phase == "REQUEST":
+            if reservations >= 1:
+                raise RuntimeError("single cloud request budget exhausted")
+            reservations += 1
+        destination = output / "raw/cloud" / (phase.lower() + ".json")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open("xb") as stream:
+            stream.write(data)
+
+    grounded.cloud.raw_transport_observer = wire
+    planner = MolmoWorkerPlanner(grounded, output=output / "planning")
+    binding = make_worker_binding(
+        planner,
+        asset_manifest_sha256=asset_manifest_sha256,
+        marker_family_id=assignment["marker_family_id"],
+        component_diagnostic=assignment.get("component_diagnostic", False),
+    )
+    _write(output / "role-binding.json", binding.evidence())
+    return planner, binding
+
+
+def run_worker_episode(
+    assignment: dict[str, Any],
+    output: Path,
+    result: dict[str, Any],
+    *,
+    planner: Any,
+    binding: Any,
+) -> None:
+    """创建一次SQLite任务并由原worker领取；不直接派发技能或补写完成。"""
+    from uuid import uuid4
+
+    from cloud_edge_robot_arm.repositories.event_autonomy.sqlite import (
+        SQLiteEventAutonomyRepository,
+    )
+    from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+        SQLiteSimulationJobRepository,
+    )
+    from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+
+    jobs = SQLiteSimulationJobRepository(output / "runtime.db")
+    events = SQLiteEventAutonomyRepository(output / "events.db")
+    try:
+        job = jobs.create_job(
+            run_id="sol-molmo-single-" + uuid4().hex,
+            batch_id="",
+            backend="MUJOCO",
+            scenario_id="S01_NORMAL_STATIC",
+            control_mode="PCSC",
+            seed=assignment["seed"],
+            manifest_id="sol-molmo.development-single.v1",
+            reproducibility_hash=hashlib.sha256(
+                json.dumps(assignment, sort_keys=True).encode()
+            ).hexdigest(),
+            draft={
+                "input_mode": "RGBD",
+                "execution_scope": "VISION_CLOSED_LOOP",
+                "backend": "MUJOCO",
+                "scenarios": ["S01_NORMAL_STATIC"],
+                "control_modes": ["PCSC"],
+                "seeds": [assignment["seed"]],
+                "user_instruction": assignment["instruction"],
+                "parameter_overrides": {
+                    "development_marker_family": assignment["marker_family_id"],
+                    "sol_molmo_component_diagnostic": assignment.get("component_diagnostic", False),
+                },
+            },
+            timeout_seconds=120,
+            max_attempts=1,
+            artifact_root="worker",
+            source_commit="DEVELOPMENT_CURRENT_SOURCES",
+            source_tree_hash=binding.bundle.digest(),
+        )
+        assert (
+            jobs.update_status_cas(
+                job.job_id,
+                expected=RuntimeJobStatus.CREATED,
+                next_status=RuntimeJobStatus.QUEUED,
+                reason_code="explicit_development_single_episode",
+                worker_id="",
+                lease_id="",
+            )
+            is not None
+        )
+        worker = SimulationWorker(
+            worker_id="sol-molmo-single-" + uuid4().hex,
+            backend="MUJOCO",
+            repository=jobs,
+            artifact_root=output,
+            planner_factory=lambda: planner,
+            visual_role_binding=binding,
+            visual_event_repository=events,
+            visual_robot_id="mujoco-single-scene",
+        )
+        if not worker.poll_once():
+            raise RuntimeError("single worker did not acquire the task")
+        final = jobs.get_job(job.job_id)
+        episodes = list((output / "worker").glob("rgbd-attempts/*/visual_episode/episode.json"))
+        if assignment.get("component_diagnostic") is True:
+            episodes = (
+                [output / "component/episode.json"]
+                if (output / "component/episode.json").is_file()
+                else []
+            )
+        result.update(job_id=job.job_id, worker_status=final.status.value)
+        if len(episodes) != 1:
+            result.update(
+                status="FAILED",
+                terminal_reason=final.error_code or "WORKER_DID_NOT_PRODUCE_EPISODE",
+            )
+            return
+        outcome = json.loads(episodes[0].read_text())
+        result.update(
+            outcome=outcome,
+            status="SUCCESS" if outcome["success"] else "FAILED",
+            success=outcome["success"],
+            physical_success=outcome["physical_success"],
+            online_reported_complete=outcome["online_reported_complete"],
+            executed_actions=outcome["executed_actions"],
+            model_calls=outcome["model_calls"],
+            terminal_reason=outcome["terminal_reason"],
+            observation_count=outcome["observation_count"],
+        )
+        for boundary in ("before", "after"):
+            path = output / boundary / "marker-validation.json"
+            if path.is_file():
+                result["marker_" + boundary] = json.loads(path.read_text())
+        if outcome.get("execution_scope") == "MUJOCO_COMPONENT_DIAGNOSTIC":
+            result.update(
+                execution_scope=outcome["execution_scope"],
+                status=outcome["status"],
+                physics_steps=outcome["physics_steps"],
+                episode_id=outcome["episode_id"],
+                planning_passed=outcome.get("planning_passed", False),
+            )
+            if final.status != RuntimeJobStatus.SUCCEEDED:
+                worker_reason = "WORKER_TERMINAL_" + final.status.value
+                result.update(
+                    status="FAILED",
+                    terminal_reason=outcome["terminal_reason"] or worker_reason,
+                    worker_terminal_reason=worker_reason,
+                    worker_error_code=final.error_code,
+                )
+        counters = output / "physics-counters.json"
+        if counters.is_file():
+            result.update(json.loads(counters.read_text()))
+    finally:
+        result["cloud_requests"] = planner.cost_ledger.snapshot().cloud_model_requests
+        result["cloud_request_reservations"] = int((output / "raw/cloud/request.json").is_file())
+        _write(output / "costs.json", planner.cost_ledger.export())
+        events.close()
+
+
 def _run_observed_scene(
     assignment: dict[str, Any],
     output: Path,
@@ -305,7 +505,7 @@ def _run_observed_scene(
 
     service = points = None
     resources: AbstractContextManager[Any]
-    if mode == "plan-only":
+    if mode in {"plan-only", "execute"}:
         from scripts.probe_molmo_grounded_planner import _admit_resources
 
         service = selected_sol_service(cast(Path, model_control_db), cast(str, profile_id))
@@ -314,7 +514,7 @@ def _run_observed_scene(
         resources = nullcontext()
     with resources:
         try:
-            if mode == "plan-only":
+            if mode in {"plan-only", "execute"}:
                 from cloud_edge_robot_arm.vision.molmo_pointing import MolmoPointProvider
 
                 points = MolmoPointProvider(
@@ -323,6 +523,17 @@ def _run_observed_scene(
                     raw_directory=output / "raw/molmo",
                     generation_limit=4,
                 )
+            if mode == "execute":
+                planner, binding = create_molmo_opencv_bridge(
+                    service=service,
+                    profile_id=cast(str, profile_id),
+                    points=points,
+                    assignment=assignment,
+                    output=output,
+                    asset_manifest_sha256=_sha(cast(Path, asset_manifest)),
+                )
+                run_worker_episode(assignment, output, result, planner=planner, binding=binding)
+                return
             config = SimulatorConfig(
                 model_path=str(ROOT / assignment["model_path"]),
                 seed=assignment["seed"],
@@ -389,11 +600,14 @@ def run_single_episode(
     asset_manifest: Path | None = None,
     gpu_lock: Path | None = None,
     allow_paid: bool = False,
+    component_diagnostic: bool = False,
 ) -> dict[str, Any]:
-    """统一显式入口；当前 execute 如实阻塞，不冒充已接通物理 worker。"""
+    """显式组件诊断可执行；正式T10路径仍须原生资格，不混淆两者。"""
     if mode not in MODES:
         raise ValueError("unsupported single episode mode")
-    if mode == "plan-only" and (
+    if type(component_diagnostic) is not bool or (component_diagnostic and mode != "execute"):
+        raise ValueError("component diagnostic requires explicit execute mode")
+    if mode in {"plan-only", "execute"} and (
         not allow_paid
         or not profile_id
         or model_control_db is None
@@ -401,9 +615,10 @@ def run_single_episode(
         or asset_manifest is None
     ):
         raise ValueError(
-            "plan-only needs explicit Sol profile, database, Molmo assets and allow-paid"
+            f"{mode} needs explicit Sol profile, database, Molmo assets and allow-paid"
         )
     assignment = scene_assignment(seed, marker_family_id)
+    assignment["component_diagnostic"] = component_diagnostic
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     sources: dict[str, str] = {}
@@ -430,6 +645,10 @@ def run_single_episode(
         "marker_endpoints_observed": False,
         "continuous_visibility_proven": False,
         "planning_passed": False,
+        "execution_scope": "MUJOCO_COMPONENT_DIAGNOSTIC"
+        if component_diagnostic
+        else "NOT_EXECUTED",
+        "component_success": None,
         "planning_outcome": "NOT_RUN",
         "blocking_reasons": [],
         "source_snapshot_status": "INCOMPLETE",
@@ -447,8 +666,14 @@ def run_single_episode(
         _write(output / "source-hashes.json", {"scope": "SELECTED_ENTRY_SOURCES", "files": sources})
         result["source_snapshot_status"] = "COMPLETE"
         if mode == "execute":
-            result.update(status="BLOCKED", blocking_reasons=execution_blockers(assignment))
-        elif mode != "dry-run":
+            result["blocking_reasons"] = execution_blockers(assignment)
+            if not component_diagnostic:
+                result["blocking_reasons"].append(
+                    "native_action_metric_and_motion_qualification_unavailable"
+                )
+            if result["blocking_reasons"]:
+                result["status"] = "BLOCKED"
+        if mode != "dry-run" and result["status"] != "BLOCKED":
             _run_observed_scene(
                 assignment,
                 output,
@@ -480,6 +705,12 @@ def run_single_episode(
         result["changed_source_paths"] = drift
         if drift and result["status"] != "INTERRUPTED":
             result.update(status="FAILED", error_type="SourceDrift")
+        if component_diagnostic:
+            result["component_success"] = bool(
+                result["status"] == "COMPONENTS_COMPLETED"
+                and result.get("outcome", {}).get("diagnostic_complete")
+                and result["physical_success"] is True
+            )
         result["elapsed_s"] = time.monotonic() - started
         _write(output / "result.json", result)
         files = [

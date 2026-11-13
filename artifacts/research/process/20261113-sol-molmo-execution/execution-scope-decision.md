@@ -1,0 +1,11 @@
+# 完整动作验证的实际边界
+
+源码核实：vision/action_evidence.py::native_action_contract始终生成geometric_error_bound_m=None、motion_bound_m_s=None；vision/tracking.py不证明连续稳定性。现有原执行链会拒绝完整原生动作，接通模型与资产并不会改变此事实。
+
+选项一：新增显式的MuJoCo开发组件诊断入口。仅固定S01与已登记资产，由真实SQLite SimulationWorker持有租约、来源和单次计划；消费两阶段Molmo/Sol/OpenCV已校验8核心技能。技能仍经既有SkillExecutor和SafetyShield，检测硬安全故障、控制器失败或当前RGB-D身份丢失立即停止。每次动作保留真实输入、结果、采样和独立物理评价。它不冒充正式VisualWorkerRuntime的T10证书或原条件全horizon完成，不补写原UNKNOWN，不使用LEGACY标签掩饰差异；原有正式运行方式不变。结果scope为MUJOCO_COMPONENT_DIAGNOSTIC，formal_research=NOT_ACCEPTED，online_reported_complete不能借控制器成功自动置真。可报告动作>=7与独立physical_success，但它们不是合格G1/B0。
+
+选项二：保留现有T10动作门，先补独立几何/运动误差和连续完整时域证据。继续真实worker桥接和拒绝测试；在资格成立之前不承诺7个动作。工作量和实验范围超出附件关于SHA与点位格式的假设。
+
+依据AGENTS.md：现有安全边界、运行预算和验收标准继续有效。用户本次已建议临时SHA处理；上述T10与稳定证据是另一个实际边界，不能通过清空blockers或把None改成常数处理。
+
+用户已选择选项一：允许MuJoCo组件诊断，保留硬安全检查。实现与实际结果见design.md、step-report.md；本决定不授予正式资格。
