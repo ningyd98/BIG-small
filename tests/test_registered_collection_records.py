@@ -756,6 +756,47 @@ def test_r643_reader_rebuilds_destination_attribution(tmp_path, monkeypatch, yaw
         )
 
 
+@pytest.mark.parametrize("partial", [False, True])
+def test_r675_recorded_measured_reference_matches_live_scope(tmp_path, monkeypatch, partial):
+    from cloud_edge_robot_arm.research.native_calibration_collection import (
+        _registered_collection_protocol_v2,
+    )
+    from tests.test_registered_grounding_preparation import _r675_scene
+
+    module, ref, current, reg, _, _, clock, state = _r675_scene(
+        tmp_path, monkeypatch, partial=partial
+    )
+    protocol = _registered_collection_protocol_v2()
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref,
+        reg,
+        source_root=ROOT,
+        source_hashes=protocol["source_hashes"],
+        nominal_policy=protocol["region_policy"],
+    )
+    clock[0] = current.captured_at
+    live = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    offline = archived._ArchivedRegisteredCollectionTrackerV2(
+        ref,
+        reg,
+        source_root=ROOT,
+        source_hashes=protocol["source_hashes"],
+        initialized_at=ref.captured_at,
+        nominal_policy=protocol["region_policy"],
+    )
+    result = offline.preview_at(
+        current, state, evaluated_at=current.captured_at, finished_at=current.captured_at
+    )
+    assert result.to_payload() == live.to_payload()
+    assert result.status == ("UNKNOWN" if partial else "DERIVED")
+    if partial:
+        assert result.reason == "registered_region_reference_not_rectangular"
+    else:
+        assert result.region_evidence["status"] == "FULL_NOMINAL"
+        assert result.region_evidence["region_pixels"] == 899
+    assert result.execution_allowed is False and result.native_authority == "UNAVAILABLE"
+
+
 def test_r643_reader_rejects_resealed_changes(tmp_path, monkeypatch):
     from cloud_edge_robot_arm.research import native_full_horizon_originals as reader
     from cloud_edge_robot_arm.research.native_calibration_collection import (

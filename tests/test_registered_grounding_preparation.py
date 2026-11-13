@@ -1410,3 +1410,213 @@ def test_r643_nominal_residual_boundaries(tmp_path, monkeypatch, change, expecte
     assert result.status == expected, result.reason
     if expected == "UNKNOWN":
         assert result.region_evidence is result.destination_world_m is None
+
+
+def _r675_repaint(observation, changes):
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    with Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64))) as image:
+        rgb = np.array(image)
+    for y, x, color in changes:
+        rgb[y, x] = color
+    stream = io.BytesIO()
+    Image.fromarray(rgb).save(stream, format="PNG")
+    return revised(observation, rgb_png_base64=base64.b64encode(stream.getvalue()).decode())
+
+
+def _r675_scene(tmp_path, monkeypatch, *, corners=("tl",), partial=False):
+    module, ref, current, reg, root, hashes, clock, state = nominal_scene(tmp_path, monkeypatch)
+    points = {"tl": (60, 118), "tr": (60, 147), "bl": (89, 118), "br": (89, 147)}
+    changes = [(points[name][0], points[name][1], 255) for name in corners]
+    ref = _r675_repaint(ref, changes)
+    if partial:
+        current = _r675_repaint(current, changes)
+    else:
+        current = revised(
+            ref,
+            frame_id="r675-current-full",
+            observation_id="r675-current-full",
+            captured_at=ref.captured_at + timedelta(seconds=0.5),
+            sim_time_s=ref.sim_time_s + 0.5,
+        )
+    return module, ref, current, reg, root, hashes, clock, state
+
+
+@pytest.mark.parametrize("corner", [None, "tl", "tr", "bl", "br"])
+def test_r675_full_measured_reference_keeps_exact_support(tmp_path, monkeypatch, corner):
+    import hashlib
+
+    import numpy as np
+
+    module, ref, current, reg, root, hashes, clock, state = _r675_scene(
+        tmp_path, monkeypatch, corners=() if corner is None else (corner,)
+    )
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref,
+        reg,
+        source_root=root,
+        source_hashes=hashes,
+        nominal_policy=module.registered_nominal_region_policy_v1(hashes),
+    )
+    clock[0] = current.captured_at
+    result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert result.status == "DERIVED", result.reason
+    proof = result.region_evidence
+    expected = np.zeros((ref.height, ref.width), dtype=bool)
+    expected[60:90, 118:148] = True
+    if corner is not None:
+        y, x = {"tl": (60, 118), "tr": (60, 147), "bl": (89, 118), "br": (89, 147)}[corner]
+        expected[y, x] = False
+    depth = np.asarray(ref.depth_values(), dtype="<f4").reshape(expected.shape)
+    assert proof["status"] == "FULL_NOMINAL"
+    assert proof["region_pixels"] == proof["visible_pixels"] == 900 - (corner is not None)
+    assert proof["missing_pixels"] == 0
+    assert proof["reference_region_mask_sha256"] == hashlib.sha256(expected.tobytes()).hexdigest()
+    assert (
+        proof["reference_region_depth_sha256"]
+        == hashlib.sha256(depth[expected].tobytes()).hexdigest()
+    )
+    assert proof["reference_observation_checksum_sha256"] == ref.checksum_sha256
+    assert result.execution_allowed is False and result.native_authority == "UNAVAILABLE"
+    assert result.geometric_error_bound_m is None
+    assert proof["placement_clearance"] == "UNKNOWN"
+    inputs = owner.RegisteredGroundingFrameInputsV2.from_preview(result, current, reg)
+    assert inputs.to_payload()["region_evidence"]["region_pixels"] == int(expected.sum())
+
+
+def test_r675_nonrectangular_partial_remains_unknown(tmp_path, monkeypatch):
+    module, ref, current, reg, root, hashes, clock, state = _r675_scene(
+        tmp_path, monkeypatch, partial=True
+    )
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref,
+        reg,
+        source_root=root,
+        source_hashes=hashes,
+        nominal_policy=module.registered_nominal_region_policy_v1(hashes),
+    )
+    clock[0] = current.captured_at
+    result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert result.status == "UNKNOWN"
+    assert result.reason == "registered_region_reference_not_rectangular"
+    assert (
+        result.object_center_world_m is result.destination_world_m is result.region_evidence is None
+    )
+
+
+@pytest.mark.parametrize("fault", ["hole", "cropped", "degenerate", "two_corners", "zero_boundary"])
+def test_r675_invalid_measured_reference_is_not_released(tmp_path, monkeypatch, fault):
+    import base64
+
+    import numpy as np
+
+    module, ref, current, reg, root, hashes, clock, state = _r675_scene(
+        tmp_path, monkeypatch, corners=("tl", "tr") if fault == "two_corners" else ()
+    )
+    if fault == "hole":
+        ref = _r675_repaint(ref, [(70, 130, 255)])
+    elif fault in {"cropped", "degenerate"}:
+        changes = [(y, x, 255) for y in range(60, 90) for x in range(118, 148)]
+        changes += [
+            (y, x, (0, 255, 0))
+            for y in range(60, 90)
+            for x in (range(0, 30) if fault == "cropped" else range(125, 127))
+        ]
+        ref = _r675_repaint(ref, changes)
+    elif fault == "zero_boundary":
+        depth = np.asarray(ref.depth_values(), dtype="<f4").reshape(ref.height, ref.width)
+        depth[89, 147] = 0
+        ref = revised(
+            ref,
+            depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
+            valid_mask_base64=None,
+        )
+    if fault != "two_corners":
+        expected = {
+            "hole": "region_topology_not_supported_axis_aligned_rectangle",
+            "cropped": "extent_truncated_at_image_boundary",
+            "degenerate": "region_topology_not_supported_axis_aligned_rectangle",
+            "zero_boundary": "target_depth_incomplete",
+        }[fault]
+        with pytest.raises(ValueError, match=expected):
+            module.bootstrap_registered_collection_tracker_v2(
+                ref,
+                reg,
+                source_root=root,
+                source_hashes=hashes,
+                nominal_policy=module.registered_nominal_region_policy_v1(hashes),
+            )
+        return
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref,
+        reg,
+        source_root=root,
+        source_hashes=hashes,
+        nominal_policy=module.registered_nominal_region_policy_v1(hashes),
+    )
+    clock[0] = current.captured_at
+    result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert result.status == "UNKNOWN" and result.reason == "registered_region_anchors_unavailable"
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "restored_corner",
+        "extra_color",
+        "disconnected",
+        "missing_color",
+        "zero_boundary",
+        "depth_residual",
+        "false_foreground",
+    ],
+)
+def test_r675_full_support_still_checks_current_pixels_and_depth(tmp_path, monkeypatch, fault):
+    import base64
+
+    import numpy as np
+
+    module, ref, current, reg, root, hashes, clock, state = _r675_scene(tmp_path, monkeypatch)
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref,
+        reg,
+        source_root=root,
+        source_hashes=hashes,
+        nominal_policy=module.registered_nominal_region_policy_v1(hashes),
+    )
+    if fault == "restored_corner":
+        current = _r675_repaint(current, [(60, 118, (0, 255, 0))])
+    elif fault == "extra_color":
+        current = _r675_repaint(current, [(70, 148, (0, 255, 0))])
+    elif fault == "disconnected":
+        current = _r675_repaint(current, [(y, 132, 255) for y in range(60, 90)])
+    elif fault == "missing_color":
+        current = _r675_repaint(current, [(70, 130, 255)])
+    elif fault == "false_foreground":
+
+        def false_model(observation, geometry, primitives, pixels):
+            model = np.full(len(pixels), np.inf)
+            model[0] = 1.2
+            return model
+
+        monkeypatch.setattr(module, "_registered_model_depth_v1", false_model)
+    else:
+        depth = np.asarray(current.depth_values(), dtype="<f4").reshape(
+            current.height, current.width
+        )
+        depth[89, 147] = 0 if fault == "zero_boundary" else depth[89, 147] + 0.011
+        current = revised(
+            current,
+            depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
+            valid_mask_base64=None,
+        )
+    clock[0] = current.captured_at
+    result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert result.status == "UNKNOWN", result.reason
+    assert (
+        result.object_center_world_m is result.destination_world_m is result.region_evidence is None
+    )
