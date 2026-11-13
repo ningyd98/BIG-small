@@ -1340,6 +1340,70 @@ def registered_collection_grounding_preview_v2(tracker, observation, robot_state
     return _shared_registered_collection_preview_v2(tracker, observation, robot_state)
 
 
+def registered_marker_aware_pregrasp_preview_v1(
+    tracker, observation, robot_state, *, minimum_height_m=0.16
+):
+    """Propose a small marker-away offset; current evidence grants no execution.
+
+    The 5mm offset is a development setting for the selected side-marker asset,
+    not a calibrated clearance or a claim that the whole trajectory is visible.
+    The final approach still targets the current measured grasp TCP.
+    """
+    from cloud_edge_robot_arm.vision.marker_families import SIDE_PREPARE_ONLY_FAMILY
+
+    if (
+        type(minimum_height_m) not in (int, float)
+        or not math.isfinite(minimum_height_m)
+        or minimum_height_m < 0.16
+    ):
+        raise ValueError("finite minimum pregrasp height of at least 0.16m required")
+    preview = registered_collection_grounding_preview_v2(tracker, observation, robot_state)
+    result = dict(
+        schema_version="registered.marker-aware-pregrasp.preview.v1",
+        status="UNKNOWN",
+        reason=preview.reason,
+        observation_id=observation.observation_id,
+        observation_checksum_sha256=observation.checksum_sha256,
+        source_sha256=preview.source_sha256,
+        registration_sha256=preview.registration_sha256,
+        nominal_offset_m=0.005,
+        target_world_m=None,
+        approach_target_world_m=None,
+        prepare_only=True,
+        execution_allowed=False,
+        native_authority="UNAVAILABLE",
+        geometric_error_bound_m=None,
+    )
+    if preview.status != "DERIVED":
+        return result
+    registration = tracker._provider._registration
+    if registration.marker_family_id != SIDE_PREPARE_ONLY_FAMILY or tracker._nominal_policy is None:
+        result["reason"] = "marker_aware_pregrasp_profile_not_supported"
+        return result
+    geometry = preview.track.geometry
+    grasp = np.asarray(preview.grasp_tcp_world_m, dtype=float)
+    direction = (
+        np.asarray(geometry.marker_estimate.marker_center_world_m, dtype=float)[:2]
+        - (np.asarray(preview.object_center_world_m, dtype=float)[:2])
+    )
+    length = float(np.linalg.norm(direction))
+    if not math.isfinite(length) or length <= 1e-12:
+        result["reason"] = "marker_away_direction_unavailable"
+        return result
+    offset = -0.005 * direction / length
+    result.update(
+        status="DERIVED",
+        reason="uncalibrated_current_marker_away_pregrasp_candidate",
+        target_world_m=[
+            float(grasp[0] + offset[0]),
+            float(grasp[1] + offset[1]),
+            max(float(minimum_height_m), float(grasp[2] + 0.10)),
+        ],
+        approach_target_world_m=grasp.tolist(),
+    )
+    return result
+
+
 def _shared_registered_collection_preview_v2(tracker, observation, robot_state):
     """共用确定性计算；历史适配器由独立入口约束，不获得实时权限。"""
     current = RGBDObservation.model_validate(observation.model_dump())
