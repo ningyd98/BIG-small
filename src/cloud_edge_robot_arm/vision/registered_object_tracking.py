@@ -111,7 +111,11 @@ class RegisteredObjectTrackerV1:
         *,
         source_root: Path,
         source_hashes: Mapping[str, str],
+        corner_refinement: Literal["NONE", "SUBPIX"] = "NONE",
     ) -> None:
+        if type(corner_refinement) is not str or corner_refinement not in {"NONE", "SUBPIX"}:
+            raise ValueError("unsupported marker corner refinement")
+        self._corner_refinement = corner_refinement
         if (
             type(reference) is not RGBDObservation
             or type(registration) is not NativeGeometryRegistration
@@ -141,7 +145,8 @@ class RegisteredObjectTrackerV1:
         reason = self._binding_reason(self._reference, datetime.now(UTC))
         if reason:
             raise ValueError("initial registered observation unavailable: " + reason)
-        geometry = derive_registered_object_geometry(self._reference, self._registration)
+        options = {} if self._corner_refinement == "NONE" else {"corner_refinement": "SUBPIX"}
+        geometry = derive_registered_object_geometry(self._reference, self._registration, **options)
         self._verify_sources()
         reason = self._binding_reason(self._reference, datetime.now(UTC))
         if reason or geometry.status != "DERIVED":
@@ -250,7 +255,8 @@ class RegisteredObjectTrackerV1:
                     self._last_seen = current
         if reason:
             return self._result(current, evaluated_at=evaluated_at, is_new=is_new, reason=reason)
-        geometry = derive_registered_object_geometry(current, self._registration)
+        options = {} if self._corner_refinement == "NONE" else {"corner_refinement": "SUBPIX"}
+        geometry = derive_registered_object_geometry(current, self._registration, **options)
         reason, evaluated_at = self._recheck_current(current)
         if reason is None and geometry.status != "DERIVED":
             reason = geometry.reason

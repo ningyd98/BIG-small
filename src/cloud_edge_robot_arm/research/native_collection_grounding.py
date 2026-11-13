@@ -926,8 +926,16 @@ class RegisteredCollectionPreviewTrackerV2:
     def __init__(
         self, observation, registration, *, source_root, source_hashes, nominal_policy=None
     ):
+        if nominal_policy is not None:
+            expected = registered_nominal_region_policy_v1(source_hashes)
+            if type(nominal_policy) is not dict or nominal_policy != expected:
+                raise ValueError("exact source-bound nominal region policy required")
         self._provider = RegisteredObjectTrackerV1(
-            observation, registration, source_root=source_root, source_hashes=source_hashes
+            observation,
+            registration,
+            source_root=source_root,
+            source_hashes=source_hashes,
+            corner_refinement="NONE" if nominal_policy is None else "SUBPIX",
         )
         reference = RGBDObservation.model_validate(observation.model_dump())
         self._region_tracker, _ = bootstrap_collection_tracker(
@@ -951,9 +959,6 @@ class RegisteredCollectionPreviewTrackerV2:
         self._nominal_policy = None
         self._primitives = None
         if nominal_policy is not None:
-            expected = registered_nominal_region_policy_v1(source_hashes)
-            if type(nominal_policy) is not dict or nominal_policy != expected:
-                raise ValueError("exact source-bound nominal region policy required")
             self._nominal_policy = json.dumps(expected, sort_keys=True, separators=(",", ":"))
             self._primitives = _registered_opaque_primitives_v1(
                 registration, source_root=source_root, source_hashes=source_hashes

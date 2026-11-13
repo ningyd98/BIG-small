@@ -73,7 +73,10 @@ class PoseMarkerEstimate:
 
 
 def detect_pose_marker(
-    observation: RGBDObservation, registration: PoseMarkerRegistration
+    observation: RGBDObservation,
+    registration: PoseMarkerRegistration,
+    *,
+    corner_refinement: Literal["NONE", "SUBPIX"] = "NONE",
 ) -> PoseMarkerEstimate:
     """Decode exactly one known marker and estimate its ordered pose from depth.
 
@@ -81,6 +84,9 @@ def detect_pose_marker(
     frame, or agreement of endpoints, cannot bound motion between observations.
     No source scope is promoted and no native VALID flag is returned.
     """
+
+    if type(corner_refinement) is not str or corner_refinement not in {"NONE", "SUBPIX"}:
+        raise ValueError("unsupported marker corner refinement")
 
     def unknown(reason: str, ids: tuple[int, ...] = ()) -> PoseMarkerEstimate:
         return PoseMarkerEstimate(
@@ -106,6 +112,8 @@ def detect_pose_marker(
 
         params = cv2.aruco.DetectorParameters()
         params.errorCorrectionRate = 0.0  # do not repair unknown marker bits into the expected ID
+        if corner_refinement == "SUBPIX":
+            params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
         dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
         detector = cv2.aruco.ArucoDetector(dictionary, params)
         rgb = np.asarray(

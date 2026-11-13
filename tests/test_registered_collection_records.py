@@ -711,13 +711,14 @@ def test_independent_registered_grounding_reconstruction_checks_semantics(
         assert audit.source_ok is False and audit.horizon_ok is False
 
 
-def test_r643_reader_rebuilds_destination_attribution(tmp_path, monkeypatch):
+@pytest.mark.parametrize("yaw", [0, 1])
+def test_r643_reader_rebuilds_destination_attribution(tmp_path, monkeypatch, yaw):
     from cloud_edge_robot_arm.research.native_calibration_collection import (
         _registered_collection_protocol_v2,
     )
     from tests.test_registered_grounding_preparation import nominal_scene
 
-    module, ref, current, reg, _, _, clock, state = nominal_scene(tmp_path, monkeypatch)
+    module, ref, current, reg, _, _, clock, state = nominal_scene(tmp_path, monkeypatch, yaw=yaw)
     factory = getattr(archived, "_ArchivedRegisteredCollectionTrackerV2", None)
     assert factory is not None, "independent v2 recorded-time tracker missing"
     protocol = _registered_collection_protocol_v2()

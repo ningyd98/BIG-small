@@ -57,7 +57,16 @@ class _ArchivedTargetTracker(OpenCVTargetTracker):
 class _ArchivedRegisteredObjectTracker(RegisteredObjectTrackerV1):
     """仅重算原记录时间的来源值；live精确类型检查拒绝此子类。"""
 
-    def __init__(self, reference, registration, *, source_root, source_hashes, initialized_at):
+    def __init__(
+        self,
+        reference,
+        registration,
+        *,
+        source_root,
+        source_hashes,
+        initialized_at,
+        corner_refinement="NONE",
+    ):
         stamp = _validated_utc(initialized_at)
         if not 0 <= (stamp - reference.captured_at).total_seconds() < 5:
             raise ValueError("recorded registered bootstrap time invalid")
@@ -65,7 +74,11 @@ class _ArchivedRegisteredObjectTracker(RegisteredObjectTrackerV1):
         self._inside_update = False
         try:
             super().__init__(
-                reference, registration, source_root=source_root, source_hashes=source_hashes
+                reference,
+                registration,
+                source_root=source_root,
+                source_hashes=source_hashes,
+                corner_refinement=corner_refinement,
             )
         finally:
             self._recorded_times = None
@@ -185,6 +198,7 @@ class _ArchivedRegisteredCollectionTrackerV2:
             source_root=source_root,
             source_hashes=source_hashes,
             initialized_at=initialized_at,
+            corner_refinement="SUBPIX",
         )
         reference = RGBDObservation.model_validate(reference.model_dump())
         evidence = collection_bootstrap_evidence(reference, registration.to_payload())

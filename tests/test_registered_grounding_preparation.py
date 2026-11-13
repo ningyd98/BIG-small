@@ -1142,6 +1142,40 @@ def nominal_scene(tmp_path, monkeypatch, *, center=None, yaw=0):
     return module, ref, current, reg, root, hashes, clock, values()["online"].robot_state
 
 
+@pytest.mark.parametrize("offset_y_px", [0, 0.25])
+def test_r672_nominal_quarter_turn_localization(tmp_path, monkeypatch, offset_y_px):
+    module, ref, current, reg, root, hashes, clock, state = nominal_scene(
+        tmp_path, monkeypatch, yaw=1
+    )
+    if offset_y_px:
+        import numpy as np
+
+        camera = np.asarray(ref.camera_to_world).reshape(4, 4)
+        fx, fy, cx, cy = ref.intrinsics
+        center = (
+            camera[0, 3] + (132.5 - cx) * 1.396 / fx,
+            camera[1, 3] - (74.5 - cy) * 1.396 / fy + offset_y_px * 1.396 / fy,
+            0.039,
+        )
+        module, ref, current, reg, root, hashes, clock, state = nominal_scene(
+            tmp_path / "translated", monkeypatch, center=center, yaw=1
+        )
+    policy = module.registered_nominal_region_policy_v1(hashes)
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref, reg, source_root=root, source_hashes=hashes, nominal_policy=policy
+    )
+    clock[0] = current.captured_at
+    result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert result.status == "DERIVED", result.reason
+    assert result.region_evidence["maximum_model_residual_m"] == pytest.approx(
+        0.008435160574, abs=1e-8
+    )
+    assert result.region_evidence["maximum_model_residual_m"] < policy["tau_model_m"]
+    assert result.execution_allowed is False and result.native_authority == "UNAVAILABLE"
+    assert result.geometric_error_bound_m is None
+    assert result.region_evidence["placement_clearance"] == "UNKNOWN"
+
+
 @pytest.mark.parametrize("yaw", [0, 1])
 def test_r643_plate_crosses_region_boundary(tmp_path, monkeypatch, yaw):
     module, ref, current, reg, root, hashes, clock, state = nominal_scene(
@@ -1155,15 +1189,6 @@ def test_r643_plate_crosses_region_boundary(tmp_path, monkeypatch, yaw):
     )
     clock[0] = current.captured_at
     result = module.registered_collection_grounding_preview_v2(tracker, current, state)
-    if yaw == 1:
-        # R658 retains this finite-pixel side-face counterexample: 10.2102mm > 10mm.
-        # This is an unsupported pose under the nominal rule, not rotation robustness.
-        assert result.status == "UNKNOWN"
-        assert result.reason == "registered_region_foreground_depth_mismatch"
-        assert result.region_evidence is result.destination_world_m is None
-        assert result.object_center_world_m is result.grasp_tcp_world_m is None
-        assert result.execution_allowed is False and result.native_authority == "UNAVAILABLE"
-        return
     assert result.status == "DERIVED", result.reason
     proof = result.region_evidence
     assert proof["status"] == "PARTIAL_REGISTERED_NOMINAL"
@@ -1172,6 +1197,116 @@ def test_r643_plate_crosses_region_boundary(tmp_path, monkeypatch, yaw):
     assert proof["placement_clearance"] == "UNKNOWN"
     assert proof["geometric_error_bound_m"] is None
     assert proof["nominal_policy"] == policy
+
+
+def test_r672_default_estimator_retains_quarter_turn_counterexample(tmp_path, monkeypatch):
+    from cloud_edge_robot_arm.vision.registered_objects import derive_registered_object_geometry
+
+    module, ref, current, reg, root, hashes, _, _ = nominal_scene(tmp_path, monkeypatch, yaw=1)
+    baseline = derive_registered_object_geometry(current, reg)
+    assert baseline == derive_registered_object_geometry(current, reg, corner_refinement="NONE")
+    assert baseline.object_center_world_m == pytest.approx(
+        (0.20267973932262515, 0.2447440079619855, 0.03899997348785392), abs=1e-12
+    )
+    policy = module.registered_nominal_region_policy_v1(hashes)
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref, reg, source_root=root, source_hashes=hashes, nominal_policy=policy
+    )
+    proof, reason = module._registered_region_evidence_v2(
+        tracker, current, object_geometry=baseline, nominal_policy=policy
+    )
+    assert proof is None and reason == "registered_region_foreground_depth_mismatch"
+
+
+@pytest.mark.parametrize(
+    "yaw,dx,dy,expected",
+    [
+        (0, 0, 0, "DERIVED"),
+        (0, 0.25, 0, "UNKNOWN"),
+        (0, -0.25, 0, "UNKNOWN"),
+        (0, 0, 0.25, "DERIVED"),
+        (0, 0, -0.25, "UNKNOWN"),
+        (1, 0.25, 0, "UNKNOWN"),
+        (1, -0.25, 0, "UNKNOWN"),
+        (1, 0, -0.25, "UNKNOWN"),
+    ],
+)
+def test_r672_quarter_pixel_support_boundary(tmp_path, monkeypatch, yaw, dx, dy, expected):
+    import numpy as np
+
+    module, ref, current, reg, root, hashes, clock, state = nominal_scene(
+        tmp_path, monkeypatch, yaw=yaw
+    )
+    if dx or dy:
+        camera = np.asarray(ref.camera_to_world).reshape(4, 4)
+        fx, fy, cx, cy = ref.intrinsics
+        center = (
+            camera[0, 3] + (132.5 - cx + dx) * 1.396 / fx,
+            camera[1, 3] - (74.5 - cy - dy) * 1.396 / fy,
+            0.039,
+        )
+        module, ref, current, reg, root, hashes, clock, state = nominal_scene(
+            tmp_path / "translated", monkeypatch, center=center, yaw=yaw
+        )
+    policy = module.registered_nominal_region_policy_v1(hashes)
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref, reg, source_root=root, source_hashes=hashes, nominal_policy=policy
+    )
+    clock[0] = current.captured_at
+    result = module.registered_collection_grounding_preview_v2(tracker, current, state)
+    assert result.status == expected, result.reason
+    assert result.execution_allowed is False and result.native_authority == "UNAVAILABLE"
+    if expected == "UNKNOWN":
+        assert result.reason == "registered_region_projection_mask_mismatch"
+        assert result.region_evidence is result.destination_world_m is None
+        assert result.object_center_world_m is result.grasp_tcp_world_m is None
+    else:
+        assert result.region_evidence["maximum_model_residual_m"] <= policy["tau_model_m"]
+        assert result.region_evidence["placement_clearance"] == "UNKNOWN"
+
+
+@pytest.mark.parametrize("bad", [None, "CONTOUR", True, []])
+def test_r672_corner_refinement_options_are_closed(tmp_path, monkeypatch, bad):
+    from cloud_edge_robot_arm.vision.pose_markers import detect_pose_marker
+    from cloud_edge_robot_arm.vision.registered_objects import derive_registered_object_geometry
+
+    _, ref, current, reg, root, hashes, _, _ = nominal_scene(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match="unsupported marker corner refinement"):
+        detect_pose_marker(current, reg.pose_marker, corner_refinement=bad)
+    with pytest.raises(ValueError, match="unsupported marker corner refinement"):
+        derive_registered_object_geometry(current, reg, corner_refinement=bad)
+    with pytest.raises(ValueError, match="unsupported marker corner refinement"):
+        registered_object_tracking.RegisteredObjectTrackerV1(
+            ref, reg, source_root=root, source_hashes=hashes, corner_refinement=bad
+        )
+
+
+@pytest.mark.parametrize("fault", ["foreign", "duplicate"])
+def test_r672_nominal_refinement_keeps_marker_identity_gate(tmp_path, monkeypatch, fault):
+    module, ref, current, reg, root, hashes, clock, state = nominal_scene(
+        tmp_path, monkeypatch, yaw=1
+    )
+    tracker = module.bootstrap_registered_collection_tracker_v2(
+        ref,
+        reg,
+        source_root=root,
+        source_hashes=hashes,
+        nominal_policy=module.registered_nominal_region_policy_v1(hashes),
+    )
+    bad, _ = frame(fault=fault)
+    bad = revised(
+        bad,
+        observation_id="bad-marker-" + fault,
+        frame_id="bad-marker-" + fault,
+        captured_at=current.captured_at,
+        sim_time_s=current.sim_time_s,
+    )
+    clock[0] = bad.captured_at
+    result = module.registered_collection_grounding_preview_v2(tracker, bad, state)
+    assert result.status == "UNKNOWN" and result.reason == "foreign_or_ambiguous_marker"
+    assert result.region_evidence is result.object_center_world_m is None
+    assert result.destination_world_m is result.grasp_tcp_world_m is None
+    assert result.execution_allowed is False
 
 
 def test_r643_resealed_region_binding(tmp_path, monkeypatch):
@@ -1204,6 +1339,7 @@ def test_r643_resealed_region_binding(tmp_path, monkeypatch):
             owner.RegisteredGroundingFrameInputsV2.from_payload(payload)
 
 
+@pytest.mark.parametrize("yaw", [0, 1])
 @pytest.mark.parametrize(
     "change,expected",
     [
@@ -1216,14 +1352,16 @@ def test_r643_resealed_region_binding(tmp_path, monkeypatch):
         ("projection_hole", "UNKNOWN"),
     ],
 )
-def test_r643_nominal_residual_boundaries(tmp_path, monkeypatch, change, expected):
+def test_r643_nominal_residual_boundaries(tmp_path, monkeypatch, change, expected, yaw):
     import base64
     import io
 
     import numpy as np
     from PIL import Image
 
-    module, ref, current, reg, root, hashes, clock, state = nominal_scene(tmp_path, monkeypatch)
+    module, ref, current, reg, root, hashes, clock, state = nominal_scene(
+        tmp_path, monkeypatch, yaw=yaw
+    )
     with Image.open(io.BytesIO(base64.b64decode(current.rgb_png_base64))) as image:
         rgb = np.array(image)
     depth = np.array(current.depth_values(), dtype="<f4").reshape(current.height, current.width)

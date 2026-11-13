@@ -53,12 +53,17 @@ class RegisteredObjectGeometry:
 
 
 def derive_registered_object_geometry(
-    observation: RGBDObservation, registration: NativeGeometryRegistration
+    observation: RGBDObservation,
+    registration: NativeGeometryRegistration,
+    *,
+    corner_refinement: Literal["NONE", "SUBPIX"] = "NONE",
 ) -> RegisteredObjectGeometry:
     """从同帧原始深度标记与注册变换推导物体中心及抓取点，保留未知量。"""
     # Local import avoids a cycle with the calibration consumer of this helper.
     from cloud_edge_robot_arm.vision.native_calibration import NativeGeometryRegistration
 
+    if type(corner_refinement) is not str or corner_refinement not in {"NONE", "SUBPIX"}:
+        raise ValueError("unsupported marker corner refinement")
     if (
         type(observation) is not RGBDObservation
         or type(registration) is not NativeGeometryRegistration
@@ -90,7 +95,8 @@ def derive_registered_object_geometry(
     if any(camera[key] != value for key, value in payload["camera"].items()):
         return RegisteredObjectGeometry("UNKNOWN", "registered_camera_mismatch", **provenance)
 
-    marker = detect_pose_marker(current, marker_registration)
+    options = {} if corner_refinement == "NONE" else {"corner_refinement": corner_refinement}
+    marker = detect_pose_marker(current, marker_registration, **options)
     if type(marker) is not PoseMarkerEstimate:
         return RegisteredObjectGeometry("UNKNOWN", "invalid_marker_result", **provenance)
     if (
