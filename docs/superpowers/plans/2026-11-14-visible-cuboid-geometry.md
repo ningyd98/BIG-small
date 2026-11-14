@@ -3,7 +3,7 @@
 > **For agentic workers:** Use superpowers:executing-plans inline, with one fresh whole-change reviewer at the end. Steps use checkbox tracking.
 
 **Goal:** Repair raster contour and edge-depth handling without weakening missing/occluded evidence gates.
-**Architecture:** Measured depth clusters anchored to visible RGB interior; half-pixel rectangle support; explicit invalid-depth diagnostics. Existing pipeline and authority remain.
+**Architecture:** Measured top support anchored directly to visible RGB interior; half-pixel rectangle support; explicit invalid-depth diagnostics. Existing pipeline and authority remain.
 **Tech Stack:** Python, NumPy, OpenCV, pytest, MuJoCo.
 **Spec:** docs/superpowers/specs/2026-11-14-visible-cuboid-geometry-design.md
 
@@ -17,7 +17,7 @@
 
 ## Review Focus
 
-- Foreground or internal depth anomalies must not become a chosen top cluster.
+- Foreground or internal depth anomalies must not become a nominated top support.
 - Small clipped convex silhouettes must still fail via boundary depth or reference size.
 - A rectangle fit cannot supply unseen corners or calibrated metric confidence.
 - Missing/invalid depth and insufficient interior must fail, including no-bound input.
@@ -30,7 +30,8 @@
 
 - [x] Add tests: noisy lower boundary with no bound recovers visible top but not extent;
   near boundary/core spike rejects without a bound; calibrated support violation rejects.
-- [x] Run new tests RED, then implement measured-gap clusters and explicit failure reasons.
+- [x] Run new tests RED, then implement measured-gap clusters and explicit failure reasons (initial design; replaced
+  with direct interior anchoring after the final review).
 - [x] Run new depth tests + test_opencv_target_evidence.py GREEN; commit task.
 
 ### Task 2: Raster contour and invalid-background diagnostics
@@ -53,13 +54,22 @@ research/sol_molmo_single_episode.py; extend tests/test_visible_cuboid_geometry.
 
 - [x] Replay all 40 archived observations with diagnostic-only capture-time clock;
   store before/after reasons and immutable-input hashes. No plan/action authority.
-- [ ] Render fresh host MuJoCo normal, actual foreground occluder and table-edge controls
+- [x] Render fresh host MuJoCo normal, actual foreground occluder and table-edge controls
   at original resolution; archive renderer/settings and show refusal remains active.
-- [ ] Run appropriate broad tests, lint, type comparison and bounded full-project check.
-- [ ] Obtain one read-only whole-change review; fix important findings once with RED/GREEN.
-- [ ] Freeze an exact new 40-item matrix/source manifest, separately from old evidence.
+- [x] Run appropriate broad tests, lint, type comparison and bounded full-project check.
+- [x] Obtain one read-only whole-change review; fix important findings once with RED/GREEN.
+- [x] Freeze an exact new 40-item matrix/source manifest, separately from old evidence.
 - [ ] Commit/push verified source, tests, derived docs only; verify local/upstream/remote SHA.
 
 **Expected:** Positive regression fixtures recover visible support; malformed, occluded,
 invalid or unresolved evidence stops. No claim all 40 pass or task rate improves before
 an independently authorized actual-model batch. Keep actual remaining blockers explicit.
+
+Final verification: 385 affected tests passed in 62.52s; Ruff clean. Two targeted mypy
+diagnostics and the global Chinese-docstring audit failure reproduce on exact base.
+The single reviewer Important was reproduced, then fixed with direct measured-interior
+anchoring and entire selected-top span checks; no final Astra approval is claimed.
+Final visibility replay: fixed 10/10, development 8/15, disclosed old held-out 10/15,
+28/40 overall; all 40 baseline gates reproduced, six actual occluders still refused.
+No new model/paid/action batch has run. Post-push SHA receipt is saved externally in the
+chat output package so it can refer to the exact delivered commit without self-reference.

@@ -12,18 +12,22 @@ marker, native/cloud model selection, controllers, action budgets and metric qua
 A lower solidity threshold or higher render resolution would not fix the depth failure;
 they are excluded. Use measured visible support and the existing half-pixel footprint.
 
-1. Depth: partition sorted measured heights only across an observed gap greater than
-   either partition's spread and, when supplied, twice the calibrated depth bound.
-   Anchor the chosen measured clusters to all eroded RGB-interior pixels and at least
-   eight points. Multiple interior clusters may merge only within the existing 8mm
-   top-grasp flatness admission when no error bound exists, or twice a supplied bound;
-   this does not create a sensor bound or metric qualification. A larger interior split,
-   higher foreground boundary cluster,
-   missing depth or missing interior fails explicitly. Lower clusters must be boundary
-   only. With a calibrated bound they must not lie below calibrated support; top-plane
-   depth intervals must overlap. Without a supplied bound, extent/effects stay UNKNOWN.
-   Never revert an unresolved split to the whole color mask as top. Preserve every
-   original silhouette/depth sample in conservative outer bounds; do not synthesize depth.
+1. Depth: use all measured eroded RGB-interior pixels as the top anchor. Require
+   their height span to fit the existing 8mm top-grasp flatness admission without a
+   sensor bound, or twice a supplied bound. A boundary point can nominate top support
+   only if its height remains within that admission of every interior height.
+   Require at least eight measured top points and validate the entire nominated top's
+   span too. Any higher excluded boundary point, missing depth or missing interior
+   refuses. Lower excluded points must be boundary only; with a calibrated bound
+   they cannot lie below calibrated support. Calibrated top-plane depth intervals
+   must overlap. Without a supplied bound, extent/effects stay UNKNOWN. The 8mm rule
+   is an existing visibility/flatness admission, never an invented sensor error bound.
+   Preserve every original silhouette/depth sample in conservative outer bounds;
+   never synthesize depth or fall back to the whole mask after unresolved separation.
+
+   The initial gap-based partition proposal was rejected during verification: equal
+   gaps can hide multilevel anomalies and merge normal visible side levels. Explicit
+   equal-gap negatives and side-level positives now pin the interior-anchor approach.
 
 2. Contour: replace area/convex-hull >=0.95 with a rotated-rectangle interior support
    check, limited to the existing upright cuboid scope. minAreaRect fits observed pixel

@@ -141,7 +141,7 @@ class OpenCVTargetTracker:
         ys: np.ndarray,
         xs: np.ndarray,
     ) -> tuple[np.ndarray, list[float] | None, str | None]:
-        """只从包含全部可见内部像素的实测深度簇提名顶面，不降级为整片掩膜。"""
+        """以实测可见内部锚定顶面，再分类边界；未决深度不得降级为整片顶面。"""
         heights = points[:, 2]
         top = np.zeros(len(heights), dtype=bool)
         bound = self.depth_error_bound_m
@@ -149,34 +149,15 @@ class OpenCVTargetTracker:
         core = interior[ys, xs]
         if not np.any(core):
             return top, None, "visible_top_interior_unavailable"
-        pending = [np.argsort(heights)]
-        groups = []
-        while pending:
-            indices = pending.pop()
-            if len(indices) > 1:
-                values = heights[indices]
-                cut = int(np.argmax(np.diff(values)))
-                gap = float(values[cut + 1] - values[cut])
-                spread = max(
-                    float(values[cut] - values[0]),
-                    float(values[-1] - values[cut + 1]),
-                    2 * (bound or 0.0),
-                )
-                if gap > spread:
-                    pending.extend((indices[: cut + 1], indices[cut + 1 :]))
-                    continue
-            groups.append(indices)
-        choices = [indices for indices in groups if np.any(core[indices])]
-        # 可见内部已有8mm顶面平整度准入；它不是传感器误差界，不能赋予完整尺寸。
-        # 只允许内部微小波动合并，独立的更近边界簇仍必须拒绝。
-        if len(choices) > 1 and float(np.ptp(heights[core])) > (
-            2 * bound if bound is not None else _MAX_TOP_PATCH_Z_SPAN_M
-        ):
-            return top, None, "top_support_not_single_visible_plane"
-        chosen = np.concatenate(choices)
-        if len(chosen) < 8:
-            return top, None, "top_support_not_single_visible_plane"
-        top[chosen] = True
+        # 8mm只沿用既有顶面平整度准入，不是传感器误差界，不能赋予完整尺寸。
+        # 标定输入仍使用原始区间交集约束；整个内部和最终顶面都必须满足跨度限制。
+        span_limit = 2 * bound if bound is not None else _MAX_TOP_PATCH_Z_SPAN_M
+        low, high = float(heights[core].min()), float(heights[core].max())
+        if high - low > span_limit:
+            return top, None, "top_support_height_span_unresolved"
+        top = (heights >= high - span_limit) & (heights <= low + span_limit)
+        if int(top.sum()) < 8 or float(np.ptp(heights[top])) > span_limit:
+            return top, None, "top_support_height_span_unresolved"
         if np.any(heights[~top] > heights[top].max()):
             return top, None, "boundary_depth_in_front_of_observed_top"
         if bound is not None and np.any(heights[~top] < self.support_z - bound):

@@ -100,6 +100,48 @@ def test_calibrated_top_does_not_ignore_boundary_below_support():
         track(cuboid(damage="below_calibrated_support"), bound=0.001)
 
 
+@pytest.mark.parametrize(
+    "row,reason",
+    [
+        (113, "boundary_depth_in_front_of_observed_top"),
+        (116, "top_support_height_span_unresolved"),
+    ],
+    ids=["boundary", "interior"],
+)
+def test_unresolved_equal_gap_depths_never_become_a_whole_top(row, reason):
+    observation = cuboid()
+    depth = np.asarray(observation.depth_values(), dtype="<f4").reshape(240, 320)
+    depth[113:128, 172:187] = 1.3125
+    depth[row, 175] = 1.28125
+    depth[row, 176] = 1.25
+    payload = observation.model_dump()
+    payload.update(
+        depth_float32_base64=base64.b64encode(depth.tobytes()).decode(), checksum_sha256=""
+    )
+    with pytest.raises(ValueError, match=reason):
+        track(RGBDObservation.model_validate(payload))
+
+
+def test_continuous_boundary_side_levels_do_not_replace_visible_interior_top():
+    observation = cuboid()
+    depth = np.asarray(observation.depth_values(), dtype="<f4").reshape(240, 320)
+    depth[113:128, 172:187] = 1.3125
+    boundary = np.ones((15, 15), dtype=np.uint8)
+    boundary[1:-1, 1:-1] = 0
+    ys, xs = np.nonzero(boundary)
+    for index, (y, x) in enumerate(zip(ys, xs, strict=True)):
+        depth[y + 113, x + 172] = (1.3125, 1.34375, 1.375)[index % 3]
+    payload = observation.model_dump()
+    payload.update(
+        depth_float32_base64=base64.b64encode(depth.tobytes()).decode(), checksum_sha256=""
+    )
+    geometry = track(RGBDObservation.model_validate(payload)).initial
+    assert geometry["top_pixels"] < geometry["visible_pixels"]
+    assert geometry["observed_top_min"][2] == pytest.approx(0.0875)
+    assert geometry["observed_body_min"][2] == pytest.approx(0.025)
+    assert geometry["extent_complete"] is False
+
+
 @pytest.mark.parametrize("size", [14, 24, 32])
 @pytest.mark.parametrize("angle", [5, 17, 33, 45, 73])
 def test_complete_rotated_raster_top_uses_pixel_footprint_instead_of_solidity(size, angle):
@@ -146,3 +188,4 @@ def test_episode_source_snapshot_seals_modified_tracking_code(tmp_path):
     run_single_episode(output=output)
     snapshot = json.loads((output / "source-hashes.json").read_text())
     assert len(snapshot["files"]["src/cloud_edge_robot_arm/vision/tracking.py"]) == 64
+    assert len(snapshot["files"]["src/cloud_edge_robot_arm/vision/top_grasp.py"]) == 64
