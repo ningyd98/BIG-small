@@ -1,0 +1,150 @@
+{
+  "plan_id": "round-joint-limit-diagnosis",
+  "plan_version": "1.0",
+  "created_at": "2026-11-14T17:30:00+08:00",
+  "objective": "生成硬限位失败的完整诊断数据，确定根因属于假设A/B/C，为下一轮修复提供输入条件",
+  "scope": {
+    "in_scope": [
+      "生成诊断数据",
+      "确定根因",
+      "对比在线与评价边界"
+    ],
+    "out_of_scope": [
+      "修复硬限位问题本身",
+      "分析其余17项失败",
+      "几何判据审查"
+    ]
+  },
+  "input_files": [
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/episode_evaluator.py",
+      "sha256": "a0b5891a70752400dcf0dea0cbe837476114148000b9eb345c27fe468860af50",
+      "role": "评价核心"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+      "sha256_expected": "d6bf8cc360328187ee7bf6c5b3fb78149b4e4302ee7380e2c4a3fcd7fabae452",
+      "sha256_actual": "498efa2b2947d70cce8e311aa57a77fbcb50a978db592f44cba8d0ac2f5aa7e0",
+      "role": "后端数据结构",
+      "note": "SHA256不匹配，需确认版本差异"
+    },
+    {
+      "path": "/home/ningyd/Documents/Codex/2026-11-14/x20-gpu-nvidia-smi-nvml-gpu/outputs/geometry-repair-40-20261114-v2/development-043003/component/physical-evidence.json",
+      "sha256": "bce0fb30ff4069f4aca355396e62da955f9b44762e7442ab697d885a4bc13de6",
+      "role": "样本1逐步证据"
+    },
+    {
+      "path": "/home/ningyd/Documents/Codex/2026-11-14/x20-gpu-nvidia-smi-nvml-gpu/outputs/geometry-repair-40-20261114-v2/held-out-044009/component/physical-evidence.json",
+      "sha256": "f109f755a2d49bff3434316a2287b3454f868e91f9c78e2baffec1b8e288ec16",
+      "role": "样本2逐步证据"
+    },
+    {
+      "path": "/home/ningyd/Documents/Codex/2026-11-14/x20-gpu-nvidia-smi-nvml-gpu/outputs/geometry-repair-40-20261114-v2/held-out-044011/component/physical-evidence.json",
+      "sha256": "560b76e938fdb8d1876362e16b432981713498116399179a4976ea9770f5857c",
+      "role": "样本3逐步证据"
+    }
+  ],
+  "modifications": [
+    {
+      "file": "src/cloud_edge_robot_arm/research/freeze_evidence.py",
+      "type": "extend",
+      "changes": ["新增函数 _save_joint_limit_diagnostics()"]
+    },
+    {
+      "file": "scripts/diagnose_joint_limits.py",
+      "type": "create",
+      "purpose": "重放样本并生成诊断数据"
+    },
+    {
+      "file": "scripts/analyze_joint_limit_diagnostics.py",
+      "type": "create",
+      "purpose": "分析诊断数据并生成根因报告"
+    }
+  ],
+  "verification_metrics": {
+    "diagnostic_file_coverage": {
+      "target": "3/3",
+      "measurement": "检查文件存在性"
+    },
+    "field_completeness": {
+      "target": "100%",
+      "measurement": "验证JSON结构"
+    },
+    "violated_joint_identification": {
+      "target": ">=1 sample",
+      "measurement": "检查 violated_joints 非空"
+    },
+    "joint_data_consistency": {
+      "target": "9 joints",
+      "measurement": "验证关节位置+手指位置长度"
+    }
+  },
+  "acceptance_criteria": {
+    "success": [
+      "3个样本的诊断数据生成完成",
+      "根因分析报告明确指出属于哪个假设",
+      "下一轮修复计划的输入条件已满足"
+    ],
+    "failure": [
+      "诊断数据无法生成（输入文件丢失、环境不可用）",
+      "诊断数据无法确定根因（数据不足、边界一致但仍越界）"
+    ],
+    "expand_scope": [
+      "诊断数据显示多种根因混合",
+      "需要更多样本验证根因"
+    ]
+  },
+  "hypotheses": [
+    {
+      "id": "A",
+      "description": "越界来自手指关节，在线监测未覆盖",
+      "priority": "P2",
+      "verification": "诊断数据显示手指关节触发限位 + 在线日志无对应告警"
+    },
+    {
+      "id": "B",
+      "description": "机械臂关节映射或边界定义不一致",
+      "priority": "P1",
+      "verification": "诊断数据显示机械臂关节触发限位 + 在线与评价边界不同"
+    },
+    {
+      "id": "C",
+      "description": "控制轨迹本身不可达",
+      "priority": "P1",
+      "verification": "诊断数据显示大幅越界（>1e-3 rad） + 目标姿态或路径有问题"
+    }
+  ],
+  "prerequisites": {
+    "environment": [
+      "MuJoCo 环境可用",
+      "Python 环境包含 numpy, dataclasses-json"
+    ],
+    "codebase": [
+      "commit 025c5389 或兼容状态",
+      "episode_evaluator.py SHA256 匹配",
+      "backend.py 版本确认"
+    ],
+    "data": [
+      "development-043003 原始输入文件存在",
+      "held-out-044009 原始输入文件存在",
+      "held-out-044011 原始输入文件存在"
+    ]
+  },
+  "decisions": {
+    "diagnostic_field_implementation": "独立文件（推荐）",
+    "replay_scope": "完整 episode",
+    "diagnostic_storage_location": "<episode_dir>/component/joint-limit-diagnostics.json",
+    "diagnostic_storage_format": "JSON",
+    "insufficient_data_fallback": "记录不足表现 → 生成增强诊断计划 → 再次交给 Astra"
+  },
+  "deliverables": [
+    "development-043003/component/joint-limit-diagnostics.json",
+    "held-out-044009/component/joint-limit-diagnostics.json",
+    "held-out-044011/component/joint-limit-diagnostics.json",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-joint-limit-diagnosis/root-cause-analysis.md",
+    "scripts/diagnose_joint_limits.py",
+    "scripts/analyze_joint_limit_diagnostics.py",
+    "src/cloud_edge_robot_arm/research/freeze_evidence.py (修改)"
+  ],
+  "estimated_duration_hours": 7.5
+}

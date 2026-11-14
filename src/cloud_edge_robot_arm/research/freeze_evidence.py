@@ -1106,3 +1106,110 @@ def initial_spec_from_evidence(directory: Path) -> ProtocolSpec:
         opportunity_hash=content_digest(opportunities),
         recovery_fault_manifest_hash=content_digest(faults),
     )
+
+
+def _save_joint_limit_diagnostics(observation: Any, output_dir: Path) -> None:
+    """仅离线重放显式调用，保存超出既有评价容差的关节原始值。"""
+    fields = (
+        (
+            "arm",
+            "rad",
+            observation.joint_positions_rad,
+            observation.joint_velocities_rad_s,
+            observation.joint_ranges_rad,
+            7,
+        ),
+        (
+            "finger",
+            "m",
+            observation.finger_positions_m,
+            observation.finger_velocities_m_s,
+            observation.finger_ranges_m,
+            2,
+        ),
+    )
+    violated: list[dict[str, Any]] = []
+    index = 0
+    for kind, unit, positions, velocities, ranges, count in fields:
+        if not len(positions) == len(velocities) == len(ranges) == count:
+            raise ValueError("diagnostic snapshot requires seven arm and two finger joints")
+        for position, velocity, bounds in zip(positions, velocities, ranges, strict=True):
+            if len(bounds) != 2:
+                raise ValueError("joint diagnostic range needs two bounds")
+            low, high = bounds
+            if not all(math.isfinite(v) for v in (position, velocity, low, high)) or low >= high:
+                raise ValueError(
+                    "joint diagnostics require finite positions, velocities and ordered bounds"
+                )
+            if not low - 1e-4 <= position <= high + 1e-4:
+                violated.append(
+                    {
+                        "index": index,
+                        "type": kind,
+                        "unit": unit,
+                        "position": position,
+                        "velocity": velocity,
+                        "lower_bound": low,
+                        "upper_bound": high,
+                        "violation_magnitude": max(low - position, position - high),
+                        "bound_type": "lower" if position < low else "upper",
+                    }
+                )
+            index += 1
+    if not violated:
+        return
+    if (
+        not observation.episode_id
+        or type(observation.physics_step) is not int
+        or observation.physics_step < 0
+        or not math.isfinite(observation.sim_time_s)
+    ):
+        raise ValueError("joint diagnostics need a valid episode, physics step and time")
+    row = {
+        "physics_step": observation.physics_step,
+        "sim_time_s": observation.sim_time_s,
+        "joint_positions_rad": observation.joint_positions_rad,
+        "joint_velocities_rad_s": observation.joint_velocities_rad_s,
+        "joint_ranges_rad": observation.joint_ranges_rad,
+        "finger_positions_m": observation.finger_positions_m,
+        "finger_velocities_m_s": observation.finger_velocities_m_s,
+        "finger_ranges_m": observation.finger_ranges_m,
+        "violated_joints": violated,
+    }
+    output_dir = Path(output_dir).absolute()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = _inside(output_dir, "joint-limit-diagnostics.json")
+    if path.exists():
+        payload = json.loads(path.read_text())
+        rows = payload.get("violations") if isinstance(payload, dict) else None
+        if not (
+            isinstance(payload, dict)
+            and payload.get("schema") == "joint-limit-diagnostics.v1"
+            and payload.get("episode_id") == observation.episode_id
+            and isinstance(rows, list)
+            and rows
+            and all(
+                isinstance(row, dict)
+                and type(row.get("physics_step")) is int
+                and row["physics_step"] >= 0
+                for row in rows
+            )
+            and all(
+                a["physics_step"] < b["physics_step"] for a, b in zip(rows, rows[1:], strict=False)
+            )
+            and rows[-1]["physics_step"] < observation.physics_step
+        ):
+            raise ValueError("diagnostic episode or physics step differs from existing output")
+    else:
+        payload = {
+            "schema": "joint-limit-diagnostics.v1",
+            "scope": "OFFLINE_RECORDED_ACTION_REPLAY_NOT_ONLINE_ACCEPTANCE",
+            "episode_id": observation.episode_id,
+            "evaluator_position_tolerance": {"arm_rad": 1e-4, "finger_m": 1e-4},
+            "violations": [],
+        }
+    payload["violations"].append(row)
+    temporary = path.with_suffix(".json.tmp")
+    with temporary.open("x", encoding="utf-8") as stream:
+        stream.write(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+    temporary.replace(path)
