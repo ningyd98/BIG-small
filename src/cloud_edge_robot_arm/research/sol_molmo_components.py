@@ -68,6 +68,13 @@ def check_component_hard_state(backend: Any, robot: Any) -> None:
             raise ComponentStopped("HARD_JOINT_LIMIT")
         if not math.isfinite(velocity) or abs(velocity) > 3.0:
             raise ComponentStopped("HARD_JOINT_VELOCITY")
+    # 手指滑动关节按米检查，保留独立评价的0.1mm容差；不消费物体真值。
+    for name in ("finger_left_joint", "finger_right_joint"):
+        index = backend._model.joint(name).id
+        position = float(backend._data.qpos[backend._model.jnt_qposadr[index]])
+        low, high = backend._model.jnt_range[index]
+        if not math.isfinite(position) or not low - 1e-4 <= position <= high + 1e-4:
+            raise ComponentStopped("HARD_FINGER_LIMIT")
     p = state.tcp_pose
     if not all(math.isfinite(v) for v in (p.x, p.y, p.z)) or (
         not -0.85 <= p.x <= 0.85
