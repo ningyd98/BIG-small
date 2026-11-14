@@ -59,7 +59,8 @@ research/sol_molmo_single_episode.py; extend tests/test_visible_cuboid_geometry.
 - [x] Run appropriate broad tests, lint, type comparison and bounded full-project check.
 - [x] Obtain one read-only whole-change review; fix important findings once with RED/GREEN.
 - [x] Freeze an exact new 40-item matrix/source manifest, separately from old evidence.
-- [ ] Commit/push verified source, tests, derived docs only; verify local/upstream/remote SHA.
+- [x] Commit/push verified source, tests, derived docs only; verify local/upstream/remote SHA.
+  Source delivery afc43e80 verified equal locally/upstream/remotely; external receipt retained.
 
 **Expected:** Positive regression fixtures recover visible support; malformed, occluded,
 invalid or unresolved evidence stops. No claim all 40 pass or task rate improves before
@@ -71,5 +72,10 @@ The single reviewer Important was reproduced, then fixed with direct measured-in
 anchoring and entire selected-top span checks; no final Astra approval is claimed.
 Final visibility replay: fixed 10/10, development 8/15, disclosed old held-out 10/15,
 28/40 overall; all 40 baseline gates reproduced, six actual occluders still refused.
-No new model/paid/action batch has run. Post-push SHA receipt is saved externally in the
+The subsequently authorized actual-model paired batch completed 40/40: component physical
+success 20/40 versus original11/40, image candidates12/12 but zero geometry recoveries,
+40 cloud calls,136 native generations,195 actions; no retry/timeout/source drift. Remaining
+12 depth refusals,5 moving-frame identity failures,2 safety terminals,1 grasp-lost terminal;
+hard-limit evidence3 including grasp-lost. These remain explicit unresolved limits.
+Post-push SHA receipt is saved externally in the
 chat output package so it can refer to the exact delivered commit without self-reference.
