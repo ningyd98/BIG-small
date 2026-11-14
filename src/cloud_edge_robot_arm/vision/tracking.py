@@ -140,28 +140,39 @@ class OpenCVTargetTracker:
         ys: np.ndarray,
         xs: np.ndarray,
     ) -> tuple[np.ndarray, list[float] | None, str | None]:
-        """Separate a measured dominant horizontal top from boundary-only sides.
-
-        Otsu supplies a data-derived candidate split, not a metric tolerance or
-        calibration. Only source-supplied depth intervals can validate its plane.
-        The lower mode must occur exclusively on the complete silhouette boundary;
-        interior anomalies cannot be relabelled as cuboid sides.
-        """
+        """只从包含全部可见内部像素的实测深度簇提名顶面，不降级为整片掩膜。"""
         heights = points[:, 2]
-        top = np.ones(len(heights), dtype=bool)
+        top = np.zeros(len(heights), dtype=bool)
         bound = self.depth_error_bound_m
-        full_plane_possible = bound is not None and float(np.ptp(heights)) <= 2 * bound
-        if not full_plane_possible and np.ptp(heights) > 0:
-            normalized = np.rint((heights - heights.min()) / np.ptp(heights) * 255).astype(np.uint8)
-            split, _ = cv2.threshold(normalized, 0, 255, cv2.THRESH_OTSU)
-            candidate = normalized > split
-            boundary = cv2.erode(selected.astype(np.uint8), np.ones((3, 3), np.uint8)) == 0
-            if (
-                int(candidate.sum()) >= 8
-                and np.all(boundary[ys[~candidate], xs[~candidate]])
-                and np.all(heights[~candidate] >= self.support_z - (bound or 0.0))
-            ):
-                top = candidate
+        interior = cv2.erode(selected.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+        core = interior[ys, xs]
+        if not np.any(core):
+            return top, None, "visible_top_interior_unavailable"
+        pending = [np.argsort(heights)]
+        groups = []
+        while pending:
+            indices = pending.pop()
+            if len(indices) > 1:
+                values = heights[indices]
+                cut = int(np.argmax(np.diff(values)))
+                gap = float(values[cut + 1] - values[cut])
+                spread = max(
+                    float(values[cut] - values[0]),
+                    float(values[-1] - values[cut + 1]),
+                    2 * (bound or 0.0),
+                )
+                if gap > spread:
+                    pending.extend((indices[: cut + 1], indices[cut + 1 :]))
+                    continue
+            groups.append(indices)
+        choices = [indices for indices in groups if int(core[indices].sum()) == int(core.sum())]
+        if len(choices) != 1 or len(choices[0]) < 8:
+            return top, None, "top_support_not_single_visible_plane"
+        top[choices[0]] = True
+        if np.any(heights[~top] > heights[top].max()):
+            return top, None, "boundary_depth_in_front_of_observed_top"
+        if bound is not None and np.any(heights[~top] < self.support_z - bound):
+            return top, None, "boundary_depth_below_calibrated_support"
         if bound is None:
             return top, None, None
         interval = [float((heights[top] - bound).max()), float((heights[top] + bound).min())]
