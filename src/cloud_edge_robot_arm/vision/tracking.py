@@ -22,6 +22,7 @@ from PIL import Image
 
 from cloud_edge_robot_arm.contracts import RobotState
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
+from cloud_edge_robot_arm.vision.top_grasp import _MAX_TOP_PATCH_Z_SPAN_M
 
 _CONDITIONS = (
     "target_visible",
@@ -165,10 +166,17 @@ class OpenCVTargetTracker:
                     pending.extend((indices[: cut + 1], indices[cut + 1 :]))
                     continue
             groups.append(indices)
-        choices = [indices for indices in groups if int(core[indices].sum()) == int(core.sum())]
-        if len(choices) != 1 or len(choices[0]) < 8:
+        choices = [indices for indices in groups if np.any(core[indices])]
+        # 可见内部已有8mm顶面平整度准入；它不是传感器误差界，不能赋予完整尺寸。
+        # 只允许内部微小波动合并，独立的更近边界簇仍必须拒绝。
+        if len(choices) > 1 and float(np.ptp(heights[core])) > (
+            2 * bound if bound is not None else _MAX_TOP_PATCH_Z_SPAN_M
+        ):
             return top, None, "top_support_not_single_visible_plane"
-        top[choices[0]] = True
+        chosen = np.concatenate(choices)
+        if len(chosen) < 8:
+            return top, None, "top_support_not_single_visible_plane"
+        top[chosen] = True
         if np.any(heights[~top] > heights[top].max()):
             return top, None, "boundary_depth_in_front_of_observed_top"
         if bound is not None and np.any(heights[~top] < self.support_z - bound):
@@ -236,8 +244,31 @@ class OpenCVTargetTracker:
         contour = contours[0]
         hull_area = cv2.contourArea(cv2.convexHull(contour))
         area = cv2.contourArea(contour)
-        if target and (hull_area <= 0 or area / hull_area < 0.95):
-            return None, "target_contour_incomplete_or_occluded"
+        raster_support = None
+        if target:
+            (cx, cy), (width, height), angle = cv2.minAreaRect(contour)
+            radians = math.radians(angle)
+            axis = np.array([math.cos(radians), math.sin(radians)])
+            normal = np.array([-axis[1], axis[0]])
+            # 原有半像素方形足迹在两条矩形轴上的投影；不增加可调面积门限。
+            inset = 0.5 * float(np.abs(axis).sum())
+            normal_inset = 0.5 * float(np.abs(normal).sum())
+            grid_y, grid_x = np.indices(selected.shape)
+            dx, dy = grid_x - cx, grid_y - cy
+            required = (np.abs(dx * axis[0] + dy * axis[1]) < width / 2 - inset - 1e-5) & (
+                np.abs(dx * normal[0] + dy * normal[1]) < height / 2 - normal_inset - 1e-5
+            )
+            raster_support = {
+                "method": "OBSERVED_RASTER_RECTANGLE_INNER_SUPPORT",
+                "rectangle_size_px": [float(width), float(height)],
+                "axis_footprint_half_width_px": [inset, normal_inset],
+                "required_interior_pixels": int(required.sum()),
+                "missing_interior_pixels": int(np.count_nonzero(required & ~selected)),
+                "measured_solidity": area / hull_area if hull_area > 0 else None,
+                "filled_pixels": 0,
+            }
+            if not required.any() or np.any(required & ~selected):
+                return None, "target_contour_incomplete_or_occluded"
         if target:
             filled = np.zeros_like(mask)
             cv2.drawContours(filled, contours, -1, 1, thickness=cv2.FILLED)
@@ -358,6 +389,7 @@ class OpenCVTargetTracker:
             "inside_pixel_rectangle": inside_pixel_rectangle,
             "depth_error_bound_m": self.depth_error_bound_m,
             "pixel_footprint_half_width_px": 0.5,
+            "raster_support": raster_support,
             "mask": selected,
         }, None
 

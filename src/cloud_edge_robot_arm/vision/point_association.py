@@ -179,6 +179,28 @@ def associate_target_point(
     if not bool(
         np.all((valid[component] > 0) & np.isfinite(depth[component]) & (depth[component] > 0))
     ):
+        invalid = (valid == 0) | ~np.isfinite(depth) | (depth <= 0)
+        interior = cv2.erode(component.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+        invalid_component = invalid & component
+        exterior = cv2.dilate(component.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+        exterior &= ~component
+        adjacent = cv2.dilate(invalid_component.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+        exterior_invalid = adjacent & exterior & invalid
+        interior_count = int(np.count_nonzero(invalid_component & interior))
+        evidence["invalid_depth_diagnosis"] = {
+            "classification": "INTERIOR_INVALID_DEPTH"
+            if interior_count
+            else (
+                "BOUNDARY_ADJACENT_INVALID_BACKGROUND"
+                if exterior_invalid.any()
+                else "BOUNDARY_INVALID_DEPTH"
+            ),
+            "invalid_component_pixels": int(invalid_component.sum()),
+            "invalid_interior_pixels": interior_count,
+            "adjacent_invalid_exterior_pixels": int(exterior_invalid.sum()),
+            "physical_occluder_identity": "UNKNOWN",
+            "original_depth_preserved": True,
+        }
         reject("local component has invalid original depth")
     distances = cv2.distanceTransform(
         component.astype(np.uint8), cv2.DIST_L2, cv2.DIST_MASK_PRECISE

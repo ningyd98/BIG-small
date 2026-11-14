@@ -128,6 +128,7 @@ def test_actual_worker_cloud_image_route_preserves_geometry_and_one_request_budg
         assert result["planning_passed"] is False
         if action == "CANDIDATE":
             second = json.loads((output / "planning/planning-stage-02.json").read_text())
-            assert "target_contour_incomplete_or_occluded" in second["reason"]
+            # 栅格轮廓已恢复；这个真实帧仍须拒绝未证明的外圈深度。
+            assert "target_outer_boundary_depth_unresolved" in second["reason"]
     assert (output / "raw/cloud/request.json").is_file()
     assert (output / "raw/cloud/response.json").is_file()

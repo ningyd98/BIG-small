@@ -32,6 +32,8 @@ SOURCE_PATHS = (
     "src/cloud_edge_robot_arm/vision/cloud_vision_fallback.py",
     "src/cloud_edge_robot_arm/vision/molmo_pointing.py",
     "src/cloud_edge_robot_arm/vision/point_association.py",
+    "src/cloud_edge_robot_arm/vision/tracking.py",
+    "src/cloud_edge_robot_arm/vision/top_grasp.py",
     "src/cloud_edge_robot_arm/vision/role_models.py",
     "src/cloud_edge_robot_arm/vision/execution.py",
     "src/cloud_edge_robot_arm/research/native_collection_application.py",

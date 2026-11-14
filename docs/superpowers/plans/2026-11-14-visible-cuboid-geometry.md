@@ -28,10 +28,10 @@
 **Files:** Modify vision/tracking.py; create tests/test_visible_cuboid_geometry.py.
 **Interfaces:** Keep _top_support(points, selected, ys, xs) -> selector, interval, reason.
 
-- [ ] Add tests: noisy lower boundary with no bound recovers visible top but not extent;
+- [x] Add tests: noisy lower boundary with no bound recovers visible top but not extent;
   near boundary/core spike rejects without a bound; calibrated support violation rejects.
-- [ ] Run new tests RED, then implement measured-gap clusters and explicit failure reasons.
-- [ ] Run new depth tests + test_opencv_target_evidence.py GREEN; commit task.
+- [x] Run new tests RED, then implement measured-gap clusters and explicit failure reasons.
+- [x] Run new depth tests + test_opencv_target_evidence.py GREEN; commit task.
 
 ### Task 2: Raster contour and invalid-background diagnostics
 
@@ -39,11 +39,11 @@
 research/sol_molmo_single_episode.py; extend tests/test_visible_cuboid_geometry.py.
 **Interfaces:** Preserve tracker geometry and association result contracts; add audit fields.
 
-- [ ] Add rotated raster positives (14/24/32px, several yaw angles), notch/hole and
+- [x] Add rotated raster positives (14/24/32px, several yaw angles), notch/hole and
   foreground negatives; invalid-background/interior diagnostics; observe RED.
-- [ ] Implement half-pixel rectangle interior support, unchanged exterior depth checks,
+- [x] Implement half-pixel rectangle interior support, unchanged exterior depth checks,
   additive invalid-depth evidence, explicit tracking source hash in episode snapshot.
-- [ ] Run geometry, association, planner, cloud fallback and worker regression GREEN;
+- [x] Run geometry, association, planner, cloud fallback and worker regression GREEN;
   update the fixture that formerly expected a raster-only failure; commit task.
 
 ### Task 3: Actual controls, frozen replay and delivery
@@ -51,7 +51,7 @@ research/sol_molmo_single_episode.py; extend tests/test_visible_cuboid_geometry.
 **Files:** Add a bounded offline verification script and research usage/result documentation.
 **Consumes:** Original frozen RGB-D evidence and modified production geometry.
 
-- [ ] Replay all 40 archived observations with diagnostic-only capture-time clock;
+- [x] Replay all 40 archived observations with diagnostic-only capture-time clock;
   store before/after reasons and immutable-input hashes. No plan/action authority.
 - [ ] Render fresh host MuJoCo normal, actual foreground occluder and table-edge controls
   at original resolution; archive renderer/settings and show refusal remains active.

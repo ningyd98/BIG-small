@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 from datetime import UTC, datetime
 
 import cv2
@@ -41,9 +42,16 @@ def cuboid(*, size=14, angle=0, damage=None):
     elif damage == "invalid_boundary":
         by, bx = np.nonzero(boundary)
         depth[by[0], bx[0]] = 0
+        depth[by[0] - 1, bx[0]] = 0
+    elif damage == "invalid_interior":
+        depth[120, 179] = 0
+    elif damage == "notch":
+        left = int(np.nonzero(mask)[1].min())
+        rgb[118:123, left : left + size // 3 + 1] = 225
+        depth[118:123, left : left + size // 3 + 1] = 1.4
     elif damage == "interior_hole":
-        rgb[120, 179] = 225
-        depth[120, 179] = 1.1
+        rgb[120, 180] = 225
+        depth[120, 180] = 1.1
     stream = io.BytesIO()
     Image.fromarray(rgb).save(stream, format="PNG")
     payload = observation.model_dump()
@@ -90,3 +98,51 @@ def test_unbounded_sensor_cannot_hide_foreground_in_a_top_fallback(damage):
 def test_calibrated_top_does_not_ignore_boundary_below_support():
     with pytest.raises(ValueError, match="initial RGB-D identity/extent unavailable"):
         track(cuboid(damage="below_calibrated_support"), bound=0.001)
+
+
+@pytest.mark.parametrize("size", [14, 24, 32])
+@pytest.mark.parametrize("angle", [5, 17, 33, 45, 73])
+def test_complete_rotated_raster_top_uses_pixel_footprint_instead_of_solidity(size, angle):
+    observation = cuboid(size=size, angle=angle)
+    geometry = track(observation, bound=0.001).initial
+    assert geometry["silhouette_complete"] is True
+    assert geometry["raster_support"]["missing_interior_pixels"] == 0
+    assert geometry["extent_complete"] is True
+    assert geometry["mask"][120, 179]
+
+
+@pytest.mark.parametrize("damage", ["notch", "interior_hole", "invalid_boundary"])
+def test_missing_color_or_depth_cannot_be_completed_by_rectangle_fit(damage):
+    with pytest.raises(ValueError, match="initial RGB-D identity/extent unavailable"):
+        track(cuboid(angle=17, damage=damage))
+
+
+@pytest.mark.parametrize(
+    "damage,kind",
+    [
+        ("invalid_boundary", "BOUNDARY_ADJACENT_INVALID_BACKGROUND"),
+        ("invalid_interior", "INTERIOR_INVALID_DEPTH"),
+    ],
+)
+def test_invalid_depth_diagnosis_distinguishes_background_from_interior(damage, kind):
+    from cloud_edge_robot_arm.vision.point_association import (
+        PointAssociationError,
+        associate_target_point,
+    )
+
+    observation = cuboid(damage=damage)
+    with pytest.raises(PointAssociationError, match="invalid original depth") as caught:
+        associate_target_point(observation, (179, 109), target_phrase="red block")
+    evidence = caught.value.evidence["invalid_depth_diagnosis"]
+    assert evidence["classification"] == kind
+    assert evidence["invalid_component_pixels"] == 1
+    assert evidence["physical_occluder_identity"] == "UNKNOWN"
+
+
+def test_episode_source_snapshot_seals_modified_tracking_code(tmp_path):
+    from cloud_edge_robot_arm.research.sol_molmo_single_episode import run_single_episode
+
+    output = tmp_path / "episode"
+    run_single_episode(output=output)
+    snapshot = json.loads((output / "source-hashes.json").read_text())
+    assert len(snapshot["files"]["src/cloud_edge_robot_arm/vision/tracking.py"]) == 64

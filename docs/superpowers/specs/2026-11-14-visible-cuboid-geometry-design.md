@@ -14,8 +14,11 @@ they are excluded. Use measured visible support and the existing half-pixel foot
 
 1. Depth: partition sorted measured heights only across an observed gap greater than
    either partition's spread and, when supplied, twice the calibrated depth bound.
-   Require one cluster to contain every eroded RGB-interior pixel and at least eight
-   measured points. A different interior cluster, higher foreground boundary cluster,
+   Anchor the chosen measured clusters to all eroded RGB-interior pixels and at least
+   eight points. Multiple interior clusters may merge only within the existing 8mm
+   top-grasp flatness admission when no error bound exists, or twice a supplied bound;
+   this does not create a sensor bound or metric qualification. A larger interior split,
+   higher foreground boundary cluster,
    missing depth or missing interior fails explicitly. Lower clusters must be boundary
    only. With a calibrated bound they must not lie below calibrated support; top-plane
    depth intervals must overlap. Without a supplied bound, extent/effects stay UNKNOWN.
