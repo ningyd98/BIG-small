@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -83,6 +84,7 @@ def make_worker_binding(
     asset_manifest_sha256: str,
     marker_family_id: str | None = None,
     component_diagnostic: bool = False,
+    component_scene: dict[str, Any] | None = None,
 ) -> RoleRuntimeBinding:
     """固定本次云、规则边缘、OpenCV及本地感知配置，不生成正式验收许可。"""
     if len(asset_manifest_sha256) != 64 or any(
@@ -108,6 +110,16 @@ def make_worker_binding(
         "development_marker_family": marker_family_id,
         "component_diagnostic": component_diagnostic,
     }
+    if component_scene is not None:
+        if not component_diagnostic:
+            raise ValueError("component scene requires an explicit component diagnostic")
+        from cloud_edge_robot_arm.research.sol_molmo_scenarios import physical_component_scenario
+
+        scene_seed = component_scene.get("seed")
+        if type(scene_seed) is not int:
+            raise ValueError("component scene requires an integer seed")
+        physical_component_scenario(scene_seed, component_scene)
+        policy["component_scene"] = json.loads(json.dumps(component_scene, allow_nan=False))
     edge_paths = ["src/cloud_edge_robot_arm/edge/recovery/verification_router.py"] + [
         f"src/cloud_edge_robot_arm/edge/evidence/{name}.py"
         for name in ("models", "validator", "conditions")
@@ -153,6 +165,8 @@ def make_worker_binding(
     if component_diagnostic:
         device_paths += [
             "src/cloud_edge_robot_arm/research/sol_molmo_components.py",
+            "src/cloud_edge_robot_arm/research/sol_molmo_scenarios.py",
+            "src/cloud_edge_robot_arm/simulation/models.py",
             "src/cloud_edge_robot_arm/research/sol_molmo_single_episode.py",
             "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
             "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",

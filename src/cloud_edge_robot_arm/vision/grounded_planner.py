@@ -138,6 +138,7 @@ class MolmoGroundedPlannerAdapter:
         task: GroundingTaskDescriptor,
         post_cloud_observation_supplier: Callable[[], RGBDObservation] | None = None,
         worker_owned_refresh: bool = False,
+        component_diagnostic: bool = False,
     ) -> None:
         if cloud.provider != "openai_compatible" or cloud.model_snapshot is None:
             raise ValueError("grounded planning requires an explicit compatible cloud snapshot")
@@ -149,6 +150,11 @@ class MolmoGroundedPlannerAdapter:
             worker_owned_refresh and post_cloud_observation_supplier is not None
         ):
             raise ValueError("worker-owned refresh requires its own capture protocol")
+        if type(component_diagnostic) is not bool or (
+            component_diagnostic and not worker_owned_refresh
+        ):
+            raise ValueError("component diagnostic requires explicit worker-owned refresh")
+        self.component_diagnostic = component_diagnostic
         self.worker_owned_refresh = worker_owned_refresh
         self._owned_refresh: _OwnedRefreshPlan | None = None
         self._owned_started = False
@@ -469,7 +475,13 @@ class MolmoGroundedPlannerAdapter:
             {
                 "role": "system",
                 "content": (
-                    "Plan a pick-and-place using the supplied measured geometry. "
+                    (
+                        "This is a MuJoCo software component diagnostic only. "
+                        "Skills are evaluated only in simulation; no physical robot is dispatched. "
+                        "Development geometry does not grant physical execution qualification. "
+                        if self.component_diagnostic else ""
+                    )
+                    + "Plan a pick-and-place using the supplied measured geometry. "
                     "Return only a JSON object with skills and reason. "
                     "Skills must be "
                     + (
@@ -488,6 +500,10 @@ class MolmoGroundedPlannerAdapter:
                 "role": "user",
                 "content": json.dumps(
                     {
+                        **({
+                            "execution_scope": "MUJOCO_COMPONENT_DIAGNOSTIC",
+                            "hardware_dispatch": False,
+                        } if self.component_diagnostic else {}),
                         "instruction": working.user_instruction,
                         "geometry": facts,
                         "geometry_status": (
@@ -649,6 +665,7 @@ def build_molmo_grounded_planner(
     allow_paid: bool = False,
     post_cloud_observation_supplier: Callable[[], RGBDObservation] | None = None,
     worker_owned_refresh: bool = False,
+    component_diagnostic: bool = False,
 ) -> MolmoGroundedPlannerAdapter:
     """复用既有 profile 与密钥服务，保持所选云端身份；默认不允许付费调用。"""
     if calibration_asset_sha256(grasp_profile) is None:
@@ -689,4 +706,5 @@ def build_molmo_grounded_planner(
         task=task,
         post_cloud_observation_supplier=post_cloud_observation_supplier,
         worker_owned_refresh=worker_owned_refresh,
+        component_diagnostic=component_diagnostic,
     )

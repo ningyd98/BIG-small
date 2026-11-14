@@ -966,6 +966,7 @@ def test_native_absence_alias_stops_target_or_destination(monkeypatch, absent_at
 
 def colored_edge_points():
     """仅替代外部原生推理，保留真实绑定、解析与后续完整规划管线。"""
+
     class EdgePoints(FixturePoints):
         def point(self, observation, phrase):
             import hashlib
@@ -1032,3 +1033,84 @@ def test_colored_edge_selected_spike_does_not_hunt_for_a_flatter_pixel(monkeypat
     assert evidence["associated_pixel_target"] == [12, 26]
     assert "flat" in response.reason
     assert bodies == [] and response.contract is None
+
+
+@pytest.mark.parametrize("component", [False, True])
+def test_outbound_component_scope_is_explicit_and_keeps_geometry_unqualified(
+    monkeypatch, component
+):
+    from cloud_edge_robot_arm.vision.grounded_planner import (
+        GroundingTaskDescriptor,
+        MolmoGroundedPlannerAdapter,
+    )
+
+    cloud, bodies = cloud_fixture(monkeypatch, reply={"skills": SKILLS[1:-1]})
+    adapter = MolmoGroundedPlannerAdapter(
+        point_provider=FixturePoints(),
+        cloud=cloud,
+        task=GroundingTaskDescriptor(
+            instruction="Move the red block to the green region.",
+            target_phrase="red block",
+            destination_phrase="green region",
+            target_label="red block",
+        ),
+        worker_owned_refresh=True,
+        component_diagnostic=component,
+    )
+    adapter.plan(request_scene())
+    payload = json.loads(bodies[0]["messages"][1]["content"])
+    assert payload["geometry_status"] == "CALIBRATED_DEVELOPMENT_ESTIMATE_NOT_PHYSICAL_ACCEPTANCE"
+    if component:
+        assert payload["execution_scope"] == "MUJOCO_COMPONENT_DIAGNOSTIC"
+        assert payload["hardware_dispatch"] is False
+    else:
+        assert "execution_scope" not in payload
+        assert "hardware_dispatch" not in payload
+    assert adapter.awaiting_owned_refresh
+
+
+def test_component_scope_does_not_turn_empty_cloud_decision_into_execution(monkeypatch):
+    from cloud_edge_robot_arm.vision.grounded_planner import (
+        GroundingTaskDescriptor,
+        MolmoGroundedPlannerAdapter,
+    )
+
+    cloud, bodies = cloud_fixture(monkeypatch, reply={"skills": [], "reason": "uncertain fixture"})
+    adapter = MolmoGroundedPlannerAdapter(
+        point_provider=FixturePoints(),
+        cloud=cloud,
+        task=GroundingTaskDescriptor(
+            instruction="Move the red block to the green region.",
+            target_phrase="red block",
+            destination_phrase="green region",
+            target_label="red block",
+        ),
+        worker_owned_refresh=True,
+        component_diagnostic=True,
+    )
+    draft = adapter.plan(request_scene())
+    assert len(bodies) == 1
+    assert not adapter.awaiting_owned_refresh
+    assert draft.parsed_json["_sentinel"] == "REQUEST_MORE_OBSERVATION"
+
+
+def test_component_scope_requires_explicit_worker_owned_refresh(monkeypatch):
+    from cloud_edge_robot_arm.vision.grounded_planner import (
+        GroundingTaskDescriptor,
+        MolmoGroundedPlannerAdapter,
+    )
+
+    cloud, bodies = cloud_fixture(monkeypatch)
+    with pytest.raises(ValueError, match="component"):
+        MolmoGroundedPlannerAdapter(
+            point_provider=FixturePoints(),
+            cloud=cloud,
+            task=GroundingTaskDescriptor(
+                instruction="Move the red block to the green region.",
+                target_phrase="red block",
+                destination_phrase="green region",
+                target_label="red block",
+            ),
+            component_diagnostic=True,
+        )
+    assert bodies == []

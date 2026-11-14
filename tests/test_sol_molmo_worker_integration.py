@@ -58,10 +58,11 @@ class RGBPointFixture:
 
 
 @pytest.mark.parametrize(
-    "through_entry,after_capture_fails", [(False, False), (True, False), (False, True)]
+    "through_entry,after_capture_fails,scene_split",
+    [(False, False, None), (True, False, None), (False, True, None), (True, False, "held-out")],
 )
 def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical_evidence(
-    tmp_path, monkeypatch, through_entry, after_capture_fails
+    tmp_path, monkeypatch, through_entry, after_capture_fails, scene_split
 ):
     from cloud_edge_robot_arm.model_control.service import ModelControlService
     from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
@@ -107,10 +108,28 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
             )
 
     monkeypatch.setattr("urllib.request.build_opener", lambda *args: Opener())
-    assignment = module.scene_assignment(42001, "side_y_plus_id7_75mm_component_v1")
+    assignment = module.scene_assignment(
+        42001,
+        "side_y_plus_id7_75mm_component_v1",
+        **({"scene_split": scene_split} if scene_split else {}),
+    )
     assignment["component_diagnostic"] = True
     output = tmp_path / "worker-run"
     points = RGBPointFixture()
+    if scene_split:
+        # Isolate state application from pose-dependent perception capability.
+        # An explicit model ABSENT must stop even after a valid varied reset.
+        def absent_point(observation, phrase):
+            points.calls += 1
+            return BoundPointResult(
+                parse_native_point("ABSENT"),
+                observation.checksum_sha256,
+                observation.evidence()["rgb_sha256"],
+                hashlib.sha256(phrase.encode()).hexdigest(),
+                {"evidence_scope": "SOFTWARE_ONLY_EXPLICIT_ABSENCE"},
+            )
+
+        monkeypatch.setattr(points, "point", absent_point)
     if through_entry:
         from contextlib import nullcontext
 
@@ -134,6 +153,7 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
             model_directory=tmp_path / "software-only-model",
             asset_manifest=manifest,
             allow_paid=True,
+            **({"scene_split": scene_split} if scene_split else {}),
         )
     else:
         output.mkdir()
@@ -147,6 +167,19 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
         )
         result = {"executed_actions": 0, "model_calls": 0}
         module.run_worker_episode(assignment, output, result, planner=planner, binding=binding)
+    if scene_split:
+        assert requests == [] and points.calls == 1
+        assert result["executed_actions"] == 0
+        assert result["terminal_reason"] == "COMPONENT_INITIAL_PLANNING_REJECTED"
+        assert result["outcome"]["native_action_qualification"] == "UNKNOWN_NOT_GRANTED"
+        applied = json.loads((output / "component/scene-application.json").read_text())
+        desired = assignment["component_scene"]
+        assert applied["object_position_m"] == pytest.approx(desired["object_position_m"])
+        assert applied["object_position_m"] != pytest.approx([0.45, 0.0, 0.035])
+        assert applied["object_quaternion_wxyz"][3] == pytest.approx(
+            __import__("math").sin(desired["object_yaw_rad"] / 2)
+        )
+        return
     assert len(requests) == 1 and points.calls == 4, result.get("terminal_reason")
     assert result["execution_scope"] == "MUJOCO_COMPONENT_DIAGNOSTIC"
     assert result["online_reported_complete"] is None
@@ -170,4 +203,12 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
         assert result["worker_status"] == "SUCCEEDED"
         assert result["status"] == "COMPONENTS_COMPLETED"
         assert (output / "after/marker-validation.json").is_file()
+        endpoint = json.loads((output / "after/marker-validation.json").read_text())
+        assert endpoint["status"] == "OBSERVED", endpoint
+        assert endpoint["observed_marker_ids"] == [7]
     assert (output / "component/physical-evidence.json").is_file()
+
+    payload = json.loads(requests[0]["messages"][1]["content"])
+    assert payload["execution_scope"] == "MUJOCO_COMPONENT_DIAGNOSTIC"
+    assert payload["hardware_dispatch"] is False
+    assert "component_scene" not in payload and "object_yaw_rad" not in payload

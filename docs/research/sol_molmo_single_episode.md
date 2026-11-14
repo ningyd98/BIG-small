@@ -81,6 +81,16 @@ API key不作为CLI参数，也不写入场景配置。入口以只读SQLite连�
 
 结果必须查看 `execution_scope=MUJOCO_COMPONENT_DIAGNOSTIC`、`component_success` 与独立 `physical_success`。即使二者为true，`success=false`、`online_reported_complete=null`、`formal_research=NOT_ACCEPTED`、`qualified_groups_added=0`。软件集成中的云和点位替身与真实模型运行分别记录。
 
+## 可选的组件位姿变化
+
+默认仍是固定S01。只有显式组件执行可加 `--scene-split development` 或 `--scene-split held-out`，两者使用独立的诊断采样命名空间，不使用正式基础/留出场景池。记录中的 `component_scene` 指定实际物体位置和绕Z轴的偏航；后端在reset时应用，`component/scene-application.json` 保存初始化后的实际位置与四元数作离线核对。当前仍是同一注册资产的位姿覆盖，不代表多任务或正式场景资格。
+
+每四个种子中一个为 `ARM_OCCLUSION_STRESS`，表示朝机械臂投影区域布置的压力条件，不宣称遮挡已被独立测量。其余为可见位姿条件。未知/不完整轮廓、模型ABSENT和空云规划继续停止；变化条件不保证已有抓放轮廓门一定准入。声明条件以规范JSON标量写入任务参数，并与冻结角色策略逐字比对，不能只改seed或元数据冒充实际变化。
+
+选定组件标记族的RETREAT在原控制器目标上沿世界-Y多退让100mm，实际参数仍由同一SafetyShield与SkillExecutor消费，以避免原终点姿态阻挡标记。检测器、标记资产、相机和资格字段不变。首尾检测成功仍不证明运动全程可见。
+
+只有显式组件诊断的云请求带 `execution_scope=MUJOCO_COMPONENT_DIAGNOSTIC`、`hardware_dispatch=false` 和仿真范围说明；原开发几何未获物理许可的标签与不确定时空规划规则保留。物体初始真值仅写离线审计，不进入Molmo或云端请求。
+
 ## 输出、退出码和验收
 
 - `scene-assignment.json`：固定场景、标记、预算、资产版本。
@@ -100,3 +110,32 @@ API key不作为CLI参数，也不写入场景配置。入口以只读SQLite连�
 ## 本轮实际结果
 
 2026-11-13新140mm变体真实Sol+Molmo单例：8技能、worker SUCCEEDED、component_success=true、独立physical_success=true；抬升约178mm，保持1.26秒，释放后稳定4.40秒，检查范围内未记录安全违规。20帧标记15次OBSERVED、释放后5次UNKNOWN，连续可见性尚未成立。首次真实版本因遗漏云配置版本号在动作前停止，修复后第二版本成功；失败原件保留。完整边界、验证与派生指标见artifacts/research/process/20261113-sol-molmo-execution/step-report.md及verification-summary.json。这不是G1成功率或T8 120组结果。
+
+
+### 2026-11-14 observability follow-up results
+
+The matrix was frozen before requests: 10 fixed controls (42001–42010), 15 development
+poses (43001–43015), and 15 held-out poses (44001–44015), with fresh sequential native
+processes and all failures retained. All 30 varied poses were verified against the
+actual initial physics position/quaternion; coverage is one registered asset.
+
+| Group | Physical/component success | Endpoint marker observed |
+| --- | --- | --- |
+| Fixed controls | 10/10 | 10/10 |
+| Development poses | 0/15 | 12/15 |
+| Held-out poses | 1/15 | 14/15 |
+
+Marker counts include unchanged endpoints of rejected episodes and are not task success.
+All 11 completed physical episodes ended with strictly decoded ID7. The 29 other
+episodes stopped before actions and cloud requests: 21 incomplete/occluded contours,
+7 unresolved exterior boundary depth, and 1 invalid original depth. The named
+arm-occlusion conditions remain intended stress labels, not measured occlusion truth.
+
+The run used 40 model loads, 102 completed local generations, 11 cloud requests and
+11 reservations, and 88 actions in 959.2 seconds. SHA256 verification covered 4,417
+evidence files (407,178,335 bytes), one identical executed source snapshot, and no
+process timeout or source drift. These results improve the fixed diagnostic pipeline;
+varied-pose robustness remains poor. Formal acceptance stays NOT_ACCEPTED, native
+action qualification UNKNOWN_NOT_GRANTED, qualified groups added 0, hardware dispatch
+false. Complete raw data and runtime databases remain local and are not part of the
+remote source delivery.

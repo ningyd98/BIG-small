@@ -207,7 +207,6 @@ def run_component_episode(
     from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor
     from cloud_edge_robot_arm.edge.runtime.skill_registry import SkillRegistry
     from cloud_edge_robot_arm.simulation.config import SimulatorConfig
-    from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
     from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
     from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
         CompletionCriteria,
@@ -247,6 +246,16 @@ def run_component_episode(
         )
     ):
         raise ValueError("explicit component diagnostic and exact role binding required")
+    from cloud_edge_robot_arm.research.sol_molmo_scenarios import physical_component_scenario
+
+    scene = binding.evidence()["edge_policy"].get("component_scene")
+    encoded_scene = (
+        json.dumps(scene, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        if scene is not None else None
+    )
+    if parameters.get("sol_molmo_component_scene") != encoded_scene:
+        raise ValueError("component scene differs from its bound role policy")
+    scenario = physical_component_scenario(job.seed, scene)
     family = marker_family(family_id)
     snapshot = planner.model_snapshot
     ledger = planner.cost_ledger
@@ -306,7 +315,17 @@ def run_component_episode(
     try:
         active()
         backend.initialize(config)
-        backend.reset(PhysicalScenarioConfig.scenario(job.scenario_id, seed=job.seed))
+        backend.reset(scenario)
+        assert backend._model is not None and backend._data is not None
+        body = backend._model.body("object").id
+        applied = {
+            "scope": "OFFLINE_INITIAL_PHYSICS_AUDIT_NOT_ONLINE_MODEL_INPUT",
+            "requested_scene": scene,
+            "object_position_m": backend._data.xpos[body].tolist(),
+            "object_quaternion_wxyz": backend._data.xquat[body].tolist(),
+        }
+        _save(folder / "scene-application.json", applied)
+        row["scene_application"] = applied
         robot = MuJoCoSkillRobot(backend)
         executor = SkillExecutor(robot=robot, registry=SkillRegistry.default())
         backend.step(120)
@@ -439,6 +458,18 @@ def run_component_episode(
                                 update={"parameters": step.parameters | {"target_pose": target}}
                             )
                             audit["registered_side_pregrasp_offset_m"] = [0, -0.005, 0]
+                        if (
+                            step.skill.value == "RETREAT"
+                            and family_id == "side_y_plus_id7_75mm_component_v1"
+                        ):
+                            # Vertical-only retreat leaves the wrist over this tag's quiet zone.
+                            # Keep the registered controller; move its diagnostic endpoint clear.
+                            target = dict(step.parameters["target_pose"])
+                            target["y"] -= 0.100
+                            step = step.model_copy(
+                                update={"parameters": step.parameters | {"target_pose": target}}
+                            )
+                            audit["component_marker_clear_retreat_offset_m"] = [0, -0.100, 0]
                         step_started = time.monotonic()
                         # The diagnostic execution view binds the actual registered resolver's
                         # parameters/timeouts. Preserve the source template separately; neither

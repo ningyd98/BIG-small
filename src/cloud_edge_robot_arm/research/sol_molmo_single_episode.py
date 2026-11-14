@@ -36,6 +36,9 @@ SOURCE_PATHS = (
     "src/cloud_edge_robot_arm/research/native_collection_application.py",
     "src/cloud_edge_robot_arm/cloud/planning/pipeline.py",
     "src/cloud_edge_robot_arm/research/sol_molmo_components.py",
+    "src/cloud_edge_robot_arm/research/sol_molmo_scenarios.py",
+    "src/cloud_edge_robot_arm/simulation/models.py",
+    "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
     "src/cloud_edge_robot_arm/vision/molmo_worker.py",
     "src/cloud_edge_robot_arm/vision/marked_asset.py",
     "src/cloud_edge_robot_arm/vision/request_control.py",
@@ -61,14 +64,16 @@ def _write(path: Path, value: Any) -> None:
         stream.write(encoded + "\n")
 
 
-def scene_assignment(seed: int, marker_family_id: str) -> dict[str, Any]:
-    """登记固定 S01；不同 seed 不声称生成了不同的随机场景。"""
+def scene_assignment(
+    seed: int, marker_family_id: str, *, scene_split: str | None = None
+) -> dict[str, Any]:
+    """Default to fixed S01; opt-in diagnostics apply sampled physical object poses."""
     if type(seed) is not int or not 0 <= seed < 2**31:
         raise ValueError("seed must be an integer in 0..2147483647")
     family = marker_family(marker_family_id)
     if _sha(ROOT / family.asset_path) != family.asset_sha256:
         raise ValueError("registered marker asset bytes changed")
-    return {
+    assignment = {
         "schema_version": "sol-molmo.single-scene.v1",
         "scenario_id": "S01_NORMAL_STATIC",
         "seed": seed,
@@ -96,7 +101,15 @@ def scene_assignment(seed: int, marker_family_id: str) -> dict[str, Any]:
             "retries": 0,
         },
     }
+    if scene_split is not None:
+        from cloud_edge_robot_arm.research.sol_molmo_scenarios import sample_component_scene
 
+        assignment.update(
+            scene_sampling="SEEDED_COMPONENT_POSE_V1",
+            independent_random_scene=True,
+            component_scene=sample_component_scene(seed, scene_split),
+        )
+    return assignment
 
 def execution_blockers(assignment: dict[str, Any]) -> list[str]:
     """仅检查开发资产与软件桥接；T10动作资格仍由真实运行时核对。"""
@@ -328,6 +341,7 @@ def create_molmo_opencv_bridge(
         grasp_profile=assignment["grasp_profile"],
         allow_paid=True,
         worker_owned_refresh=True,
+        component_diagnostic=assignment.get("component_diagnostic", False),
     )
     grounded.cloud.cost_ledger = CostLedger()
     reservations = 0
@@ -350,6 +364,7 @@ def create_molmo_opencv_bridge(
         asset_manifest_sha256=asset_manifest_sha256,
         marker_family_id=assignment["marker_family_id"],
         component_diagnostic=assignment.get("component_diagnostic", False),
+        component_scene=assignment.get("component_scene"),
     )
     _write(output / "role-binding.json", binding.evidence())
     return planner, binding
@@ -400,6 +415,12 @@ def run_worker_episode(
                 "parameter_overrides": {
                     "development_marker_family": assignment["marker_family_id"],
                     "sol_molmo_component_diagnostic": assignment.get("component_diagnostic", False),
+                    **({
+                        "sol_molmo_component_scene": json.dumps(
+                            assignment["component_scene"], sort_keys=True,
+                            separators=(",", ":"), allow_nan=False,
+                        ),
+                    } if "component_scene" in assignment else {}),
                 },
             },
             timeout_seconds=120,
@@ -601,12 +622,15 @@ def run_single_episode(
     gpu_lock: Path | None = None,
     allow_paid: bool = False,
     component_diagnostic: bool = False,
+    scene_split: str | None = None,
 ) -> dict[str, Any]:
     """显式组件诊断可执行；正式T10路径仍须原生资格，不混淆两者。"""
     if mode not in MODES:
         raise ValueError("unsupported single episode mode")
     if type(component_diagnostic) is not bool or (component_diagnostic and mode != "execute"):
         raise ValueError("component diagnostic requires explicit execute mode")
+    if scene_split is not None and not component_diagnostic:
+        raise ValueError("scene variations require explicit component diagnostic execution")
     if mode in {"plan-only", "execute"} and (
         not allow_paid
         or not profile_id
@@ -617,7 +641,7 @@ def run_single_episode(
         raise ValueError(
             f"{mode} needs explicit Sol profile, database, Molmo assets and allow-paid"
         )
-    assignment = scene_assignment(seed, marker_family_id)
+    assignment = scene_assignment(seed, marker_family_id, scene_split=scene_split)
     assignment["component_diagnostic"] = component_diagnostic
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)

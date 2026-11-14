@@ -787,7 +787,12 @@ class MuJoCoPhysicsBackend:
         self._last_contacts = []
         self._command_records = []
         self._pending_joint_targets = []
-        self._set_free_body_pose("object", scenario.object_pose)
+        if scenario.object_yaw_rad == 0.0:
+            self._set_free_body_pose("object", scenario.object_pose)
+        else:
+            self._set_free_body_pose(
+                "object", scenario.object_pose, yaw_rad=scenario.object_yaw_rad
+            )
         for finger_name in ("finger_left_joint", "finger_right_joint"):
             finger_id = self._model.joint(finger_name).id
             self._data.qpos[self._model.jnt_qposadr[finger_id]] = 0.04
@@ -1306,12 +1311,14 @@ class MuJoCoPhysicsBackend:
             2.0,
         )
 
-    def _set_free_body_pose(self, body_name: str, pose: Pose) -> None:
+    def _set_free_body_pose(self, body_name: str, pose: Pose, *, yaw_rad: float = 0.0) -> None:
         assert self._model is not None and self._data is not None
         joint_id = self._model.joint(f"{body_name}_free").id
         qpos_addr = self._model.jnt_qposadr[joint_id]
         self._data.qpos[qpos_addr : qpos_addr + 3] = [pose.x, pose.y, pose.z]
-        self._data.qpos[qpos_addr + 3 : qpos_addr + 7] = [1.0, 0.0, 0.0, 0.0]
+        self._data.qpos[qpos_addr + 3 : qpos_addr + 7] = [
+            math.cos(yaw_rad / 2), 0.0, 0.0, math.sin(yaw_rad / 2),
+        ]
 
     def _set_body_mass(self, body_name: str, mass_kg: float) -> None:
         assert self._model is not None

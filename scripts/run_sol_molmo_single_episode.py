@@ -41,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-paid", action="store_true")
     parser.add_argument("--component-diagnostic", action="store_true",
                         help="与--execute共同启用已授权的MuJoCo组件诊断；不代表T10/G1验收")
+    parser.add_argument("--scene-split", choices=("development", "held-out"),
+                        help="显式组件诊断的独立位姿采样命名空间；默认保留固定场景")
     args = parser.parse_args(argv)
     if args.application_site_packages is not None:
         dependency_path = args.application_site_packages.resolve()
@@ -70,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             gpu_lock=args.gpu_lock,
             allow_paid=args.allow_paid,
             component_diagnostic=args.component_diagnostic,
+            scene_split=args.scene_split,
         )
     except (ValueError, OSError) as error:
         print(json.dumps({"status": "NOT_STARTED", "error_type": type(error).__name__}))

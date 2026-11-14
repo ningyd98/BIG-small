@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from math import isfinite
 
 from cloud_edge_robot_arm.contracts import Pose
 
@@ -89,6 +90,11 @@ class PhysicalScenarioConfig:
     object_pose: Pose = field(default_factory=lambda: Pose(x=0.45, y=0.0, z=0.035))
     target_region_pose: Pose = field(default_factory=lambda: Pose(x=0.2, y=0.25, z=0.035))
     max_episode_s: float = 60.0
+    object_yaw_rad: float = 0.0
+
+    def __post_init__(self) -> None:
+        if type(self.object_yaw_rad) not in {int, float} or not isfinite(self.object_yaw_rad):
+            raise ValueError("object yaw must be finite radians")
 
     @classmethod
     def scenario(cls, scenario_id: str, *, seed: int) -> PhysicalScenarioConfig:
