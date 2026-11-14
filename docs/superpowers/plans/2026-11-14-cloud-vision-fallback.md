@@ -56,7 +56,7 @@ modify `vision/grounded_planner.py` (paths under `src/cloud_edge_robot_arm/`).
 - [x] Run focused and related tests, lint, type checks and bounded full-project regression.
 - [x] Obtain one fresh read-only branch review; address actionable findings with regression tests.
 - [x] Record actual-model testing separately; do not claim an accuracy/success-rate improvement.
-- [ ] Commit only source/tests/docs, push the existing research branch, verify local/upstream/remote SHA.
+- [x] Commit only source/tests/docs, push the existing research branch, verify local/upstream/remote SHA.
 
 ## Verification record
 
@@ -75,8 +75,15 @@ reproduced seven failures, then passed after restricting native exception fallba
 to inference timeouts and validating raw/result consistency before absence/invalid
 classification, with a narrow evidence-checked token-cap exception.
 
-Live image smoke is separately prepared for at most three archived synthetic cases,
-with zero execution and no retries. Host credential preflight succeeds. Automatic
-approval review rejected image transmission because the prior explicit permission
-covered text and geometry; a separate image-upload question is pending. No live
-request has been sent. This does not block committing the opt-in implementation.
+Implementation commit `44ecd8d7e89a6a5fd53bd443c23aace93f2c29c6` was pushed to
+`codex/molmo-flat-interior-20261111`; local/upstream/remote SHA matched.
+
+Live image smoke completed after the user explicitly authorized up to three paid
+image requests. An earlier automatic approval rejection, before process creation,
+was resolved by that explicit permission. Exactly three requests to the existing
+Sol profile succeeded, with no retries or actions. All returned strict-schema
+candidates, and each target/destination point passed an RGB-only red/green chroma
+check. Original RGB bytes and crop hashes matched the archived evidence. Request
+latencies were 4.06–4.09 seconds; usage was 2,514 input + 307 output = 2,821 tokens.
+The provider did not report a monetary charge. No current-depth admission, task
+execution, recognition accuracy estimate or new 40-episode success rate is claimed.

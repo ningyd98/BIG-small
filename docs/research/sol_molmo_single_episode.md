@@ -163,3 +163,16 @@ varied-pose robustness remains poor. Formal acceptance stays NOT_ACCEPTED, nativ
 action qualification UNKNOWN_NOT_GRANTED, qualified groups added 0, hardware dispatch
 false. Complete raw data and runtime databases remain local and are not part of the
 remote source delivery.
+
+### 2026-11-14 云端视觉接口实测
+
+用户另行明确授权最多3次付费图片请求后，使用已有`gpt-6.1-sol`配置和官方
+`/v1/chat/completions`路由，对development-043001、development-043005及held-out-044008
+的历史仿真原始RGB和局部裁剪进行离线复核。恰好3次请求、0重试、0动作；均返回通过
+严格schema的二维候选，三个目标/目的地点均通过RGB红/绿色度核对。请求中的原图字节
+及裁剪哈希与历史原件一致；不上传原始深度或离线实例真值。
+
+耗时4.06–4.09秒/次，用量2,514输入+307输出=2,821 tokens；实际金额未由provider返回。
+这证明所选接口可接收图片并按协议返回候选。上述三个原失败分别涉及轮廓、边界深度和
+原始深度缺失，候选点本身不能证明几何检查通过。未进行当前帧准入或动作执行，也未
+重跑40项；这些精选历史样本不构成识别精度或任务成功率估计。
