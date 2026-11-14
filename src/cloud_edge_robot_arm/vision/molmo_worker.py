@@ -91,6 +91,8 @@ def make_worker_binding(
         c not in "0123456789abcdef" for c in asset_manifest_sha256
     ):
         raise ValueError("exact local model manifest digest required")
+    if planner.grounded.cloud_vision_fallback and not component_diagnostic:
+        raise ValueError("cloud vision fallback requires a component diagnostic binding")
     budget = ExecutionPolicy("budget source", model_snapshot_hash="a" * 64).verification_budget
     policy: dict[str, Any] = {
         "provider": "rules",
@@ -105,6 +107,7 @@ def make_worker_binding(
             "generation_limit": 4,
             "cloud_requests": 1,
             "worker_owned_refresh": True,
+            "cloud_vision_fallback": planner.grounded.cloud_vision_fallback,
         },
         "research_scope": "MUJOCO_DEVELOPMENT_NOT_FORMAL_ACCEPTANCE",
         "development_marker_family": marker_family_id,
@@ -132,6 +135,7 @@ def make_worker_binding(
             "top_grasp",
             "molmo_worker",
             "grounded_planner",
+            "cloud_vision_fallback",
             "molmo_pointing",
             "point_association",
             "marked_asset",

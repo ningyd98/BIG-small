@@ -29,6 +29,7 @@ SOURCE_PATHS = (
     "src/cloud_edge_robot_arm/vision/pose_markers.py",
     "src/cloud_edge_robot_arm/vision/capture.py",
     "src/cloud_edge_robot_arm/vision/grounded_planner.py",
+    "src/cloud_edge_robot_arm/vision/cloud_vision_fallback.py",
     "src/cloud_edge_robot_arm/vision/molmo_pointing.py",
     "src/cloud_edge_robot_arm/vision/point_association.py",
     "src/cloud_edge_robot_arm/vision/role_models.py",
@@ -342,6 +343,7 @@ def create_molmo_opencv_bridge(
         allow_paid=True,
         worker_owned_refresh=True,
         component_diagnostic=assignment.get("component_diagnostic", False),
+        cloud_vision_fallback=assignment.get("cloud_vision_fallback", False),
     )
     grounded.cloud.cost_ledger = CostLedger()
     reservations = 0
@@ -415,6 +417,9 @@ def run_worker_episode(
                 "parameter_overrides": {
                     "development_marker_family": assignment["marker_family_id"],
                     "sol_molmo_component_diagnostic": assignment.get("component_diagnostic", False),
+                    "sol_molmo_cloud_vision_fallback": assignment.get(
+                        "cloud_vision_fallback", False
+                    ),
                     **({
                         "sol_molmo_component_scene": json.dumps(
                             assignment["component_scene"], sort_keys=True,
@@ -623,12 +628,17 @@ def run_single_episode(
     allow_paid: bool = False,
     component_diagnostic: bool = False,
     scene_split: str | None = None,
+    cloud_vision_fallback: bool = False,
 ) -> dict[str, Any]:
     """显式组件诊断可执行；正式T10路径仍须原生资格，不混淆两者。"""
     if mode not in MODES:
         raise ValueError("unsupported single episode mode")
     if type(component_diagnostic) is not bool or (component_diagnostic and mode != "execute"):
         raise ValueError("component diagnostic requires explicit execute mode")
+    if type(cloud_vision_fallback) is not bool or (
+        cloud_vision_fallback and not component_diagnostic
+    ):
+        raise ValueError("cloud vision fallback requires explicit component diagnostic execution")
     if scene_split is not None and not component_diagnostic:
         raise ValueError("scene variations require explicit component diagnostic execution")
     if mode in {"plan-only", "execute"} and (
@@ -643,6 +653,7 @@ def run_single_episode(
         )
     assignment = scene_assignment(seed, marker_family_id, scene_split=scene_split)
     assignment["component_diagnostic"] = component_diagnostic
+    assignment["cloud_vision_fallback"] = cloud_vision_fallback
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     sources: dict[str, str] = {}
@@ -669,6 +680,7 @@ def run_single_episode(
         "marker_endpoints_observed": False,
         "continuous_visibility_proven": False,
         "planning_passed": False,
+        "cloud_vision_fallback": cloud_vision_fallback,
         "execution_scope": "MUJOCO_COMPONENT_DIAGNOSTIC"
         if component_diagnostic
         else "NOT_EXECUTED",

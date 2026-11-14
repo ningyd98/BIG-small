@@ -43,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="与--execute共同启用已授权的MuJoCo组件诊断；不代表T10/G1验收")
     parser.add_argument("--scene-split", choices=("development", "held-out"),
                         help="显式组件诊断的独立位姿采样命名空间；默认保留固定场景")
+    parser.add_argument("--cloud-vision-fallback", action="store_true",
+                        help="本地失败时将一次云请求改为RGB识别复核；仅限显式付费组件诊断")
     args = parser.parse_args(argv)
     if args.application_site_packages is not None:
         dependency_path = args.application_site_packages.resolve()
@@ -73,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_paid=args.allow_paid,
             component_diagnostic=args.component_diagnostic,
             scene_split=args.scene_split,
+            cloud_vision_fallback=args.cloud_vision_fallback,
         )
     except (ValueError, OSError) as error:
         print(json.dumps({"status": "NOT_STARTED", "error_type": type(error).__name__}))

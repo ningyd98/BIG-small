@@ -20,6 +20,10 @@ from cloud_edge_robot_arm.cloud.planning.models import (
     PlannerDraft,
 )
 from cloud_edge_robot_arm.model_control.service import ModelControlService
+from cloud_edge_robot_arm.vision.cloud_vision_fallback import (
+    CloudVisionDecision,
+    fallback_messages,
+)
 from cloud_edge_robot_arm.vision.messages import model_to_observation_pixel
 from cloud_edge_robot_arm.vision.molmo_pointing import (
     MODEL_ID,
@@ -107,10 +111,16 @@ class _PlanBinding:
     role: Any
     role_hash: str | None
     cloud_hash: str
+    route_options: tuple[bool, bool, bool]
 
 
 class _NativePerceptionFailure(RuntimeError):
-    pass
+    def __init__(self, cause: Exception) -> None:
+        super().__init__(type(cause).__name__)
+        # 超时可交由图像候选补充；线程、预算和未知执行/I/O 错误必须先停止。
+        self.category = (
+            "INFERENCE_TIMEOUT" if isinstance(cause, TimeoutError) else "EXECUTION_OR_IO_FAILURE"
+        )
 
 
 @dataclass(frozen=True)
@@ -122,6 +132,7 @@ class _OwnedRefreshPlan:
     cloud_started: dict[str, Any]
     cloud_returned: dict[str, Any]
     not_before: datetime
+    vision_points: tuple[tuple[int, int], tuple[int, int]] | None = None
 
 
 class MolmoGroundedPlannerAdapter:
@@ -139,6 +150,7 @@ class MolmoGroundedPlannerAdapter:
         post_cloud_observation_supplier: Callable[[], RGBDObservation] | None = None,
         worker_owned_refresh: bool = False,
         component_diagnostic: bool = False,
+        cloud_vision_fallback: bool = False,
     ) -> None:
         if cloud.provider != "openai_compatible" or cloud.model_snapshot is None:
             raise ValueError("grounded planning requires an explicit compatible cloud snapshot")
@@ -155,6 +167,11 @@ class MolmoGroundedPlannerAdapter:
         ):
             raise ValueError("component diagnostic requires explicit worker-owned refresh")
         self.component_diagnostic = component_diagnostic
+        if type(cloud_vision_fallback) is not bool or (
+            cloud_vision_fallback and not component_diagnostic
+        ):
+            raise ValueError("cloud vision fallback requires explicit component diagnostic")
+        self.cloud_vision_fallback = cloud_vision_fallback
         self.worker_owned_refresh = worker_owned_refresh
         self._owned_refresh: _OwnedRefreshPlan | None = None
         self._owned_started = False
@@ -202,6 +219,7 @@ class MolmoGroundedPlannerAdapter:
                 pending.binding.role,
                 pending.binding.role_hash,
                 pending.binding.cloud_hash,
+                pending.binding.route_options,
             )
             evidence = self._evidence(fresh, binding)
             evidence.update(
@@ -220,8 +238,26 @@ class MolmoGroundedPlannerAdapter:
                 model_image_count=2,
                 perception_model_image_count=2,
             )
-            measured = self._ground(request, binding.task, binding, evidence)
-            if (
+            if pending.vision_points is None:
+                measured = self._ground(request, binding.task, binding, evidence)
+            else:
+                audit = copy.deepcopy(pending.reference["cloud_vision_fallback"])
+                evidence.update(
+                    cloud_vision_fallback=audit,
+                    cloud_model_image_count=audit["image_count"],
+                    perception_model_image_count=int(bool(pending.reference["native_results"])),
+                    model_image_count=audit["image_count"]
+                    + int(bool(pending.reference["native_results"])),
+                    perception_input_mode="CLOUD_RGB_CANDIDATE_LOCAL_RGBD_RECHECK",
+                    grounding_point_source="CLOUD_VISION_CANDIDATE",
+                )
+                self._grounding_scope(request, binding.task, binding, evidence)
+                points = [model_to_observation_pixel(p, fresh, coordinate_system="normalized_1000")
+                          for p in pending.vision_points]
+                evidence["cloud_original_pixel_target"] = list(points[0])
+                evidence["cloud_original_pixel_destination"] = list(points[1])
+                measured = self._measure_points(request, binding.task, binding, evidence, points)
+            if pending.vision_points is None and (
                 evidence["opencv_support_mask_sha256"]
                 != pending.reference["opencv_support_mask_sha256"]
             ):
@@ -263,6 +299,11 @@ class MolmoGroundedPlannerAdapter:
 
     def _context(self, binding: _PlanBinding) -> None:
         if (
+            any(type(value) is not bool or value is not expected for value, expected in zip(
+                (self.cloud_vision_fallback, self.component_diagnostic, self.worker_owned_refresh),
+                binding.route_options, strict=True,
+            ))
+            or
             self.point_provider is not binding.points
             or self.cloud is not binding.cloud
             or self.task is not binding.task
@@ -294,10 +335,24 @@ class MolmoGroundedPlannerAdapter:
             or point.query_sha256 != hashlib.sha256(phrase.encode()).hexdigest()
         ):
             raise ValueError("native_point_binding_mismatch")
+        parsed = parse_native_point(point.result.raw_text)
+        # provider 在达到 512 token 上限时主动判为 INVALID，保留其有界生成证据。
+        output_tokens = point.evidence.get("output_tokens")
+        capped = (
+            point.result.status == "INVALID"
+            and point.result.normalized_1000 is None
+            and point.result.object_index is None
+            and point.result.error == "output token cap"
+            and point.evidence.get("reached_cap") is True
+            and type(output_tokens) is int
+            and output_tokens >= 512
+            and point.evidence.get("raw_sha256")
+            == hashlib.sha256(point.result.raw_text.encode()).hexdigest()
+        )
+        if parsed != point.result and not capped:
+            raise ValueError("native_point_raw_result_mismatch")
         if point.result.status != "POINT" or point.result.normalized_1000 is None:
             raise ValueError("native_target_absent_or_invalid")
-        if parse_native_point(point.result.raw_text) != point.result:
-            raise ValueError("native_point_raw_result_mismatch")
 
     def _evidence(
         self, observation: RGBDObservation | None, binding: _PlanBinding
@@ -333,22 +388,8 @@ class MolmoGroundedPlannerAdapter:
     ) -> GroundedScene:
         observation = request.observation
         try:
-            if observation is None or request.user_instruction != task.instruction:
-                raise ValueError("task_instruction_or_observation_binding_missing")
-            RGBDObservation.model_validate(observation.model_dump())
-            self._fresh(observation, binding)
-            profile = binding.cloud.model_snapshot.grasp_profile
-            if (
-                min(observation.width, observation.height) < 64
-                or observation.source != "mujoco_camera"
-                or not observation.episode_id
-                or not observation.episode_id.strip()
-                or not observation.calibration_version
-                or not observation.calibration_version.strip()
-                or calibration_asset_sha256(profile) is None
-            ):
-                raise ValueError("native_grounding_domain_or_calibration_unavailable")
-            evidence["grasp_profile"] = profile
+            self._grounding_scope(request, task, binding, evidence)
+            assert observation is not None
             queries = (
                 f"visible top center of {task.target_phrase}",
                 f"interior of {task.destination_phrase}",
@@ -359,7 +400,9 @@ class MolmoGroundedPlannerAdapter:
                 try:
                     point = binding.points.point(observation, query)
                 except (RuntimeError, OSError, TimeoutError) as exc:
-                    raise _NativePerceptionFailure(type(exc).__name__) from None
+                    failure = _NativePerceptionFailure(exc)
+                    evidence["native_failure_category"] = failure.category
+                    raise failure from None
                 evidence["native_results"].append(
                     {
                         "status": point.result.status,
@@ -380,6 +423,40 @@ class MolmoGroundedPlannerAdapter:
                 )
             evidence["native_original_pixel_target"] = list(points[0])
             evidence["native_original_pixel_destination"] = list(points[1])
+            return self._measure_points(request, task, binding, evidence, points)
+        except ValueError as exc:
+            evidence.update(getattr(exc, "evidence", {}))
+            raise
+
+    def _grounding_scope(
+        self, request: InitialPlanningRequest, task: GroundingTaskDescriptor,
+        binding: _PlanBinding, evidence: dict[str, Any],
+    ) -> None:
+        observation = request.observation
+        if observation is None or request.user_instruction != task.instruction:
+            raise ValueError("task_instruction_or_observation_binding_missing")
+        RGBDObservation.model_validate(observation.model_dump())
+        self._fresh(observation, binding)
+        profile = binding.cloud.model_snapshot.grasp_profile
+        if (
+            min(observation.width, observation.height) < 64
+            or observation.source != "mujoco_camera"
+            or not observation.episode_id or not observation.episode_id.strip()
+            or not observation.calibration_version or not observation.calibration_version.strip()
+            or calibration_asset_sha256(profile) is None
+        ):
+            raise ValueError("native_grounding_domain_or_calibration_unavailable")
+        evidence["grasp_profile"] = profile
+
+    def _measure_points(
+        self, request: InitialPlanningRequest, task: GroundingTaskDescriptor,
+        binding: _PlanBinding, evidence: dict[str, Any], points: list[tuple[int, int]],
+    ) -> GroundedScene:
+        observation = request.observation
+        assert observation is not None
+        snapshot = binding.cloud.model_snapshot
+        assert snapshot is not None
+        try:
             try:
                 association = associate_target_point(
                     observation, points[0], target_phrase=task.target_phrase
@@ -395,7 +472,7 @@ class MolmoGroundedPlannerAdapter:
                 target_pixel=association.pixel,
                 destination_pixel=points[1],
                 target_label=task.target_label,
-                grasp_profile=profile,
+                grasp_profile=snapshot.grasp_profile,
                 evidence=evidence,
             )
             # Keep partial geometry visible even if the following tracker rejects it.
@@ -424,6 +501,85 @@ class MolmoGroundedPlannerAdapter:
             evidence.update(getattr(exc, "evidence", {}))
             raise
 
+    @staticmethod
+    def _fallback_eligible(error: Exception, evidence: dict[str, Any]) -> bool:
+        reason = str(error)
+        return (
+            (isinstance(error, _NativePerceptionFailure) and error.category == "INFERENCE_TIMEOUT")
+            or reason == "native_target_absent_or_invalid"
+            or reason.startswith("initial RGB-D identity/extent unavailable:")
+            or reason == evidence.get("target_point_association", {}).get("reason")
+            or reason in {
+                "selected target pixel is not a raised visible top surface",
+                "selected pixel has invalid depth",
+                "target local support surface is unavailable",
+                "top grasp patch contains invalid metric depth",
+                "top grasp patch is not flat within calibrated world-z variation",
+            }
+        )
+
+    def _plan_vision_fallback(
+        self, request: InitialPlanningRequest, task: GroundingTaskDescriptor,
+        binding: _PlanBinding, evidence: dict[str, Any], error: Exception,
+    ) -> PlannerDraft:
+        raw = ""
+        try:
+            self._grounding_scope(request, task, binding, evidence)
+            assert request.observation is not None
+            messages, audit = fallback_messages(
+                request.observation, instruction=task.instruction,
+                target_phrase=task.target_phrase, destination_phrase=task.destination_phrase,
+                local_failure=str(error),
+                nominated_pixel=evidence.get("native_original_pixel_target"),
+            )
+            evidence.update(
+                cloud_vision_fallback=audit,
+                cloud_model_image_count=audit["image_count"],
+                perception_model_image_count=int(bool(evidence["native_results"])),
+                model_image_count=audit["image_count"] + int(bool(evidence["native_results"])),
+                cloud_messages_sha256=configuration_hash({"messages": messages}),
+                cloud_request_invoked=True,
+            )
+            started = {"utc": _utcnow().isoformat(), "monotonic_s": monotonic()}
+            self._context(binding)
+            response = binding.cloud._request_visual(
+                messages, CloudVisionDecision.model_json_schema()
+            )
+            returned = {"utc": _utcnow().isoformat(), "monotonic_s": monotonic()}
+            self._context(binding)
+            raw = response["choices"][0]["message"]["content"]
+            if not isinstance(raw, str):
+                raise ValueError("invalid cloud vision response content")
+            evidence["cloud_response_content_sha256"] = hashlib.sha256(raw.encode()).hexdigest()
+            candidate = CloudVisionDecision.model_validate(_strict_skill_json(raw), strict=True)
+            audit["action"] = candidate.action
+            if candidate.action != "CANDIDATE":
+                return RGBDPlannerAdapter._more_observation(
+                    raw, candidate.reason or "cloud vision requests another observation", evidence
+                )
+            assert candidate.target_normalized_1000 is not None
+            assert candidate.destination_normalized_1000 is not None
+            target = candidate.target_normalized_1000
+            destination = candidate.destination_normalized_1000
+            audit["target_normalized_1000"] = list(target)
+            audit["destination_normalized_1000"] = list(destination)
+            evidence["owned_refresh_required"] = True
+            self._owned_refresh = _OwnedRefreshPlan(
+                binding, SkillDecision(skills=list(candidate.skills), reason=candidate.reason),
+                raw, copy.deepcopy(evidence), started, returned, _utcnow(),
+                ((target[0], target[1]), (destination[0], destination[1])),
+            )
+            return RGBDPlannerAdapter._more_observation(
+                raw, "WORKER_OWNED_POST_CLOUD_CAPTURE_REQUIRED", evidence
+            )
+        except Exception as exc:
+            evidence.setdefault("cloud_vision_fallback", {"local_failure": str(error)})[
+                "failure_type"
+            ] = type(exc).__name__
+            return RGBDPlannerAdapter._more_observation(
+                raw, "cloud vision fallback unavailable or invalid", evidence
+            )
+
     def plan(self, request: InitialPlanningRequest) -> PlannerDraft:
         """一次云端技能意图；可选真实新采集及独立定位后再构造候选。"""
         if self.worker_owned_refresh:
@@ -445,6 +601,8 @@ class MolmoGroundedPlannerAdapter:
             role=role,
             role_hash=role.digest() if role is not None else None,
             cloud_hash=self._cloud_hash,
+            route_options=(self.cloud_vision_fallback, self.component_diagnostic,
+                           self.worker_owned_refresh),
         )
         working = request.model_copy(deep=True)
         task = binding.task.model_copy(deep=True)
@@ -453,14 +611,16 @@ class MolmoGroundedPlannerAdapter:
         raw = ""
         try:
             measured = self._ground(working, task, binding, evidence)
-        except _NativePerceptionFailure as exc:
+        except (_NativePerceptionFailure, ValueError) as exc:
+            if self.cloud_vision_fallback and self._fallback_eligible(exc, evidence):
+                return self._plan_vision_fallback(working, task, binding, evidence, exc)
+            if not isinstance(exc, _NativePerceptionFailure):
+                return RGBDPlannerAdapter._more_observation(raw, str(exc), evidence)
             return PlannerDraft(
                 raw_text=raw,
                 parse_error=f"native perception failed: {exc}",
                 observation_evidence=evidence,
             )
-        except ValueError as exc:
-            return RGBDPlannerAdapter._more_observation(raw, str(exc), evidence)
         facts = {
             key: evidence[key]
             for key in (
@@ -666,6 +826,7 @@ def build_molmo_grounded_planner(
     post_cloud_observation_supplier: Callable[[], RGBDObservation] | None = None,
     worker_owned_refresh: bool = False,
     component_diagnostic: bool = False,
+    cloud_vision_fallback: bool = False,
 ) -> MolmoGroundedPlannerAdapter:
     """复用既有 profile 与密钥服务，保持所选云端身份；默认不允许付费调用。"""
     if calibration_asset_sha256(grasp_profile) is None:
@@ -679,6 +840,7 @@ def build_molmo_grounded_planner(
         for name in (
             "capture",
             "grounded_planner",
+            "cloud_vision_fallback",
             "molmo_pointing",
             "point_association",
             "planner",
@@ -707,4 +869,5 @@ def build_molmo_grounded_planner(
         post_cloud_observation_supplier=post_cloud_observation_supplier,
         worker_owned_refresh=worker_owned_refresh,
         component_diagnostic=component_diagnostic,
+        cloud_vision_fallback=cloud_vision_fallback,
     )

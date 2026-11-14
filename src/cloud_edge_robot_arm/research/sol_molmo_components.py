@@ -246,6 +246,14 @@ def run_component_episode(
         )
     ):
         raise ValueError("explicit component diagnostic and exact role binding required")
+    cloud_vision_fallback = binding.edge_policy.get("perception_binding", {}).get(
+        "cloud_vision_fallback", False
+    )
+    if type(cloud_vision_fallback) is not bool or (
+        parameters.get("sol_molmo_cloud_vision_fallback", False) is not cloud_vision_fallback
+        or planner.grounded.cloud_vision_fallback is not cloud_vision_fallback
+    ):
+        raise ValueError("cloud vision fallback differs from its bound role policy")
     from cloud_edge_robot_arm.research.sol_molmo_scenarios import physical_component_scenario
 
     scene = binding.evidence()["edge_policy"].get("component_scene")
@@ -311,6 +319,8 @@ def run_component_episode(
         source = check_component_lease(worker, job, start_monotonic, expected_attempt=lease_attempt)
         lease_attempt = source.attempt
         binding.validate(planner)
+        if planner.grounded.cloud_vision_fallback is not cloud_vision_fallback:
+            raise ComponentStopped("CLOUD_VISION_FALLBACK_POLICY_CHANGED")
 
     try:
         active()
