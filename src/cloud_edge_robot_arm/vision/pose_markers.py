@@ -73,13 +73,16 @@ class PoseMarkerEstimate:
 
 
 def _decode_subpix_rejected_candidates(
-    gray: Any, rejected: Any, dictionary: Any, marker_id: int
+    gray: Any, rejected: Any, dictionary: Any
 ) -> tuple[tuple[Any, ...], Any]:
     """在SUBPIX模式下对四角候选先做亚像素角点细化与双线性透视采样，仍要求0比特误差精确匹配。"""
     import cv2
     import numpy as np
 
-    expected = (cv2.aruco.generateImageMarker(dictionary, marker_id, 6) > 0).astype(np.uint8)
+    expected = np.stack([
+        (cv2.aruco.generateImageMarker(dictionary, marker_id, 6) > 0).astype(np.uint8)
+        for marker_id in range(50)
+    ])
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
     ppc = 8
     side = 6 * ppc
@@ -119,12 +122,17 @@ def _decode_subpix_rejected_candidates(
                     col * ppc + margin : (col + 1) * ppc - margin,
                 ]
                 bits[row, col] = 1 if float(cell.mean()) > 127.5 else 0
+        matches = []
         for rotation_k in range(4):
-            if np.array_equal(np.rot90(bits, rotation_k), expected):
-                ordered = np.roll(refined, -rotation_k, axis=0).reshape(1, 4, 2)
-                matched_corners.append(ordered)
-                matched_ids.append([marker_id])
-                break
+            marker_ids = np.flatnonzero(np.all(expected == np.rot90(bits, rotation_k), axis=(1, 2)))
+            matches.extend((int(marker_id), rotation_k) for marker_id in marker_ids)
+        if len(matches) > 1:
+            raise ValueError("ambiguous exact marker dictionary match")
+        if matches:
+            marker_id, rotation_k = matches[0]
+            ordered = np.roll(refined, -rotation_k, axis=0).reshape(1, 4, 2)
+            matched_corners.append(ordered)
+            matched_ids.append([marker_id])
     if not matched_ids:
         return (), None
     return tuple(matched_corners), np.array(matched_ids, dtype=np.int32)
@@ -181,7 +189,7 @@ def detect_pose_marker(
         corners, ids, rejected = detector.detectMarkers(gray)
         if ids is None and corner_refinement == "SUBPIX" and rejected:
             corners, ids = _decode_subpix_rejected_candidates(
-                gray, rejected, dictionary, registration.marker_id
+                gray, rejected, dictionary
             )
     except (ImportError, AttributeError):
         return unknown("aruco_decoder_unavailable")

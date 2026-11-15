@@ -396,3 +396,151 @@ def test_subpix_candidate_decode_recovers_small_marker_without_bit_repair():
         render_small(corrupted), reg, corner_refinement="SUBPIX"
     )
     assert corrupted_est.status == "UNKNOWN"
+
+
+def _subpix_rejected_scene(
+    marker_ids: tuple[int, ...],
+    *,
+    quarter_turns: int = 0,
+    side_px: float = 14.0,
+    damaged: str | None = None,
+) -> tuple[RGBDObservation, np.ndarray]:
+    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+    gray = np.full((240, 320), 220, dtype=np.uint8)
+    for index, marker_id in enumerate(marker_ids):
+        bits = BITS7.copy() if marker_id == 7 else cv2.aruco.generateImageMarker(
+            dictionary, marker_id, 6
+        )
+        if damaged == "bit":
+            bits[1, 3] = 255
+        elif damaged == "border":
+            bits[0, :] = 255
+        if damaged:
+            assert not any(
+                np.array_equal(np.rot90(bits, rotation), cv2.aruco.generateImageMarker(
+                    dictionary, candidate_id, 6
+                ))
+                for rotation in range(4)
+                for candidate_id in range(50)
+            )
+        bits = np.rot90(bits, quarter_turns)
+        canvas = np.full((160, 160), 220, dtype=np.uint8)
+        canvas[20:140, 20:140] = np.repeat(np.repeat(bits, 20, axis=0), 20, axis=1)
+        transform = cv2.getRotationMatrix2D((80, 80), 5.0, side_px / 120.0)
+        transform[0, 2] += 100.5 + index * 100.0 - 80.0
+        transform[1, 2] += 100.5 - 80.0
+        gray = np.minimum(gray, cv2.warpAffine(
+            canvas, transform, (320, 240), flags=cv2.INTER_AREA, borderValue=220
+        ))
+    image = io.BytesIO()
+    Image.fromarray(gray).convert("RGB").save(image, format="PNG")
+    current = RGBDObservation(
+        frame_id="subpix-identity-controls",
+        captured_at=datetime(2026, 10, 4, tzinfo=UTC),
+        sim_time_s=0.0,
+        width=320,
+        height=240,
+        rgb_png_base64=base64.b64encode(image.getvalue()).decode(),
+        depth_float32_base64=base64.b64encode(
+            np.full((240, 320), 1.33, dtype="<f4").tobytes()
+        ).decode(),
+        intrinsics=(350.0, 350.0, 159.5, 119.5),
+        camera_to_world=(
+            1.0, 0.0, 0.0, 0.0,
+            0.0, -1.0, 0.0, 0.0,
+            0.0, 0.0, -1.0, 1.33,
+            0.0, 0.0, 0.0, 1.0,
+        ),
+        source="rgbd_camera",
+        episode_id="SOFTWARE_ONLY",
+        calibration_version="synthetic-cal",
+    )
+    return current, gray
+
+
+def _assert_unknown_has_no_pose(estimate):
+    assert estimate.status == "UNKNOWN"
+    assert estimate.ordered_corners_px is None
+    assert estimate.marker_center_world_m is None
+    assert estimate.rotation_marker_to_world is None
+    assert estimate.yaw_world_rad is None
+
+
+@pytest.mark.parametrize("marker_ids", [(7, 0), (0, 7)])
+def test_subpix_rejected_candidates_preserve_foreign_marker_ambiguity(marker_ids):
+    current, gray = _subpix_rejected_scene(marker_ids)
+    parameters = cv2.aruco.DetectorParameters()
+    parameters.errorCorrectionRate = 0.0
+    parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+    _, native_ids, rejected = cv2.aruco.ArucoDetector(dictionary, parameters).detectMarkers(gray)
+    assert native_ids is None and len(rejected) >= 2
+    result = api().detect_pose_marker(
+        current, api().PoseMarkerRegistration(7, 0.0525, "a" * 64), corner_refinement="SUBPIX"
+    )
+    _assert_unknown_has_no_pose(result)
+    assert result.reason == "foreign_or_ambiguous_marker"
+    assert sorted(result.observed_marker_ids) == [0, 7]
+
+
+@pytest.mark.parametrize("marker_ids,status,observed_ids", [
+    ((7,), "OBSERVED", (7,)),
+    ((0,), "UNKNOWN", (0,)),
+    ((7, 7), "UNKNOWN", (7, 7)),
+])
+def test_subpix_rejected_candidates_identity_controls(marker_ids, status, observed_ids):
+    current, _ = _subpix_rejected_scene(marker_ids)
+    result = api().detect_pose_marker(
+        current, api().PoseMarkerRegistration(7, 0.0525, "a" * 64), corner_refinement="SUBPIX"
+    )
+    assert result.status == status
+    assert result.observed_marker_ids == observed_ids
+    if status == "UNKNOWN":
+        _assert_unknown_has_no_pose(result)
+
+
+@pytest.mark.parametrize("quarter_turns", range(4))
+def test_subpix_rejected_candidates_preserve_ordered_pose(quarter_turns):
+    current, gray = _subpix_rejected_scene((7,), quarter_turns=quarter_turns)
+    parameters = cv2.aruco.DetectorParameters()
+    parameters.errorCorrectionRate = 0.0
+    parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+    _, native_ids, rejected = cv2.aruco.ArucoDetector(dictionary, parameters).detectMarkers(gray)
+    assert native_ids is None and len(rejected) > 0
+    result = api().detect_pose_marker(
+        current, api().PoseMarkerRegistration(7, 0.0525, "a" * 64), corner_refinement="SUBPIX"
+    )
+    assert result.status == "OBSERVED"
+    assert result.observed_marker_ids == (7,)
+    # 图像 y 向下；验证 canonical 四角身份，不为14px未标定估计承诺角度精度。
+    expected_quadrants = (
+        ((-1, -1), (1, -1), (1, 1), (-1, 1)),
+        ((-1, 1), (-1, -1), (1, -1), (1, 1)),
+        ((1, 1), (-1, 1), (-1, -1), (1, -1)),
+        ((1, -1), (1, 1), (-1, 1), (-1, -1)),
+    )
+    points = np.asarray(result.ordered_corners_px)
+    assert np.isfinite(points).all()
+    assert np.array_equal(np.sign(points - points.mean(axis=0)), expected_quadrants[quarter_turns])
+    assert result.geometric_error_bound_m is None
+    assert result.angular_velocity_bound_rad_s is None
+    assert result.stability_status == "UNKNOWN"
+
+
+@pytest.mark.parametrize("damaged", [None, "bit", "border"])
+def test_subpix_rejected_candidates_blank_and_invalid_codes_stay_unknown(damaged):
+    current, _ = _subpix_rejected_scene(() if damaged is None else (7,), damaged=damaged)
+    result = api().detect_pose_marker(
+        current, api().PoseMarkerRegistration(7, 0.0525, "a" * 64), corner_refinement="SUBPIX"
+    )
+    _assert_unknown_has_no_pose(result)
+
+
+def test_subpix_rejected_candidates_native_mixed_markers_stay_unknown():
+    current, _ = _subpix_rejected_scene((7, 0), side_px=48.0)
+    result = api().detect_pose_marker(
+        current, api().PoseMarkerRegistration(7, 0.0525, "a" * 64), corner_refinement="SUBPIX"
+    )
+    _assert_unknown_has_no_pose(result)
+    assert sorted(result.observed_marker_ids) == [0, 7]

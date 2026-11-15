@@ -1,0 +1,133 @@
+{
+  "round": "round-small-marker-rotation-fixture-20261115",
+  "planning_model": "gpt-6-astra",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "date": "2026-11-15",
+  "worktree": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall",
+  "baseline_head": "57c4dc0d855f5410fcf497edf47b43cfd24ad74b",
+  "previous_plan": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-gemini-subpix-marker-ambiguity-review-20261115/plan.md",
+  "problem": "14px新旋转对照沿用48px绝对yaw容差0.025rad，k=0发生计划外失败；三个身份歧义RED仍属上一轮预期。",
+  "raw_failure": {
+    "log": "original-evidence/marker-red.log",
+    "exit_code": 1,
+    "outcome": "4 failed, 9 passed, 20 deselected",
+    "unexpected": "test_subpix_rejected_candidates_preserve_ordered_pose[0]",
+    "yaw_error_rad": 0.06536547160602678,
+    "assertion_abs_tolerance_rad": 0.025,
+    "command": "PYTHONDONTWRITEBYTECODE=1 /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -m pytest -p no:cacheprovider --basetemp=/tmp/bigsmall-v4-marker-red tests/test_pose_marker_evidence.py -k subpix_rejected_candidates -q"
+  },
+  "root_cause": {
+    "confirmed": "测试精度假设无依据：生产明确是未标定单帧估计，14px采样/角点细化后不满足从48px测试移用的0.025rad要求；四个canonical角点对应均正确。",
+    "limit": "探针没有建立真实成像角误差模型，也没有证明生产几何精度。",
+    "diagnostic": "diagnostic/probe.stdout",
+    "diagnostic_exit_code": 0
+  },
+  "limited_scope": {
+    "amendment": [
+      "tests/test_pose_marker_evidence.py::test_subpix_rejected_candidates_preserve_ordered_pose",
+      "仅必要的独立期望数据或小型测试辅助函数"
+    ],
+    "previous_identity_repair_still_approved": true,
+    "forbidden": [
+      "任何生产几何阈值/角点细化/采样/纠错变更",
+      "修改48px已有绝对yaw测试",
+      "删除旋转或身份负例",
+      "改写冻结失败或patch证据",
+      "硬件、真实episode、付费模型实验、提交推送（本规划子任务）"
+    ]
+  },
+  "test_oracle": {
+    "principle": "检查canonical角点与图像四象限的离散对应，不设新的角精度阈值。",
+    "expected_image_quadrants_by_k": [
+      [
+        "TL",
+        "TR",
+        "BR",
+        "BL"
+      ],
+      [
+        "BL",
+        "TL",
+        "TR",
+        "BR"
+      ],
+      [
+        "BR",
+        "BL",
+        "TL",
+        "TR"
+      ],
+      [
+        "TR",
+        "BR",
+        "BL",
+        "TL"
+      ]
+    ],
+    "implementation": "显式期望表独立于生产rotation_k/np.roll逻辑；相对四角均值计算dx/dy符号，严格对比四角各自象限，中心轴上的角点失败。",
+    "preconditions": "各k均断言原生ids=None且rejected非空，公共接口OBSERVED、observed_marker_ids==(7,)，四个有限角点。",
+    "mutation_check": "从正确输出分别循环移位1/2/3、逆序[0,3,2,1]，oracle都须拒绝；用临时诊断执行并保留结果，避免为镜像实现扩张永久测试。"
+  },
+  "verification": [
+    "先仅修改测试，聚焦RED须变为恰好3个既知身份失败且4个旋转对照通过",
+    "确认48px原测试逐字保持并通过",
+    "原计划身份修复后聚焦测试、整个pose marker与原计划9文件组合通过",
+    "两修改文件ruff --no-cache；git diff --check只检查实际源/测试文件",
+    "记录RED/GREEN、SHA、命令、退出码和步骤报告并汇入父阶段总结"
+  ],
+  "prerequisites": [
+    "实施前核对本inputs SHA和HEAD，区分原计划脏修改与新增漂移",
+    "共享.venv Python3.12.3/OpenCV4.14.0/NumPy2.5.3且ArUco可用；CPU合成、无网络或GPU需求",
+    "合法可写隔离工作树；PYTHONDONTWRITEBYTECODE=1、pytest无缓存与唯一/tmp basetemp、ruff无缓存",
+    "新根因、范围扩大或额外失败暂停相关修复并再请Astra"
+  ],
+  "acceptance_boundary": "仅软件身份保留和旋转角点对应回归；不是14px标记角精度标定，不是实际机器人运行或正式研究验收；geometric_error_bound_m/angular_velocity_bound_rad_s继续None、stability_status继续UNKNOWN。",
+  "evidence_formatting_diagnostic": "父报告baseline raw.patch的diff-context空行被git diff --check标记；按原样证据格式诊断处理，冻结patch不改字节。源文件空白检查使用明确路径；不能把范围限定误报为全部历史证据通过。",
+  "inputs": [
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/tests/test_pose_marker_evidence.py",
+      "sha256": "5e96fb9af19c25c8f6ffe62ccc482b9aa6df8f962d9d89a45d4fa1ab641a26a5",
+      "snapshot": "input-snapshots/test_pose_marker_evidence.py"
+    },
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/vision/pose_markers.py",
+      "sha256": "88ed6d11ec6dec59a1d8f5afe86792ffdc8567966588099ebbe3a9655c64325e",
+      "snapshot": "input-snapshots/pose_markers.py"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-gemini-subpix-marker-ambiguity-review-20261115/plan.md",
+      "sha256": "d3de982652b37e3b4241bc5ee30a153bf7865424df8f752e28cafbc18e00bc55",
+      "snapshot": "input-snapshots/previous-plan.md"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-gemini-subpix-marker-ambiguity-review-20261115/plan.json",
+      "sha256": "b986e4d7a18bf1ea735cb1de0320dbcf6d4bf41d0d8c1cd5a61acc89b3a349c9",
+      "snapshot": "input-snapshots/previous-plan.json"
+    },
+    {
+      "path": "/tmp/bigsmall-v4-execution/marker-red.log",
+      "sha256": "2a6846cd405354a86f641d3714aec61f78d0630814a1d612c5fce256e1161df0",
+      "snapshot": "original-evidence/marker-red.log"
+    },
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261115-v4-marker-ambiguity/software/marker-red-original.json",
+      "sha256": "d420e64a7e5ea7378ba2f3a1472b3854bad30eac3bfc173e95de495511852a63",
+      "snapshot": "original-evidence/marker-red-original.json"
+    },
+    {
+      "path": "/tmp/bigsmall-small-marker-rotation-probe.py",
+      "sha256": "05fd2017382c409be7a2761d5220066a96536b18aac3963d02ae7262e9befc64",
+      "snapshot": "diagnostic/probe.py"
+    },
+    {
+      "path": "/tmp/bigsmall-small-marker-rotation-probe.stdout",
+      "sha256": "e9db04703cecf2ee70f6291b5573a874f2eb5e6dcf47a0c12c9e5979122aa8c1",
+      "snapshot": "diagnostic/probe.stdout"
+    }
+  ],
+  "planning_runtime_note": {
+    "evidence": "diagnostic/planning-runtime.log",
+    "issue": "未限定python命令不存在（exit127），仅计划文件写入器未启动",
+    "astra_resolution": "使用已验证且原计划要求的绝对.venv解释器，成功exit0；没有生产或测试修改"
+  }
+}
