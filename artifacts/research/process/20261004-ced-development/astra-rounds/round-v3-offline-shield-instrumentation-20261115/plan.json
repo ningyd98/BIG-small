@@ -1,0 +1,95 @@
+{
+  "round": "round-v3-offline-shield-instrumentation-20261115",
+  "planning_model": "gpt-6-astra",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "worktree": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall",
+  "head": "3ef1e028ccd471f887eb5b8154c98c3eb9ccfb82",
+  "problem": "测试把真实post_check内部委托pre_check误记为第二次外部PRE，导致POST节点计划外失败。",
+  "raw_failure": {
+    "source": "/tmp/bigsmall-v4-execution/offline-strict-fault-green-01.log",
+    "snapshot": "evidence/offline-strict-fault-green-01.log",
+    "sha256": "e6f63b162e85538f13b48da53f03ed81db7dcfb1869cc99fad76faea9004481c",
+    "exit_code": 1,
+    "outcome": "1 failed, 2 passed in 13.47s",
+    "expected_calls": [
+      "PRE",
+      "EXECUTE",
+      "POST"
+    ],
+    "actual_calls": [
+      "PRE",
+      "EXECUTE",
+      "PRE",
+      "POST"
+    ],
+    "original_full_argv": "NOT_PRESENT_IN_RAW_LOG; 父任务可追加原工具调用回执，不冒充本计划建议命令"
+  },
+  "root_cause": {
+    "confirmed": "SafetyShield.post_check直接调用self.pre_check；当前泛型wrapper分别包两方法，post原函数动态调到已包的pre，内部真实规则执行被当外部PRE。",
+    "production_evidence": "真实episode只有PRE/POST两条，21规则各执行，1动作，POST拒绝后无settle，end_step=controller_return_step=835。",
+    "not_claimed": "本失败不说明生产额外执行动作；源/静态证据不能替代修复后3节点复验。"
+  },
+  "scope": {
+    "write": [
+      "tests/test_sol_molmo_offline_regression.py::test_actual_worker_stops_at_injected_safety_boundary",
+      "tests/test_sol_molmo_offline_regression.py::_assert_reached_safety_boundary（仅必要内部调用记录与保持原严格断言）"
+    ],
+    "read_only": [
+      "src/cloud_edge_robot_arm/edge/safety/shield.py",
+      "src/cloud_edge_robot_arm/research/sol_molmo_components.py",
+      "真实worker/planner/executor/backend/controller/evaluator"
+    ],
+    "forbidden": [
+      "mock整个Shield或返回伪造allowed替代真实规则",
+      "把期望改为PRE EXECUTE PRE POST或简单去重/删除断言",
+      "修改生产post_check/门禁/阈值/物理/相机",
+      "本规划子任务运行模型、联网、仿真、测试、提交或推送"
+    ]
+  },
+  "implementation": {
+    "capture": "在任何monkeypatch前保存original_pre与original_post。",
+    "state": "测试局部按Shield实例维护POST委托深度（例如dict id(self) -> depth），POST调用原方法前递增，finally原样恢复；不使用跳过全局开关。",
+    "pre": "总是调用original_pre(self,context)，断言原verdict.allowed且规则结果非空；若处于该实例POST委托，记录独立delegated_pre事件（含context/contract/step引用），原样返回verdict，不追加外部calls、不注入PRE；仅外部PRE追加calls并在phase=PRE时拒绝。",
+    "post": "在受保护深度内调用original_post(self,context)，规则通过且退出保护后才追加外部POST，再于phase=POST注入；禁止用original_pre直接替代original_post。",
+    "oracle": "保持calls外部事件PRE EXECUTE POST各一次及相同contract/step的is断言；POST内部delegated_pre恰1，映射同POST context/contract/step，规则结果保留；PRE/HARD内部委托为0。注入命中分别恰1，非目标phase无注入。"
+  },
+  "verification": {
+    "red": "先保留此次原始log、三个case关键原字节及完整文件SHA清单，记录1 failed2passed；无需重跑已证的坏插桩覆盖证据。",
+    "green_command": "PYTHONDONTWRITEBYTECODE=1 MUJOCO_GL=egl \\\nPYTHONPATH=/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src:/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall \\\nBIGSMALL_V3_REGRESSION_ROOT=/home/ningyd/Documents/Codex/2026-11-14/x20-gpu-nvidia-smi-nvml-gpu/outputs/next-round-repair-40-20261115-v3 \\\n/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -m pytest -p no:cacheprovider \\\n--basetemp=/tmp/bigsmall-offline-shield-instrumentation-green-01 \\\n 'tests/test_sol_molmo_offline_regression.py::test_actual_worker_stops_at_injected_safety_boundary[PRE]' \\\n 'tests/test_sol_molmo_offline_regression.py::test_actual_worker_stops_at_injected_safety_boundary[POST]' \\\n 'tests/test_sol_molmo_offline_regression.py::test_actual_worker_stops_at_injected_safety_boundary[HARD]' -q",
+    "green_expected": "精确PRE、POST、HARD三个node各通过、无skip；保留各自独立episode与日志；不将其他用例全绿替代三node。",
+    "invariants": [
+      "全部真实两阶段planning_passed、point4/cloud1、零真实load/generation/cloud_request和空network_attempts",
+      "PRE唯一拒绝、0execute/POST/actions；HARD恰1命中、0PRE/execute/POST",
+      "POST原PRE与POST规则真实执行且允许后注入，1动作，safety_checks阶段PRE/POST且allowed=[true,false]",
+      "POST动作无diagnostic_settle_steps、end_step==controller_return_step；marker_frames含pre-00、禁止任意post-动作帧、后续pre动作与terminal-stability；finally after允许",
+      "保留旧规划失败不能通过门禁的三个负对照；同一文件ruff --no-cache，源码SHA禁止项不变"
+    ]
+  },
+  "prerequisites": [
+    "前置核对inputs和两个函数hash；实际导入隔离源，使用绝对共享.venv解释器和固定PYTHONPATH",
+    "沿已匹配的审批执行上下文，MUJOCO_GL=egl在导入前；如需require_escalated由父任务按已有授权提交审核，拒绝不绕过",
+    "NetworkDenyGuard启用，历史V3只读，独占新/tmp输出，不改RGB/hash/校准/渲染以求匹配",
+    "并行完整性Astra计划可授权同一测试文件其他函数及offline module/CLI变动；输入expected_authorized_change不代表已实施或可无条件接受任意diff。实施前记录双方计划和新SHA回执，确认本两函数未冲突，生产源码不漂移",
+    "新失败或根因变化停止受影响修复，再由Astra计划"
+  ],
+  "concurrent_authorized_change": {
+    "test_functions_owned": {
+      "test_actual_worker_stops_at_injected_safety_boundary": {
+        "sha256": "59ac3fc91a76b2d54845bb3d175a6da9f1d55cbc1b03774f8c73a3cec5a89820",
+        "start_line": 380,
+        "end_line": 436
+      },
+      "_assert_reached_safety_boundary": {
+        "sha256": "99060e46575b23050950d58b226a110c944c4aaa9ca26972b0b43332f580181e",
+        "start_line": 439,
+        "end_line": 478
+      }
+    },
+    "other_test_functions_and_new_negatives": "另轮Astra完整性计划负责；父任务串行整合，不重写全文件、不覆盖他人修改",
+    "module_and_cli": "本轮只读取快照，待另一计划有限修改后按实际SHA留新回执"
+  },
+  "acceptance_boundary": "只证明故障测试仪器正确记录真实安全门禁；不证明27例已经通过，不产生新模型端到端成功率、硬件或正式研究资格。",
+  "inputs_file": "inputs.json",
+  "evidence_inventory": "episode-file-hashes.json",
+  "source_revalidation": "source-revalidation.json"
+}

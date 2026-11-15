@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "planner_model": "gpt-6-astra",
+  "created_at_utc": "2026-11-15T04:22:54.148800+00:00",
+  "status": "PLAN_ONLY_ENVIRONMENT_VALIDATION_NOT_RUN",
+  "source_root": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall",
+  "observed_head": "3ef1e028ccd471f887eb5b8154c98c3eb9ccfb82",
+  "parent_plan_sha256": "e452f37658794e548080f48f48b3e3c5fe98ba102291cdec1e126b943767ca95",
+  "issue": "Sandbox rejects socket.socket construction before Python socket.connect audit guard can be exercised.",
+  "original_failure": {
+    "evidence": {
+      "absolute_path": "/tmp/bigsmall-v4-execution/offline-unit.log",
+      "sha256": "2150b862b07363c66e4729a83c87771c4731961bad4762cabda2c6391ffaa92d",
+      "bytes": 1661,
+      "snapshot": "addendum-socket-guard-environment-20261115.evidence/offline-unit.log"
+    },
+    "node": "tests/test_sol_molmo_offline_regression.py::test_network_guard_stops_actual_socket_before_connection",
+    "exception": "PermissionError: [Errno 1] Operation not permitted",
+    "location": "socket.socket() / socket.py:233, before client.connect",
+    "suite_result": "1 failed,16 passed,3 skipped in0.47s"
+  },
+  "facts": [
+    "NetworkDenyGuard is activated before socket.socket creation.",
+    "_deny_network intercepts socket.connect/getaddrinfo/urllib.Request; it appends audit event then raises RuntimeError OFFLINE_NETWORK_DENIED.",
+    "Test uses loopback literal127.0.0.1:9, expects RuntimeError and exactly one recorded guard attempt.",
+    "Current failure does not prove guard passed or failed: connect was never reached."
+  ],
+  "allowed_action": {
+    "tool": "exec_command",
+    "sandbox_permissions": "require_escalated",
+    "purpose": "Allow OS socket object creation for exactly one existing guard test; Python audit hook must still block connect before system call.",
+    "authorization": "Within user-approved software regression and zero-network scope; escalation is submitted to automatic approval review, not assumed approved.",
+    "cwd": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall",
+    "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src:/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -m pytest -p no:cacheprovider --basetemp=/tmp/bigsmall-v4-socket-guard-escalated-01 tests/test_sol_molmo_offline_regression.py::test_network_guard_stops_actual_socket_before_connection -q",
+    "environment": "Explicit source pinning; no bytecode or pytest cache; unique writable /tmp basetemp and separate logs.",
+    "network": "No network/DNS/model/hardware probe. Test attempts Python connect only and must be interrupted by existing guard; no socket connection may complete.",
+    "source_changes": []
+  },
+  "steps": [
+    "Verify unchanged original plan and captured guard/test input hashes; inspect exact node still activates guard before socket creation and still expects OFFLINE_NETWORK_DENIED.",
+    "Request require_escalated for this single node only, with justification that sandbox blocks socket creation before guard and no actual connection is allowed. Do not grant broad prefix permitting arbitrary network tests.",
+    "Capture exact argv/env/cwd, approval outcome, stdout/stderr/exitcode to unique new outputs; do not overwrite offline-unit.log.",
+    "Accept only1passed exit0 with unchanged test; this proves actual socket.connect audit denial in that environment. Preserve16passed/3skipped separately; integration skips remain untested.",
+    "On approval denial/unavailable escalation or other unexpected failure, leave guard verification blocked/unmeasured and request next Astra plan before any test/source adjustment. No alternative network destination or disabling guard."
+  ],
+  "test_change_policy": "No test change currently required or authorized by this supplement. Do not turn PermissionError into PASS, skip the test, mock connect or invoke only sys.audit as substitute for the real socket.connect acceptance. Any optional platform-specific test split must be separately planned and must preserve an actual connect-guard test.",
+  "full_suite": {
+    "status": "INCOMPLETE_NOT_PASSED",
+    "exit_code": 124,
+    "timeout_s": 600,
+    "last_progress_percent": 2,
+    "observed_failure_markers": 5,
+    "failing_test_names": "UNKNOWN: -q output incomplete",
+    "action": "Preserve raw log/status. No blame/root cause inference, no unrelated production repair, no global pass claim. Independently scoped phase3 work may continue; later full-suite diagnostics are separate and no test deletion or timeout status recoding.",
+    "parent_current_instructions": "Continue independent phase3; do not restart entire suite as part of this minimal supplement."
+  },
+  "inputs": [
+    {
+      "absolute_path": "/tmp/bigsmall-v4-execution/offline-unit.log",
+      "sha256": "2150b862b07363c66e4729a83c87771c4731961bad4762cabda2c6391ffaa92d",
+      "bytes": 1661,
+      "snapshot": "addendum-socket-guard-environment-20261115.evidence/offline-unit.log"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/tests/test_sol_molmo_offline_regression.py",
+      "sha256": "a451eb31e584aaeda2cdadae55498211c5cca6907e7ea19efef1582957e69bf0",
+      "bytes": 10240,
+      "snapshot": "addendum-socket-guard-environment-20261115.evidence/test_sol_molmo_offline_regression.py"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py",
+      "sha256": "44cc0610976bb152bf9d90d862f29a4aec9cfa73756378ffca35f87119a125e5",
+      "bytes": 35193,
+      "snapshot": "addendum-socket-guard-environment-20261115.evidence/sol_molmo_offline_regression.py"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261115-v4-marker-ambiguity/software/full-project-timeout.log",
+      "sha256": "192a1bc6655ff37bc1f410b3e0fccd2b8ac19964231a711b6b6aca315c9fbb5d",
+      "bytes": 220,
+      "snapshot": "addendum-socket-guard-environment-20261115.evidence/full-project-timeout.log"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261115-v4-marker-ambiguity/software/full-project-status.json",
+      "sha256": "e08646b41654cf354e3f2469730e481e20caf296c520bcd80cb638ee697f1673",
+      "bytes": 99,
+      "snapshot": "addendum-socket-guard-environment-20261115.evidence/full-project-status.json"
+    }
+  ],
+  "acceptance_boundaries": [
+    "Only network guard software verification; no actual networking, inference or physics execution.",
+    "No production or test edits, no threshold changes, no expansion of three-file scope.",
+    "Original stage3 plan and configuration addendum remain unchanged.",
+    "Any successful isolated test does not convert incomplete global suite or skipped integrations into passed checks."
+  ],
+  "original_plan_files_unchanged": {
+    "plan.md": "a10b83c9d7a82b64ad03583a1627173e0f448f46fad71d2b7de14e55fc639d9f",
+    "plan.json": "e452f37658794e548080f48f48b3e3c5fe98ba102291cdec1e126b943767ca95",
+    "hash-manifest.json": "f2c996e3114533dad04d885ec9ad921f5c63c2a1eeced2f2fcb8715fcc71e005",
+    "SHA256SUMS": "ff6df9bc87ea67bbfcbdd6b3af005e8766285c51505cbfd8a589659bef64e5cd"
+  }
+}

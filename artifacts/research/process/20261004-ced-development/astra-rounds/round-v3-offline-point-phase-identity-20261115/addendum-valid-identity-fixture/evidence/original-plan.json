@@ -1,0 +1,79 @@
+{
+  "planner_model": "gpt-6-astra",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "round": "round-v3-offline-point-phase-identity-20261115",
+  "date": "2026-11-15",
+  "input_manifest": "inputs.json",
+  "issue": "FrozenPointProvider用调用序号分配phase，未验证本次输入相对于本次运行前阶段的身份；同一个before可被当作第三四次post-cloud输入。",
+  "original_evidence": {
+    "independent_probe": "evidence/probe/astra_offline_phase_probe_20261115.json",
+    "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src:/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python /tmp/astra_offline_phase_probe_20261115.py > /tmp/astra_offline_phase_probe_20261115.json",
+    "exit_code": 0,
+    "semantics": "只读provider负例，打印旧行为，exit0不代表验收通过；无模型/网络/仿真",
+    "case": "fixed-042001",
+    "actual": "四次同一before及按序四phrase全部接受，phase记录before,before,post-cloud,post-cloud；4个current checksum一致。",
+    "replay_calls": 4,
+    "real_model_loads": 0,
+    "real_generation_calls": 0,
+    "reviewer_original": "父任务转述独立review同结果；未将其未落盘tool stdout冒充本轮原始文件。"
+  },
+  "boundary": "原真实grounded_planner._resume_owned在point前调用validate_post_cloud_observation，原函数检查新observation_id/frame_id/checksum/captured_at以及not_before；故本问题是provider自身未满足原计划错phase拒绝要求，不是已证实际27路径绕过。",
+  "root_cause": "phase仅由replay_calls+1决定；historical sim_time和RGB校验在暂停仿真两阶段可能完全相同，不构成新捕获身份。现有正例四次同obs及phase负例改sim_time掩盖独立阶段验证缺失。",
+  "allowed_modify": [
+    "src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py",
+    "tests/test_sol_molmo_offline_regression.py"
+  ],
+  "approved_concurrent_changes": "同两文件正由父任务实施完整性I1/I3/I4/I2及另一Astra fault wrapper计划；本轮快照只锚定诊断时点，实施前必须核对这些已授权diff，追加新receipt而不覆盖旧计划。CLI仅作为输入绑定，本轮不必改。",
+  "implementation": [
+    "在FrozenPointProvider记录本次成功接受的before与post-cloud身份元组：(observation_id,frame_id,checksum_sha256,captured_at)。不使用历史checksum作为本次运行身份，不将序号当身份验证。",
+    "第1次所有现有校验成功后记录before元组；第2次必须与before四字段完全相同。第3次observation_id/frame_id/checksum各自不同于before，captured_at严格大于before；第4次必须与已接受post-cloud元组四字段完全相同。",
+    "阶段身份检查必须在消费输出前；仅当现有RGB/query/calibration/raw/native等检查全部通过才提交阶段状态、append record及递增replay_calls。拒绝不消耗次数，不污染phase状态。可使用小私有验证方法，禁止改生产planner或新建第二套刷新执行器。",
+    "每个record保留当前phase identity字段便于追溯；现有historical/current checksum区分不变。错误需能区分阶段identity mismatch/new capture not new，不以泛化成功/计数掩盖。",
+    "修改四次同obs的单元正例：构造before对、post-cloud对，保持RGB/深度/mask/sim_time及相机不变，仅更换新frame/observation id和更晚captured_at，使用RGBDObservation.model_validate(...checksum_sha256清空)重算真实checksum；不能凭空用model_copy伪造任意checksum来冒充有效新观测。",
+    "原planner not_before仍由原validate_post_cloud_observation执行，provider没有供应边界时刻不可编造；不得修改not_before逻辑、原深度容差或相机方案。"
+  ],
+  "red_green": [
+    {
+      "test": "第三次重复before",
+      "RED": "固定case或同RGB/sim_time夹具先消费前两次，再用同before作第三次；旧实现接受。",
+      "GREEN": "第三次明确拒绝；replay_calls=2、records=2、post-cloud identity未提交；随后合法新phase仍可成功。"
+    },
+    {
+      "test": "同阶段第二次换obs",
+      "RED": "第1次后对第2次传新合法id/capture/checksum但相同RGB/sim_time，旧实现接受。",
+      "GREEN": "第2次拒绝，次数仍1；第4次换obs同样拒绝，次数仍3。可参数化覆盖两阶段。"
+    },
+    {
+      "test": "正常两个phase",
+      "GREEN": "before同一对象或等值副本两次，更新metadata后的fresh两次；4次成功，2+2身份配对，新phase各id/checksum不同且capture更晚，RGB/depth/sim_time不变，0真实load/generation。"
+    },
+    {
+      "test": "新鲜性边界",
+      "GREEN": "第三次只换id却capture相等/更早拒绝；任一obs id/frame id/checksum仍旧拒绝（用受控负例区分错误，不把无效model当正例）。"
+    },
+    {
+      "test": "既有严格输入",
+      "GREEN": "RGB/query/raw/calibration/完整cloud request微变拒绝仍成立；原sim_time变化测试可保留为calibration/phase-field负例，但不得称独立phase身份验证。"
+    }
+  ],
+  "prerequisites": [
+    "shared .venv，但启动前PYTHONPATH必须指向新隔离树/src及树根；PYTHONDONTWRITEBYTECODE=1；pytest -p no:cacheprovider；新/tmp basetemp",
+    "本轮测试只需读取冻结provider数据，无EGL/仿真/模型/网络，不需socket权限提升",
+    "实施前复核本轮hash与完整性计划approved overrides，再生成新版3入口receipt；父任务并行改动不得被本轮回滚",
+    "测试fixture创建与所有输出只在/tmp或新树批准offline-regression目录，历史原件只读"
+  ],
+  "verification_order": [
+    "先新增两个身份负例RED及合法两阶段正例",
+    "最小provider状态校验与正例fixture修正GREEN",
+    "运行新增offline unit（排除真实socket与仿真故障节点），再既有grounded planner刷新验证相关测试，Ruff",
+    "整合完整性与fault wrapper计划，重新源码全集合/3入口前后验证",
+    "三个真实fault节点及原27待其他已知阻断修复及review通过后统一运行，不能以本轮unit代替"
+  ],
+  "acceptance": [
+    "只新增provider/test变更，原grounded_planner/revalidation字节完全不变",
+    "严格RGB/depth/query/fullrequest/phase校验不放松；不改变sim_time以制造phase判别",
+    "provider通过身份元组证明逻辑阶段区分，不声称metadata单独证明物理曝光；真实采集仍由原worker负责",
+    "无真实模型/网络/付费/硬件，原27分母与0.1mm/39mm验收不变",
+    "原探针/失败/前计划全保留，出现新根因或范围扩大再Astra"
+  ]
+}

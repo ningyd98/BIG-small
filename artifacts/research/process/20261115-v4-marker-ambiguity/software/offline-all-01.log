@@ -1,0 +1,77 @@
+........................................F.                               [100%]
+=================================== FAILURES ===================================
+__________ test_actual_worker_stops_at_injected_safety_boundary[POST] __________
+
+tmp_path = PosixPath('/tmp/bigsmall-offline-all-01/test_actual_worker_stops_at_in1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77851d0aa780>
+phase = 'POST'
+
+    @pytest.mark.parametrize("phase", ["PRE", "POST", "HARD"])
+    def test_actual_worker_stops_at_injected_safety_boundary(tmp_path, monkeypatch, phase):
+        root = os.environ.get("BIGSMALL_V3_REGRESSION_ROOT")
+        if not root:
+            pytest.skip("explicit read-only V3 fixture required")
+        from cloud_edge_robot_arm.contracts import SafetyDecision
+        from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor
+        from cloud_edge_robot_arm.edge.safety.context_builder import SafetyContextBuilder
+        from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
+        from cloud_edge_robot_arm.research import sol_molmo_components as components
+    
+        calls = []
+        contexts = {}
+        original_build = SafetyContextBuilder.build
+    
+        def build(self, **kwargs):
+            context = original_build(self, **kwargs)
+            contexts[id(context)] = (kwargs["contract"], kwargs["step"])
+            return context
+    
+        monkeypatch.setattr(SafetyContextBuilder, "build", build)
+        original_execute = SkillExecutor.execute_attempt
+    
+        def execute(self, **kwargs):
+            calls.append(("EXECUTE", kwargs["contract"], kwargs["step"]))
+            return original_execute(self, **kwargs)
+    
+        monkeypatch.setattr(SkillExecutor, "execute_attempt", execute)
+        for method, label in (("pre_check", "PRE"), ("post_check", "POST")):
+            original = getattr(SafetyShield, method)
+    
+            def check(self, context, original=original, label=label):
+                verdict = original(self, context)
+                calls.append((label, *contexts[id(context)]))
+                return (
+                    replace(verdict, allowed=False, decision=SafetyDecision.REJECT)
+                    if phase == label
+                    else verdict
+                )
+    
+            monkeypatch.setattr(SafetyShield, method, check)
+        if phase == "HARD":
+    
+            def hard(backend, robot):
+                raise components.ComponentStopped("INJECTED_HARD_STATE")
+    
+            monkeypatch.setattr(components, "check_component_hard_state", hard)
+        manifest = load_v3_manifest(
+            Path(root),
+            Path(__file__).resolve().parents[1]
+            / "artifacts/research/process/20261115-v4-marker-ambiguity/v3-baseline/snapshot.json",
+        )
+        result = run_frozen_component_case("fixed-042001", manifest, tmp_path / "episode")
+        assert result["component_success"] is False
+        episode = result["outcome"]
+        if phase in {"PRE", "HARD"}:
+            assert not any(item[0] == "EXECUTE" for item in calls)
+            assert episode["executed_actions"] == 0
+        else:
+>           assert [item[0] for item in calls] == ["PRE", "EXECUTE", "POST"]
+E           AssertionError: assert [] == ['PRE', 'EXECUTE', 'POST']
+E             
+E             Right contains 3 more items, first extra item: 'PRE'
+E             Use -v to get more diff
+
+tests/test_sol_molmo_offline_regression.py:439: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sol_molmo_offline_regression.py::test_actual_worker_stops_at_injected_safety_boundary[POST]
+1 failed, 41 passed, 1 deselected in 14.21s

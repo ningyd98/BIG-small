@@ -1,0 +1,292 @@
+FFFFFFFFFFFFFFF                                                          [100%]
+=================================== FAILURES ===================================
+__________ test_fixed_worker_binding_preserves_absent_component_scene __________
+
+tmp_path = PosixPath('/tmp/bigsmall-optional-scene-red/test_fixed_worker_binding_pres0')
+
+    def test_fixed_worker_binding_preserves_absent_component_scene(tmp_path):
+        root = os.environ.get("BIGSMALL_V3_REGRESSION_ROOT")
+        if not root:
+            pytest.skip("explicit read-only V3 fixture required")
+        from cloud_edge_robot_arm.research.sol_molmo_offline_regression import build_frozen_worker
+        manifest = load_v3_manifest(Path(root), Path(__file__).resolve().parents[1] /
+            "artifacts/research/process/20261115-v4-marker-ambiguity/v3-baseline/snapshot.json")
+>       worker, binding, points, cloud = build_frozen_worker(manifest.cases["fixed-042001"], manifest, tmp_path)
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_sol_molmo_offline_regression.py:212: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+case = FrozenCase(root=PosixPath('/home/ningyd/Documents/Codex/2026-11-14/x20-gpu-nvidia-smi-nvml-gpu/outputs/next-round-repa...idence-manifest.json', 'sha256': '5841382b3e8178a2cc41beef1553e41b24ca55f83c76dc48c998be71d0787922', 'bytes': 37978}]})
+manifest = V3Manifest(root=PosixPath('/home/ningyd/Documents/Codex/2026-11-14/x20-gpu-nvidia-smi-nvml-gpu/outputs/next-round-repa..., 'sha256': '62d9e48b25682d690c144f5e8806ce9d2ea8d5336ed9ea11962a12bfe965706b', 'bytes': 1508}]}], verified_files=7041)
+output = PosixPath('/tmp/bigsmall-optional-scene-red/test_fixed_worker_binding_pres0')
+
+    def build_frozen_worker(
+        case: FrozenCase, manifest: V3Manifest, output: Path
+    ) -> tuple[Any, Any, FrozenPointProvider, FrozenCloudReplayAdapter]:
+        """使用真实两阶段planner和当前设备绑定，不创建模型或读取任何凭据。"""
+        from cloud_edge_robot_arm.vision.grounded_planner import (
+            GroundingTaskDescriptor,
+            MolmoGroundedPlannerAdapter,
+        )
+        from cloud_edge_robot_arm.vision.molmo_worker import MolmoWorkerPlanner, make_worker_binding
+        from cloud_edge_robot_arm.vision.role_models import (
+            RoleProviderSnapshot,
+            cloud_request_settings,
+            configuration_hash,
+        )
+    
+        evidence = case.json("planning/planning-stage-01.json")["attempts"][0]["draft"][
+            "observation_evidence"
+        ]
+        config = dict(evidence["cloud_model_snapshot"])
+        endpoint_hash = config.pop("endpoint_hash")
+        endpoints = [
+            e
+            for e in ("https://api.openai.com", "https://api.openai.com/v1")
+            if _sha(e.encode()) == endpoint_hash
+        ]
+        if len(endpoints) != 1:
+            raise ValueError("HISTORICAL_ENDPOINT_BINDING_MISMATCH")
+        snapshot = ModelConfigSnapshot(**config, endpoint=endpoints[0])
+        if snapshot.digest() != evidence["cloud_model_snapshot_hash"]:
+            raise ValueError("HISTORICAL_MODEL_SNAPSHOT_MISMATCH")
+        historical_binding = case.json("role-binding.json")
+        role = RoleProviderSnapshot(**historical_binding["bundle"]["cloud_snapshot"])
+        for name, digest in role.source_hashes.items():
+            if _sha(_contained(ROOT, ROOT / name).read_bytes()) != digest:
+                raise ValueError("HISTORICAL_CLOUD_SOURCE_MISMATCH:" + name)
+        cloud = FrozenCloudReplayAdapter(
+            case,
+            base_url=snapshot.endpoint,
+            model=snapshot.model,
+            provider=snapshot.provider,
+            api_key="",
+            timeout_s=snapshot.timeout_s,
+            allow_paid=True,
+            chat_path="/chat/completions"
+            if snapshot.endpoint.endswith("/v1")
+            else "/v1/chat/completions",
+            model_snapshot=snapshot,
+            cost_ledger=CostLedger(),
+        )
+        cloud.role_config_version = 2
+        cloud.role_snapshot = role
+        if configuration_hash(cloud_request_settings(cloud)) != role.request_config_hash:
+            raise ValueError("HISTORICAL_CLOUD_CONFIG_MISMATCH")
+        assignment = case.json("scene-assignment.json")
+        points = FrozenPointProvider(case)
+        grounded = MolmoGroundedPlannerAdapter(
+            point_provider=points,
+            cloud=cloud,
+            task=GroundingTaskDescriptor(
+                instruction=assignment["instruction"],
+                target_phrase="red block",
+                destination_phrase="green region",
+                target_label="red block",
+            ),
+            worker_owned_refresh=True,
+            component_diagnostic=True,
+            cloud_vision_fallback=assignment["cloud_vision_fallback"],
+        )
+        worker = MolmoWorkerPlanner(grounded, output=output / "planning")
+        if (
+            worker.role_config_version != 2
+            or configuration_hash(cloud_request_settings(worker)) != role.request_config_hash
+        ):
+            raise ValueError("HISTORICAL_WORKER_CONFIG_MISMATCH")
+        binding = make_worker_binding(
+            worker,
+            asset_manifest_sha256=historical_binding["edge_policy"]["perception_binding"][
+                "asset_manifest_sha256"
+            ],
+            marker_family_id=assignment["marker_family_id"],
+            component_diagnostic=True,
+>           component_scene=assignment["component_scene"],
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       KeyError: 'component_scene'
+
+src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py:470: KeyError
+________ test_component_scene_restores_exact_optional_semantics[fixed] _________
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_restores_0'), files={'before/observa...<locals>.put at 0x742799781940>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+split = 'fixed'
+
+    @pytest.mark.parametrize("split", ["fixed", "development", "held-out"])
+    def test_component_scene_restores_exact_optional_semantics(frozen, split):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:237: ImportError
+_____ test_component_scene_restores_exact_optional_semantics[development] ______
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_restores_1'), files={'before/observa...<locals>.put at 0x74279975ca40>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+split = 'development'
+
+    @pytest.mark.parametrize("split", ["fixed", "development", "held-out"])
+    def test_component_scene_restores_exact_optional_semantics(frozen, split):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:237: ImportError
+_______ test_component_scene_restores_exact_optional_semantics[held-out] _______
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_restores_2'), files={'before/observa...<locals>.put at 0x74279975ce00>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+split = 'held-out'
+
+    @pytest.mark.parametrize("split", ["fixed", "development", "held-out"])
+    def test_component_scene_restores_exact_optional_semantics(frozen, split):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:237: ImportError
+____ test_component_scene_rejects_fabrication_or_binding_drift[fixed_null] _____
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f0'), files={'before/observa...<locals>.put at 0x74279975cae0>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'fixed_null'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+____ test_component_scene_rejects_fabrication_or_binding_drift[fixed_empty] ____
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f1'), files={'before/observa...<locals>.put at 0x74279975d4e0>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'fixed_empty'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+____ test_component_scene_rejects_fabrication_or_binding_drift[fixed_fake] _____
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f2'), files={'before/observa...<locals>.put at 0x7427ca621620>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'fixed_fake'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+__ test_component_scene_rejects_fabrication_or_binding_drift[seeded_missing] ___
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f3'), files={'before/observa...<locals>.put at 0x74279975d1c0>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'seeded_missing'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+____ test_component_scene_rejects_fabrication_or_binding_drift[seeded_null] ____
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f4'), files={'before/observa...<locals>.put at 0x74279975cea0>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'seeded_null'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+__ test_component_scene_rejects_fabrication_or_binding_drift[role_difference] __
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f5'), files={'before/observa...<locals>.put at 0x74279975d620>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'role_difference'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+_______ test_component_scene_rejects_fabrication_or_binding_drift[seed] ________
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f6'), files={'before/observa...<locals>.put at 0x74279975d8a0>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'seed'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+_______ test_component_scene_rejects_fabrication_or_binding_drift[split] _______
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f7'), files={'before/observa...<locals>.put at 0x74279975db20>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'split'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+________ test_component_scene_rejects_fabrication_or_binding_drift[job] ________
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f8'), files={'before/observa...<locals>.put at 0x74279975dee0>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'job'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+_____ test_component_scene_rejects_fabrication_or_binding_drift[sampling] ______
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f9'), files={'before/observa...<locals>.put at 0x74279975e3e0>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'sampling'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+_______ test_component_scene_rejects_fabrication_or_binding_drift[flag] ________
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-optional-scene-red/test_component_scene_rejects_f10'), files={'before/observ...<locals>.put at 0x74279975e840>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+change = 'flag'
+
+    @pytest.mark.parametrize("change", ["fixed_null", "fixed_empty", "fixed_fake", "seeded_missing",
+        "seeded_null", "role_difference", "seed", "split", "job", "sampling", "flag"])
+    def test_component_scene_rejects_fabrication_or_binding_drift(frozen, change):
+>       from cloud_edge_robot_arm.research.sol_molmo_offline_regression import _validated_component_scene
+E       ImportError: cannot import name '_validated_component_scene' from 'cloud_edge_robot_arm.research.sol_molmo_offline_regression' (/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py)
+
+tests/test_sol_molmo_offline_regression.py:246: ImportError
+=========================== short test summary info ============================
+FAILED tests/test_sol_molmo_offline_regression.py::test_fixed_worker_binding_preserves_absent_component_scene
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_restores_exact_optional_semantics[fixed]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_restores_exact_optional_semantics[development]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_restores_exact_optional_semantics[held-out]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[fixed_null]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[fixed_empty]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[fixed_fake]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[seeded_missing]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[seeded_null]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[role_difference]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[seed]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[split]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[job]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[sampling]
+FAILED tests/test_sol_molmo_offline_regression.py::test_component_scene_rejects_fabrication_or_binding_drift[flag]
+15 failed, 28 deselected in 2.75s

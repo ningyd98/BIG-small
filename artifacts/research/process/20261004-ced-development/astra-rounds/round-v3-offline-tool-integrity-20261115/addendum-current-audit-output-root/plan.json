@@ -1,0 +1,51 @@
+{
+  "planner_model": "gpt-6-astra",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "date": "2026-11-15",
+  "extends": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-v3-offline-tool-integrity-20261115/plan.json",
+  "input_manifest": "inputs.json",
+  "issue": "audit_child把当前ROOT整个加入保护集合，批准ROOT/artifacts/.../offline-regression下current.json被自身保护拒绝。",
+  "evidence": {
+    "probe": "evidence/astra_audit_output_path_probe_20261115.json",
+    "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src:/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python /tmp/astra_audit_output_path_probe_20261115.py > /tmp/astra_audit_output_path_probe_20261115.json",
+    "exit_code": 0,
+    "result": "批准repo current.json被PROTECTED_OUTPUT_PATH拒绝；批准/tmp新路径通过；两路径均不存在，未创建。",
+    "semantics": "只读路径检查输出，exit0不是错误行为验收通过；未调用audit_child帧计算/模型/仿真。"
+  },
+  "root_cause": "output_path(output,[manifest.root,source_root])与_PROTECTED_INPUTS.add(source_root.resolve())混同当前源码与完整历史源码输入树；当前允许输出根自身位于ROOT内，发生保护根/批准根冲突。",
+  "scope": [
+    "新增offline module中的audit_child路径准备及小纯helper",
+    "新增offline tests的路径负/正例"
+  ],
+  "unchanged": [
+    "所有原生产源码、当前源初始化/模块SHA验证、594/591基线与599来源前后核验",
+    "全局批准输出根及原主/Gemini/V3/baseline/astra保护",
+    "历史归档source整体保护",
+    "controller/physics/evaluator/相机/阈值、RGB/request严格匹配"
+  ],
+  "steps": [
+    "对source_root与ROOT均resolve，再通过小纯helper返回应该保护的源码路径集合，不写文件、不扫描仿真。",
+    "历史source_root!=ROOT：仍返回整个历史source_root；当前source_root==ROOT：只返回实际源码目录ROOT/src、ROOT/assets、ROOT/scripts、ROOT/tests（以及已绑定源文件所在且不覆盖批准输出的必要目录/文件），不能返回整个ROOT。全局allowlist本来已禁止向这些源码目录输出，显式保护作为额外输入边界。",
+    "audit_child使用同一helper结果做output_path额外protected，并update登记这些路径，替代两处整ROOT保护；manifest.root照旧保护。要验证登记后末尾_write(output)仍能通过，不能只修入口一次。",
+    "保留当前source的_expected_sources、validate_source_imports及后续完整源校验；不以路径分支绕过初始化。不改_write或output_path的全局保护优先级/allowlist，不删保护项让通过。",
+    "新增纯路径测试：current+repo批准新文件、current+/tmp批准新文件均通过；historical+/tmp或repo合法外部输出通过，historical内部/祖先拒绝；current src/assets/scripts/tests与所有既有保护根仍拒绝；两个阶段入口检查及保护登记后的同一文件检查均通过。",
+    "路径测试只调用纯validator并断言路径不存在；用monkeypatch隔离保护集合避免用例间污染，不实际mkdir/写文件或跑589帧。若模拟原子_write门禁，仅调用同一validator，不伪造审计成功报告。"
+  ],
+  "red_green": {
+    "RED": "保留本轮微型probe证明repo批准路径当前错误拒绝；新增helper集成路径测试先失败。",
+    "GREEN": "上述正/负例全通过，且批准路径仍不存在；完整性/phase/fault既有软件测试不回归，Ruff。",
+    "next": "独立review确认后重新冻结3入口SHA，才能开始原27；先前11节点/599来源PASS为父任务结果，本轮未重跑也不当成本修复通过。"
+  },
+  "prerequisites": [
+    "共享venv，启动前隔离树PYTHONPATH，PYTHONDONTWRITEBYTECODE=1",
+    "pytest禁缓存，唯一/tmp basetemp；本轮只路径单元，正常无需EGL、网络、模型或权限提升",
+    "输入SHA及已批准并行测试改动复核；只追加实施receipt，原计划/失败不覆盖"
+  ],
+  "acceptance": [
+    "只新module/test变更，CLI无必要修改",
+    "允许repo与/tmp输出同时可用且历史/生产输入保护不弱化",
+    "normalize比较不能误将symlink别名归历史/当前不同分支；现有path.resolve保护保留",
+    "没有运行模型/仿真、没有向probe候选路径写入",
+    "发生新范围/根因先Astra"
+  ]
+}

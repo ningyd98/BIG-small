@@ -1,0 +1,46 @@
+{
+  "planning_model": "gpt-6-astra",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "parent_plan_unchanged_sha256": {
+    "plan.md": "19418de48b2b6bb3379e7369f4e749d9af9223c176e567a75fcf0297bac7d52f",
+    "plan.json": "508ac35b5c02bba3140d20c86e5e63ef12dbddc803188d2dfa963a71c5b6bc50",
+    "SHA256SUMS": "81d143fa8b6bbb80ab65c11a1dc7da18338cfd1367ef518fbda766c5465d883c"
+  },
+  "problem": "post-cloud规划帧被startswith(post-)误认为动作后帧，3节点在同一帧分类断言失败。",
+  "raw_failure": {
+    "log": "evidence/offline-strict-fault-green-02.log",
+    "exit_code": 1,
+    "outcome": "3 failed in 13.51s",
+    "log_sha256": "26fee82eb00cf111c3f0e1646c1757f6b12c718e87fb78b974432e30871af74c"
+  },
+  "confirmed_root_cause": "三case均已两阶段规划成功并在正确PRE/POST/HARD边界终止；唯一共有被旧谓词拒绝的实际标签是post-cloud，非动作后帧。",
+  "scope": [
+    "仅tests/test_sol_molmo_offline_regression.py::_assert_reached_safety_boundary内labels分类断言",
+    "不改注入/原规则/对象引用/步数/原因/计数断言，不改任何生产源码"
+  ],
+  "minimal_change": "保留pre-00-move_above必须存在，用set(labels) <= {before,post-cloud,pre-00-move_above,after}替代旧not any；固定允许集合拒绝所有post动作、后续pre、terminal和未知帧。",
+  "alternative_not_selected": "可用re.match(r\"^post-[0-9]{2}-\",label)辨识实际动作帧并保留其它拒绝条件，但固定合法集合更简单且不会接受未知post标签。",
+  "input_function": {
+    "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/tests/test_sol_molmo_offline_regression.py",
+    "name": "_assert_reached_safety_boundary",
+    "sha256": "fac1539866e085167ee946013d8c91150934f9b4f6e973236901fc8e7ee8abfd",
+    "start_line": 564,
+    "end_line": 612
+  },
+  "verification": [
+    "冻结此次原始RED，不覆盖green-01/02",
+    "实施后纯标签检查确认4合法标签允许，post-00/post-01/post-07/post-99/pre-01/pre-07/terminal/未知post全拒绝；该分类不启动仿真",
+    "沿原计划固定环境复验精确PRE POST HARD3节点，新basetemp如/tmp/bigsmall-offline-strict-fault-green-03且目录不存在；预期3passed无skip",
+    "保持原规则先allowed、delegated_pre数量和对象is、注入恰一次、执行/终止/无settle/marker_frames全部断言",
+    "原规划失败3负对照和该测试Ruff；任何新增失败另交Astra"
+  ],
+  "prerequisites": [
+    "重核此输入函数SHA；同文件其它完整性/phase修改属另一计划，父串行整合不覆写",
+    "原计划MUJOCO_GL/PYTHONPATH/绝对.venv/权限审核/NetworkDenyGuard/V3只读保持",
+    "本Astra子任务仅读取和写计划，无测试、仿真、网络、模型或提交"
+  ],
+  "acceptance": "仅修标签语义，未声称此次3节点通过，未声称27例完成或真实研究验收。",
+  "inputs": "inputs.json",
+  "evidence_summary": "frame-summary.json",
+  "episode_inventory": "episode-file-hashes.json"
+}

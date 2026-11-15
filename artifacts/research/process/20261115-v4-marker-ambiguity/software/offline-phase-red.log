@@ -1,0 +1,185 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_ test_point_phase_rejects_reused_before_without_consuming_or_polluting_state __
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-offline-phase-red/test_point_phase_rejects_reuse0'), files={'before/observat...<locals>.put at 0x7817b1713a60>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+
+    def test_point_phase_rejects_reused_before_without_consuming_or_polluting_state(frozen):
+        case, obs, _, _ = frozen
+        provider = FrozenPointProvider(case)
+        provider.point(obs, "red")
+        provider.point(obs, "green")
+>       with pytest.raises(ValueError, match="PHASE"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_sol_molmo_offline_regression.py:107: Failed
+_________ test_point_same_phase_requires_same_observation_identity[2] __________
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-offline-phase-red/test_point_same_phase_requires0'), files={'before/observat...<locals>.put at 0x7817b1a0b4c0>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+index = 2
+
+    @pytest.mark.parametrize("index", [2, 4])
+    def test_point_same_phase_requires_same_observation_identity(frozen, index):
+        case, obs, _, _ = frozen
+        provider = FrozenPointProvider(case)
+        provider.point(obs, "red")
+        if index == 4:
+            provider.point(obs, "green")
+            obs = _new_observation(obs)
+            provider.point(obs, "red")
+>       with pytest.raises(ValueError, match="PHASE"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_sol_molmo_offline_regression.py:125: Failed
+_________ test_point_same_phase_requires_same_observation_identity[4] __________
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-offline-phase-red/test_point_same_phase_requires1'), files={'before/observat...<locals>.put at 0x7817b1a0b880>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+index = 4
+
+    @pytest.mark.parametrize("index", [2, 4])
+    def test_point_same_phase_requires_same_observation_identity(frozen, index):
+        case, obs, _, _ = frozen
+        provider = FrozenPointProvider(case)
+        provider.point(obs, "red")
+        if index == 4:
+            provider.point(obs, "green")
+            obs = _new_observation(obs)
+            provider.point(obs, "red")
+>       with pytest.raises(ValueError, match="PHASE"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_sol_molmo_offline_regression.py:125: Failed
+___ test_point_post_cloud_requires_new_ids_and_later_capture[observation_id] ___
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-offline-phase-red/test_point_post_cloud_requires0'), files={'before/observat...<locals>.put at 0x7817b1a0bc40>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+field = 'observation_id'
+
+    @pytest.mark.parametrize("field", ["observation_id", "frame_id", "captured_at"])
+    def test_point_post_cloud_requires_new_ids_and_later_capture(frozen, field):
+        case, obs, _, _ = frozen
+        provider = FrozenPointProvider(case)
+        provider.point(obs, "red")
+        provider.point(obs, "green")
+        with pytest.raises(ValueError, match="PHASE"):
+>           provider.point(_new_observation(obs, **{field: getattr(obs, field)}), "red")
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_sol_molmo_offline_regression.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obs = RGBDObservation(frame_id='initial', observation_id='initial', captured_at=datetime.datetime(2026, 11, 15, 4, 46, 3, 78...e', calibration_version='test-cal', checksum_sha256='4b90c5fdc9f75da7ca2c4b3c39c7d5541500f4d4748b11a4c38359a9208e959e')
+updates = {'observation_id': 'initial'}
+timedelta = <class 'datetime.timedelta'>
+RGBDObservation = <class 'cloud_edge_robot_arm.vision.observations.RGBDObservation'>
+payload = {'calibration_version': 'test-cal', 'camera_to_world': (1.0, 0.0, 0.0, 0.0, 0.0, -1.0, ...), 'captured_at': datetime.datetime(2026, 11, 15, 4, 46, 3, 887447, tzinfo=datetime.timezone.utc), 'checksum_sha256': '', ...}
+
+    def _new_observation(obs, **updates):
+        from datetime import timedelta
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+        payload = obs.model_dump()
+        payload.update(observation_id=obs.observation_id + "-fresh", frame_id=obs.frame_id + "-fresh",
+                       captured_at=obs.captured_at + timedelta(milliseconds=100), checksum_sha256="")
+        payload.update(updates)
+>       return RGBDObservation.model_validate(payload)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RGBDObservation
+E         Value error, observation_id must match frame_id [type=value_error, input_value={'frame_id': 'initial-fre..., 'checksum_sha256': ''}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/value_error
+
+tests/test_sol_molmo_offline_regression.py:38: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-offline-phase-red/test_point_post_cloud_requires0'), files={'before/observat...<locals>.put at 0x7817b1a0bc40>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+field = 'observation_id'
+
+    @pytest.mark.parametrize("field", ["observation_id", "frame_id", "captured_at"])
+    def test_point_post_cloud_requires_new_ids_and_later_capture(frozen, field):
+        case, obs, _, _ = frozen
+        provider = FrozenPointProvider(case)
+        provider.point(obs, "red")
+        provider.point(obs, "green")
+>       with pytest.raises(ValueError, match="PHASE"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'PHASE'
+E        Input: "1 validation error for RGBDObservation\n  Value error, observation_id must match frame_id [type=value_error, input_value={'frame_id': 'initial-fre..., 'checksum_sha256': ''}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+
+tests/test_sol_molmo_offline_regression.py:137: AssertionError
+______ test_point_post_cloud_requires_new_ids_and_later_capture[frame_id] ______
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-offline-phase-red/test_point_post_cloud_requires1'), files={'before/observat...<locals>.put at 0x7817b1c88680>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+field = 'frame_id'
+
+    @pytest.mark.parametrize("field", ["observation_id", "frame_id", "captured_at"])
+    def test_point_post_cloud_requires_new_ids_and_later_capture(frozen, field):
+        case, obs, _, _ = frozen
+        provider = FrozenPointProvider(case)
+        provider.point(obs, "red")
+        provider.point(obs, "green")
+        with pytest.raises(ValueError, match="PHASE"):
+>           provider.point(_new_observation(obs, **{field: getattr(obs, field)}), "red")
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_sol_molmo_offline_regression.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obs = RGBDObservation(frame_id='initial', observation_id='initial', captured_at=datetime.datetime(2026, 11, 15, 4, 46, 3, 80...e', calibration_version='test-cal', checksum_sha256='f871e069d626da381636821e68187627321d98e8d0431b58c6fdd22df9c25f36')
+updates = {'frame_id': 'initial'}, timedelta = <class 'datetime.timedelta'>
+RGBDObservation = <class 'cloud_edge_robot_arm.vision.observations.RGBDObservation'>
+payload = {'calibration_version': 'test-cal', 'camera_to_world': (1.0, 0.0, 0.0, 0.0, 0.0, -1.0, ...), 'captured_at': datetime.datetime(2026, 11, 15, 4, 46, 3, 906436, tzinfo=datetime.timezone.utc), 'checksum_sha256': '', ...}
+
+    def _new_observation(obs, **updates):
+        from datetime import timedelta
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+        payload = obs.model_dump()
+        payload.update(observation_id=obs.observation_id + "-fresh", frame_id=obs.frame_id + "-fresh",
+                       captured_at=obs.captured_at + timedelta(milliseconds=100), checksum_sha256="")
+        payload.update(updates)
+>       return RGBDObservation.model_validate(payload)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RGBDObservation
+E         Value error, observation_id must match frame_id [type=value_error, input_value={'frame_id': 'initial', '..., 'checksum_sha256': ''}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/value_error
+
+tests/test_sol_molmo_offline_regression.py:38: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-offline-phase-red/test_point_post_cloud_requires1'), files={'before/observat...<locals>.put at 0x7817b1c88680>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+field = 'frame_id'
+
+    @pytest.mark.parametrize("field", ["observation_id", "frame_id", "captured_at"])
+    def test_point_post_cloud_requires_new_ids_and_later_capture(frozen, field):
+        case, obs, _, _ = frozen
+        provider = FrozenPointProvider(case)
+        provider.point(obs, "red")
+        provider.point(obs, "green")
+>       with pytest.raises(ValueError, match="PHASE"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'PHASE'
+E        Input: "1 validation error for RGBDObservation\n  Value error, observation_id must match frame_id [type=value_error, input_value={'frame_id': 'initial', '..., 'checksum_sha256': ''}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+
+tests/test_sol_molmo_offline_regression.py:137: AssertionError
+____ test_point_post_cloud_requires_new_ids_and_later_capture[captured_at] _____
+
+frozen = (FrozenCase(root=PosixPath('/tmp/bigsmall-offline-phase-red/test_point_post_cloud_requires2'), files={'before/observat...<locals>.put at 0x7817b1c88ae0>, {'messages': [{'content': 'geometry:0.451', 'role': 'user'}], 'model': 'gpt-6.1-sol'})
+field = 'captured_at'
+
+    @pytest.mark.parametrize("field", ["observation_id", "frame_id", "captured_at"])
+    def test_point_post_cloud_requires_new_ids_and_later_capture(frozen, field):
+        case, obs, _, _ = frozen
+        provider = FrozenPointProvider(case)
+        provider.point(obs, "red")
+        provider.point(obs, "green")
+>       with pytest.raises(ValueError, match="PHASE"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_sol_molmo_offline_regression.py:137: Failed
+=========================== short test summary info ============================
+FAILED tests/test_sol_molmo_offline_regression.py::test_point_phase_rejects_reused_before_without_consuming_or_polluting_state
+FAILED tests/test_sol_molmo_offline_regression.py::test_point_same_phase_requires_same_observation_identity[2]
+FAILED tests/test_sol_molmo_offline_regression.py::test_point_same_phase_requires_same_observation_identity[4]
+FAILED tests/test_sol_molmo_offline_regression.py::test_point_post_cloud_requires_new_ids_and_later_capture[observation_id]
+FAILED tests/test_sol_molmo_offline_regression.py::test_point_post_cloud_requires_new_ids_and_later_capture[frame_id]
+FAILED tests/test_sol_molmo_offline_regression.py::test_point_post_cloud_requires_new_ids_and_later_capture[captured_at]
+6 failed, 81 deselected in 0.52s

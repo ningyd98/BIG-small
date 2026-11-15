@@ -1,0 +1,34 @@
+.............F...sss                                                     [100%]
+=================================== FAILURES ===================================
+___________ test_network_guard_stops_actual_socket_before_connection ___________
+
+    def test_network_guard_stops_actual_socket_before_connection():
+>       with NetworkDenyGuard() as guard, socket.socket() as client:
+                                          ^^^^^^^^^^^^^^^
+
+tests/test_sol_molmo_offline_regression.py:149: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <socket.socket fd=-1, family=0, type=0, proto=0>
+family = <AddressFamily.AF_INET: 2>, type = <SocketKind.SOCK_STREAM: 1>
+proto = 0, fileno = None
+
+    def __init__(self, family=-1, type=-1, proto=-1, fileno=None):
+        # For user code address family and type values are IntEnum members, but
+        # for the underlying _socket.socket they're just integers. The
+        # constructor of _socket.socket converts the given argument to an
+        # integer automatically.
+        if fileno is None:
+            if family == -1:
+                family = AF_INET
+            if type == -1:
+                type = SOCK_STREAM
+            if proto == -1:
+                proto = 0
+>       _socket.socket.__init__(self, family, type, proto, fileno)
+E       PermissionError: [Errno 1] Operation not permitted
+
+/usr/lib/python3.12/socket.py:233: PermissionError
+=========================== short test summary info ============================
+FAILED tests/test_sol_molmo_offline_regression.py::test_network_guard_stops_actual_socket_before_connection
+1 failed, 16 passed, 3 skipped in 0.47s

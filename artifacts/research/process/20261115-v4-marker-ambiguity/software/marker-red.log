@@ -1,0 +1,115 @@
+FF.F.F.......                                                            [100%]
+=================================== FAILURES ===================================
+_ test_subpix_rejected_candidates_preserve_foreign_marker_ambiguity[marker_ids0] _
+
+marker_ids = (7, 0)
+
+    @pytest.mark.parametrize("marker_ids", [(7, 0), (0, 7)])
+    def test_subpix_rejected_candidates_preserve_foreign_marker_ambiguity(marker_ids):
+        current, gray = _subpix_rejected_scene(marker_ids)
+        parameters = cv2.aruco.DetectorParameters()
+        parameters.errorCorrectionRate = 0.0
+        parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+        dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        _, native_ids, rejected = cv2.aruco.ArucoDetector(dictionary, parameters).detectMarkers(gray)
+        assert native_ids is None and len(rejected) >= 2
+        result = api().detect_pose_marker(
+            current, api().PoseMarkerRegistration(7, 0.0525, "a" * 64), corner_refinement="SUBPIX"
+        )
+>       _assert_unknown_has_no_pose(result)
+
+tests/test_pose_marker_evidence.py:481: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+estimate = PoseMarkerEstimate(status='OBSERVED', reason='uncalibrated_single_frame_pose_estimate', observation_id='subpix-identit...ide_px=12.644139064498505, geometric_error_bound_m=None, angular_velocity_bound_rad_s=None, stability_status='UNKNOWN')
+
+    def _assert_unknown_has_no_pose(estimate):
+>       assert estimate.status == "UNKNOWN"
+E       AssertionError: assert 'OBSERVED' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED
+
+tests/test_pose_marker_evidence.py:462: AssertionError
+_ test_subpix_rejected_candidates_preserve_foreign_marker_ambiguity[marker_ids1] _
+
+marker_ids = (0, 7)
+
+    @pytest.mark.parametrize("marker_ids", [(7, 0), (0, 7)])
+    def test_subpix_rejected_candidates_preserve_foreign_marker_ambiguity(marker_ids):
+        current, gray = _subpix_rejected_scene(marker_ids)
+        parameters = cv2.aruco.DetectorParameters()
+        parameters.errorCorrectionRate = 0.0
+        parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+        dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        _, native_ids, rejected = cv2.aruco.ArucoDetector(dictionary, parameters).detectMarkers(gray)
+        assert native_ids is None and len(rejected) >= 2
+        result = api().detect_pose_marker(
+            current, api().PoseMarkerRegistration(7, 0.0525, "a" * 64), corner_refinement="SUBPIX"
+        )
+>       _assert_unknown_has_no_pose(result)
+
+tests/test_pose_marker_evidence.py:481: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+estimate = PoseMarkerEstimate(status='OBSERVED', reason='uncalibrated_single_frame_pose_estimate', observation_id='subpix-identit...ide_px=12.644139064498505, geometric_error_bound_m=None, angular_velocity_bound_rad_s=None, stability_status='UNKNOWN')
+
+    def _assert_unknown_has_no_pose(estimate):
+>       assert estimate.status == "UNKNOWN"
+E       AssertionError: assert 'OBSERVED' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED
+
+tests/test_pose_marker_evidence.py:462: AssertionError
+_ test_subpix_rejected_candidates_identity_controls[marker_ids1-UNKNOWN-observed_ids1] _
+
+marker_ids = (0,), status = 'UNKNOWN', observed_ids = (0,)
+
+    @pytest.mark.parametrize("marker_ids,status,observed_ids", [
+        ((7,), "OBSERVED", (7,)),
+        ((0,), "UNKNOWN", (0,)),
+        ((7, 7), "UNKNOWN", (7, 7)),
+    ])
+    def test_subpix_rejected_candidates_identity_controls(marker_ids, status, observed_ids):
+        current, _ = _subpix_rejected_scene(marker_ids)
+        result = api().detect_pose_marker(
+            current, api().PoseMarkerRegistration(7, 0.0525, "a" * 64), corner_refinement="SUBPIX"
+        )
+        assert result.status == status
+>       assert result.observed_marker_ids == observed_ids
+E       assert () == (0,)
+E         
+E         Right contains one more item: 0
+E         Use -v to get more diff
+
+tests/test_pose_marker_evidence.py:497: AssertionError
+___________ test_subpix_rejected_candidates_preserve_ordered_pose[0] ___________
+
+quarter_turns = 0
+
+    @pytest.mark.parametrize("quarter_turns", range(4))
+    def test_subpix_rejected_candidates_preserve_ordered_pose(quarter_turns):
+        current, _ = _subpix_rejected_scene((7,), quarter_turns=quarter_turns)
+        result = api().detect_pose_marker(
+            current, api().PoseMarkerRegistration(7, 0.0525, "a" * 64), corner_refinement="SUBPIX"
+        )
+        assert result.status == "OBSERVED"
+        expected_yaw = math.radians(5) + quarter_turns * math.pi / 2
+>       assert math.atan2(
+            math.sin(result.yaw_world_rad - expected_yaw),
+            math.cos(result.yaw_world_rad - expected_yaw),
+        ) == pytest.approx(0.0, abs=0.025)
+E       assert 0.06536547160602678 == 0.0 ± 0.025
+E         
+E         comparison failed
+E         Obtained: 0.06536547160602678
+E         Expected: 0.0 ± 0.025
+
+tests/test_pose_marker_evidence.py:510: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_pose_marker_evidence.py::test_subpix_rejected_candidates_preserve_foreign_marker_ambiguity[marker_ids0]
+FAILED tests/test_pose_marker_evidence.py::test_subpix_rejected_candidates_preserve_foreign_marker_ambiguity[marker_ids1]
+FAILED tests/test_pose_marker_evidence.py::test_subpix_rejected_candidates_identity_controls[marker_ids1-UNKNOWN-observed_ids1]
+FAILED tests/test_pose_marker_evidence.py::test_subpix_rejected_candidates_preserve_ordered_pose[0]
+4 failed, 9 passed, 20 deselected in 0.43s

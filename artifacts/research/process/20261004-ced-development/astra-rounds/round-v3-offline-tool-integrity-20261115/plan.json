@@ -1,0 +1,115 @@
+{
+  "planner_model": "gpt-6-astra",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "date": "2026-11-15",
+  "round": "round-v3-offline-tool-integrity-20261115",
+  "issue": "离线验收工具的四个完整性缺口：baseline未锚定；线程网络guard作用域不全；结束时未重验完整冻结源与新增入口；输出允许根缺失/audit-child绕过。",
+  "evidence": {
+    "independent_probe": "evidence/probe/astra_offline_integrity_probe_20261115.json",
+    "probe_command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src:/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python /tmp/astra_offline_integrity_probe_20261115.py > /tmp/astra_offline_integrity_probe_20261115.json",
+    "probe_exit": 0,
+    "probe_semantics": "两个独立负例被当前工具错误接受；脚本打印反例，未设计失败退出码，故exit0并非验收通过。无socket实例/真实网络。",
+    "network": "主线程synthetic socket.connect阻断，新thread未阻断，attempts只有1；根因ContextVar不传播新thread。",
+    "baseline": "保留archive digest但source_mapping裁为8的snapshot仍通过7041文件验证、_expected_sources与8模块import验证；真实snapshot SHA下方锚定。",
+    "after_source": "静态代码：finally只比较8个modules；pre仅写两个offline_entry_sources，不比较post且缺test文件；其余src/assets运行中变化漏检。",
+    "output": "静态代码new_output仅按调用者protected排除，缺批准根白名单；audit_child直接_write(output)，可在未允许位置创建文件。未写入任何受保护目标进行破坏性复现。"
+  },
+  "input_manifest": "inputs.json",
+  "baseline": {
+    "sha256": "4ee75e26c90dc6e6e503fea59cf04524f13ddd96238c90189480487d4bccaa8d",
+    "archive_sha256": "6fde448feedd3748a0943f28d01197dc66050bd65f4625767af8f3a97294061d",
+    "members": 594,
+    "repo_members": 591,
+    "external_members": 3,
+    "independent_verification": "本轮逐成员读取tar，594 exact set/sha/length通过；当前591仓库成员只pose有批准差异；3外部原件均SHA通过。"
+  },
+  "allowed_files": [
+    "src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py",
+    "scripts/run_v3_marker_offline_regression.py",
+    "tests/test_sol_molmo_offline_regression.py"
+  ],
+  "unchanged": "全部既有生产源码/控制器/physics/evaluator/SafetyShield/相机/阈值/冻结raw及原计划；仅新增离线3文件和本轮证据可变。",
+  "plan": [
+    {
+      "id": "I1",
+      "change": "固定并校验snapshot原始字节SHA，在JSON解析及使用路径/source_mapping前验证；避免_expected_sources/audit_child等重读未校验JSON。归档SHA、全部594不重复member路径/bytes/hash、完整591source+3external集合必须精确符合已锚定映射，不能只验数量或过滤src/assets。",
+      "red": [
+        "裁剪8成员snapshot与同archive digest必须拒绝",
+        "删1/重复1/同数量替换成员/改original_path或source_root/改sha/bytes/仅改archive字段均拒绝；不得把真实snapshot改写",
+        "archive缺失、重复、额外、非regular、路径穿越/链接拒绝"
+      ],
+      "green": "真实snapshot及594归档成员与591仓库成员准确通过；当前唯一已批准既有源码override是pose e6eb27d2b2c19481054c2b834d2ece29a53d747fff26c82d1dd6246ddf71ff40。测试或入口允许变动不能放宽baseline成员集合。"
+    },
+    {
+      "id": "I2",
+      "change": "用进程内线程共享的活跃guard登记替换ContextVar作为唯一启用条件。单个audit hook+锁保护active guards；事件在所有活跃guard各记一次并立刻抛错；嵌套退出/异常/并发子线程不能提前关闭外层。保留上下文API，不改变worker。",
+      "coverage": [
+        "socket.connect（包括connect_ex对应审计）、socket.sendto、socket.sendmsg（存在则覆盖）、socket.getaddrinfo、gethostbyname/gethostbyaddr等Python DNS审计、urllib.Request",
+        "审计白名单必须根据当前CPython实际事件确认；对于send/sendall等无审计网络出口，不得宣称覆盖，可在新增模块使用受同一active registry控制的最小socket方法包装，guard退出恢复，或显式限制并证明当前执行没有预建连接。优先完整覆盖已连接socket的send/sendall，不能把audit hook称OS级防火墙。",
+        "现有worker仅使用离线provider，禁止新进程/原生库网络；此Python guard不对恶意ctypes/原生SDK构成安全边界，不能宣称任意网络已验证。"
+      ],
+      "red": [
+        "主/新thread/guard前已启动thread synthetic sys.audit都必须阻断，旧实现newthread为NOT_BLOCKED",
+        "嵌套guard内外均记录；内层退出和抛异常后外层仍有效；所有guard退出后只用合成事件验证恢复，不做真实连接",
+        "UDP sendto/sendmsg、DNS/urllib合成审计事件均阻断且计数准确；预建socket方法的守卫测试不能实际发包"
+      ],
+      "green": "先合成事件和受控测试确认前置抛错；再仅精确命名socket.connect/connect_ex、UDP、DNS节点申请工具自动审批提升复跑（有PermissionError时）。guard先启用，任何实际connect/sendto/sendmsg/DNS系统调用之前抛OFFLINE_NETWORK_DENIED；不运行未受guard保护的真实负对照。"
+    },
+    {
+      "id": "I3",
+      "change": "建立一次完整source receipt：全部591仓库映射+3外部输入与归档证据（路径、长度、SHA）、全部3新入口（模块、CLI、测试）的pre字节，以及已加载关键模块真实路径。before与finally重新读同一完整集合并核对固定expected及before receipt。不要只重用8模块或只比success分支。",
+      "red": [
+        "tmp复制受测源集合，模拟执行期间更改shield/skill_robot/assets任一非8模块成员，必须发现",
+        "新模块/CLI/测试任一文件改变、删除、symlink替换必须失败",
+        "模拟异常提前退出仍完成post核验并记录original_error+integrity_error，不使某一覆盖另一个"
+      ],
+      "green": "unchanged全集合和3入口通过；official receipt冻结本次实际3新文件SHA，与实施报告一致。源码变化时component_success必须false、CLI非0、停止批次；不得只写source_bytes_unchanged_after=false而仍成功。既有production文件负例仅在/tmp独立夹具，不改真实源。"
+    },
+    {
+      "id": "I4",
+      "change": "统一目录/文件输出验证，所有CLI mode及直接入口(write/audit-child)在创建目录/文件/日志前先验证批准根。批准路径仅新隔离树PROCESS/offline-regression之下的新运行子目录或/tmp的新任务路径。resolve路径与已有symlink父目录，拒绝根自身、既有文件/运行目录、祖先覆盖/输入输出重叠；批准根不得由不可信snapshot.source_root决定。",
+      "protected": [
+        "原主工作树",
+        "原Gemini工作树",
+        "V3根和40case原件",
+        "新隔离树v3-baseline与所有astra-rounds/冻结计划",
+        "manifest.baseline、archive、audit-source输入（即使位于/tmp）",
+        "显式传入的其他冻结/输入目录"
+      ],
+      "red": [
+        "批准根外绝对/相对路径、..、symlink穿越、/tmp指向历史目录、输出为输入祖先/后代均拒绝，副作用为零",
+        "audit-child文件路径也不能绕过目录guard；verify/audit/case/batch/audit-child逐模式负例",
+        "现有文件/目录不可覆盖；不要通过删除后再写绕过"
+      ],
+      "green": "新隔离树offline-regression新子目录与/tmp独占新路径允许；audit-child可在已批准父运行目录创建不存在的child.json，但仍独占文件；子进程日志/中间archive提取都在批准临时输出中。共享guard在_write中校验路径，new_output负责目录独占，避免重复mkdir冲突。"
+    }
+  ],
+  "prerequisites": [
+    "只读输入SHA复核，父任务并行fault修复产生变更时先diff并追加实现receipt，不改本计划原字节",
+    "显式隔离树PYTHONPATH，PYTHONDONTWRITEBYTECODE=1，shared .venv；缓存/pytest basetemp在唯一/tmp",
+    "纯完整性负例用/tmp复制夹具；不跑真实模型/网络/硬件，不启动27仿真",
+    "真实socket节点必须精确命名与审批；禁止以批准整个套件代替单节点授权，禁止联网探测renderer",
+    "正式fault/27保持上一环境计划的严格RGB/query/calibration/fullrequest/roleversion2/sourcepin约束"
+  ],
+  "verification_order": [
+    "保存本轮四个原始失败/静态证明",
+    "I1/I3/I4/I2分别RED→最小修改→GREEN，先不含真实socket或仿真",
+    "运行新增unit suite及已有绑定/scene/配置负对照，Ruff；不因全项目超时扩大修改",
+    "必要真实socket精确节点审批，主/新thread/嵌套UDP/DNS全部阻断；单独报告合成与实际调用层证据",
+    "重跑上一fault三节点，必须到达真实PRE/POST/HARD拒绝；收集环境和完整pre/post receipt",
+    "独立review通过后才执行全27新闭环，first-case02只是开发小样；首个新问题停止、保留27分母"
+  ],
+  "acceptance": [
+    "4项完整性缺口都有可重现RED/GREEN和输入绑定",
+    "全部网络测试零系统连接/报文/外部DNS/模型load/inference；实际guard前置拦截非PermissionError代替",
+    "594/591集合无静默裁剪；全集合及3新文件结束后重新读哈希",
+    "所有写路径按批准输出根与保护输入校验，无历史/主树写入",
+    "不改变冻结请求或容差使通过；原40/589/27边界不变；全项目600s超时仍未完成",
+    "仅此3新增文件修改；新根因或范围扩张再次Astra"
+  ],
+  "assumptions": [
+    "未发现真实历史运行已发生外网调用；线程缺口是守卫覆盖缺陷",
+    "直接CLI输出漏洞目前为代码可达性证明，未向历史位置写入实测",
+    "本轮不声称已修复/测试通过"
+  ]
+}

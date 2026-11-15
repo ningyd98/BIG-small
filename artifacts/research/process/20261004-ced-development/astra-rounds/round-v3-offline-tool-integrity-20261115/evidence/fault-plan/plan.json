@@ -1,0 +1,138 @@
+{
+  "planner_model": "gpt-6-astra",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "date": "2026-11-15",
+  "round": "round-v3-offline-safety-boundary-environment-20261115",
+  "supersedes": null,
+  "extends": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-v3-offline-27-regression-20261115/plan.json",
+  "authorization": "用户已授权保全V3、marker修复、原27离线闭环；本轮仅计划。审批提升须通过工具实际审核，不授权联网/模型推理/硬件/公开push。会话强制Astra要求优先于工作树AGENTS放宽条款。",
+  "issue": "故障测试在冻结RGB绑定拒绝处提前退出，PRE/HARD仅检查零执行导致假通过；POST正确暴露调用缺失，另有未到达的frames字段断言错误。",
+  "original_failure": {
+    "log": "/tmp/bigsmall-v4-execution/offline-all-01.log",
+    "summary": "1 failed, 41 passed, 1 deselected in 14.21s",
+    "failing_node": "tests/test_sol_molmo_offline_regression.py::test_actual_worker_stops_at_injected_safety_boundary[POST]",
+    "assertion": "[] != ['PRE','EXECUTE','POST']",
+    "original_exact_argv": "未记录于原log；不把下述建议复跑命令冒充原命令",
+    "facts": [
+      {
+        "phase": "PRE",
+        "terminal_reason": "COMPONENT_INITIAL_PLANNING_REJECTED",
+        "planning_reason": "FROZEN_POINT_INPUT_MISMATCH",
+        "point_replays": 0,
+        "cloud_replays": 0,
+        "executed_actions": 0,
+        "safety_checks": [],
+        "rgb_sha256": "ba49d16b639b2281a83b8dfb79d876b817b5c0aa41b6ea2f65da5cc79b1ba7c0",
+        "depth_sha256": "078d726944f8f5bf4c9db8e3a01b4856eba93aa3e755169ba3edd82cd030b3f0",
+        "network_attempts": []
+      },
+      {
+        "phase": "POST",
+        "terminal_reason": "COMPONENT_INITIAL_PLANNING_REJECTED",
+        "planning_reason": "FROZEN_POINT_INPUT_MISMATCH",
+        "point_replays": 0,
+        "cloud_replays": 0,
+        "executed_actions": 0,
+        "safety_checks": [],
+        "rgb_sha256": "ba49d16b639b2281a83b8dfb79d876b817b5c0aa41b6ea2f65da5cc79b1ba7c0",
+        "depth_sha256": "078d726944f8f5bf4c9db8e3a01b4856eba93aa3e755169ba3edd82cd030b3f0",
+        "network_attempts": []
+      },
+      {
+        "phase": "HARD",
+        "terminal_reason": "COMPONENT_INITIAL_PLANNING_REJECTED",
+        "planning_reason": "FROZEN_POINT_INPUT_MISMATCH",
+        "point_replays": 0,
+        "cloud_replays": 0,
+        "executed_actions": 0,
+        "safety_checks": [],
+        "rgb_sha256": "ba49d16b639b2281a83b8dfb79d876b817b5c0aa41b6ea2f65da5cc79b1ba7c0",
+        "depth_sha256": "078d726944f8f5bf4c9db8e3a01b4856eba93aa3e755169ba3edd82cd030b3f0",
+        "network_attempts": []
+      }
+    ]
+  },
+  "root_cause_proven": [
+    "PRE/HARD断言只要求零执行，不能排除初始化/规划失败；无故障注入命中计数和精确terminal reason。",
+    "原生产episode使用marker_frames，当前POST测试引用frames；该错误被较早的空calls失败遮蔽。",
+    "三例当前RGB及depth与原V3及成功first-case-02不同；三例相互相同。"
+  ],
+  "hypotheses": [
+    "默认沙箱与审批提升运行的EGL设备/驱动/库可见性可能不同；尚无同进程GL_VENDOR/GL_RENDERER和库映射证据，不能断言NVIDIA因果。",
+    "pytest进程导入顺序或图形后端初始化环境也可能参与；单纯设置MUJOCO_GL文本或旧64测试通过不足以证明当前渲染匹配。"
+  ],
+  "independently_verified_success": {
+    "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261115-v4-marker-ambiguity/offline-regression/first-case-02",
+    "component_success": true,
+    "worker_status": "SUCCEEDED",
+    "executed_actions": 8,
+    "point_replays": 4,
+    "cloud_replays": 1,
+    "network_attempts": [],
+    "rgb_sha256": "9ab94dd324217955be622aee20d802a13b41247e76294bad975b2993950f2915",
+    "depth_sha256": "83ab1980a700e50381fbe5429e19ed31c4f5b15af3a649ac99043afc02320713",
+    "permission_mode": "require_escalated由父任务报告，原结果本身不证明权限来源"
+  },
+  "allowed_scope": {
+    "primary": [
+      "tests/test_sol_molmo_offline_regression.py"
+    ],
+    "optional_receipt_only": [
+      "src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py",
+      "scripts/run_v3_marker_offline_regression.py"
+    ],
+    "receipt_limits": "仅记录允许列表环境值、进程/依赖版本/来源和运行调用证明；不得新增renderer/context/切换设备、重采样、阈值/绑定行为。可在外部派生receipt记审批上下文；不能伪装进程已知沙箱模式。",
+    "unchanged": [
+      "FrozenPointProvider/FrozenCloudReplayAdapter全部严格比较",
+      "所有既有生产loop、SafetyShield、executor、controller、physics、evaluator、finger AST验证器",
+      "相机/MSAA/noise/seed、0.1mm/39mm标准、原计划与V3/frozen/raw"
+    ]
+  },
+  "implementation_steps": [
+    "重新验证本轮输入SHA及前轮配置/scene补充；如父任务并行改动三新文件，先限定diff确认只含已批准修复，记录新的receipt，不覆盖本轮快照。",
+    "仅加强故障测试：记录注入命中数与真实SafetyShield原始verdict；原始判定须allowed且不产生参数限制，再注入指定拒绝。HARD记录触发次数及物理步位置，然后抛出唯一INJECTED_HARD_STATE。保持原真实组件路径，禁止mock整段planner/backend/loop。",
+    "公共前置断言：真实两阶段规划成功、4次冻结point与1次完整cloud请求严格通过；model_loads/generation/cloud真实请求均0；network_attempts=[]；source receipt有效。所有用例必须worker FAILED、component_success=false、diagnostic_complete=false，不能把初始规划拒绝算安全测试通过。",
+    "PRE：调用顺序恰为PRE，无EXECUTE/POST；唯一PRE safety check拒绝，terminal_reason=SAFETY_SHIELD_PRE_REJECTED_OR_LIMITED；执行0、actions为空、注入恰1。",
+    "HARD：首次action前hard-state注入恰1且无PRE/EXECUTE/POST，terminal_reason=INJECTED_HARD_STATE，执行0/actions与safety_checks为空；规划和pre-00新帧已完成。",
+    "POST：PRE/EXECUTE/POST各1，原始真实PRE和POST均通过后注入POST拒绝；terminal_reason=SAFETY_SHIELD_POST_REJECTED_OR_LIMITED；8动作中只执行首动作(计数1)，同一contract和resolved step对象用于三处；首动作无diagnostic_settle_steps；使用marker_frames断言不存在post-00及后续pre动作/terminal-stability；正常finally after帧允许。",
+    "增补小型断言负对照：保存的三例early planning failure不得被边界验收接受；可用测试本地小helper验证此断言，不增加第二套执行器。",
+    "使用启动前显式source pin与MUJOCO_GL=egl的新进程运行三node；可针对这三node申请require_escalated。输出新目录、原失败不可覆盖。先确认严格冻结输入通过，再判断安全边界。若仍不匹配，保留失败停止受影响批次，收集受限环境receipt重新Astra；不得试改渲染/相机参数或放松hash。",
+    "三node通过且收到独立review后，原27通过相同实际匹配运行环境逐例新进程运行；每例仍独立验证4point/1cloud完整绑定，不由first-case或环境名字推定后续输入匹配。保持27分母和全部失败。"
+  ],
+  "prerequisites": {
+    "cwd": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall",
+    "python": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src:/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall",
+      "MUJOCO_GL": "egl",
+      "BIGSMALL_V3_REGRESSION_ROOT": "/home/ningyd/Documents/Codex/2026-11-14/x20-gpu-nvidia-smi-nvml-gpu/outputs/next-round-repair-40-20261115-v3"
+    },
+    "other": [
+      "headless MuJoCo/EGL、cv2.aruco及原共享venv版本",
+      "pycache/cache输出禁写历史目录；pytest -p no:cacheprovider，唯一/tmp basetemp",
+      "NetworkDenyGuard实际生效，零网络/真实推理；审批拒绝不得绕过",
+      "运行环境receipt仅白名单：MUJOCO_GL/PYOPENGL_PLATFORM/MUJOCO_EGL_DEVICE_ID/EGL_DEVICE_ID/LIBGL_ALWAYS_SOFTWARE；缺值原样记录，勿改变未指定设置；禁止倾倒全env/读取凭据",
+      "记录sys.executable/sys.path/module SHA/cwd/argv及numpy/OpenCV/MuJoCo/PyOpenGL版本；GL厂商信息仅可从已有活跃context只读获取，无法获取明确unknown，不能新建context扰动测试"
+    ]
+  },
+  "verification": {
+    "RED": "原失败快照证明三个均未到达；新增断言会拒绝旧三例，包含原来误pass的PRE/HARD。",
+    "GREEN": "三项集成测试分别到达指定真实边界，严格输入匹配、精确reason/calls/执行数量/contract identity和零真实推理网络满足。",
+    "negative_controls": [
+      "已有RGB/query/phase/calibration/raw/cloud请求微小变化拒绝测试继续通过，绝不删除/skip",
+      "early planning failure不能满足PRE/HARD成功断言",
+      "POST必须保留真实PRE→EXECUTE→POST身份一致性和无settle后续动作断言"
+    ],
+    "batch": "同匹配环境全27离线闭环；非新的真实Sol/Molmo成功率。任何新失败记录，禁止修改判据使通过。",
+    "full_project": "此前600s超时5个未命名F仍为未完成；旧64pass与本次41pass不能替代完整项目通过或冻结输入匹配"
+  },
+  "acceptance_boundaries": [
+    "PLAN_ONLY，不执行任何本轮测试/修复",
+    "生产行为及阈值不变，原始数据/失败/计划字节不变",
+    "独立冻结帧589审计结果与故障安全测试分开报告",
+    "环境原因尚未确证；提升成功仅证明该执行条件匹配，不独自证明NVIDIA是根因",
+    "出现新根因/范围扩大/新计划外失败则暂停受影响部分并再次Astra"
+  ],
+  "input_manifest": "inputs.json"
+}

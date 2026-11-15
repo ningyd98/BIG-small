@@ -1,0 +1,56 @@
+{
+  "planner_model": "gpt-6-astra",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "date": "2026-11-15",
+  "extends": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-v3-offline-point-phase-identity-20261115/plan.json",
+  "issue": "两项负例构造违反RGBDObservation的observation_id=frame_id领域不变量，错误发生在provider调用前，未验证phase守卫。",
+  "failure": {
+    "log": "/tmp/bigsmall-v4-execution/offline-pure-green-01.log",
+    "summary": "2 failed, 73 passed, 12 deselected in 0.72s",
+    "nodes": [
+      "test_point_post_cloud_requires_new_ids_and_later_capture[observation_id]",
+      "test_point_post_cloud_requires_new_ids_and_later_capture[frame_id]"
+    ],
+    "actual": "RGBDObservation.model_validate报observation_id must match frame_id；pytest期待PHASE文本不匹配。",
+    "original_exact_command": "原始log不含完整argv；不编造。",
+    "classification": "测试夹具域约束失败；非新增provider根因、非真实27失败。"
+  },
+  "input_manifest": "inputs.json",
+  "root_cause": "_new_observation先将两id同时设为新值，单字段update再只还原其中一个旧id，破坏模型约束。原计划的单字段负例不适于合法RGBDObservation。",
+  "allowed_scope": [
+    "tests/test_sol_molmo_offline_regression.py::test_point_post_cloud_requires_new_ids_and_later_capture",
+    "仅必要的同文件fixture组织"
+  ],
+  "do_not_modify": [
+    "FrozenPointProvider逐字段新身份检查",
+    "RGBDObservation/生产validator",
+    "原grounded planner/not_before",
+    "RGB/深度/mask/sim_time/相机/容差",
+    "历史数据与原计划"
+  ],
+  "steps": [
+    "保留两个原失败log及测试/provider/生产validator输入快照；复核并行已批准完整性/fault改动，不回滚它们。",
+    "将两个不可能单独保留旧id的参数例合并为ids例：同时传旧observation_id与旧frame_id，保持captured_at比before更晚，清空checksum后用model_validate重算。合法候选应两id相等且旧、checksum不同；RGB/depth/sim_time不变。",
+    "在pytest.raises之外先构造candidate，并断言领域合法与所需差异，以保证构造失败不再被误归provider。然后仅包围provider.point(candidate,red)，期待FROZEN_POINT_PHASE_REFRESH_REQUIRED，calls/records仍2。",
+    "captured_at相等参数例保留：两id合法新且一致、原capture时间、重算checksum；候选构造成功，provider同样拒绝；可保留原合法fresh正例证明正常4调用通过。",
+    "不使用model_copy/model_construct绕过模型，不通过放宽异常regex接受ValidationError；合并后的2例取代3例，记录总数变化来自两个非法夹具合并，不是skip/xfailed掩盖。"
+  ],
+  "validation": {
+    "RED": "原log证明两个负例未达到provider；不需重复制造完整73项失败。",
+    "GREEN": "聚焦test_point_post_cloud_requires_new_ids_and_later_capture两例都成功构造合法候选，然后provider精准拒绝且消费数/records不变。",
+    "regression": "全部point阶段与严格输入单元及offline纯软件集合通过；原4次合法阶段正例、重复before/同阶段换obs拒绝仍通过；Ruff。",
+    "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:. .venv/bin/python -m pytest -p no:cacheprovider --basetemp=/tmp/bigsmall-phase-valid-fixture-green-01 tests/test_sol_molmo_offline_regression.py -k point_post_cloud_requires_new_ids_and_later_capture -q",
+    "cwd": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall"
+  },
+  "prerequisites": [
+    "共享venv，但PYTHONPATH源固定隔离树，禁止字节码/cache写入历史",
+    "新/tmp输出，测试不需EGL/网络/模型/仿真；无提权必要",
+    "实施前复核SHA及已授权并行变更，再生成新的完整3入口receipt"
+  ],
+  "acceptance": [
+    "只测试夹具修改，provider与生产validator本轮前后SHA相同",
+    "候选构造不置于raises内；明确命中provider错误",
+    "原计划、失败证据保留；未执行正式27，不冒充真实模型成功率",
+    "发生新问题暂停相关部分再次Astra"
+  ]
+}

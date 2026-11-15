@@ -1,0 +1,119 @@
+.F.                                                                      [100%]
+=================================== FAILURES ===================================
+__________ test_actual_worker_stops_at_injected_safety_boundary[POST] __________
+
+tmp_path = PosixPath('/tmp/bigsmall-offline-strict-fault-green-01/test_actual_worker_stops_at_in1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72208b5b3650>
+phase = 'POST'
+
+    @pytest.mark.parametrize("phase", ["PRE", "POST", "HARD"])
+    def test_actual_worker_stops_at_injected_safety_boundary(tmp_path, monkeypatch, phase):
+        root = os.environ.get("BIGSMALL_V3_REGRESSION_ROOT")
+        if not root:
+            pytest.skip("explicit read-only V3 fixture required")
+        from cloud_edge_robot_arm.contracts import SafetyDecision
+        from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor
+        from cloud_edge_robot_arm.edge.safety.context_builder import SafetyContextBuilder
+        from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
+        from cloud_edge_robot_arm.research import sol_molmo_components as components
+    
+        calls = []
+        hard_hits = []
+        contexts = {}
+        original_build = SafetyContextBuilder.build
+    
+        def build(self, **kwargs):
+            context = original_build(self, **kwargs)
+            contexts[id(context)] = (kwargs["contract"], kwargs["step"])
+            return context
+    
+        monkeypatch.setattr(SafetyContextBuilder, "build", build)
+        original_execute = SkillExecutor.execute_attempt
+    
+        def execute(self, **kwargs):
+            calls.append(("EXECUTE", kwargs["contract"], kwargs["step"]))
+            return original_execute(self, **kwargs)
+    
+        monkeypatch.setattr(SkillExecutor, "execute_attempt", execute)
+        for method, label in (("pre_check", "PRE"), ("post_check", "POST")):
+            original = getattr(SafetyShield, method)
+    
+            def check(self, context, original=original, label=label):
+                verdict = original(self, context)
+                assert verdict.allowed
+                calls.append((label, *contexts[id(context)]))
+                return (
+                    replace(verdict, allowed=False, decision=SafetyDecision.REJECT)
+                    if phase == label
+                    else verdict
+                )
+    
+            monkeypatch.setattr(SafetyShield, method, check)
+        if phase == "HARD":
+    
+            def hard(backend, robot):
+                hard_hits.append(backend.total_physics_steps)
+                raise components.ComponentStopped("INJECTED_HARD_STATE")
+    
+            monkeypatch.setattr(components, "check_component_hard_state", hard)
+        manifest = load_v3_manifest(
+            Path(root),
+            Path(__file__).resolve().parents[1]
+            / "artifacts/research/process/20261115-v4-marker-ambiguity/v3-baseline/snapshot.json",
+        )
+        result = run_frozen_component_case("fixed-042001", manifest, tmp_path / "episode")
+>       _assert_reached_safety_boundary(result, phase, calls, hard_hits)
+
+tests/test_sol_molmo_offline_regression.py:436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+result = {'case': 'fixed-042001', 'cloud_replays': 1, 'cloud_request_reservations': 0, 'cloud_requests': 0, ...}
+phase = 'POST'
+calls = [('PRE', TaskContract(task_id='b0189765ecfb45409cc8c12694dfcd8c', plan_version=1, command_seq=1, timestamp=datetime.da...leration': 0.5}, expected_duration_ms=2000, timeout_ms=10000, retry_limit=0, preconditions=[], success_conditions=[]))]
+hard_hits = []
+
+    def _assert_reached_safety_boundary(result, phase, calls, hard_hits):
+        assert result["component_success"] is False
+        assert result["worker_status"] == "FAILED"
+        assert result["point_replays"] == 4 and result["cloud_replays"] == 1
+        assert result["model_loads_started"] == result["generation_calls_started"] == 0
+        assert result["generation_calls_completed"] == result["cloud_requests"] == 0
+        assert result["network_attempts"] == []
+        episode = result["outcome"]
+        assert episode["planning_passed"] is True
+        assert episode["diagnostic_complete"] is False
+        expected = {
+            "PRE": "SAFETY_SHIELD_PRE_REJECTED_OR_LIMITED",
+            "POST": "SAFETY_SHIELD_POST_REJECTED_OR_LIMITED",
+            "HARD": "INJECTED_HARD_STATE",
+        }
+        assert result["terminal_reason"] == episode["terminal_reason"] == expected[phase]
+        labels = [item["label"] for item in episode["marker_frames"]]
+        assert "pre-00-move_above" in labels
+        assert not any(
+            label.startswith(("post-00", "pre-01")) or label == "terminal-stability" for label in labels
+        )
+        if phase == "PRE":
+            assert [item[0] for item in calls] == ["PRE"]
+            assert len(episode["safety_checks"]) == 1
+            assert episode["safety_checks"][0]["verdict"]["allowed"] is False
+            assert episode["actions"] == []
+            assert episode["executed_actions"] == 0
+            assert hard_hits == []
+        elif phase == "HARD":
+            assert len(hard_hits) == 1
+            assert calls == episode["safety_checks"] == episode["actions"] == []
+            assert episode["executed_actions"] == 0
+        else:
+            assert hard_hits == []
+>           assert [item[0] for item in calls] == ["PRE", "EXECUTE", "POST"]
+E           AssertionError: assert ['PRE', 'EXEC...'PRE', 'POST'] == ['PRE', 'EXECUTE', 'POST']
+E             
+E             At index 2 diff: 'PRE' != 'POST'
+E             Left contains one more item: 'POST'
+E             Use -v to get more diff
+
+tests/test_sol_molmo_offline_regression.py:473: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sol_molmo_offline_regression.py::test_actual_worker_stops_at_injected_safety_boundary[POST]
+1 failed, 2 passed in 13.47s

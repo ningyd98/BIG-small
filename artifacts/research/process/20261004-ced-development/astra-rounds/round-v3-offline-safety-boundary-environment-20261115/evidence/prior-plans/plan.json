@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "round_id": "round-v3-offline-27-regression-20261115",
+  "planner_model": "gpt-6-astra",
+  "created_at_utc": "2026-11-15T03:56:06.306841+00:00",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "authorization": {
+    "user": "用户“开始”授权阶段1–3：保全V3、修复标记歧义、原27成功离线回归",
+    "implementation_authorized_for_parent": true,
+    "planner_task": "plan only; no source/test/script edits",
+    "not_authorized": [
+      "public push",
+      "new paid/model inference",
+      "network model calls",
+      "hardware dispatch"
+    ]
+  },
+  "source_root": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall",
+  "planning_time_head": "57c4dc0d855f5410fcf497edf47b43cfd24ad74b",
+  "v3_base_commit": "5e68e2f9f1ed7d865f483f41534dec9404c83394",
+  "v3_root": "/home/ningyd/Documents/Codex/2026-11-14/x20-gpu-nvidia-smi-nvml-gpu/outputs/next-round-repair-40-20261115-v3",
+  "input_bindings": [
+    "inputs.json",
+    "case-inputs.json",
+    "frame-inputs.json",
+    "model-record-inputs.json",
+    "episode-manifest-bindings.json"
+  ],
+  "parent_owned_authorized_changing_inputs": [
+    "src/cloud_edge_robot_arm/vision/pose_markers.py",
+    "tests/test_pose_marker_evidence.py"
+  ],
+  "facts": {
+    "v3_cases": 40,
+    "v3_component_success": 27,
+    "success_groups": {
+      "fixed": 10,
+      "development": 9,
+      "held-out": 8
+    },
+    "frozen_rgbd_frames": 589,
+    "model_raw_files_bound_and_verified": 1478,
+    "frame_files_bound_and_verified": 2945,
+    "frame_storage": "each case/before, case/after, case/component/frames/*; raw is per case, not a batch-root raw directory",
+    "known_expected_unknown_example": "fixed-042001 post-06-release and pre-07-retreat are already UNKNOWN in successful V3",
+    "original_27_cases": [
+      "fixed-042001",
+      "fixed-042002",
+      "fixed-042003",
+      "fixed-042004",
+      "fixed-042005",
+      "fixed-042006",
+      "fixed-042007",
+      "fixed-042008",
+      "fixed-042009",
+      "fixed-042010",
+      "development-043001",
+      "development-043002",
+      "development-043005",
+      "development-043006",
+      "development-043007",
+      "development-043010",
+      "development-043013",
+      "development-043014",
+      "development-043015",
+      "held-out-044001",
+      "held-out-044002",
+      "held-out-044003",
+      "held-out-044005",
+      "held-out-044006",
+      "held-out-044010",
+      "held-out-044013",
+      "held-out-044015"
+    ],
+    "execution_gap": "scripts/verify_next_round_repairs.py::_simulate_episode directly executes SkillExecutor and lacks actual component SafetyShield pre/post and job lifecycle; cannot substantiate phase3 acceptance",
+    "real_execution_path": "run_component_episode owns per-frame decoding, _ground_component, resolved_step, exact same action_contract for SafetyShield and executor, hard-state on every physics step, settle/terminal capture, independent physical evaluation",
+    "guard_dependency": "verify_finger_limit_fix.py::_verify_guard_ast permits only the finger loop and two existing helpers, and rejects a new shared runtime function. Keep it unchanged."
+  },
+  "failure_baseline": {
+    "marker_issue": "Earlier approved round reproduced ID7+ID0=>OBSERVED with exit1; parent phase2 fixes it. Not reimplemented here.",
+    "stage3_status": "No current stage3 runner/test execution exists; 27 new simulation outcomes unmeasured. Existing V3 original outcomes are 27 success / 13 failure.",
+    "original_failure_evidence": "Previous marker round original-evidence/repro.stderr and marker-ambiguity-evidence.json; copied prior plan binds these.",
+    "old_harness_limitation": "Code-inspected missing SafetyShield, not a newly run failed 27-case experiment.",
+    "parent_full_verification": {
+      "evidence_files": 7041,
+      "source_files": 594,
+      "historical_frozen_files": 11388,
+      "physical_rescores": 40,
+      "provenance": "Parent reported full verifier PASS; planner did not rerun this full verifier."
+    }
+  },
+  "architecture": {
+    "recommendation": "Use actual MolmoWorkerPlanner + exact MolmoGroundedPlannerAdapter + make_worker_binding + run_worker_episode. Inject only hash-bound frozen PointProvider and RGBDPlannerAdapter subclass overriding _post. Keep entire existing production execution and validator files unchanged.",
+    "point_boundary": "FrozenPointProvider.point replays four ordered archived responses only after exact raw RGB/query/phase binding; returns BoundPointResult bound to new observation; separate replay counter, zero true generations/loads.",
+    "cloud_boundary": "FrozenCloudReplayAdapter(RGBDPlannerAdapter)._post validates route/model and exact full parsed JSON request against original request; returns deep copied frozen response; never calls super._post, raw network transport, model service, or CostLedger.record_request. Max one replay.",
+    "actual_path": [
+      "real initial and owned-refresh PlanningPipeline",
+      "new RGBD and deterministic grounding",
+      "new make_worker_binding from actual current source hashes",
+      "real SQLite job/attempt/lease/heartbeat via run_worker_episode",
+      "original run_component_episode",
+      "original per-frame decode / _ground_component",
+      "original SafetyShield PRE/POST and same action_contract",
+      "original SkillExecutor + hard-state",
+      "original capture count, RNG consumption, settle, evaluator"
+    ],
+    "comparison": {
+      "extracted_core": "Rejected for this round: mechanically moves ~400 lines, triggers protected runtime AST, needs extra guard-equivalence proof and loses worker-level coverage unless more wiring. No validator whitelist expansion authorized.",
+      "frozen_boundaries": "Selected: exact public protocol injection already supported for points; cloud subclass allowed by current exact-type guards (only grounded/planner exact). No second executor or manual contract regeneration."
+    }
+  },
+  "allowed_phase3_changes": [
+    "src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py",
+    "scripts/run_v3_marker_offline_regression.py",
+    "tests/test_sol_molmo_offline_regression.py"
+  ],
+  "separately_approved_phase2_changes": [
+    "src/cloud_edge_robot_arm/vision/pose_markers.py",
+    "tests/test_pose_marker_evidence.py"
+  ],
+  "forbidden_changes": [
+    "V3 original tree or raw bytes",
+    "Gemini original worktree",
+    "controller/physics/backend/evaluator",
+    "0.1mm finger limit tolerance or 39mm open target",
+    "camera/extrinsics/calibration/model assets",
+    "vision geometry/association thresholds",
+    "SafetyShield rules/TTL/resolved step semantics",
+    "live admission relaxation",
+    "model selection/real model run",
+    "old verifier rewritten as closed-loop evidence",
+    "sol_molmo_components.py extraction or behavioral edit",
+    "verify_finger_limit_fix.py whitelist/baseline relaxation",
+    "existing planner/pipeline/admission/role/worker source changes",
+    "manual contract reissue bypassing real PlanningPipeline"
+  ],
+  "new_interfaces": {
+    "FrozenPointProvider": "point(observation:RGBDObservation, phrase:str)->BoundPointResult; four source-bound calls; replay_calls incremented; model_loads_started/generation_calls_started/generation_calls_completed all0",
+    "FrozenCloudReplayAdapter": "subclass RGBDPlannerAdapter; _post(path:str,body:dict[str,Any])->dict[str,Any]; one exact full-body/route match; frozen response; no superclass I/O; replay_calls=1 at most; genuine CostLedger remains empty",
+    "build_frozen_worker": "(case, manifest, output:Path)->tuple[MolmoWorkerPlanner,RoleRuntimeBinding,FrozenPointProvider,FrozenCloudReplayAdapter]; build actual types and current source binding, archive replay provenance",
+    "load_v3_manifest": "(v3_root:Path,baseline_snapshot:Path)->immutable cases/frames/model inputs; reject all hash/path mismatches",
+    "audit_frozen_frames": "(manifest,output:Path)->dict; exactly589 frames/40 cases with phase/state-aware grounding; unavailable inputs explicitly recorded",
+    "run_frozen_component_case": "(case_id:str,manifest,output:Path)->dict; exact27 membership, real run_worker_episode; no direct executor calls",
+    "run_v3_marker_offline_regression.py": "--v3-root PATH --baseline-snapshot PATH --output PATH --phase frames|closed-loop|all [--case CASE smoke only]; fresh case processes, no overwrite"
+  },
+  "acceptance": {
+    "coverage": "40 cases /589 immutable frames audited; all27 original successful case IDs each attempted once in distinct fresh processes, 10/9/8 split retained",
+    "expected_success": "All27 remain component-complete AND independent physical-success under identical criteria; any less is reported as a regression/non-comparable failure, never pass or denominator reduction",
+    "safety": "Actual original worker/lease/attempt/heartbeat and runtime path;8 actions imply16 real PRE/POST checks, current RGBD, same resolved action_contract, hard-state on every observed physics step; frozen adapters affect only model I/O.",
+    "integrity": "all V3/historical/source baselines unchanged, new source delta limited to approved lists",
+    "no_model_calls": "0 true model loads/generations/cloud transmissions/network dispatch; new replay_calls separately4 points+1 cloud per passing case; original raw token usage explicitly historical; no counter deletion/forgery.",
+    "reporting": "software-only frozen-model-output MuJoCo regression; no new Sol/Molmo end-to-end rate, no hardware/formal acceptance, no new held-out generalization"
+  },
+  "pending_measurements": [
+    "headless EGL rendering works under actual executor permissions",
+    "fresh initialization capture sequence matches frozen model-input RGB; depth hashes compared without relaxing geometry",
+    "unchanged production integration plus frozen-adapter/worker tests",
+    "589-frame phase-aware audit",
+    "27 new closed loops and independent physical scores"
+  ],
+  "preimplementation_revalidation": [
+    "Pin actual isolated checkout via absolute PYTHONPATH and verify imported module __file__/SHA before any audit or run; shared editable environment is not authoritative.",
+    "Check non-phase2 source hashes against inputs.json; reconcile current authorized HEAD rather than forcing old base commit",
+    "Bind final approved phase2 SHA and test evidence in a new implementation receipt without rewriting this plan",
+    "Verify archive/snapshot, all case manifests and selected model/frame inputs; compare original V3 originals unchanged",
+    "Verify writable isolated worktree/output ownership and headless dependency availability before touching code",
+    "Any new root cause, unplanned failure or scope expansion requires next Astra round; preserve all failure logs and continue only independent unaffected work",
+    "Verify exact components.py and verify_finger_limit_fix.py hashes unchanged; run original guard verifier without expanding any allowlist."
+  ],
+  "future_delivery": "Local explicit-path commits if authorized by existing project policy; no push in this authorization. Keep full raw/caches/db/source archive local; summaries are not complete remote reproduction package.",
+  "revision": "FINAL_NATIVE_WORKER_FROZEN_BOUNDARIES_2",
+  "supersedes": "superseded-shared-core-draft/; retained as unimplemented draft, no longer authorized design",
+  "source_pinning": {
+    "problem": "Shared .venv editable installation resolves original project unless explicit source pinning. Parent transient oracle probe imported wrong package; corrected PYTHONPATH probe succeeded. No production fix required.",
+    "required_env": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=<absolute-isolated-src>:<absolute-isolated-root>",
+    "runner_requirement": "Resolve checkout from script __file__, put its src and root at the front of sys.path before package imports, require caller --source-root if used equals it, and assert imported critical modules __file__.resolve() are under exact selected checkout and SHA256 equals run receipt. Child subprocesses inherit explicit absolute PYTHONPATH; python executable and cwd are recorded.",
+    "critical_modules": [
+      "vision.pose_markers",
+      "research.sol_molmo_components",
+      "research.sol_molmo_single_episode",
+      "vision.grounded_planner",
+      "vision.molmo_worker",
+      "vision.execution",
+      "simulation.mujoco.backend",
+      "simulation.mujoco.episode_evaluator"
+    ],
+    "wrong_source_action": "SOURCE_IMPORT_MISMATCH before reading replay outputs or starting backend; fail closed, never count as regression test execution."
+  },
+  "parent_phase2_latest_observation": "parent-phase2-input-receipt.json"
+}
