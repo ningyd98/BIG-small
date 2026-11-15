@@ -1,3 +1,4 @@
+// RGB-D界面回归：沿用本地服务配置，并用不可用模型端点验证受限降级。
 import { defineConfig } from "@playwright/test";
 import base from "./playwright.config";
 

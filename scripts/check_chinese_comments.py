@@ -86,6 +86,8 @@ DEFAULT_AUDIT_PATHS = [
     "dashboard/tests",
     "dashboard/index.html",
     "dashboard/playwright.config.ts",
+    "dashboard/playwright.research.config.ts",
+    "dashboard/playwright.rgbd.config.ts",
     "dashboard/vite.config.ts",
     "dashboard/eslint.config.js",
     "dashboard/package.json",
@@ -107,6 +109,7 @@ DEFAULT_AUDIT_PATHS = [
     "simulation",
     "thesis",
     "tests",
+    "tools",
     "ros2_ws/src",
 ]
 

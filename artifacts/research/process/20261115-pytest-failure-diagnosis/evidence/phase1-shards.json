@@ -1,0 +1,184 @@
+{
+  "scope": "FIRST_CORRECTED_SOURCE_SHARDS_PARTIAL_WITH_REAL_FAILURES_NOT_FULL_PASS",
+  "reason_for_interrupt": "Established test-owned dispatcher leak: T2 isolated passes, API predecessor+T2 fails calls160 instead of1; old race injections violate unchanged root-writer guard",
+  "parts": [
+    {
+      "shard": 0,
+      "exit_code": 2,
+      "expected_nodes": 1738,
+      "collected_nodes": 1738,
+      "counts": {
+        "passed": 582,
+        "skipped": 5,
+        "unfinished": 1151
+      },
+      "source_postcheck_errors": [],
+      "elapsed_s": 2808.637818336487
+    },
+    {
+      "shard": 1,
+      "exit_code": 2,
+      "expected_nodes": 1736,
+      "collected_nodes": 1736,
+      "counts": {
+        "passed": 646,
+        "skipped": 6,
+        "unfinished": 1084
+      },
+      "source_postcheck_errors": [],
+      "elapsed_s": 2808.571343898773
+    },
+    {
+      "shard": 2,
+      "exit_code": 2,
+      "expected_nodes": 1739,
+      "collected_nodes": 1739,
+      "counts": {
+        "passed": 583,
+        "skipped": 5,
+        "unfinished": 1151
+      },
+      "source_postcheck_errors": [],
+      "elapsed_s": 2857.5444042682648
+    },
+    {
+      "shard": 3,
+      "exit_code": 1,
+      "expected_nodes": 1737,
+      "collected_nodes": 1737,
+      "counts": {
+        "passed": 1723,
+        "skipped": 11,
+        "failed": 3
+      },
+      "source_postcheck_errors": [],
+      "elapsed_s": 2267.182268857956
+    }
+  ],
+  "totals": {
+    "passed": 3534,
+    "skipped": 27,
+    "unfinished": 3386,
+    "failed": 3
+  },
+  "failures": [
+    {
+      "nodeid": "tests/test_rgbd_lease_handoff.py::test_expiry_scan_cannot_interrupt_a_replacement_lease",
+      "phase": "call",
+      "detail_prefix": "tests/test_rgbd_lease_handoff.py:478: in test_expiry_scan_cannot_interrupt_a_replacement_lease\n    assert repo.expire_leases() == []\n           ^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded\n    return cast(R, repository._writer_call(function, args, kwargs))\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2071: in _writer_call\n    return self._dispatch_writer(function, args, kwargs, job_id)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2105: in _dispatch_writer\n    value = function(*args, **kwargs)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:986: in expire_leases\n    updated = self.update_status_cas(\ntests/test_rgbd_lease_handoff.py:474: in race\n    replacement.append(_handoff(repo, job, worker, tmp_path))\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntests/test_rgbd_lease_handoff.py:17: in _handoff\n    repo.update_status_cas(\ntests/test_rgbd_lease_handoff.py:475: in race\n    return original_cas(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded\n    return cast(R, repository._writer_call(function, args, kwargs))\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2043: in _writer_call\n    raise OperationalLeaseError(\nE   cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: nested public mutation is not a registered same-job subordinate"
+    },
+    {
+      "nodeid": "tests/test_rgbd_lease_handoff.py::test_stale_retry_snapshot_cannot_requeue_new_owner",
+      "phase": "call",
+      "detail_prefix": "tests/test_rgbd_lease_handoff.py:578: in test_stale_retry_snapshot_cannot_requeue_new_owner\n    repo.retry_job(job.job_id)\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded\n    return cast(R, repository._writer_call(function, args, kwargs))\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2071: in _writer_call\n    return self._dispatch_writer(function, args, kwargs, job_id)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2105: in _dispatch_writer\n    value = function(*args, **kwargs)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:1354: in retry_job\n    return self._retry_job_unlocked(job_id)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:1358: in _retry_job_unlocked\n    job = self.get_job(job_id)\n          ^^^^^^^^^^^^^^^^^^^^\ntests/test_rgbd_lease_handoff.py:573: in race\n    _handoff(repo, job, worker, tmp_path)\ntests/test_rgbd_lease_handoff.py:29: in _handoff\n    repo.update_status_cas(\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:106: in guarded\n    return cast(R, repository._writer_call(function, args, kwargs))\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:2043: in _writer_call\n    raise OperationalLeaseError(\nE   cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: nested public mutation is not a registered same-job subordinate"
+    },
+    {
+      "nodeid": "tests/test_t2_session_initialization.py::test_real_session_constructor_completion",
+      "phase": "call",
+      "detail_prefix": "tests/test_t2_session_initialization.py:72: in test_real_session_constructor_completion\n    assert len(calls) == 1 and calls[0][\"attempted\"] is True and calls[0][\"entered\"] is True\nE   AssertionError: assert (527 == 1)\nE    +  where 527 = len([{'poll_id': 1, 'worker_resource_id': 133178312645504, 'attempted': True, 'entered': False, 'returned_normally': True, 'return_value': False, 'exception': None, 'start_sequence': 1, 'entry_sequence': None, 'end_sequence': 4, 'thread_id': None, 'native_thread_id': None}, {'poll_id': 2, 'worker_resource_id': 133178473387824, 'attempted': True, 'entered': False, 'returned_normally': True, 'return_value': False, 'exception': None, 'start_sequence': 2, 'entry_sequence': None, 'end_sequence': 6, 'thread_id': None, 'native_thread_id': None}, {'poll_id': 3, 'worker_resource_id': 133178446825616, 'attempted': True, 'entered': False, 'returned_normally': True, 'return_value': False, 'exception': None, 'start_sequence': 3, 'entry_sequence': None, 'end_sequence': 8, 'thread_id': None, 'native_thread_id': None}, {'poll_id': 4, 'worker_resource_id': 133178133707856, 'attempted': True, 'entered': False, 'returned_normally': True, 'return_value': False, 'exception': None, 'start_sequence': 5, 'entry_sequence': None, 'end_sequence': 7, 'thread_id': None, 'native_thread_id': None}, {'poll_id': 5, 'worker_resource_id': 133178128225328, 'attempted': True, 'entered': False, 'returned_normally': True, 'return_value': False, 'exception': None, 'start_sequence': 9, 'entry_sequence': None, 'end_sequence': 14, 'thread_id': None, 'native_thread_id': None}, {'poll_id': 6, 'worker_resource_id': 133178459259344, 'attempted': True, 'entered': False, 'returned_normally': True, 'return_value': False, 'exception': None, 'start_sequence': 10, 'entry_sequence': None, 'end_sequence': 12, 'thread_id': None, 'native_thread_id': None}, {'poll_id': 7, 'worker_resource_id': 133178446825904, 'attempted': True, 'entered': False, 'returned_normally': True, 'return_value': False, 'exception': None, 'start_sequence': 11, 'entry_sequence': None, 'end_sequence': 16, 'thread_id': None, 'native_thread_id': None}, {'poll_id': 8, 'worker_resource_id': 133178459260832, 'attemp"
+    }
+  ],
+  "raw_files": [
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-0.receipt.json",
+      "bytes": 852991,
+      "sha256": "5b594d9d9b85277a6b18329f3fd050461b6e502da4cf8ce00e3001dffdbd9293"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-0.receipt.events.jsonl",
+      "bytes": 376376,
+      "sha256": "9e33dd2f3a764324876efe8695915c7517f96fef1ac84a08d91140eac498528b"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-0.xml",
+      "bytes": 97677,
+      "sha256": "16622530b27dd899fe4b79a11b3af624d726b1201d892fa2dddb0f7ce7b9d29e"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-0.log",
+      "bytes": 83566,
+      "sha256": "d35605ef813f17b382642d910a30638d3a180e0f6f4104bbb2e3edec142e0260"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-0.status.json",
+      "bytes": 53,
+      "sha256": "8fa37490fa3b019770b7a5b55435dc0ef6a85bd8572a142742af997fa6ba9481"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-1.receipt.json",
+      "bytes": 854526,
+      "sha256": "e425b3a580e010b028c23b94c5bb6872f8c978b3de6c10dc14cc758371634620"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-1.receipt.events.jsonl",
+      "bytes": 387402,
+      "sha256": "f4be98c426df7be012b69363bc3fd418d2790182e124dccdd4621b079da48b0f"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-1.xml",
+      "bytes": 98445,
+      "sha256": "8dbf2aabdc1ea5eb85ceca102141f96668590e9e211baa921ad603bc8f016ed6"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-1.log",
+      "bytes": 83202,
+      "sha256": "cdf6e27df9901dc2b002022027eec2a52fd57f23f45d02023f8902aebade1982"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-1.status.json",
+      "bytes": 53,
+      "sha256": "36afa178ca477ab9f37a3708038538ded2adeb442e27d338e92255af79e4cbb9"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-2.receipt.json",
+      "bytes": 887672,
+      "sha256": "c86c525ce2bd36e82012a73ed290c6db673ea78b41d408f057379abef9c23520"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-2.receipt.events.jsonl",
+      "bytes": 397243,
+      "sha256": "70add2f9eb859acfde590b1b28a52626cc2ee9dae5e6e08a6407c4519591db20"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-2.xml",
+      "bytes": 104685,
+      "sha256": "a8f05b8bf511feedf722addf1edcd85479d51d560fe5da5dce6dc268f68b89c9"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-2.log",
+      "bytes": 90732,
+      "sha256": "014fef53b32964dce47355aed4be529670880f905c40a5ac95216865f56daff4"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-2.status.json",
+      "bytes": 53,
+      "sha256": "f1aa6649f636c27673d22be024b4d4cb3d5cf9aacfb44b9bca8d41f960aa3e24"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-3.receipt.json",
+      "bytes": 1752464,
+      "sha256": "2fda878c6f4c0871e467c9c34da8515ea8bdb34040cf960d679dc57b21bb40db"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-3.receipt.events.jsonl",
+      "bytes": 1175416,
+      "sha256": "a39cfe2a7179a9b0938bc859e8a8d49ab890c856a570cad17fb182a66c0b60ce"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-3.xml",
+      "bytes": 552514,
+      "sha256": "7b766b5b13d24045720c86d8a3a4bd3c4f1e2575f2c9eed642bc3534ba5f7bcc"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-3.log",
+      "bytes": 507545,
+      "sha256": "4b9c113c5881bdcfb47a560757b080ed068ea934ce1ad3564a6edcfe326dbe3e"
+    },
+    {
+      "path": "artifacts/research/process/20261115-pytest-failure-diagnosis/raw-local/phase1-shard-3.status.json",
+      "bytes": 53,
+      "sha256": "a459ed8b03f720da72e323dc776ccc9d492e94e48921ba963e56b2c78c9f3edb"
+    }
+  ],
+  "all_1059_source_postchecks_clean": true
+}

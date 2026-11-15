@@ -59,6 +59,17 @@ def fake_hf(monkeypatch, body=b"rgbd01", *, fail_first=False):
     return calls
 
 
+def _install_http_mock(monkeypatch, serve):
+    """保留客户端的类身份，使第三方首次导入的运行时类型注解仍然有效。"""
+    original_client = httpx.Client
+
+    class MockClient(original_client):
+        def __init__(self, **kwargs):
+            super().__init__(transport=httpx.MockTransport(serve), **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", MockClient)
+
+
 def test_plan_blocks_download_budget_before_network(tmp_path, monkeypatch):
     mod = transfer()
     calls = fake_hf(monkeypatch)
@@ -287,7 +298,6 @@ def test_ongoing_disk_reserve_blocks_http_body_write(tmp_path, monkeypatch):
 
 def test_hf_persistent_transport_pins_revision_and_records_actual_bytes(tmp_path, monkeypatch):
     mod = transfer()
-    original_client = httpx.Client
     requests = []
 
     def serve(request):
@@ -295,9 +305,7 @@ def test_hf_persistent_transport_pins_revision_and_records_actual_bytes(tmp_path
         assert "/resolve/" + "a" * 40 + "/trajectory.h5" in str(request.url)
         return httpx.Response(200, content=b"rgbd01")
 
-    monkeypatch.setattr(
-        httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
-    )
+    _install_http_mock(monkeypatch, serve)
     plan = make_plan(tmp_path, transport="hf_sdk_metadata_http_range")
     result = mod.download_plan(plan, retries=1)
     assert result["files"][0]["transport"] == "hf_sdk_metadata_http_range"
@@ -401,16 +409,13 @@ def test_concurrent_process_cannot_overwrite_shared_budget_ledger(tmp_path, monk
 
 def test_https_download_refuses_redirect_to_plain_http(tmp_path, monkeypatch):
     mod = transfer()
-    original_client = httpx.Client
 
     def serve(request):
         if request.url.host == "huggingface.co":
             return httpx.Response(302, headers={"location": "http://cdn.example.test/file"})
         return httpx.Response(200, content=b"rgbd01")
 
-    monkeypatch.setattr(
-        httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
-    )
+    _install_http_mock(monkeypatch, serve)
     with pytest.raises(RuntimeError, match="TLS"):
         mod.download_plan(make_plan(tmp_path, transport="hf_sdk_metadata_http_range"), retries=1)
 
@@ -453,7 +458,6 @@ def test_keyboard_interrupt_cancels_active_http_and_queued_files_preserving_part
     mod = transfer()
     started = threading.Event()
     requests = []
-    original_client = httpx.Client
 
     class SlowBody(httpx.SyncByteStream):
         def __iter__(self):
@@ -472,9 +476,7 @@ def test_keyboard_interrupt_cancels_active_http_and_queued_files_preserving_part
         raise KeyboardInterrupt
 
     monkeypatch.setattr(mod, "as_completed", interrupted_iterator)
-    monkeypatch.setattr(
-        httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
-    )
+    _install_http_mock(monkeypatch, serve)
     plan = make_plan(
         tmp_path,
         transport="hf_sdk_metadata_http_range",

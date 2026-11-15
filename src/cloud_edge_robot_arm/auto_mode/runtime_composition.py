@@ -70,7 +70,10 @@ def _aware(now: datetime) -> bool:
 
 @dataclass(frozen=True)
 class RuntimeCompositionSnapshot:
-    """Complete owner-thread inputs; checkpoint truth maps never enter the policy."""
+    """隔离所有者线程的完整在线输入，检查点真值映射不传入策略。
+
+    Complete owner-thread inputs; checkpoint truth maps never enter the policy.
+    """
 
     active_contract: TaskContract
     checkpoint: ExecutionCheckpoint
@@ -187,7 +190,10 @@ def compose_decision_context(
     *,
     risk_model: RiskModelArtifact | None = None,
 ) -> DecisionContext:
-    """Derive online features and canonical verdicts; missing calibration is UNKNOWN."""
+    """由在线快照生成特征与规范判据，校准缺失时保持未知状态。
+
+    Derive online features and canonical verdicts; missing calibration is UNKNOWN.
+    """
     snap = cast(RuntimeCompositionSnapshot, _isolated(snapshot))
     _check_identity(snap, event, now)
     online = snap.online_evidence
@@ -242,6 +248,7 @@ def compose_decision_context(
 
 @dataclass(frozen=True)
 class RuntimeCompositionResult:
+    """记录组合决策及其来源证据，明确区分软件诊断与未准入状态。"""
     action: DecisionAction
     scope: Literal["SOFTWARE_ONLY", "NOT_ADMITTED"]
     reasons: tuple[str, ...]
@@ -253,7 +260,10 @@ class RuntimeCompositionResult:
 
 
 class RuntimeCompositionAdapter:
-    """No admission flags, dispatch, mode mutations or persistent budget transaction."""
+    """组合在线决策与来源验证，不派发动作、不修改模式或持久预算。
+
+    No admission flags, dispatch, mode mutations or persistent budget transaction.
+    """
 
     def __init__(
         self,
@@ -301,6 +311,7 @@ class RuntimeCompositionAdapter:
         return EvidenceVerdict("VALID", ("runtime_source_callback_completed",))
 
     def evaluate(self, event: DecisionEvent) -> RuntimeCompositionResult:
+        """复核当前快照、事件与来源，返回经过校验的诊断决策或停止原因。"""
         scope: Literal["SOFTWARE_ONLY", "NOT_ADMITTED"] = (
             "SOFTWARE_ONLY" if self.software_only else "NOT_ADMITTED"
         )
@@ -310,6 +321,7 @@ class RuntimeCompositionAdapter:
         source = EvidenceVerdict("UNKNOWN", ("source_binding_missing",))
 
         def stop(*reasons: str) -> RuntimeCompositionResult:
+            """以当前已有证据构造停止结果，并保留具体原因。"""
             return RuntimeCompositionResult(
                 DecisionAction.STOP, scope, tuple(reasons), now, context, candidates, None, source
             )
@@ -329,6 +341,7 @@ class RuntimeCompositionAdapter:
         digest = content_hash((snap, event))
 
         def fresh() -> RuntimeCompositionSnapshot:
+            """在回调边界后重新读取快照，并校验时钟和事件身份。"""
             nonlocal now
             now = self._clock(now)
             try:
@@ -455,7 +468,10 @@ class RuntimeCompositionAdapter:
         return cast(RuntimeCompositionResult, _isolated(result))
 
     def validate_for_existing_submission(self, result: RuntimeCompositionResult) -> EvidenceVerdict:
-        """Read-only revalidation, always closed until a real admission verifier exists."""
+        """只读复验既有提交；真实准入校验器缺失时继续关闭执行授权。
+
+        Read-only revalidation, always closed until a real admission verifier exists.
+        """
         if (
             self.software_only
             or result.scope == "SOFTWARE_ONLY"

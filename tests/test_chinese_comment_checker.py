@@ -490,8 +490,9 @@ def test_default_paths_cover_all_tracked_code_files() -> None:
     expected: list[Path] = []
     for name in tracked:
         path = Path(name)
-        # 覆盖说明：文档中的可执行代码块也要审计，只排除生成的验收 artifacts。
-        if path.parts and path.parts[0] == "artifacts":
+        # 应用源码和维护文档中的代码块需要审计；冻结验收/文档产物保留原字节，
+        # output 内的历史文档、QA快照和第三方依赖不属于当前应用源码范围。
+        if path.parts and path.parts[0] in {"artifacts", "output"}:
             continue
         if (
             path.parts

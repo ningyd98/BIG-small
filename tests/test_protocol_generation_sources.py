@@ -711,16 +711,34 @@ def test_successor_accounts_new_cpu_failure_in_shared_200_denominator(tmp_path, 
 
 def test_successor_pins_immutable_first_actual_without_relabeling(tmp_path):
     root = Path(__file__).resolve().parents[1]
-    predecessor = root / (
+    archived = root / (
         "artifacts/research/process/20261004-ced-development/"
         "astra-repair-execution/R07/producer/protocol-final"
     )
-    if not predecessor.is_dir():
+    if not archived.is_dir():
         pytest.skip("requires immutable first R07 actual predecessor")
+    reviewed_hash = "66570b912ba08e0924e4cbe31098be9df7f1f02ed43548b131f65b2695ded724"
+    original = json.loads((archived / "generation.json").read_text())
+    assert api().content_digest(original) == reviewed_hash
+    predecessor = Path(original["protocol_directory"])
+    if predecessor.resolve() != archived.resolve():
+        # 工作树副本必须仍被拒绝；正控只读已冻结且哈希绑定的原始命名空间。
+        with pytest.raises(ValueError, match="hash/namespace"):
+            api().prepare_successor_generation(
+                archived,
+                tmp_path / "copied-namespace-refused",
+                expected_predecessor_hash=reviewed_hash,
+            )
+        assert not (tmp_path / "copied-namespace-refused").exists()
+    if not predecessor.is_dir():
+        pytest.skip("requires the original namespace of immutable first R07 predecessor")
+    assert (predecessor / "generation.json").read_bytes() == (
+        archived / "generation.json"
+    ).read_bytes()
     api().prepare_successor_generation(
         predecessor,
         tmp_path / "actual-successor",
-        expected_predecessor_hash="66570b912ba08e0924e4cbe31098be9df7f1f02ed43548b131f65b2695ded724",
+        expected_predecessor_hash=reviewed_hash,
     )
     plan = api().preflight_generation(tmp_path / "actual-successor", "recovery-0002")
     assert plan["attempted"] == 1 and plan["unattempted"] == 199

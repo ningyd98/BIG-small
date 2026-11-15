@@ -9,10 +9,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from collections import Counter
 from collections.abc import Mapping
+from contextlib import closing
 from csv import DictReader
 from pathlib import Path
 from types import SimpleNamespace
@@ -278,8 +280,8 @@ def test_paired_difference_requires_both_sides_authoritative() -> None:
     assert summary["paired_backend_experiment_accepted"] is False
 
 
-def test_f20_uses_real_phase11_runtime_receipts(tmp_path: Path) -> None:
-    """F20 must create SQLite, lease, attempt, duplicate competition and recovery evidence."""
+def test_f20_preserves_blocked_phase11_runtime_receipts(tmp_path: Path) -> None:
+    """默认 Mock/RGBD 阻塞必须保留原生租约证据，不能冒充执行器完成。"""
 
     output = tmp_path / "phase12_2"
     run_phase12_experiments(Phase12Profile.VALIDATION, output)
@@ -287,8 +289,10 @@ def test_f20_uses_real_phase11_runtime_receipts(tmp_path: Path) -> None:
     f20_rows = [row for row in rows if row["experiment_id"] == "F20_STRESS_AND_RECOVERY"]
 
     assert f20_rows
-    assert all(row["runtime_invoked"] is True for row in f20_rows)
-    assert all(row["runtime_completed"] is True for row in f20_rows)
+    assert all(row["runtime_invoked"] is False for row in f20_rows)
+    assert all(row["runtime_completed"] is False for row in f20_rows)
+    assert all(row["status"] == "BLOCKED_BY_ENV" for row in f20_rows)
+    assert all(row["authoritative_for_thesis"] is False for row in f20_rows)
     for row in f20_rows:
         receipt_path = output / str(row["source_artifact_path"])
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
@@ -301,12 +305,22 @@ def test_f20_uses_real_phase11_runtime_receipts(tmp_path: Path) -> None:
             == receipt["sqlite_evidence"]["sha256"]
         )
         assert receipt["worker_lease_evidence"]["lease_count"] >= 1
-        assert receipt["duplicate_competition_evidence"]["runner_invocation_count"] == 1
+        assert receipt["duplicate_competition_evidence"]["runner_invocation_count"] == 0
         assert receipt["duplicate_competition_evidence"]["lease_winner"]
         assert receipt["duplicate_competition_evidence"]["lease_loser"]
         assert receipt["recovery_evidence"]["lease_expired"] is True
         assert receipt["artifact_atomicity"]["evidence_consistency_present"] is True
         assert receipt["runtime_receipt_hash"]
+        assert receipt["runtime_outcome"]["runtime_invoked"] is False
+        assert receipt["runtime_outcome"]["runtime_completed"] is False
+        for probe in ("main_job", "recovery_evidence", "duplicate_competition_evidence"):
+            evidence = receipt[probe]["execution_evidence"]
+            assert evidence["status"] == "BLOCKED_BY_ENV"
+            assert "RGBD_CAMERA_REQUIRED" in evidence["failure_type"]
+            assert evidence["executor_invoked"] is False
+            assert evidence["executor_returned"] is False
+            assert evidence["evidence_valid"] is True
+            assert evidence["lease_released"] is True
 
 
 def test_paired_summary_marks_isaac_blocked_as_not_accepted(tmp_path: Path) -> None:
@@ -1423,12 +1437,31 @@ def test_phase11_runtime_adapter_rerun_uses_fresh_sqlite_repository(tmp_path: Pa
     adapter = Phase11RuntimeAdapter()
 
     first = adapter.run(context)
+    first_receipt = json.loads(
+        (tmp_path / first.source_artifact_path).read_text(encoding="utf-8")
+    )
+    database = tmp_path / first_receipt["sqlite_evidence"]["relative_path"]
+    assert hashlib.sha256(database.read_bytes()).hexdigest() == (
+        first_receipt["sqlite_evidence"]["sha256"]
+    )
+    # 只在本测试拥有的新数据库写入哨兵，确认重跑真的重建文件。
+    with closing(sqlite3.connect(database)) as connection, connection:
+        connection.execute("CREATE TABLE test_prior_run_sentinel (value INTEGER)")
+        connection.execute("INSERT INTO test_prior_run_sentinel VALUES (1)")
     second = adapter.run(context)
 
-    assert first.runtime_completed is True
-    assert second.runtime_completed is True
+    for result in (first, second):
+        assert result.status == Phase12RunStatus.BLOCKED_BY_ENV
+        assert result.runtime_invoked is False and result.runtime_completed is False
+        assert "RGBD_CAMERA_REQUIRED" in result.failure_type
+        assert result.authoritative_for_thesis is False
     receipt = json.loads((tmp_path / second.source_artifact_path).read_text(encoding="utf-8"))
     assert receipt["sqlite_evidence"]["exists"] is True
+    assert hashlib.sha256(database.read_bytes()).hexdigest() == receipt["sqlite_evidence"]["sha256"]
+    with closing(sqlite3.connect(database)) as connection:
+        assert connection.execute(
+            "SELECT name FROM sqlite_master WHERE name = 'test_prior_run_sentinel'"
+        ).fetchall() == []
 
 
 def _run_validation_pipeline(output: Path) -> None:

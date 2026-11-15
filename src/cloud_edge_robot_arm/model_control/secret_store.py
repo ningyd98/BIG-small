@@ -11,7 +11,10 @@ from cloud_edge_robot_arm.model_control.models import SecretStoreKind
 
 
 class SecretStoreError(ValueError):
-    """Public failures carry no paths, OS errors or credential contents."""
+    """对外统一报告凭据存储不可用，不泄露路径、系统错误或凭据内容。
+
+    Public failures carry no paths, OS errors or credential contents.
+    """
 
     def __init__(self) -> None:
         super().__init__("model_secret_store_unavailable")
@@ -69,7 +72,10 @@ class InMemorySecretStore:
 
 
 def create_secret_store(database_path: Path) -> SecretStore:
-    """Use stable private user data, with a separate namespace for each DB path."""
+    """按数据库绝对路径隔离凭据命名空间，并选择显式配置的存储方式。
+
+    Use stable private user data, with a separate namespace for each DB path.
+    """
 
     mode = os.environ.get("MODEL_CONTROL_SECRET_STORE", "ENCRYPTED_FILE")
     if mode == SecretStoreKind.SESSION_ONLY:

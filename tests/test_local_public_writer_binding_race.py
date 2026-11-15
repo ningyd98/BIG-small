@@ -18,6 +18,15 @@ def _r223_plain(value):
     return _frozen._b_t2_plain(value)
 
 
+def _r223_evidence_root(name, request):
+    configured = os.environ.get(name)
+    if configured is not None:
+        return Path(configured)
+    directory = request.getfixturevalue('tmp_path') / name.lower()
+    directory.mkdir(exist_ok=True)
+    return directory
+
+
 def _r223_save(root, nodeid, value):
     directory = Path(root)
     assert directory.is_dir() and not directory.is_symlink()
@@ -46,7 +55,8 @@ def _r223_observe(monkeypatch, request):
         value['observations']['exit_exception'] = None if error_type is None else {
             'type': error_type.__name__, 'message': str(error)}
         value['allocation_attempts'] = len(value['resources'])
-        _r223_save(os.environ['BIGSMALL_R223_RESOURCE_ROOT'], request.node.nodeid, value)
+        _r223_save(_r223_evidence_root('BIGSMALL_R223_RESOURCE_ROOT', request),
+                   request.node.nodeid, value)
 
 
 def _r223_legacy_state(events, task):
@@ -243,7 +253,8 @@ def _r223_case(monkeypatch, tmp_path, request, backend, observed, *, mode, secon
     finally:
         value = observed.value['observations'].get('r223')
         if value is not None:
-            _r223_save(os.environ['BIGSMALL_R223_CASE_ROOT'], request.node.nodeid, value)
+            _r223_save(_r223_evidence_root('BIGSMALL_R223_CASE_ROOT', request),
+                       request.node.nodeid, value)
 
 
 @pytest.mark.parametrize('backend', ['memory', 'sqlite'])
@@ -310,6 +321,7 @@ def test_unbound_legacy_writer_roundtrip(monkeypatch, tmp_path, request, backend
                          'after': _r223_legacy_state(events, task), 'binding': _r223_bound(events, task),
                          'polled': False, 'worker_active_job_id': worker.active_job_id}
                 observed.value['observations']['scenarios'].append(value)
-                _r223_save(os.environ['BIGSMALL_R223_CASE_ROOT'], request.node.nodeid, value)
+                _r223_save(_r223_evidence_root('BIGSMALL_R223_CASE_ROOT', request),
+                           request.node.nodeid, value)
             finally:
                 events.close()

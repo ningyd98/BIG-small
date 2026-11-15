@@ -1,4 +1,7 @@
-"""A stale worker may close only its own attempt after a recovered lease handoff."""
+"""租约交接保持公开写入串行，旧持有者只能结束自己的尝试。
+
+A stale worker may close only its own attempt after a recovered lease handoff.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +10,7 @@ import json
 import pytest
 
 from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseError
 from cloud_edge_robot_arm.simulation_runtime.worker import CancelledByOperator, TimedOut
 from tests.test_rgbd_runtime_control import _queued_closed_loop_worker
 
@@ -147,12 +151,14 @@ def test_old_worker_does_not_release_or_overwrite_new_owner(
     )
 
 
-def _competing_guard_process(database, queue):
+def _competing_guard_process(database, queue, enter):
     from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
         SQLiteSimulationJobRepository,
     )
 
     repo = SQLiteSimulationJobRepository(database)
+    queue.put("ready")
+    assert enter.wait(timeout=5)
     queue.put("waiting")
     with repo.publication_guard():
         queue.put("acquired")
@@ -171,10 +177,14 @@ def test_publication_guard_is_cross_process_and_repository_reentrant(tmp_path):
     second = SQLiteSimulationJobRepository(database)
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
-    process = context.Process(target=_competing_guard_process, args=(database, queue))
+    enter = context.Event()
+    process = context.Process(target=_competing_guard_process, args=(database, queue, enter))
     try:
+        # 初始化也获取同一公开锁；先完成子进程初始化，再单独验证锁竞争。
+        process.start()
+        assert queue.get(timeout=5) == "ready"
         with first.publication_guard(), second.publication_guard():
-            process.start()
+            enter.set()
             assert queue.get(timeout=5) == "waiting"
             with pytest.raises(Empty):
                 queue.get(timeout=0.1)
@@ -461,28 +471,38 @@ def test_worker_conjoins_terminal_semantics_without_overwriting_task_result(
     assert current.status == ("SUCCEEDED" if want_success else "FAILED")
 
 
-def test_expiry_scan_cannot_interrupt_a_replacement_lease(tmp_path):
+def test_expiry_scan_cannot_interrupt_a_replacement_lease(tmp_path, monkeypatch):
     from tests.test_rgbd_lease_control import invalidate, running_job
 
     repo, job, worker = running_job(tmp_path)
     invalidate(repo, job, "expired")
     original_cas = repo.update_status_cas
-    replacement = []
+    snapshot = repo.get_job(job.job_id)
+    stale_cas = []
 
     def race(*args, **kwargs):
-        if kwargs.get("reason_code") == "lease_expired" and not replacement:
-            replacement.append(_handoff(repo, job, worker, tmp_path))
+        if kwargs.get("reason_code") == "lease_expired":
+            stale_cas.append((args, kwargs))
+            _handoff(repo, job, worker, tmp_path)
         return original_cas(*args, **kwargs)
 
-    repo.update_status_cas = race
+    # 受保护事务内的重入不是合法并发；验证拒绝与回滚，再提交真实交接。
+    with monkeypatch.context() as scoped:
+        scoped.setattr(repo, "update_status_cas", race)
+        with pytest.raises(OperationalLeaseError, match="nested public mutation"):
+            repo.expire_leases()
+    assert repo.get_job(job.job_id) == snapshot
+    replacement = _handoff(repo, job, worker, tmp_path)
+    assert len(stale_cas) == 1
+    assert original_cas(*stale_cas[0][0], **stale_cas[0][1]) is None
     assert repo.expire_leases() == []
     current = repo.get_job(job.job_id)
     assert current.status == "RUNNING"
-    assert current.lease_id == replacement[0].lease_id
+    assert current.lease_id == replacement.lease_id
     assert current.worker_id == "new-worker"
 
 
-def test_expiry_scan_rechecks_current_expiration_in_atomic_update(tmp_path):
+def test_expiry_scan_rechecks_current_expiration_in_atomic_update(tmp_path, monkeypatch):
     import sqlite3
     from datetime import UTC, datetime, timedelta
 
@@ -491,46 +511,68 @@ def test_expiry_scan_rechecks_current_expiration_in_atomic_update(tmp_path):
     repo, job, _ = running_job(tmp_path)
     invalidate(repo, job, "expired")
     original_cas = repo.update_status_cas
+    stale_cas = []
+    future = (datetime.now(UTC) + timedelta(seconds=60)).isoformat()
+
+    def heartbeat():
+        with sqlite3.connect(repo.database_path, timeout=0) as connection:
+            connection.execute(
+                "UPDATE simulation_jobs SET lease_expires_at=? WHERE job_id=?",
+                (future, job.job_id),
+            )
+            connection.execute(
+                "UPDATE simulation_job_leases SET expires_at=? WHERE lease_id=?",
+                (future, job.lease_id),
+            )
 
     def refresh_before_cas(*args, **kwargs):
         if kwargs.get("reason_code") == "lease_expired":
-            # Model a heartbeat committed after the scan snapshot, before expiry CAS.
-            future = (datetime.now(UTC) + timedelta(seconds=60)).isoformat()
-            with sqlite3.connect(repo.database_path) as connection:
-                connection.execute(
-                    "UPDATE simulation_jobs SET lease_expires_at=? WHERE job_id=?",
-                    (future, job.job_id),
-                )
-                connection.execute(
-                    "UPDATE simulation_job_leases SET expires_at=? WHERE lease_id=?",
-                    (future, job.lease_id),
-                )
+            stale_cas.append((args, kwargs))
+            heartbeat()
         return original_cas(*args, **kwargs)
 
-    repo.update_status_cas = refresh_before_cas
+    # 独立连接不能穿过 BEGIN IMMEDIATE；事务退出后再提交心跳并复查旧CAS。
+    with monkeypatch.context() as scoped:
+        scoped.setattr(repo, "update_status_cas", refresh_before_cas)
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            repo.expire_leases()
+    heartbeat()
+    assert len(stale_cas) == 1
+    assert original_cas(*stale_cas[0][0], **stale_cas[0][1]) is None
     assert repo.expire_leases() == []
     assert repo.get_job(job.job_id).status == "RUNNING"
 
 
-def test_cancel_racing_handoff_cancels_current_job_without_restoring_old_owner(tmp_path):
+def test_cancel_racing_handoff_cancels_current_job_without_restoring_old_owner(
+    tmp_path, monkeypatch
+):
     from tests.test_rgbd_lease_control import running_job
 
     repo, job, worker = running_job(tmp_path)
     original_cas = repo.update_status_cas
-    replacement = []
+    snapshot = repo.get_job(job.job_id)
+    stale_cas = []
 
     def race(*args, **kwargs):
-        if kwargs.get("reason_code") == "operator_cancel" and not replacement:
-            replacement.append(_handoff(repo, job, worker, tmp_path))
+        if kwargs.get("reason_code") == "operator_cancel":
+            stale_cas.append((args, kwargs))
+            _handoff(repo, job, worker, tmp_path)
         return original_cas(*args, **kwargs)
 
-    repo.update_status_cas = race
+    with monkeypatch.context() as scoped:
+        scoped.setattr(repo, "update_status_cas", race)
+        with pytest.raises(OperationalLeaseError, match="nested public mutation"):
+            repo.request_cancel(job.job_id)
+    assert repo.get_job(job.job_id) == snapshot
+    replacement = _handoff(repo, job, worker, tmp_path)
+    assert len(stale_cas) == 1
+    assert original_cas(*stale_cas[0][0], **stale_cas[0][1]) is None
     returned = repo.request_cancel(job.job_id)
     current = repo.get_job(job.job_id)
     assert returned == current
     assert current.status == "CANCEL_REQUESTED"
     assert current.cancel_requested
-    assert current.lease_id == replacement[0].lease_id
+    assert current.lease_id == replacement.lease_id
     assert current.worker_id == "new-worker"
 
 
@@ -557,12 +599,13 @@ def test_recovery_scan_cannot_finish_new_owner_attempt(tmp_path):
     assert attempts[-1].result == "RUNNING"
 
 
-def test_stale_retry_snapshot_cannot_requeue_new_owner(tmp_path):
+def test_stale_retry_snapshot_cannot_requeue_new_owner(tmp_path, monkeypatch):
     from tests.test_rgbd_lease_control import invalidate, running_job
 
     repo, job, worker = running_job(tmp_path)
     invalidate(repo, job, "interrupted")
     original_get = repo.get_job
+    snapshot = original_get(job.job_id)
     injected = False
 
     def race(job_id):
@@ -573,12 +616,29 @@ def test_stale_retry_snapshot_cannot_requeue_new_owner(tmp_path):
             _handoff(repo, job, worker, tmp_path)
         return snapshot
 
-    repo.get_job = race
-    with pytest.raises(ValueError, match="job_not_retryable"):
-        repo.retry_job(job.job_id)
+    with monkeypatch.context() as scoped:
+        scoped.setattr(repo, "get_job", race)
+        with pytest.raises(OperationalLeaseError, match="nested public mutation"):
+            repo.retry_job(job.job_id)
+    assert original_get(job.job_id) == snapshot
+    replacement = _handoff(repo, job, worker, tmp_path)
+    stale_reads = 0
+
+    def read_stale_once(job_id):
+        nonlocal stale_reads
+        stale_reads += 1
+        return snapshot if stale_reads == 1 else original_get(job_id)
+
+    # 旧快照仍通过 INTERRUPTED 前置检查，真实 SQL CAS 必须拒绝已交接的所有者。
+    with monkeypatch.context() as scoped:
+        scoped.setattr(repo, "get_job", read_stale_once)
+        with pytest.raises(ValueError, match="job_not_retryable"):
+            repo.retry_job(job.job_id)
+    assert stale_reads == 1
     current = original_get(job.job_id)
     assert current.status == "RUNNING"
     assert current.worker_id == "new-worker"
+    assert current.lease_id == replacement.lease_id
 
 
 def test_expired_starting_lease_can_be_interrupted(tmp_path):

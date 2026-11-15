@@ -194,14 +194,19 @@ def test_archive_tracker_cannot_enter_live_collection(monkeypatch, tmp_path):
     with pytest.raises(ValueError, match="aware UTC"):
         archive.facts_at(c.e, c.state, evaluated_at=c.clock[0].replace(tzinfo=None))
     app, live = _software_app(c, monkeypatch, tmp_path / "factory")
+    c.clock[0] += timedelta(milliseconds=10)
+    _, step, binding, _, _ = c.app._collect_grounded_step(
+        c.live, 0, c.e, c.protocol, consume_capture=c.consume
+    )
     live.tracker = archive
     with pytest.raises(RuntimeError, match="exact original pixel tracker"):
         app._evaluate_collection_admission(
             phase="PRE",
-            step=c.original.contract.steps[0],
+            step=step,
             conditions=(),
             observation=c.e,
             shield=None,
+            binding=binding,
         )
     assert live.session is None and not c.live.recorder.decisions
     now = c.clock[0]

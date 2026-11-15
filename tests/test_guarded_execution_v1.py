@@ -117,8 +117,8 @@ def test_diagnostic_scope_cannot_mint_native_authority():
     assert not hasattr(guard, "certified_artifacts")
 
 
-def test_actual_mujoco_guarded_diagnostic_no_render():
-    stage = Path(os.environ["R413_STAGE_DIR"])
+def test_actual_mujoco_guarded_diagnostic_no_render(tmp_path):
+    stage = Path(os.environ.get("R413_STAGE_DIR", tmp_path))
     output = stage / "actual-diagnostic"
     result = api().run_guarded_execution_diagnostic_v1(output)
     assert result["status"] == "PASS"

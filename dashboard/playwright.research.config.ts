@@ -1,3 +1,4 @@
+// 研究证据界面验收：启动独立前后端并保存浏览器原始追踪，不授予研究准入。
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 

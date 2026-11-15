@@ -12,7 +12,9 @@ from cloud_edge_robot_arm.experiments.models import (
     NetworkProfileName,
     TaskProfile,
 )
+from cloud_edge_robot_arm.experiments.reproducibility import stable_hash
 from cloud_edge_robot_arm.experiments.runner import ExperimentRunner
+from tests.experiment_event_semantics import semantic_event_digest
 
 
 def _config(tmp_path: Path, seed: int) -> ExperimentConfig:
@@ -38,9 +40,17 @@ def test_same_config_and_seed_produce_same_result_hash_and_events(tmp_path: Path
     second = ExperimentRunner(_config(tmp_path / "b", 9)).run()
 
     assert first.result.result_hash == second.result.result_hash
-    assert [event.payload_hash for event in first.events] == [
-        event.payload_hash for event in second.events
-    ]
+    for run in (first, second):
+        for event in run.events:
+            assert event.payload_hash == stable_hash(
+                {
+                    "t": event.virtual_time_ms,
+                    "event_type": event.event_type,
+                    "entity_id": event.entity_id,
+                    "payload": event.payload,
+                }
+            )
+    assert semantic_event_digest(first.events) == semantic_event_digest(second.events)
 
 
 def test_different_seed_can_change_seeded_network_trace(tmp_path: Path) -> None:

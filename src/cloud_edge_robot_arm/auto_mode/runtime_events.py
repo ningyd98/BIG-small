@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 
 class DecisionAction(StrEnum):
+    """定义共同决策动作词汇，枚举值本身不授予执行权限。"""
     CONTINUE = "CONTINUE"
     REOBSERVE = "REOBSERVE"
     LOCAL_RECOVER = "LOCAL_RECOVER"
@@ -34,6 +35,7 @@ class DecisionAction(StrEnum):
 
 
 class DecisionEventKind(StrEnum):
+    """区分技能、证据、异常、云端返回和监督验证等在线事件。"""
     SKILL_BOUNDARY = "SKILL_BOUNDARY"
     EVIDENCE_INVALIDATED = "EVIDENCE_INVALIDATED"
     ANOMALY = "ANOMALY"
@@ -45,6 +47,7 @@ class DecisionEventKind(StrEnum):
 
 @dataclass(frozen=True)
 class DecisionEvent:
+    """绑定事件标识、当前观测及带时区时刻，并记录原子动作和验证状态。"""
     event_id: str
     kind: DecisionEventKind
     occurred_at: datetime

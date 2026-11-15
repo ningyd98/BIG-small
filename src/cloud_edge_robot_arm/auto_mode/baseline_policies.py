@@ -298,6 +298,7 @@ class PeriodicPolicy(_BaselinePolicy):
         """在所有业务事件上复核安全和证据，在独立tick上请求云端。"""
 
         def choose() -> DecisionAction:
+            """先核对共同安全门，再仅在监督时钟事件上选择云端请求。"""
             guarded = self._guard(context)
             if guarded is not None:
                 return guarded
@@ -328,6 +329,7 @@ class ThresholdPolicy(_BaselinePolicy):
         """每个运行中事件都重新判断，规则分数和自报confidence不作概率。"""
 
         def choose() -> DecisionAction:
+            """以有效校准的继续失败概率判断阈值，证据未知时重新观测。"""
             guarded = self._guard(context)
             if guarded is not None:
                 return guarded
@@ -399,6 +401,7 @@ class FrozenRuleAutoPolicy(_BaselinePolicy):
         """先过共同安全证据门，再把原AUTO决策映射到同一动作词汇。"""
 
         def choose() -> DecisionAction:
+            """复核共同安全门后，将冻结模式选择结果映射为现有动作。"""
             guarded = self._guard(context)
             if guarded is not None:
                 return guarded

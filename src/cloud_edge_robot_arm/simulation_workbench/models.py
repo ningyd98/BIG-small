@@ -266,7 +266,10 @@ class ExperimentManifest(BaseModel):
 
 
 class PublicationStatusView(BaseModel):
-    """Strict detached publication audit, separate from recorded SQL outcomes."""
+    """独立展示严格的归档发布确认信息，并保留原数据库记录状态。
+
+    Strict detached publication audit, separate from recorded SQL outcomes.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     schema_version: Literal["simulation.publication-status.v1"] = "simulation.publication-status.v1"
@@ -286,6 +289,7 @@ class PublicationStatusView(BaseModel):
 
     @model_validator(mode="after")
     def confirmation_is_separate(self) -> PublicationStatusView:
+        """核对发布确认状态与完整回执关联，未接受结果不得暴露确认路径。"""
         if (self.confirmation_state == "CONFIRMED") is not self.accepted:
             raise ValueError("confirmed archival status and accepted flag must agree")
         if self.accepted:

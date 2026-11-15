@@ -578,7 +578,10 @@ class ExecutionCheckpoint(BaseModel):
 
 
 def replan_payload_hash(value: BaseModel | dict[str, Any]) -> str:
-    """Canonical complete content hash; callers cannot substitute a declared digest."""
+    """对完整载荷计算规范内容摘要，不能使用调用方自报摘要代替。
+
+    Canonical complete content hash; callers cannot substitute a declared digest.
+    """
     payload = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, default=str, separators=(",", ":")).encode()
@@ -586,7 +589,10 @@ def replan_payload_hash(value: BaseModel | dict[str, Any]) -> str:
 
 
 class ReplanExecutionReceipt(BaseModel):
-    """Actual edge start notification, distinct from a resume acknowledgement."""
+    """记录边缘实际开始执行的通知，与恢复确认回执分开保存。
+
+    Actual edge start notification, distinct from a resume acknowledgement.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
     repair_id: str = Field(min_length=1)
@@ -601,13 +607,17 @@ class ReplanExecutionReceipt(BaseModel):
     @field_validator("started_at")
     @classmethod
     def aware_start(cls, value: datetime) -> datetime:
+        """要求实际执行开始时刻包含有效时区。"""
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("execution receipt requires an acquisition clock")
         return value
 
 
 class ReplanApplyRecord(BaseModel):
-    """Durable candidate identity and monotonic stage/activation/start evidence."""
+    """持久保存候选身份以及单调推进的暂存、激活与执行开始证据。
+
+    Durable candidate identity and monotonic stage/activation/start evidence.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     apply_id: str = Field(min_length=1)
@@ -647,11 +657,13 @@ class ReplanApplyRecord(BaseModel):
     start_receipt: ReplanExecutionReceipt | None = None
 
     def content_hash(self) -> str:
+        """排除摘要字段自身后，对完整应用记录计算内容摘要。"""
         payload = self.model_dump(mode="json")
         payload["apply_hash"] = ""
         return replan_payload_hash(payload)
 
     def identity_hash(self) -> str:
+        """排除可推进的状态和回执字段，计算不可变候选身份摘要。"""
         payload = self.model_dump(mode="json")
         for key in (
             "status",
@@ -678,6 +690,7 @@ class ReplanApplyRecord(BaseModel):
         token: str | None = None,
         require_acceptance: bool = True,
     ) -> None:
+        """核对暂存或恢复回执的任务版本、激活令牌、载荷及时间身份。"""
         if (
             type(ack.accepted) is not bool
             or (require_acceptance and (not ack.accepted or ack.status != "ACCEPTED"))
@@ -701,6 +714,7 @@ class ReplanApplyRecord(BaseModel):
 
     @model_validator(mode="after")
     def verify_candidate_and_evidence(self) -> ReplanApplyRecord:
+        """校验候选契约与各阶段回执之间的完整绑定关系。"""
         if self.status not in {status.value for status in ReplanApplyStatus}:
             raise ValueError("unsupported replan status")
         if self.apply_hash and self.apply_hash != self.content_hash():
@@ -790,6 +804,7 @@ class ReplanApplyRecord(BaseModel):
         return self
 
     def validate_transition(self, previous: ReplanApplyRecord, *, activation: bool = False) -> None:
+        """只允许单调状态迁移，拒绝改写已经保存的边缘执行证据。"""
         if self.identity_hash() != previous.identity_hash():
             raise ValueError("immutable candidate identity changed")
         for key in (

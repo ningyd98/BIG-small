@@ -353,7 +353,8 @@ def test_duplicate_snapshot_reuses_persisted_decision() -> None:
     assert len(repository.list_decisions(contract.task_id)) == 1
 
 
-def test_supervision_api_endpoints_form_closed_loop() -> None:
+@pytest.mark.parametrize("lookup", ["task", "request"])
+def test_supervision_api_endpoints_form_closed_loop(lookup: str) -> None:
     """API exposes status intake, manual supervision, decisions, and lifecycle endpoints."""
     clock = FakeClock()
     repository = InMemorySupervisionRepository()
@@ -369,12 +370,15 @@ def test_supervision_api_endpoints_form_closed_loop() -> None:
     assert capabilities["status_code"] == 200
     assert "KEEP_CURRENT_PLAN" in capabilities["json"]["supported_decisions"]
 
-    planning = _request(app, "POST", "/api/v1/plans", json_body=_planning_request_payload())
+    planning = _request(
+        app, "POST", "/api/v1/plans", json_body=_planning_request_payload()
+    )
     assert planning["status_code"] == 201
     contract = planning["json"]["contract"]
     task_id = contract["task_id"]
+    plan_id = task_id if lookup == "task" else planning["json"]["request_id"]
 
-    start = _request(app, "POST", f"/api/v1/plans/{task_id}/supervision/start")
+    start = _request(app, "POST", f"/api/v1/plans/{plan_id}/supervision/start")
     assert start["status_code"] == 200
     assert start["json"]["running"] is True
 
@@ -382,21 +386,21 @@ def test_supervision_api_endpoints_form_closed_loop() -> None:
     status = _request(app, "POST", "/api/v1/robots/robot-001/status", json_body=snapshot)
     assert status["status_code"] == 202
 
-    decision = _request(app, "POST", f"/api/v1/plans/{task_id}/supervise", json_body=snapshot)
+    decision = _request(app, "POST", f"/api/v1/plans/{plan_id}/supervise", json_body=snapshot)
     assert decision["status_code"] == 200
     assert decision["json"]["decision"] == "KEEP_CURRENT_PLAN"
 
-    listed = _request(app, "GET", f"/api/v1/plans/{task_id}/supervision/decisions")
+    listed = _request(app, "GET", f"/api/v1/plans/{plan_id}/supervision/decisions")
     assert listed["status_code"] == 200
     assert [item["decision_id"] for item in listed["json"]["decisions"]] == [
         decision["json"]["decision_id"]
     ]
 
-    running = _request(app, "GET", f"/api/v1/plans/{task_id}/supervision/status")
+    running = _request(app, "GET", f"/api/v1/plans/{plan_id}/supervision/status")
     assert running["status_code"] == 200
     assert running["json"]["running"] is True
 
-    stop = _request(app, "POST", f"/api/v1/plans/{task_id}/supervision/stop")
+    stop = _request(app, "POST", f"/api/v1/plans/{plan_id}/supervision/stop")
     assert stop["status_code"] == 200
     assert stop["json"]["running"] is False
 
@@ -483,3 +487,34 @@ def test_local_quality_scripts_include_phase5_verification() -> None:
     local = Path("scripts/run_checks.sh").read_text()
     assert "scripts/verify_phase5.py" in ci
     assert "scripts/verify_phase5.py" in local
+
+
+def test_cached_planning_api_preserves_lookup_and_dispatch_refusals() -> None:
+    pipeline = PlanningPipeline(planner=MockPlannerAdapter())
+    app = create_app(pipeline)
+    planning = _request(
+        app, "POST", "/api/v1/plans", json_body=_planning_request_payload()
+    )
+    assert planning["status_code"] == 201
+    request_id = planning["json"]["request_id"]
+    retrieved = _request(app, "GET", f"/api/v1/plans/{request_id}")
+    assert retrieved["status_code"] == 200
+    assert retrieved["json"] == planning["json"]
+    assert _request(app, "GET", "/api/v1/plans/not-present")["status_code"] == 404
+    missing = _request(app, "POST", "/api/v1/plans/not-present/dispatch")
+    assert missing["status_code"] == 404
+    no_gateway = _request(app, "POST", f"/api/v1/plans/{request_id}/dispatch")
+    assert no_gateway["status_code"] == 501
+    assert no_gateway["json"] == {
+        "error": "Edge gateway not configured for this pipeline instance",
+        "status_code": 501,
+    }
+    failed_app = create_app(PlanningPipeline(planner=BrokenPlannerAdapter()))
+    failed = _request(
+        failed_app, "POST", "/api/v1/plans", json_body=_planning_request_payload()
+    )
+    assert failed["status_code"] == 201 and failed["json"]["contract"] is None
+    refused = _request(
+        failed_app, "POST", f"/api/v1/plans/{failed['json']['request_id']}/dispatch"
+    )
+    assert refused["status_code"] == 409

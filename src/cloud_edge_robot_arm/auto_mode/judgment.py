@@ -25,6 +25,7 @@ def _finite(value: object) -> bool:
 
 @dataclass(frozen=True)
 class JudgmentResult:
+    """保存有限候选的选择结果，分别记录规则成本、概率与自报置信度。"""
     selected_candidate_id: str | None
     rule_scores: Mapping[str, float]
     candidate_probabilities: Mapping[str, float] | None
@@ -75,6 +76,7 @@ class JudgmentResult:
 
 @dataclass(frozen=True)
 class DecisionTrace:
+    """冻结候选、判断、成本和来源绑定，软件轨迹不能授权未来物理提交。"""
     envelope: DecisionEnvelope
     candidates: CandidateSet
     judgment: JudgmentResult
@@ -117,16 +119,22 @@ def _freeze(value: Mapping[str, object]) -> Mapping[str, object]:
 
 
 class DecisionJudge(Protocol):
+    """在既定候选和成本估计上返回判断结果的只读接口。"""
     def choose(
         self,
         context: DecisionContext,
         candidates: CandidateSet,
         estimates: Sequence[ActionCostEstimate],
-    ) -> JudgmentResult: ...
+    ) -> JudgmentResult:
+        """根据当前上下文和有限候选作出选择，无法判断时明确弃权。"""
+        ...
 
 
 class CostDecisionJudge:
-    """Deterministic minimum known cost over already legal candidates, then ID tie-break."""
+    """在合法且成本已知的候选中确定性地选择最低成本，并按标识处理并列。
+
+    Deterministic minimum known cost over already legal candidates, then ID tie-break.
+    """
 
     provider_version = (
         "cost-decision-rule.v1:" + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
@@ -142,6 +150,7 @@ class CostDecisionJudge:
         candidates: CandidateSet,
         estimates: Sequence[ActionCostEstimate],
     ) -> JudgmentResult:
+        """校验候选并计算有限成本，缺少可行候选时返回弃权结果。"""
         from cloud_edge_robot_arm.auto_mode.joint_policy import score_actions
 
         started = perf_counter()

@@ -34,7 +34,10 @@ _FILE_FLAGS = os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 
 
 class EncryptedFileSecretStore:
-    """One versioned encrypted map; every operation opens and validates fresh FDs."""
+    """以私有目录中的单个加密映射保存凭据，每次操作重新校验文件描述符。
+
+    One versioned encrypted map; every operation opens and validates fresh FDs.
+    """
 
     kind = SecretStoreKind.ENCRYPTED_FILE
 
@@ -43,15 +46,19 @@ class EncryptedFileSecretStore:
         self._directory = directory.absolute()
 
     def set_secret(self, profile_id: str, value: str) -> None:
+        """在文件锁内加密保存指定配置的凭据，并原子更新密文。"""
         self._access(profile_id, action="set", value=value)
 
     def get_secret(self, profile_id: str) -> str | None:
+        """校验并解密指定配置的凭据，未配置时返回空值。"""
         return self._access(profile_id, action="get")
 
     def delete_secret(self, profile_id: str) -> None:
+        """在文件锁内删除指定凭据，缺失时保持原状。"""
         self._access(profile_id, action="delete")
 
     def has_secret(self, profile_id: str) -> bool:
+        """通过同一校验与解密路径判断指定凭据是否存在。"""
         return self.get_secret(profile_id) is not None
 
     def _access(self, profile_id: str, *, action: str, value: str | None = None) -> str | None:

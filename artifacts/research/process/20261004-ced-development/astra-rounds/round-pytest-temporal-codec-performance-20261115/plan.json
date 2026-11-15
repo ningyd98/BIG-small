@@ -1,0 +1,425 @@
+{
+  "planner_model": "gpt-6-astra",
+  "status": "READ_ONLY_DIAGNOSIS_AND_CONDITIONAL_MINIMAL_PLAN_NOT_IMPLEMENTED",
+  "date": "2026-11-15",
+  "output_directory": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-pytest-temporal-codec-performance-20261115",
+  "scope": "仅时间证据codec与测试全局profile叠加的性能卡点；不复查全分支、不启动任何新测试/模型/仿真，不修改当前来源。",
+  "process_rule": "按本轮最新AGENTS，常规诊断/修复由当前模型处理，非每错必Astra。本次因严格证据链和缓存安全边界取舍专门调用Astra；不建立新的强制逐错审批流程。",
+  "recommendation": "当前不实施源码或测试观察器优化，先让已启动的完整观察器四分片完成。若准确来源、完整节点及观察器下能在既定cap内完成并通过，则记录慢项即可，不为速度扩大缓存/校验范围。只有实际完整路径仍不可完成且局部测量证明可用收益时，考虑下述_copy常量因子优化。",
+  "facts": [
+    {
+      "fact": "完整profile独立node120秒timeout，采样进程100秒timeout。",
+      "meaning": "仅是两次未在cap内结束；不证明永不返回、死锁或业务超时。"
+    },
+    {
+      "fact": "profile-disabled对照exit0，1 passed in54.44s、elapsed54.7223s，disabled=[main,threads]。",
+      "meaning": "DIAGNOSTIC_ONLY_NO_ACCEPTANCE；说明同测试移除全局观察钩子可完成，支持观察开销假设；不是有效验收，也不能由并发负载不同算精确加速比。"
+    },
+    {
+      "fact": "faulthandler_timeout=45组合进程日志出现Timeout与copy.deepcopy栈、随后dumped core，exit139由父任务报告。",
+      "meaning": "不能证明SIGSEGV源于codec，不能证明faulthandler就是唯一原因；本轮未native回溯或复现。"
+    },
+    {
+      "fact": "代码已有128项/8MiB单次外层解码memo，完整canonical文本+cls键，全部语义与nested检查成功后缓存，退出清理、copied Context重验。",
+      "meaning": "不应建议再做跨外层/跨上下文缓存；缓存命中仍有严格_copy+canonical成本。"
+    },
+    {
+      "fact": "本轮读取的9个源码/测试/AGENTS文件都匹配shard0 spec中对应SHA；分片总体6950节点/1059来源为manifest内容。",
+      "meaning": "未复核整条分支或全部1059文件；当前不改任何来源。9src仅47docstring且AST不变由父任务说明，本轮未重新全量证明。"
+    }
+  ],
+  "sample_summary": {
+    "samples": 19,
+    "sample_span_seconds": 90.15614461898804,
+    "sampling_period_nominal_seconds": 5,
+    "max_rss_kib_min": 102436,
+    "max_rss_kib_max": 125424,
+    "top_frames": [
+      {
+        "file": "test_operational_runtime_closure.py",
+        "function": "profile",
+        "samples": 10
+      },
+      {
+        "file": "local_temporal.py",
+        "function": "_copy",
+        "samples": 7
+      },
+      {
+        "file": "local_temporal.py",
+        "function": "_hash",
+        "samples": 2
+      }
+    ],
+    "stack_contains_local_temporal_function": [
+      {
+        "function": "from_payload",
+        "samples": 18
+      },
+      {
+        "function": "_semantic",
+        "samples": 16
+      },
+      {
+        "function": "decode_local_payload",
+        "samples": 15
+      },
+      {
+        "function": "_from_local_payload",
+        "samples": 15
+      },
+      {
+        "function": "_copy",
+        "samples": 15
+      },
+      {
+        "function": "_object",
+        "samples": 15
+      },
+      {
+        "function": "_history",
+        "samples": 15
+      },
+      {
+        "function": "semantic_projection",
+        "samples": 9
+      },
+      {
+        "function": "local_time",
+        "samples": 7
+      },
+      {
+        "function": "_original",
+        "samples": 6
+      },
+      {
+        "function": "_staged_original_body",
+        "samples": 6
+      },
+      {
+        "function": "_history_state_hash",
+        "samples": 5
+      },
+      {
+        "function": "_replay_bootstrap",
+        "samples": 5
+      },
+      {
+        "function": "to_payload",
+        "samples": 5
+      },
+      {
+        "function": "semantic",
+        "samples": 4
+      },
+      {
+        "function": "_audit_original",
+        "samples": 3
+      },
+      {
+        "function": "_hash",
+        "samples": 2
+      },
+      {
+        "function": "_reference",
+        "samples": 2
+      },
+      {
+        "function": "_history_definition",
+        "samples": 2
+      },
+      {
+        "function": "_bootstrap_promotion_source",
+        "samples": 2
+      },
+      {
+        "function": "_join_decision",
+        "samples": 1
+      },
+      {
+        "function": "model",
+        "samples": 1
+      },
+      {
+        "function": "object",
+        "samples": 1
+      },
+      {
+        "function": "string",
+        "samples": 1
+      },
+      {
+        "function": "_model",
+        "samples": 1
+      }
+    ],
+    "interpretation": "19个离散Python栈样本，不是CPU占比或完整调用计数；max_rss是进程高水位，不能据此断言无泄漏或缓存无上限。"
+  },
+  "complexity_analysis": [
+    "_copy遍历严格JSON树节点并重建dict/list，标量字符串本体不深拷字符；_object每次又调用_copy。嵌套验证多个子树的成本是所访问子树大小之和，不能仅按顶层N算一次。链状重复子树遍历可呈N×depth开销，但本次未证明指数增长或无界循环。",
+    "LocalEnvelope.from_payload每次命中memo前仍_object(整envelope)+canonical排序序列化；memo只避免已验证同完整内容的语义重跑。不同外层repository读取建立新memo，安全域刻意不跨请求复用。",
+    "LocalEnvelope.to_payload执行json.loads再_object，semantic再次_object，local_time再次原始时间验证；VisualBootstrapRecord.from_payload经LocalDomainEnvelope再转LocalEnvelope；derive_local_bootstrap重新解码record/request、projection并重放history。这些增加解码/复制次数，但不能仅因重复而删除边界验证。",
+    "_history逐事件验证original/operation/CAS/decision/transaction/replay/result hash；_history_state_hash会pop(history)，所以不能错误声称每次都规范化完整增长history前缀。_hash(body[definition])在循环中对不变定义重复，但占时尚无测量。",
+    "全局sys.setprofile与threading.setprofile接收大量Python/C事件；profile只筛少数生命周期code，但每次回调仍有筛选和wait_observer分派。采样10/19栈顶profile是线索，不是53%的CPU定量。"
+  ],
+  "unproven": [
+    "SIGSEGV的native原因、诊断timer是否触发或仅暴露问题",
+    "缓存是否达到128项/8MiB上限、每个顶层解码hit/miss与重复字节总量",
+    "完整观察器正常完成时长、并发四分片竞争成本与测量方差",
+    "最小_copy分派减少能否改善整node wall time；不许用猜测的速度收益推动缓存扩展"
+  ],
+  "safe_plan": [
+    {
+      "step": "A 保持当前验证来源",
+      "action": "继续已有四分片、完整profile与原全部断言，沿用当前faulthandler_timeout=0诊断设置和既定3600s cap。不新增运行争抢资源、不修改源码/配置/节点/观察器；读最终receipt和该node时长。若通过，首选以无实现变更收束本卡点。"
+    },
+    {
+      "step": "B 若仍有性能阻断，先最小纯解码测量",
+      "action": "分片结束并冻结来源后，在新/tmp诊断文件中读取已SHA绑定的524867-byte detached seed，提取changed_payload（leaf SHA3e64056f99c608399c22c6f6a36df402c8c777397d0268e476fb8df3f12b14c6）。不调用worker/模型/仿真。对_decode/_copy真实委托计数，记录top-level decode数、不同完整canonical键、_semantic实际成功数、copy节点/累计子树规模、memo上限/溢出、wall/CPU/RSS。仅新增诊断包装，原结果异常原样传播；计数运行不是验收。"
+    },
+    {
+      "step": "C 单一低风险候选，条件实施",
+      "action": "只有B证明有价值且不干扰冻结验证，才在vision/local_temporal.py::_copy局部令None先返回，type(value)求值一次存局部，再按原顺序exact bool/str,int,float,exact dict或Mapping,list进行分派；去除原bool/str分支内由外层已证明的冗余isinstance。保留原int严格边界、finite、Mapping.items迭代/重复key检查、错误类型/文本与顺序、返回深隔离。不会减少_copy递归访问数量，只减少类型分派；部分C回调影响需实测，不许先声称显著收益。"
+    },
+    {
+      "step": "D 等价及完整路径验证",
+      "action": "用现有test_local_temporal_copy_dispatch的完整矩阵（含Mapping虚拟注册/子类/items异常及别名独立）证明等价；再原memo、recursive projection、promotion source/原deadline/历史重排/重放负例、生命周期及完整profile目标node。原观察器必须启用，禁止skip/xfail/降低断言；新来源生成新验证receipt，不混用旧分片证明修改后版本。"
+    }
+  ],
+  "candidate_proof_obligations": [
+    "None和exact bool/str分支的内层isinstance恒成立；其删除不扩大接受集合。type(value)对同对象在函数内不变，仅局部使用，不持久缓存。",
+    "int/bool不能合并、数值严格边界(-(2**63),2**63)不变、浮点finite和-0保留；字符串/整型/浮点/list子类仍按旧规则拒绝。",
+    "Mapping判定次序与.items实际调用不改；不能用dict(value)替代、不能把list快路径提前跨过Mapping测试，避免虚拟注册Mapping/自定义items异常/重复key语义变动。",
+    "每个list/dict输出仍独立，重复别名不复用可变树，外部与返回值修改互不污染；不调整canonical/hash格式。"
+  ],
+  "alternatives_not_recommended": [
+    "跨repository读取/外层调用/线程/Context/租约缓存已经验证对象或授权决策",
+    "提高memo cap或以对象id/截断hash/忽略diagnostics作缓存键",
+    "把_object改成不复制、删除_original/_history/_semantic或nested验证、把detached包装当实时权限",
+    "动态Pydantic模型全局缓存/改变proposal校验：涉及模型可变性，非本轮最小范围",
+    "把完整history replay换成只验增量/末事件，跳过source/epoch/revision/deadline/语义比较",
+    "禁用profile、减少生命周期观察点、删除wait_observer或改成抽样以令验收通过",
+    "并行加入_history definition hash hoist：虽是更窄重复工作候选，但尚无收益测量，本轮不与_copy组合实施"
+  ],
+  "allowed_future_scope": {
+    "preferred": "不改实现，只保存诊断及完成当前验证",
+    "conditional_source": [
+      "src/cloud_edge_robot_arm/vision/local_temporal.py::_copy"
+    ],
+    "conditional_tests": [
+      "tests/test_local_temporal_copy_dispatch.py（仅必要覆盖或计数证据，现有语义断言不减）"
+    ],
+    "not_allowed": [
+      "vision/worker_runtime.py",
+      "repositories/event_autonomy/visual_bootstrap.py",
+      "tests/test_operational_runtime_closure.py观察器",
+      "任何租约/原始期限/源绑定/历史语义/成功标准/配置",
+      "当前正在运行分片所绑定的源码/测试/证据"
+    ]
+  },
+  "prerequisites": [
+    "实施前必须所有当前分片结束或由父任务明确结束且旧结果正确标记；本计划不授权中途修改",
+    "实际Python3.12共享venv、PYTHONDONTWRITEBYTECODE=1、PYTHONPATH固定当前隔离树/src与根，pytest禁cache、唯一/tmp基目录",
+    "基准与候选同CPU竞争条件、同种完整profile；记录进程/来源SHA；断言所有原live authority registry不增加，异常路径仍finally清理",
+    "纯decode不需GPU/模型/网络/仿真；若再次出现native崩溃，只收现有core/进程/库元数据，单独最小reproducer且不归因于codec"
+  ],
+  "acceptance": [
+    "当前不宣称全分片或完整profile目标已通过；no-profile passed仅性能对照",
+    "若全观察器验证完成且无真正阻断，允许结论为慢但无需变更，避免安全代码性能重构",
+    "若实施候选，输出canonical字节/digest/projection和全部负例拒绝、所有原期限/源/租约/状态关联保持一致，copy不共享mutable别名，memo作用域/cap不变",
+    "性能计数下降是实现目标，完整node通过仍需真实完整profile与原全部断言；不得用外部timeout放宽或关闭观察器代替",
+    "旧日志/seed/测试/分片来源保留，不改原实验证据，不启动新模型/网络/硬件"
+  ],
+  "inputs": [
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/AGENTS.md",
+      "sha256": "7f4f8b080b2f1e99b53d24aeebf62f51815315c69a40dc9223d2e974c3c40cdb",
+      "bytes": 1945,
+      "kind": "source_read_only"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "sha256": "c8a5a5a45d80a9123708125e18528b5b083c388ee389a81e44536ae84dad5f9c",
+      "bytes": 121341,
+      "kind": "source_read_only"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "sha256": "7c1ad5a70c65b5b20be6552dc04fbfbb4ce4aa5ecb39bf965ceb23dab98ccb3c",
+      "bytes": 155168,
+      "kind": "source_read_only"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "sha256": "6285530f111e810c009b2ff2a8000872445c4deaab88a81d01ed82276621845e",
+      "bytes": 54779,
+      "kind": "source_read_only"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/tests/test_operational_runtime_closure.py",
+      "sha256": "5392a77b7c32254da74c24c7510595dcfe102af53cb17c977e2efb7c5f06c5ad",
+      "bytes": 317332,
+      "kind": "source_read_only"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/tests/test_local_temporal_copy_dispatch.py",
+      "sha256": "51cf42610d1b4c5c6be7594e038e0b54645368763bb38540383a6fb35a8cc437",
+      "bytes": 8161,
+      "kind": "source_read_only"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/tests/test_local_temporal_decode_memo.py",
+      "sha256": "5f0f7b3d8c406fadef8e4b121e46e7808255ae253a1f5cf5352e7f10f018ea18",
+      "bytes": 17438,
+      "kind": "source_read_only"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/tests/test_local_temporal_projection_closure.py",
+      "sha256": "cdcf814b8072fc11995f4455c78fdc39219090e87813c89594d41f5b9c70f5ae",
+      "bytes": 12498,
+      "kind": "source_read_only"
+    },
+    {
+      "absolute_path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/tests/test_local_temporal_promotion_bindings.py",
+      "sha256": "e25cd09c5011cee71c1298e2def539d9b18c27e16eb1dc7af3c11c88ecb07b17",
+      "bytes": 16233,
+      "kind": "source_read_only"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-fixture-green-02.log",
+      "sha256": "0ec0e9193c082092d6e2caf03f51908926282d1d7859ea32510214cbcfce47c7",
+      "bytes": 1914,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-public-control-isolated-01.log",
+      "sha256": "21c16e4724262ea43e896d9b3fe5c740511e00412205a239f7d366c8eee32ade",
+      "bytes": 443,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-public-control-isolated-01-status.json",
+      "sha256": "cb0033414fc719f98ec2c2da24ae57baa56eefbd0b075226252a89801f969a21",
+      "bytes": 100,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-public-control-sampled-01.log",
+      "sha256": "21c16e4724262ea43e896d9b3fe5c740511e00412205a239f7d366c8eee32ade",
+      "bytes": 443,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-public-control-sampled-01-status.json",
+      "sha256": "4b335bc841079e61df4fb1f283b1b301564751db1811923e10356858b5da7902",
+      "bytes": 110,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-public-control-samples-01.jsonl",
+      "sha256": "316476d26fcffaead7bf5a396c491b4d926a6ea6b5ffc5c1bd93b845b79c1856",
+      "bytes": 192957,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-sample-public-control.py",
+      "sha256": "f3ed8abd439a914c6e038a5a32bb1e2bc2928812fe357ef0b4cb8079df67a0cf",
+      "bytes": 1451,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-public-control-profile-counterfactual.py",
+      "sha256": "7fc90194648ba49366246193cac8ff668dcc1d58fb31d9786a61ff0a61b57eb9",
+      "bytes": 1369,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-public-control-no-profile-01.log",
+      "sha256": "9337f8a47f37e64fc594418d130ebab1d039221a369123d633f3e96e67ff0984",
+      "bytes": 1191,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-public-control-no-profile-01-status.json",
+      "sha256": "f1a06e9caf088f813ca19620c4f2a0cd7728b24647223d9eeb385523578235c5",
+      "bytes": 127,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-shards-01/manifest.json",
+      "sha256": "eee5645a6d4094c82ef22b83b32f5d34cdf6c1eea08a6574b1679010cdfc3323",
+      "bytes": 1897,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-shards-01/shard-0.spec.json",
+      "sha256": "b5df96c2714cf538d450bfc2705fa42416de8c809617d1c217573dc96d6e8762",
+      "bytes": 396277,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-shards-01/shard-1.spec.json",
+      "sha256": "8547cefe2342c0e9d9510bffcf16d43cdd5ca580291c6fd4b06de97935b90f56",
+      "bytes": 388116,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-shards-01/shard-2.spec.json",
+      "sha256": "4dcd093261a76d34355a46d4374c26f636bcea4b00e56c92a7cd14eea2f0c0b1",
+      "bytes": 403131,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/tmp/bigsmall-next-shards-01/shard-3.spec.json",
+      "sha256": "66eed3e5b4b64e5412954232e85e616e8611b7fe864629df94c2642037161f2b",
+      "bytes": 386109,
+      "kind": "diagnostic_or_frozen_shard_input"
+    },
+    {
+      "absolute_path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round196-p6-t1-local-promotion-original-task-bindings-20261014/implementation/green63/cases/6d92899340e539991792be9037c073ce65513cc029918750cae4831bd0ef02f4.json",
+      "sha256": "20cbbe651d46f5c62428130db2523a413fcccede2f8851a0e6db2fb56126fb79",
+      "bytes": 524867,
+      "kind": "existing_detached_fixture_not_executed"
+    }
+  ],
+  "read_sources_match_shard0_spec": [
+    {
+      "relative_path": "AGENTS.md",
+      "matches_shard_spec": true
+    },
+    {
+      "relative_path": "src/cloud_edge_robot_arm/vision/local_temporal.py",
+      "matches_shard_spec": true
+    },
+    {
+      "relative_path": "src/cloud_edge_robot_arm/vision/worker_runtime.py",
+      "matches_shard_spec": true
+    },
+    {
+      "relative_path": "src/cloud_edge_robot_arm/repositories/event_autonomy/visual_bootstrap.py",
+      "matches_shard_spec": true
+    },
+    {
+      "relative_path": "tests/test_operational_runtime_closure.py",
+      "matches_shard_spec": true
+    },
+    {
+      "relative_path": "tests/test_local_temporal_copy_dispatch.py",
+      "matches_shard_spec": true
+    },
+    {
+      "relative_path": "tests/test_local_temporal_decode_memo.py",
+      "matches_shard_spec": true
+    },
+    {
+      "relative_path": "tests/test_local_temporal_projection_closure.py",
+      "matches_shard_spec": true
+    },
+    {
+      "relative_path": "tests/test_local_temporal_promotion_bindings.py",
+      "matches_shard_spec": true
+    }
+  ],
+  "implementation_performed": false,
+  "tests_or_simulations_started": false
+}

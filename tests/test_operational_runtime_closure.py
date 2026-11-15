@@ -2768,10 +2768,20 @@ def test_b_legacy_v1_v2_codec_bytes_and_utc_rules(monkeypatch, tmp_path):
             actual = type(source).from_payload(raw).to_payload()
         assert _b_canonical(actual) == _b_canonical(raw), tag
         goldens[tag] = _b_canonical(raw).decode()
-    destination = Path(os.environ["BIGSMALL_R158_LEGACY_GOLDENS"])
-    phase = os.environ["BIGSMALL_R158_COMMAND"]
+    configured_golden = os.environ.get("BIGSMALL_R158_LEGACY_GOLDENS")
+    destination = Path(configured_golden) if configured_golden is not None else (
+        Path(__file__).resolve().parents[1]
+        / "artifacts/research/process/20261004-ced-development/astra-rounds"
+        / "round166-p6-t1-legacy-supervision-claim-timing-20261013"
+        / "implementation/legacy_control/legacy-goldens.json"
+    )
+    if configured_golden is None:
+        assert hashlib.sha256(destination.read_bytes()).hexdigest() == (
+            "10452e376a00b1672d540fc1332c6beeeaa42b6cff44f03f425531e26a5d0c38"
+        )
+    phase = os.environ.get("BIGSMALL_R158_COMMAND", "pytest")
     if phase != "t1_red":
-        assert phase in {"t1_green", "final_new23"}
+        assert phase in {"t1_green", "final_new23", "pytest"}
         assert destination.read_bytes() == _b_canonical(goldens) + b"\n"
     data = legacy["data"]
     request = route_fixture.request_for(data)
@@ -3482,7 +3492,7 @@ def _b_t2_attempt(request):
     previous_profile = sys.getprofile()
     value = {
         "schema_version": "bigsmall.r158-t2-resource.v1",
-        "command_id": os.environ.get("BIGSMALL_R158_COMMAND"),
+        "command_id": os.environ.get("BIGSMALL_R158_COMMAND", "pytest"),
         "nodeid": request.node.nodeid, "pid": os.getpid(),
         "scenario": request.node.name, "entered_contract_guard": True,
         "entered_behavior": False, "allocation_attempts": 0, "resources": [],
@@ -3504,8 +3514,12 @@ def _b_t2_attempt(request):
         if not value["entered_behavior"]:
             value["observations"]["observers_restored"] = sys.getprofile() is previous_profile
         sink = os.environ.get("BIGSMALL_R158_T2_RESOURCE_DIR")
-        assert sink, "T2 requires the exact ROOT-approved per-command resource sink"
-        directory = Path(sink)
+        if sink is None:
+            directory = request.getfixturevalue("tmp_path") / "r158-resource-evidence"
+            directory.mkdir(exist_ok=True)
+        else:
+            assert sink, "T2 requires the exact ROOT-approved per-command resource sink"
+            directory = Path(sink)
         assert directory.is_dir() and not directory.is_symlink()
         name = hashlib.sha256(request.node.nodeid.encode()).hexdigest() + ".json"
         with (directory / name).open("x", encoding="utf-8") as stream:
@@ -5096,7 +5110,8 @@ def _b_t3_public_fields():
 
 def _b_t3_case(tmp_path, request, name, observations, attempt):
     value = {"schema_version": "bigsmall.r331.t3-case.v1", "nodeid": request.node.nodeid,
-             "scenario": request.node.name, "command_id": os.environ["BIGSMALL_R158_COMMAND"],
+             "scenario": request.node.name,
+             "command_id": os.environ.get("BIGSMALL_R158_COMMAND", "pytest"),
              "pid": os.getpid(), "observations": observations,
              "resources": attempt["resources"], "worker_lifecycles": attempt["worker_lifecycles"],
              "cleanup_errors": attempt["cleanup_errors"],

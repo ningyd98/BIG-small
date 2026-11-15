@@ -55,7 +55,14 @@ def current_binding(tmp_path, monkeypatch, *, raw_root=None):
         path=str(asset_manifest), bytes=asset_manifest.stat().st_size,
         sha256=digest(asset_manifest),
     )
-    prior_rel = str(Path(plan["prior_evidence"]["path"]).relative_to(original_root))
+    # 历史计划保留原工作树的绝对路径；临时来源通过完整相对后缀匹配其已列入清单的输入。
+    prior_parts = Path(plan["prior_evidence"]["path"]).parts
+    prior_matches = [
+        name for name in plan["required_source_paths"]
+        if prior_parts[-len(Path(name).parts):] == Path(name).parts
+    ]
+    assert len(prior_matches) == 1
+    prior_rel = prior_matches[0]
     plan["prior_evidence"]["path"] = str(source / prior_rel)
     write_json(source / PLAN_REL, plan)
     hashes = {name: digest(source / name) for name in plan["required_source_paths"]}

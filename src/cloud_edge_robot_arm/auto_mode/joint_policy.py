@@ -53,6 +53,7 @@ def _weights(values: Mapping[str, float]) -> Mapping[str, float]:
 
 @dataclass(frozen=True)
 class ActionCostEstimate:
+    """保存单个候选动作的失败概率及各项成本，未知成本保留为空值。"""
     action: DecisionAction
     failure_probability: float | None
     failure_loss: float
@@ -76,7 +77,9 @@ class ActionCostEstimate:
 def estimate_action_costs(
     context: DecisionContext, measured_costs: CostSnapshot, weights: Mapping[str, float]
 ) -> list[ActionCostEstimate]:
-    """Use mean measured cost per sent attempt, never provider RTT as inference time.
+    """按实际已发送尝试的平均测量成本估算动作开销，不发起模型请求。
+
+    Use mean measured cost per sent attempt, never provider RTT as inference time.
 
     Timing aggregates have no per-action or per-role attribution, so this heuristic
     explicitly uses the aggregate mean for REQUEST_CLOUD. Unknown inference stays
@@ -126,7 +129,10 @@ def estimate_action_costs(
 def score_actions(
     context: DecisionContext, estimates: Sequence[ActionCostEstimate]
 ) -> Mapping[DecisionAction, float]:
-    """Compute finite expected costs; missing probability/cost remains unranked."""
+    """只对概率和成本齐备的动作计算有限期望成本，缺失项不参与排序。
+
+    Compute finite expected costs; missing probability/cost remains unranked.
+    """
     scores: dict[DecisionAction, float] = {}
     seen: set[DecisionAction] = set()
     for row in estimates:
@@ -155,7 +161,9 @@ def score_actions(
 
 @dataclass(frozen=True)
 class JointPolicyAdmission:
-    """Future source-bound admission request, never an acceptance flag.
+    """绑定未来准入请求的来源与候选权重，本对象不构成已准入证明。
+
+    Future source-bound admission request, never an acceptance flag.
 
     T12a does not authorize an ordinary research decision from this object. A
     future source verifier must reconstruct INITIAL, calibrated provenance and
@@ -189,7 +197,10 @@ AdmissionProvider = Callable[[DecisionContext], JointPolicyAdmission | None]
 
 
 def joint_policy_source_hashes() -> Mapping[str, str]:
-    """Bind rule, candidate, risk estimator and evidence validator actual sources."""
+    """绑定规则、候选生成、风险估计和证据校验模块的实际源码字节。
+
+    Bind rule, candidate, risk estimator and evidence validator actual sources.
+    """
     import hashlib
 
     from cloud_edge_robot_arm.edge.evidence import validator
@@ -310,7 +321,10 @@ def _envelope_expiry(
 
 
 class JsonDecisionTraceSink:
-    """Atomically archive an immutable hashed decision; conflicting IDs never overwrite."""
+    """原子归档不可变决策轨迹，遇到相同标识的不同内容时拒绝覆盖。
+
+    Atomically archive an immutable hashed decision; conflicting IDs never overwrite.
+    """
 
     def __init__(self, directory: Path | str) -> None:
         self.directory = Path(directory)
@@ -354,7 +368,9 @@ class JsonDecisionTraceSink:
 
 
 class JointEvidencePolicy:
-    """T12a SOFTWARE_ONLY math with actual adaptive admission explicitly closed.
+    """仅产生软件诊断决策和审计轨迹，不授予物理执行或实际自适应准入权限。
+
+    T12a SOFTWARE_ONLY math with actual adaptive admission explicitly closed.
 
     This object produces audit decisions only. Hardware dispatch and commit must
     remain in the existing executor. Rule/provider latency is recorded separately;
@@ -407,7 +423,10 @@ class JointEvidencePolicy:
 
     @property
     def traces(self) -> tuple[DecisionTrace, ...]:
-        """Immutable audit records; durable storage can be supplied as trace_sink."""
+        """返回不可变的审计轨迹序列，持久保存由配置的轨迹接收器负责。
+
+        Immutable audit records; durable storage can be supplied as trace_sink.
+        """
         return tuple(self._traces)
 
     def _clock_after(self, previous: datetime, boundary: str) -> datetime:
@@ -561,7 +580,10 @@ class JointEvidencePolicy:
         )
 
     def decide(self, context: DecisionContext) -> DecisionAction:
-        """Read the live T8 ledger, filter, judge, validate and audit; never dispatch."""
+        """读取实际成本账本，过滤、判断并记录候选动作，保持执行器边界。
+
+        Read the live T8 ledger, filter, judge, validate and audit; never dispatch.
+        """
         now = self.clock()
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("decision clock must be timezone-aware")

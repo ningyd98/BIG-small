@@ -212,7 +212,7 @@ def create_app(
         cached = pipeline._cache.get(planning_id)
         if cached is None:
             raise HTTPException(status_code=404, detail="Planning request not found")
-        _, result = cached
+        result = cached.response
         return _planning_response(result)
 
     # ── Dispatch plan ────────────────────────────────────────────────────
@@ -227,7 +227,7 @@ def create_app(
         cached = pipeline._cache.get(planning_id)
         if cached is None:
             raise HTTPException(status_code=404, detail="Planning request not found")
-        _, result = cached
+        result = cached.response
         if result.contract is None:
             raise HTTPException(
                 status_code=409,
@@ -1045,10 +1045,11 @@ def _contract_for_plan_id(
 ) -> TaskContract | None:
     cached = pipeline._cache.get(plan_id)
     if cached is not None:
-        _, result = cached
+        result = cached.response
         if result.contract is not None:
             return result.contract
-    for _, result in pipeline._cache.values():
+    for cached in pipeline._cache.values():
+        result = cached.response
         if result.contract is not None and result.contract.task_id == plan_id:
             return result.contract
     status = supervisor.status_for_task(plan_id)
