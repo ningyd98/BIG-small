@@ -1,0 +1,66 @@
+{
+  "planner_model": "gpt-6-astra",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "date": "2026-11-15",
+  "issue": "临时最终证据验证器把所有事件中的末条误认作最终状态事件，遇到成功后合法artifact_created空状态而报AssertionError。",
+  "classification": "只读验收检查脚本错误，不是27执行失败；完整最终证据复核尚未完成。",
+  "original_failure": {
+    "script": "/tmp/bigsmall-v4-execution/verify-final-offline-evidence.py",
+    "log": "/tmp/bigsmall-v4-execution/final-offline-evidence-verification.log",
+    "line": 93,
+    "assertion": "events[-1][\"next_status\"] == \"SUCCEEDED\"",
+    "exception": "AssertionError",
+    "original_command": "日志未保存完整原argv，不能编造。"
+  },
+  "input_manifest": "inputs.json",
+  "independent_readonly_check": {
+    "command": "python3 /tmp/bigsmall-v4-execution/astra-readonly-27-db-status-01.py > /tmp/bigsmall-v4-execution/astra-readonly-27-db-status-01.stdout",
+    "exit_code": 0,
+    "uri": "p.as_uri()+\"?mode=ro&immutable=1\"",
+    "cases": 27,
+    "database_hashes_unchanged": true,
+    "findings": "全部唯一jobs.status=SUCCEEDED；attempt1.result=SUCCEEDED；lease有heartbeat/released；末个有next_status事件seq7 job_completed FINALIZING→SUCCEEDED，末条事件seq8 artifact_created且前后状态空。所有events原列保留在派生SELECT快照。",
+    "limits": "仅独立核DB状态与事件，未跑原最终验证器的全部599来源、物理样本和逐文件检查；查询结果不是原DB完整备份。"
+  },
+  "production_explanation": "worker.py成功流程先_transition(FINALIZING,terminal)，再append_event(artifact_created，无状态参数)，再release_lease；sqlite_repository映射SUCCEEDED为job_completed，append_event保存空默认previous/next。无须更改生产代码或事件顺序。",
+  "scope": {
+    "allowed_new_file": "/tmp/bigsmall-v4-execution/verify-final-offline-evidence-02.py",
+    "allowed_new_outputs": [
+      "/tmp/bigsmall-v4-execution/final-offline-evidence-verification-02.log",
+      "/tmp/bigsmall-v4-execution/final-offline-evidence-verification-02.json"
+    ],
+    "forbidden_changes": [
+      "原verify-final-offline-evidence.py与原失败log",
+      "3个已冻结入口及所有仓库生产/测试源码",
+      "27运行目录及全部DB/events/raw/manifest",
+      "原589帧审计与物理evaluator/阈值"
+    ]
+  },
+  "implementation": [
+    "从已冻结旧验证器复制为新编号02；若02已存在则用下一空编号，不覆盖旧证据。仅修SQLite状态判据及增加其派生报告信息/输出新编号路径，其余检查保持原文本或语义完全相同。",
+    "读取simulation_jobs全部行，必须唯一且job_id等于result/attempt/lease job_id、status=SUCCEEDED；保留len(attempts)=len(leases)=1、attempt=1、result=SUCCEEDED、heartbeat/released检查。",
+    "events仍按sequence排序并保留全部；验证属于同一个job且顺序确定。用next_status非空建立状态事件视图，必须非空，最后状态next_status=SUCCEEDED，且存在该job的job_completed成功事件；本已知路径可要求最后状态事件本身就是job_completed/FINALIZING→SUCCEEDED。不得只检查曾经SUCCEEDED而忽略后续非空失败状态。",
+    "不要删除/截断事件列表、修改空状态、重新排序原DB或要求最后全部事件为job_completed。成功后的artifact_created等非状态审计记录须在报告保留（至少完整events派生副本或原路径SHA及引用），并记录last_state_sequence与last_event_sequence。不要硬编码seq7/8作为通用成功判据。",
+    "数据库只用URI mode=ro&immutable=1，connection.close于finally；读前后DB SHA一致，拒绝写入、迁移、journal变更。",
+    "在/tmp内使用复制的内存行列表验证判据：成功状态后附空状态artifact通过；缺job/多job/jobs非成功/最后非空状态FAILED或缺job_completed/跨job事件均失败。不修改任何真实DB。该小check可与新临时脚本中的局部helper一致，不添加仓库测试。",
+    "运行新编号完整最终验证器一次，保留所有其余检查：27完整分母、8动作16shield、零新模型/网络、4point1cloud、599源与3入口SHA、逐步物理evaluate_evidence重算、逐文件长度/哈希、589新旧审计零差异。只是读取既有数据并重算，不启动MuJoCo或重新执行27。"
+  ],
+  "validation": {
+    "RED": "原log与本轮27DB完整事件顺序共同证明旧末尾断言无效；保留它，不篡改旧输出。",
+    "GREEN": "新脚本正/负状态行判据通过；完整只读最终验证器exit0并生成新报告后才宣称全部证据复核完成。",
+    "unchanged_checks": "比对新旧脚本diff仅DB状态判断、所需报告字段和新输出路径；其他物理、来源、manifest条件不能删减放宽。",
+    "post": "3冻结入口SHA与本轮输入一致；27DB字节与原SHA一致。任何新失败原样保存并交Astra，不继续修无关断言。"
+  },
+  "prerequisites": [
+    "明确cwd新隔离工作树，shared .venv且启动前PYTHONPATH=隔离树/src:隔离树；PYTHONDONTWRITEBYTECODE=1",
+    "原运行DB已终结静态，无未checkpoint WAL依赖；若发现非空WAL/活动写者，不能以immutable忽略数据，暂停报告并另行核对，不改DB",
+    "输出只/tmp新编号，源/实验原件只读；无需模型、网络、硬件、EGL仿真或提升权限"
+  ],
+  "acceptance": [
+    "此轮仅临时验收脚本修正，不动已冻结入口，不重跑27",
+    "完整验证成功前不能把27DB状态核对等同全部27证据通过",
+    "保留原错误脚本/log、全部events及后续artifact_created，不改原证据使通过",
+    "控制/物理/evaluator/0.1mm/39mm标准及27分母不变",
+    "新根因/范围扩大需下一Astra"
+  ]
+}

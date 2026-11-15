@@ -1,0 +1,246 @@
+{
+  "scope": "INDEPENDENT_FINAL_CODE_REVIEW_RECEIPT_OF_PREVIOUSLY_COMPLETED_REVIEW",
+  "reviewer": "/root/astra_offline_code_review",
+  "created_at_utc": "2026-11-15T05:14:29.419368+00:00",
+  "conclusion": "此前已完成最终代码复审无剩余已知阻断；原27离线回归准入结论保持。旧回执为历史阻断记录，不能再作为最终代码状态。",
+  "actions_this_turn": "只读取已指定结果汇总、原回执和既有测试日志，并保存本回执；未重新审查全分支、未重跑测试/27例/589帧、未修改源码、未联网或push。",
+  "historical_review": {
+    "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261115-v4-marker-ambiguity/software/offline-review-01.md",
+    "bytes": 1494,
+    "sha256": "137d7431dc1a050dd3696738b2d253b78c32dc8e0c1f9a600d5ab41b9d4bd205",
+    "classification": "HISTORICAL_BLOCKING_REVIEW_SUPERSEDED_BY_RESOLVED_FINDINGS",
+    "preserved_unchanged": true
+  },
+  "findings": [
+    {
+      "id": "R1",
+      "severity": "P1",
+      "issue": "PRE/HARD零执行假通过；POST使用不存在的frames字段",
+      "status": "RESOLVED",
+      "resolution": "真实边界测试要求规划通过、4次point与1次cloud回放、目标注入次数和准确终止原因；POST使用marker_frames并区分其内部调用的原PRE规则，检查同contract/step、无settle和后续动作。",
+      "tests": [
+        "test_actual_worker_stops_at_injected_safety_boundary",
+        "test_early_planning_failure_cannot_pass_safety_boundary_acceptance"
+      ],
+      "plan_indices": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "id": "R2",
+      "severity": "P1",
+      "issue": "baseline snapshot未锚定，裁剪source_mapping仍被接受",
+      "status": "RESOLVED",
+      "resolution": "固定baseline字节SHA，验证594唯一归档成员、591仓库成员及3外部成员，校验归档摘要和完整成员集合。",
+      "tests": [
+        "test_baseline_snapshot_bytes_are_anchored_before_trusting_members",
+        "test_archive_member_integrity_after_archive_digest_gate"
+      ],
+      "plan_indices": [
+        3
+      ]
+    },
+    {
+      "id": "R3",
+      "severity": "P2",
+      "issue": "ContextVar网络守卫遗漏新线程",
+      "status": "RESOLVED",
+      "resolution": "采用进程共享活动guard列表与RLock，审计钩子和socket/SSL发送及DNS包装覆盖线程；嵌套guard分别记录，最后退出恢复方法。",
+      "tests": [
+        "test_network_guard_covers_preexisting_thread_nested_context_and_cleanup",
+        "test_actual_socket_apis_are_denied_before_system_call",
+        "test_network_guard_stops_actual_socket_before_connection"
+      ],
+      "plan_indices": [
+        3
+      ]
+    },
+    {
+      "id": "R4",
+      "severity": "P2",
+      "issue": "运行后仅复验8核心模块，未覆盖完整冻结源码及新增入口",
+      "status": "RESOLVED",
+      "resolution": "运行回执包含599项完整来源清单；finally复验全部成员及三个入口，完整性失败令结果失败并保留原worker错误。",
+      "tests": [
+        "test_complete_source_postcheck_rejects_any_member_or_entry_change",
+        "test_inventory_finally_preserves_worker_error_and_detects_independent_drift"
+      ],
+      "plan_indices": [
+        3
+      ]
+    },
+    {
+      "id": "R5",
+      "severity": "SCOPE_GAP",
+      "issue": "输出创建未限定批准目录，audit-child存在直写缺口",
+      "status": "RESOLVED",
+      "resolution": "output_path统一约束/tmp或批准offline-regression目录，保护输入和既有输出；_write/new_output/log使用同一检查。",
+      "tests": [
+        "test_output_is_exclusive_and_protected",
+        "test_output_guard_covers_direct_file_writes_and_symlink_parents"
+      ],
+      "plan_indices": [
+        3
+      ]
+    },
+    {
+      "id": "R6",
+      "severity": "P2",
+      "issue": "point回放器可把同一before观测消费为第3/4次post-cloud输出",
+      "status": "RESOLVED",
+      "resolution": "每阶段两次回放必须保持同一身份；第二阶段observation/frame/checksum全部更新且采集时间递增；检查全部通过后才更新消费状态。生产planner的not_before和RGB/depth检查保留。",
+      "tests": [
+        "test_point_phase_rejects_reused_before_without_consuming_or_polluting_state",
+        "test_point_same_phase_requires_same_observation_identity",
+        "test_point_post_cloud_requires_new_ids_and_later_capture"
+      ],
+      "plan_indices": [
+        5,
+        6
+      ]
+    },
+    {
+      "id": "R7",
+      "severity": "P2",
+      "issue": "整棵current ROOT禁写与批准的仓库内审计输出冲突",
+      "status": "RESOLVED",
+      "resolution": "纯helper解析真实路径；current保护src/assets/scripts/tests/pyproject，historical保护整树；预检和全局登记复用同一集合。最终只读复审确认冲突消除。",
+      "tests": [
+        "test_current_audit_protects_source_directories_and_allows_both_approved_outputs",
+        "test_historical_audit_protects_entire_source_tree_after_resolving_alias"
+      ],
+      "plan_indices": [
+        4
+      ]
+    }
+  ],
+  "plans": [
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-v3-offline-safety-boundary-environment-20261115/plan.md",
+      "bytes": 6727,
+      "sha256": "726f4c252367494e93455181f342128507935676698699c5afa853087ed40494"
+    },
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-v3-offline-shield-instrumentation-20261115/plan.md",
+      "bytes": 7284,
+      "sha256": "19418de48b2b6bb3379e7369f4e749d9af9223c176e567a75fcf0297bac7d52f"
+    },
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-v3-offline-shield-instrumentation-20261115/addendum-frame-labels-20261115/plan.md",
+      "bytes": 2578,
+      "sha256": "7af229d3734cd811f08cc7bec64be6088516fb30fc3c0cf463c6ff49943c6bd8"
+    },
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-v3-offline-tool-integrity-20261115/plan.md",
+      "bytes": 6961,
+      "sha256": "b5d85384f72aa364ebeae32d5831a757601b4528ac4db73cbfed50e825d9c428"
+    },
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-v3-offline-tool-integrity-20261115/addendum-current-audit-output-root/plan.md",
+      "bytes": 2598,
+      "sha256": "b8b9b691206fea18c6e309d1cb34e498c797e91f89f2fb886780c3296a9a5a7f"
+    },
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-v3-offline-point-phase-identity-20261115/plan.md",
+      "bytes": 4033,
+      "sha256": "2d8f7694f6172b41f26a1ce46424015c0e5bf5f10d792cf1160d006292f8a965"
+    },
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round-v3-offline-point-phase-identity-20261115/addendum-valid-identity-fixture/plan.md",
+      "bytes": 2060,
+      "sha256": "e917bdf82b3e2a539f7d39cc991133f0006461c002f6650e2d0ccc4f7a8f6517"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "/tmp/bigsmall-v4-execution/offline-final-boundaries-01.log",
+      "bytes": 115,
+      "sha256": "21fd43c8086629fe616f46677dd8d7c3cf4e4e4db7e9b07d526302f461a50fa4"
+    },
+    {
+      "path": "/tmp/bigsmall-v4-execution/offline-final-boundaries-02.log",
+      "bytes": 115,
+      "sha256": "ccdaadc7d3045373510f0f128d8012393f1f97fabf093ab9ed6e568bec65a0cc"
+    },
+    {
+      "path": "/tmp/bigsmall-v4-execution/offline-final-pure-03.log",
+      "bytes": 355,
+      "sha256": "5e42fd50b82d667f958a2a5899fde82100def9c8ce12b8ebf0bbe0a6a55eb3c3"
+    },
+    {
+      "path": "/tmp/bigsmall-v4-execution/final-offline-evidence-verification-02.log",
+      "bytes": 672,
+      "sha256": "5cb86b743436f09bd08394398dc60ee25ec1c0fa0279bbee884f49dc243dc71e"
+    },
+    {
+      "path": "/tmp/bigsmall-v4-execution/final-offline-evidence-verification-02.json",
+      "bytes": 462513,
+      "sha256": "c38d6bc5748eef7cdfa16f7b9cc0cc41bf19c12088c9c0ba6bbd331a43f40012"
+    }
+  ],
+  "entry_sources": [
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py",
+      "bytes": 46036,
+      "sha256": "a03f1ac1093a3d617f469176e0fd49f35e4e9b124a0f8aeb1a55414ed9df5263"
+    },
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/scripts/run_v3_marker_offline_regression.py",
+      "bytes": 5378,
+      "sha256": "92589512cc6fb4226b8a5b7c5e89aaacbae23aaf1b9e7576297774319ff87cbf"
+    },
+    {
+      "path": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/tests/test_sol_molmo_offline_regression.py",
+      "bytes": 33922,
+      "sha256": "cea08661c024ee3dd325986992d40ebc5a17944e5cf954b10bb7bf7aa56a8319"
+    }
+  ],
+  "entry_hashes_match_final_verification": true,
+  "existing_test_results": {
+    "offline-final-pure-03.log": "228 passed, 11 deselected in 6.54s",
+    "offline-final-boundaries-02.log": "11 passed, 85 deselected in 14.10s"
+  },
+  "parent_final_verification_summary": {
+    "scope": "OFFLINE_FROZEN_OUTPUT_NEW_WORKER_REGRESSION_NOT_NEW_MODEL_E2E_OR_GENERALIZATION",
+    "denominator": 27,
+    "successes": 27,
+    "by_split": {
+      "fixed": 10,
+      "development": 9,
+      "held-out": 8
+    },
+    "physical_rescores_passed": 27,
+    "manifest_files_verified": 4806,
+    "per_step_samples": 141444,
+    "safety_checks": 432,
+    "new_closed_loop_frames": 540,
+    "new_model_requests": 0,
+    "network_attempts": 0,
+    "frozen_frame_audit": {
+      "frames": 589,
+      "marker_differences": 0,
+      "geometry_differences": 0,
+      "new_rejections": 0
+    },
+    "status_controls": {
+      "positive": 1,
+      "negative_rejected": [
+        "missing_job",
+        "duplicate_job",
+        "non_success_job",
+        "last_state_failed",
+        "missing_job_completed",
+        "foreign_job_event"
+      ]
+    }
+  },
+  "final_verification_attribution": "上述27/589统计读取父任务既有final-offline-evidence-verification-02.json及日志；本子代理本轮没有重新验证4806个文件或重算物理评价，不将转录统计表述为本轮独立全量重验。",
+  "limitations": [
+    "全仓pytest仍未完成：600秒exit124、约2%进度观察到5个F，未因局部GREEN宣称全仓通过。",
+    "27/27仅是原成功集合、冻结模型输出条件下的新真实worker/MuJoCo闭环回归；新模型端到端成功率、新泛化、真实硬件与正式研究验收均未验证。",
+    "589帧历史反事实审计与27新闭环分开；589零差不等同于589次grounding成功。",
+    "原40例中的13个历史失败没有被改写为本轮新成功；不授权新付费运行或公开push。"
+  ]
+}
