@@ -273,7 +273,30 @@ class OpenCVTargetTracker:
             ring = cv2.dilate(selected.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
             ring &= ~selected
             bound = self.depth_error_bound_m or 0.0
+            top_depth_min = float(depth[ys[top_selector], xs[top_selector]].min())
             top_depth_max = float(depth[ys[top_selector], xs[top_selector]].max())
+            if self.depth_error_bound_m is None:
+                # 1像素宽度的方块自身暗红侧边/抗锯齿过渡像素（色度或去高光纯色度一致）
+                # 且深度不浅于顶面时并入轮廓，再检查背景外环。
+                pure_rgb = rgb - rgb.min(axis=2, keepdims=True)
+                pure_chroma = pure_rgb / np.maximum(pure_rgb.sum(axis=2, keepdims=True), 1.0)
+                pure_color_vec = color - color.min()
+                pure_color = pure_color_vec / max(float(pure_color_vec.sum()), 1e-6)
+                shaded_edge = (
+                    ring
+                    & (
+                        (np.linalg.norm(chroma - color, axis=2) < 0.24)
+                        | (np.linalg.norm(pure_chroma - pure_color, axis=2) < 0.20)
+                    )
+                    & (np.ptp(rgb, axis=2) >= 14)
+                    & (valid > 0)
+                    & np.isfinite(depth)
+                    & (depth >= top_depth_min)
+                )
+                if np.any(shaded_edge):
+                    footprint = selected | shaded_edge
+                    ring = cv2.dilate(footprint.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+                    ring &= ~footprint
             if not np.all(
                 (valid[ring] > 0)
                 & np.isfinite(depth[ring])

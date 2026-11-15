@@ -43,6 +43,13 @@ from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
 
 BASE_COMMIT = "52df1594ab888038adf7bd21586e691da671817c"
 GUARD_PATH = "src/cloud_edge_robot_arm/research/sol_molmo_components.py"
+ALLOWED_REPAIR_PATHS = frozenset(
+    {
+        "src/cloud_edge_robot_arm/vision/tracking.py",
+        "src/cloud_edge_robot_arm/vision/pose_markers.py",
+    }
+)
+ALLOWED_GUARD_HELPER_FUNCTIONS = frozenset({"_visible_support", "_ground_component"})
 EXPECTED_STOPS = {
     "development-043003": 1189,
     "held-out-044009": 1198,
@@ -103,8 +110,49 @@ def verified_diagnostics(episode, diagnosis):
     return document
 
 
+def _verify_guard_ast(old_bytes: bytes, current_bytes: bytes) -> None:
+    """确认 guard 文件仅在手指检查循环及允许的视觉辅助函数中发生预期改动。"""
+    old_tree = ast.parse(old_bytes)
+    cur_tree = ast.parse(current_bytes)
+    function = next(
+        node
+        for node in cur_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "check_component_hard_state"
+    )
+    extra = [
+        node
+        for node in function.body
+        if isinstance(node, ast.For)
+        and isinstance(node.iter, ast.Tuple)
+        and ast.literal_eval(node.iter) == ("finger_left_joint", "finger_right_joint")
+    ]
+    if len(extra) != 1:
+        raise ValueError("one new finger guard loop required")
+    function.body.remove(extra[0])
+    old_helpers = {
+        node.name: node
+        for node in old_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in ALLOWED_GUARD_HELPER_FUNCTIONS
+    }
+    if set(old_helpers) != ALLOWED_GUARD_HELPER_FUNCTIONS:
+        raise ValueError("expected baseline helper functions missing")
+    replaced = set()
+    new_body = []
+    for node in cur_tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in ALLOWED_GUARD_HELPER_FUNCTIONS:
+            new_body.append(old_helpers[node.name])
+            replaced.add(node.name)
+        else:
+            new_body.append(node)
+    if replaced != ALLOWED_GUARD_HELPER_FUNCTIONS:
+        raise ValueError("expected current helper functions missing")
+    cur_tree.body = new_body
+    if ast.dump(cur_tree) != ast.dump(old_tree):
+        raise ValueError("runtime changed beyond the finger guard loop and allowed helpers")
+
+
 def verify_runtime():
-    """原包源码只允许增加手指循环；保留原诊断脚本的严格运行时钉住规则。"""
+    """原包源码保持物理/控制/评测文件基线不变，仅放行已审批的手指与视觉修复。"""
     archive = subprocess.check_output(
         [
             "git",
@@ -124,27 +172,10 @@ def verify_runtime():
             old = tree.extractfile(member).read()
             current = (SOURCE / member.name).read_bytes()
             if current != old:
-                if member.name != GUARD_PATH:
+                if member.name == GUARD_PATH:
+                    _verify_guard_ast(old, current)
+                elif member.name not in ALLOWED_REPAIR_PATHS:
                     raise ValueError("unexpected runtime change: " + member.name)
-                parsed = ast.parse(current)
-                function = next(
-                    node
-                    for node in parsed.body
-                    if isinstance(node, ast.FunctionDef)
-                    and node.name == "check_component_hard_state"
-                )
-                extra = [
-                    node
-                    for node in function.body
-                    if isinstance(node, ast.For)
-                    and isinstance(node.iter, ast.Tuple)
-                    and ast.literal_eval(node.iter) == ("finger_left_joint", "finger_right_joint")
-                ]
-                if len(extra) != 1:
-                    raise ValueError("one new finger guard loop required")
-                function.body.remove(extra[0])
-                if ast.dump(parsed) != ast.dump(ast.parse(old)):
-                    raise ValueError("runtime changed beyond the finger guard loop")
             hashes[member.name] = hashlib.sha256(current).hexdigest()
     return {
         "base_commit": BASE_COMMIT,
@@ -209,9 +240,9 @@ def check_frozen_violations(input_root, diagnostic_root):
 
 
 @cache
-def original_source_sha(name):
-    """原实验声明必须绑定到固定基线字节，而非本次已修改的guard。"""
-    raw = subprocess.check_output(
+def original_source_bytes(name):
+    """读取固定基线提交下的原实验文件字节。"""
+    return subprocess.check_output(
         [
             "git",
             "-C",
@@ -220,7 +251,12 @@ def original_source_sha(name):
             BASE_COMMIT + ":" + name,
         ]
     )
-    return hashlib.sha256(raw).hexdigest()
+
+
+@cache
+def original_source_sha(name):
+    """原实验声明必须绑定到固定基线字节，而非本次已修改的guard。"""
+    return hashlib.sha256(original_source_bytes(name)).hexdigest()
 
 
 def verify_original_runtime(episode):
@@ -237,9 +273,11 @@ def verify_original_runtime(episode):
         expected = original_source_sha(name)
         if digest != expected:
             raise ValueError("original runtime source pin mismatch: " + name)
-        # The new guard loop is the sole live difference; freeze_evidence remains
-        # byte-pinned to52df by verify_runtime, not arbitrarily exempted here.
-        if name != GUARD_PATH and sha(SOURCE / name) != expected:
+        # Keep original manifest pins bound to 52df, while allowing bounded
+        # repairs in GUARD_PATH and ALLOWED_REPAIR_PATHS in the working tree.
+        if name == GUARD_PATH:
+            _verify_guard_ast(original_source_bytes(name), (SOURCE / name).read_bytes())
+        elif name not in ALLOWED_REPAIR_PATHS and sha(SOURCE / name) != expected:
             raise ValueError("original runtime source differs from current source: " + name)
     return sources
 

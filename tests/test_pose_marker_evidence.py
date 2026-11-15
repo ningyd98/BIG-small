@@ -346,3 +346,53 @@ def test_saved_native_resolution_profiles_measure_detectability_without_truth_in
 def test_non_string_asset_identity_rejects_as_invalid_registration():
     with pytest.raises(ValueError):
         api().PoseMarkerRegistration(marker_id=7, marker_size_m=0.24, marked_asset_sha256=None)
+
+
+def test_subpix_candidate_decode_recovers_small_marker_without_bit_repair():
+    def render_small(bits: np.ndarray) -> RGBDObservation:
+        src = np.repeat(np.repeat(bits, 20, axis=0), 20, axis=1)
+        canvas = np.full((160, 160), 220, dtype=np.uint8)
+        canvas[20:140, 20:140] = src
+        mat = cv2.getRotationMatrix2D((80, 80), 5.0, 14.0 / 120.0)
+        mat[0, 2] += 100.5 - 80.0
+        mat[1, 2] += 100.5 - 80.0
+        warped = cv2.warpAffine(canvas, mat, (320, 240), flags=cv2.INTER_AREA, borderValue=220)
+        out = io.BytesIO()
+        Image.fromarray(warped).convert("RGB").save(out, format="PNG")
+        return RGBDObservation(
+            frame_id="subpix-small",
+            captured_at=datetime(2026, 10, 4, tzinfo=UTC),
+            sim_time_s=0.0,
+            width=320,
+            height=240,
+            rgb_png_base64=base64.b64encode(out.getvalue()).decode(),
+            depth_float32_base64=base64.b64encode(
+                np.full((240, 320), 1.33, dtype="<f4").tobytes()
+            ).decode(),
+            intrinsics=(350.0, 350.0, 159.5, 119.5),
+            camera_to_world=(
+                1.0, 0.0, 0.0, 0.0,
+                0.0, -1.0, 0.0, 0.0,
+                0.0, 0.0, -1.0, 1.33,
+                0.0, 0.0, 0.0, 1.0,
+            ),
+            source="rgbd_camera",
+            episode_id="SOFTWARE_ONLY",
+            calibration_version="synthetic-cal",
+        )
+
+    reg = api().PoseMarkerRegistration(
+        marker_id=7, marker_size_m=0.0525, marked_asset_sha256="a" * 64
+    )
+    obs = render_small(BITS7)
+    assert api().detect_pose_marker(obs, reg, corner_refinement="NONE").status == "UNKNOWN"
+    est = api().detect_pose_marker(obs, reg, corner_refinement="SUBPIX")
+    assert est.status == "OBSERVED"
+    assert est.observed_marker_ids == (7,)
+
+    corrupted = BITS7.copy()
+    corrupted[1, 3] = 255
+    corrupted_est = api().detect_pose_marker(
+        render_small(corrupted), reg, corner_refinement="SUBPIX"
+    )
+    assert corrupted_est.status == "UNKNOWN"

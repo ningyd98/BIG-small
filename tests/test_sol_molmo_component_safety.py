@@ -94,3 +94,43 @@ def test_zero_depth_cannot_support_component_identity():
     )
     with pytest.raises(module.ComponentStopped, match="DEPTH"):
         module._visible_support(invalid, np.array([0.8, 0.1, 0.1]))
+
+
+def test_split_visible_support_unions_inside_reference_and_rejects_outside_decoy():
+    import base64
+    import io
+
+    from PIL import Image
+
+    from tests.test_molmo_grounded_planner import request_scene
+    from tests.test_molmo_revalidation import rebuild
+
+    module = importlib.import_module("cloud_edge_robot_arm.research.sol_molmo_components")
+    observation = request_scene().observation
+    green = np.array([0.08, 0.85, 0.08])
+    ref_mask, base_info = module._visible_support(observation, green)
+    # 模拟机械臂横跨绿色区域将其分割成两块（均在参考掩码内部）
+    with Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64))) as src:
+        rgb = np.asarray(src.convert("RGB")).copy()
+    ys, xs = np.nonzero(ref_mask)
+    mid_x = int(xs.mean())
+    split_rgb = rgb.copy()
+    split_rgb[ys, mid_x - 1 : mid_x + 2] = [180, 180, 180]
+    buf = io.BytesIO()
+    Image.fromarray(split_rgb).save(buf, format="PNG")
+    split_obs = rebuild(observation, rgb_png_base64=base64.b64encode(buf.getvalue()).decode())
+
+    with pytest.raises(module.ComponentStopped, match="IDENTITY"):
+        module._visible_support(split_obs, green)
+    selected, info = module._visible_support(split_obs, green, reference_mask=ref_mask)
+    assert info["visible_pixels"] < base_info["visible_pixels"]
+    assert np.all(selected <= ref_mask)
+
+    # 若在参考掩码之外存在外来同色连通块，即便提供 reference_mask 也必须拒绝
+    decoy_rgb = split_rgb.copy()
+    decoy_rgb[2:8, 2:8] = [20, 240, 20]
+    buf2 = io.BytesIO()
+    Image.fromarray(decoy_rgb).save(buf2, format="PNG")
+    decoy_obs = rebuild(observation, rgb_png_base64=base64.b64encode(buf2.getvalue()).decode())
+    with pytest.raises(module.ComponentStopped, match="IDENTITY"):
+        module._visible_support(decoy_obs, green, reference_mask=ref_mask)

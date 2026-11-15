@@ -189,3 +189,50 @@ def test_episode_source_snapshot_seals_modified_tracking_code(tmp_path):
     snapshot = json.loads((output / "source-hashes.json").read_text())
     assert len(snapshot["files"]["src/cloud_edge_robot_arm/vision/tracking.py"]) == 64
     assert len(snapshot["files"]["src/cloud_edge_robot_arm/vision/top_grasp.py"]) == 64
+
+
+def test_shaded_target_edge_ring_pixel_accepted_while_neutral_or_shallow_occluder_rejected():
+    base = cuboid()
+    rgb = np.asarray(Image.open(io.BytesIO(base64.b64decode(base.rgb_png_base64))))
+    depth = np.asarray(base.depth_values(), dtype="<f4").reshape(240, 320).copy()
+    mask = (rgb[:, :, 0] > 200) & (rgb[:, :, 1] < 100)
+    ring = (cv2.dilate(mask.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0) & ~mask
+    ry, rx = np.nonzero(ring)
+    ey, ex = int(ry[0]), int(rx[0])
+
+    # 1像素方块自身暗红过渡边（深度不浅于顶面）允许通过外环检查
+    rgb_shaded = rgb.copy()
+    depth_shaded = depth.copy()
+    rgb_shaded[ey, ex] = [40, 18, 17]
+    depth_shaded[ey, ex] = 1.33
+    stream = io.BytesIO()
+    Image.fromarray(rgb_shaded).save(stream, format="PNG")
+    shaded_obs = RGBDObservation.model_validate(
+        {
+            **base.model_dump(),
+            "rgb_png_base64": base64.b64encode(stream.getvalue()).decode(),
+            "depth_float32_base64": base64.b64encode(depth_shaded.tobytes()).decode(),
+            "checksum_sha256": "",
+        }
+    )
+    geometry = track(shaded_obs).initial
+    assert geometry["top_pixels"] >= 9
+
+    # 中性灰前景遮挡或比顶面更近的像素仍必须拒绝
+    for occ_rgb, occ_depth in (([100, 100, 100], 1.33), ([40, 18, 17], 1.27)):
+        rgb_bad = rgb.copy()
+        depth_bad = depth.copy()
+        rgb_bad[ey, ex] = occ_rgb
+        depth_bad[ey, ex] = occ_depth
+        stream_bad = io.BytesIO()
+        Image.fromarray(rgb_bad).save(stream_bad, format="PNG")
+        bad_obs = RGBDObservation.model_validate(
+            {
+                **base.model_dump(),
+                "rgb_png_base64": base64.b64encode(stream_bad.getvalue()).decode(),
+                "depth_float32_base64": base64.b64encode(depth_bad.tobytes()).decode(),
+                "checksum_sha256": "",
+            }
+        )
+        with pytest.raises(ValueError, match="target_outer_boundary_depth_unresolved"):
+            track(bad_obs)

@@ -16,7 +16,7 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
 
@@ -72,6 +72,64 @@ class PoseMarkerEstimate:
     stability_status: Literal["UNKNOWN"] = "UNKNOWN"
 
 
+def _decode_subpix_rejected_candidates(
+    gray: Any, rejected: Any, dictionary: Any, marker_id: int
+) -> tuple[tuple[Any, ...], Any]:
+    """在SUBPIX模式下对四角候选先做亚像素角点细化与双线性透视采样，仍要求0比特误差精确匹配。"""
+    import cv2
+    import numpy as np
+
+    expected = (cv2.aruco.generateImageMarker(dictionary, marker_id, 6) > 0).astype(np.uint8)
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    ppc = 8
+    side = 6 * ppc
+    margin = 2
+    dst = np.array(
+        [[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]], dtype=np.float32
+    )
+    matched_corners = []
+    matched_ids = []
+    height, width = gray.shape
+    for candidate in rejected:
+        pts = np.asarray(candidate, dtype=np.float32).reshape(4, 2)
+        if (
+            np.any(pts[:, 0] < 2.0)
+            or np.any(pts[:, 0] >= width - 2.0)
+            or np.any(pts[:, 1] < 2.0)
+            or np.any(pts[:, 1] >= height - 2.0)
+        ):
+            continue
+        if float(np.linalg.norm(np.roll(pts, -1, axis=0) - pts, axis=1).min()) < 8.0:
+            continue
+        edge0 = pts[1] - pts[0]
+        edge1 = pts[2] - pts[1]
+        if float(edge0[0] * edge1[1] - edge0[1] * edge1[0]) < 0.0:
+            pts = pts[[0, 3, 2, 1]]
+        refined = cv2.cornerSubPix(
+            gray.copy(), pts.reshape(-1, 1, 2).copy(), (2, 2), (-1, -1), criteria
+        ).reshape(4, 2)
+        transform = cv2.getPerspectiveTransform(refined, dst)
+        warped = cv2.warpPerspective(gray, transform, (side, side), flags=cv2.INTER_LINEAR)
+        _, thresholded = cv2.threshold(warped, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        bits = np.zeros((6, 6), dtype=np.uint8)
+        for row in range(6):
+            for col in range(6):
+                cell = thresholded[
+                    row * ppc + margin : (row + 1) * ppc - margin,
+                    col * ppc + margin : (col + 1) * ppc - margin,
+                ]
+                bits[row, col] = 1 if float(cell.mean()) > 127.5 else 0
+        for rotation_k in range(4):
+            if np.array_equal(np.rot90(bits, rotation_k), expected):
+                ordered = np.roll(refined, -rotation_k, axis=0).reshape(1, 4, 2)
+                matched_corners.append(ordered)
+                matched_ids.append([marker_id])
+                break
+    if not matched_ids:
+        return (), None
+    return tuple(matched_corners), np.array(matched_ids, dtype=np.int32)
+
+
 def detect_pose_marker(
     observation: RGBDObservation,
     registration: PoseMarkerRegistration,
@@ -119,7 +177,12 @@ def detect_pose_marker(
         rgb = np.asarray(
             Image.open(io.BytesIO(base64.b64decode(current.rgb_png_base64))).convert("RGB")
         )
-        corners, ids, _ = detector.detectMarkers(cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY))
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        corners, ids, rejected = detector.detectMarkers(gray)
+        if ids is None and corner_refinement == "SUBPIX" and rejected:
+            corners, ids = _decode_subpix_rejected_candidates(
+                gray, rejected, dictionary, registration.marker_id
+            )
     except (ImportError, AttributeError):
         return unknown("aruco_decoder_unavailable")
     if ids is None:

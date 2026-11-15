@@ -108,7 +108,10 @@ def check_component_lease(
 
 
 def _visible_support(
-    observation: RGBDObservation, color: np.ndarray
+    observation: RGBDObservation,
+    color: np.ndarray,
+    *,
+    reference_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     with Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64))) as source:
         rgb = np.asarray(source.convert("RGB"), dtype=float)
@@ -119,8 +122,20 @@ def _visible_support(
     count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
     choices = [i for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= 4]
     if len(choices) != 1:
-        raise ComponentStopped("CURRENT_RGBD_IDENTITY_NOT_UNIQUE_OR_VISIBLE")
-    selected = labels == choices[0]
+        if (
+            reference_mask is not None
+            and len(choices) > 1
+            and all(
+                bool(np.any((labels == i) & reference_mask))
+                and not bool(np.any((labels == i) & ~reference_mask))
+                for i in choices
+            )
+        ):
+            selected = np.isin(labels, choices)
+        else:
+            raise ComponentStopped("CURRENT_RGBD_IDENTITY_NOT_UNIQUE_OR_VISIBLE")
+    else:
+        selected = labels == choices[0]
     depths = np.asarray(observation.depth_values()).reshape(observation.height, observation.width)
     if np.count_nonzero(selected & (depths > 0)) < max(4, np.count_nonzero(selected) * 0.8):
         raise ComponentStopped("CURRENT_RGBD_SUPPORT_DEPTH_UNAVAILABLE")
@@ -159,7 +174,16 @@ def _ground_component(
         _, visible = _visible_support(observation, tracker.target_color)
     else:
         visible = {"status": "REGISTERED_MARKER_OBSERVED", "metric_error_bound_m": None}
-    _visible_support(observation, tracker.destination_color)
+    destination_reference_mask = (
+        tracker.destination["mask"]
+        if getattr(tracker, "destination", None) is not None
+        else None
+    )
+    _visible_support(
+        observation,
+        tracker.destination_color,
+        reference_mask=destination_reference_mask,
+    )
     current = dict(evidence)
     audit: dict[str, Any] = {
         "observation_id": observation.observation_id,
