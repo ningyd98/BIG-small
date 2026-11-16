@@ -45,6 +45,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="显式组件诊断的独立位姿采样命名空间；默认保留固定场景")
     parser.add_argument("--cloud-vision-fallback", action="store_true",
                         help="本地失败时将一次云请求改为RGB识别复核；仅限显式付费组件诊断")
+    parser.add_argument("--visual-servo", action="store_true",
+                        help="显式组件诊断内启用连续OpenCV视觉反馈；不增加模型调用")
+    parser.add_argument("--camera-position", nargs=3, type=float, metavar=("X", "Y", "Z"),
+                        help="顶视相机世界坐标（米）；需--visual-servo")
     args = parser.parse_args(argv)
     if args.application_site_packages is not None:
         dependency_path = args.application_site_packages.resolve()
@@ -76,6 +80,8 @@ def main(argv: list[str] | None = None) -> int:
             component_diagnostic=args.component_diagnostic,
             scene_split=args.scene_split,
             cloud_vision_fallback=args.cloud_vision_fallback,
+            visual_servo=args.visual_servo,
+            camera_position_m=tuple(args.camera_position) if args.camera_position else None,
         )
     except (ValueError, OSError) as error:
         print(json.dumps({"status": "NOT_STARTED", "error_type": type(error).__name__}))

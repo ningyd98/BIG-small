@@ -85,6 +85,8 @@ def make_worker_binding(
     marker_family_id: str | None = None,
     component_diagnostic: bool = False,
     component_scene: dict[str, Any] | None = None,
+    visual_servo: bool = False,
+    camera_position_m: tuple[float, float, float] | None = None,
 ) -> RoleRuntimeBinding:
     """固定本次云、规则边缘、OpenCV及本地感知配置，不生成正式验收许可。"""
     if len(asset_manifest_sha256) != 64 or any(
@@ -93,6 +95,11 @@ def make_worker_binding(
         raise ValueError("exact local model manifest digest required")
     if planner.grounded.cloud_vision_fallback and not component_diagnostic:
         raise ValueError("cloud vision fallback requires a component diagnostic binding")
+    if type(visual_servo) is not bool or ((visual_servo or camera_position_m is not None)
+                                        and not component_diagnostic):
+        raise ValueError("visual servo and camera settings require explicit component diagnostic")
+    if camera_position_m is not None and not visual_servo:
+        raise ValueError("camera translation requires explicit visual servo mode")
     budget = ExecutionPolicy("budget source", model_snapshot_hash="a" * 64).verification_budget
     policy: dict[str, Any] = {
         "provider": "rules",
@@ -123,6 +130,18 @@ def make_worker_binding(
             raise ValueError("component scene requires an integer seed")
         physical_component_scenario(scene_seed, component_scene)
         policy["component_scene"] = json.loads(json.dumps(component_scene, allow_nan=False))
+    if visual_servo:
+        from cloud_edge_robot_arm.research.sol_molmo_components import component_servo_settings
+        from cloud_edge_robot_arm.simulation.mujoco.visual_servo import VisualServoConfig
+
+        policy["visual_servo"] = asdict(VisualServoConfig())
+        if camera_position_m is not None:
+            policy["camera_position_m"] = list(camera_position_m)
+        component_servo_settings({
+            "sol_molmo_visual_servo": True,
+            **({"sol_molmo_camera_position_m": json.dumps(list(camera_position_m),
+                 separators=(",", ":"), allow_nan=False)} if camera_position_m is not None else {}),
+        }, policy)
     edge_paths = ["src/cloud_edge_robot_arm/edge/recovery/verification_router.py"] + [
         f"src/cloud_edge_robot_arm/edge/evidence/{name}.py"
         for name in ("models", "validator", "conditions")
@@ -185,6 +204,14 @@ def make_worker_binding(
             "src/cloud_edge_robot_arm/edge/safety/context_builder.py",
             "src/cloud_edge_robot_arm/edge/safety/rules.py",
             "src/cloud_edge_robot_arm/edge/safety/policy.py",
+        ]
+    if visual_servo:
+        device_paths += [
+            "src/cloud_edge_robot_arm/vision/servo.py",
+            "src/cloud_edge_robot_arm/simulation/mujoco/visual_servo.py",
+            "src/cloud_edge_robot_arm/simulation/mujoco/motion_controller.py",
+            "src/cloud_edge_robot_arm/simulation/mujoco/camera.py",
+            "src/cloud_edge_robot_arm/simulation/config.py",
         ]
     device = hashes(device_paths)
     bundle = RoleModelBundle(

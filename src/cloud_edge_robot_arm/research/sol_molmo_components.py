@@ -7,6 +7,7 @@ import io
 import json
 import math
 import time
+from contextlib import nullcontext
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +36,35 @@ _SETTLE_STEPS = dict(
 
 class ComponentStopped(RuntimeError):
     """明确停止原因，不复用或升级旧帧和未知证书。"""
+
+
+def component_servo_settings(
+    parameters: dict[str, Any], policy: dict[str, Any]
+) -> tuple[bool, tuple[float, float, float] | None]:
+    """Require the same explicit development settings in job and hashed role policy."""
+    from cloud_edge_robot_arm.simulation.mujoco.visual_servo import VisualServoConfig
+
+    enabled = parameters.get("sol_molmo_visual_servo", False)
+    bound = policy.get("visual_servo")
+    if type(enabled) is not bool or enabled is not (bound is not None):
+        raise ValueError("visual servo differs from its bound role policy")
+    if bound is not None and bound != asdict(VisualServoConfig()):
+        raise ValueError("visual servo role policy differs from the supported configuration")
+    camera = policy.get("camera_position_m")
+    encoded = json.dumps(camera, separators=(",", ":"), allow_nan=False) if camera else None
+    if parameters.get("sol_molmo_camera_position_m") != encoded:
+        raise ValueError("camera position differs from its bound role policy")
+    if camera is None:
+        return enabled, None
+    if not enabled or not isinstance(camera, (tuple, list)) or len(camera) != 3 or any(
+        isinstance(value, bool) or not isinstance(value, (float, int))
+        or not math.isfinite(value) for value in camera
+    ):
+        raise ValueError("invalid development camera position")
+    x, y, z = map(float, camera)
+    if not (-0.1 <= x <= 0.8 and -0.5 <= y <= 0.5 and 0.6 <= z <= 2):
+        raise ValueError("camera position outside development workspace")
+    return enabled, (x, y, z)
 
 
 def _save(path: Path, value: Any) -> str:
@@ -153,11 +183,14 @@ def _ground_component(
     family_id: str,
     skill: str,
     state: Any,
+    *,
+    moving_camera: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """当前像素维持身份；缺完整轮廓时只在已抓取的组件诊断中消费反馈。"""
     target, target_reason = tracker._geometry(observation, tracker.target_color, target=True)
     region, region_reason = tracker._geometry(
-        observation, tracker.destination_color, target=False, occlusion_geometry=target
+        observation, tracker.destination_color, target=False,
+        occlusion_geometry=None if moving_camera else target,
     )
     family = marker_family(family_id)
     marker = detect_pose_marker(
@@ -174,7 +207,7 @@ def _ground_component(
         _, visible = _visible_support(observation, tracker.target_color)
     else:
         visible = {"status": "REGISTERED_MARKER_OBSERVED", "metric_error_bound_m": None}
-    destination_reference_mask = (
+    destination_reference_mask = None if moving_camera else (
         tracker.destination["mask"]
         if getattr(tracker, "destination", None) is not None
         else None
@@ -226,6 +259,8 @@ def _ground_component(
         )
         audit["destination_source"] = "CURRENT_OPENCV_RGBD"
     else:
+        if moving_camera and skill in {"MOVE_TO_REGION", "PLACE"}:
+            raise ComponentStopped("CURRENT_SERVO_DESTINATION_GEOMETRY_UNAVAILABLE")
         audit["destination_source"] = "REFERENCE_REGION_CENTER_WITH_CURRENT_VISIBLE_COLOR_SUPPORT"
     return current, audit
 
@@ -266,6 +301,9 @@ def run_component_episode(
     planner = worker.planner_factory()
     binding = worker.visual_role_binding
     parameters = job.draft.get("parameter_overrides", {})
+    servo_enabled, camera_position = component_servo_settings(
+        parameters, binding.evidence()["edge_policy"] if binding is not None else {}
+    )
     family_id = parameters.get("development_marker_family")
     if (
         type(planner) is not MolmoWorkerPlanner
@@ -341,21 +379,26 @@ def run_component_episode(
         "terminal_reason": None,
         "model_calls": 0,
         "physics_step_limit": 16000,
+        **({"visual_servo_enabled": True, "camera_position_m": camera_position}
+           if servo_enabled else {}),
     }
 
     lease_attempt: int | None = None
 
-    def active() -> None:
+    def active(*, verify_sources: bool = True) -> None:
         nonlocal lease_attempt
         source = check_component_lease(worker, job, start_monotonic, expected_attempt=lease_attempt)
         lease_attempt = source.attempt
-        binding.validate(planner)
+        if verify_sources:
+            binding.validate(planner)
         if planner.grounded.cloud_vision_fallback is not cloud_vision_fallback:
             raise ComponentStopped("CLOUD_VISION_FALLBACK_POLICY_CHANGED")
 
     try:
         active()
         backend.initialize(config)
+        if camera_position is not None:
+            backend.set_camera_position(camera_position)
         backend.reset(scenario)
         assert backend._model is not None and backend._data is not None
         body = backend._model.body("object").id
@@ -487,7 +530,13 @@ def run_component_episode(
                             family_id,
                             original.skill.value,
                             robot.get_state(),
+                            moving_camera=servo_enabled,
                         )
+                        if servo_enabled and original.skill.value in {"MOVE_TO_REGION", "PLACE"}:
+                            # Preserve the initial tool/support offset after lifting.
+                            measured["resolved_top_grasp_tcp"]["z"] = evidence[
+                                "resolved_top_grasp_tcp"
+                            ]["z"]
                         step = resolved_step(original, robot, measured)
                         if step.skill.value == "MOVE_ABOVE" and family_id in {
                             "side_y_plus_id7_75mm_r593",
@@ -532,14 +581,22 @@ def run_component_episode(
                             action_contract: Any = action_contract,
                             step: Any = step,
                             step_started: float = step_started,
+                            dynamic_step: Any = None,
                         ) -> None:
+                            checked_step = dynamic_step if dynamic_step is not None else step
+                            checked_contract = action_contract.model_copy(update={
+                                "steps": [
+                                    checked_step if item.step_id == checked_step.step_id else item
+                                    for item in action_contract.steps
+                                ]
+                            }, deep=True) if dynamic_step is not None else action_contract
                             now = datetime.now(UTC)
                             context = shield.context_builder.build(
-                                contract=action_contract,
-                                step=step,
+                                contract=checked_contract,
+                                step=checked_step,
                                 robot_state=robot.get_state(),
                                 scene_version=contract.scene_version,
-                                resolved_parameters=dict(step.parameters),
+                                resolved_parameters=dict(checked_step.parameters),
                                 scene_updated_at=observation.captured_at,
                                 telemetry_timestamp=now,
                                 wall_clock_now=now,
@@ -548,26 +605,33 @@ def run_component_episode(
                                 monotonic_now=time.monotonic(),
                                 requested_joint_velocities=[
                                     *map(abs, backend.get_joint_state().velocities),
-                                    float(step.parameters.get("tcp_velocity", 0)) / 0.3,
+                                    float(checked_step.parameters.get("tcp_velocity", 0)) / 0.3,
                                 ],
-                                requested_velocity=float(step.parameters.get("tcp_velocity", 0)),
+                                requested_velocity=float(
+                                    checked_step.parameters.get("tcp_velocity", 0)
+                                ),
                                 requested_acceleration=float(
-                                    step.parameters.get("acceleration", 0)
+                                    checked_step.parameters.get("acceleration", 0)
                                 ),
                             )
                             verdict = getattr(
-                                shield, "pre_check" if phase == "PRE" else "post_check"
+                                shield, "post_check" if phase == "POST" else "pre_check"
                             )(context)
                             checks.append(
                                 {
                                     "step_id": step.step_id,
                                     "phase": phase,
                                     "verdict": asdict(verdict),
+                                    **({"checked_target_pose": checked_step.parameters[
+                                            "target_pose"
+                                        ],
+                                        "observation_id": observation.observation_id}
+                                       if dynamic_step is not None else {}),
                                 }
                             )
                             if not verdict.allowed or (
                                 verdict.limited_parameters is not None
-                                and verdict.limited_parameters != step.parameters
+                                and verdict.limited_parameters != checked_step.parameters
                             ):
                                 raise ComponentStopped(
                                     "SAFETY_SHIELD_" + phase + "_REJECTED_OR_LIMITED"
@@ -589,22 +653,110 @@ def run_component_episode(
                             "start_step": beginning,
                         }
                         actions.append(action)
+                        servo_session = None
+                        servo_feedback = None
                         try:
-                            outcome = executor.execute_attempt(
-                                contract=action_contract, step=step, attempt=1
+                            if servo_enabled and "target_pose" in step.parameters:
+                                from cloud_edge_robot_arm.contracts import Pose
+                                from cloud_edge_robot_arm.simulation.mujoco import motion_controller
+                                from cloud_edge_robot_arm.simulation.mujoco.visual_servo import (
+                                    VisualServoSession,
+                                )
+                                from cloud_edge_robot_arm.vision.observations import (
+                                    observation_from_sensor_frame,
+                                )
+                                from cloud_edge_robot_arm.vision.servo import (
+                                    OpenCVServoFeedback,
+                                    save_servo_frame,
+                                )
+
+                                action["visual_servo"] = {"terminal_reason": "INITIALIZING"}
+                                servo_reference = observation_from_sensor_frame(
+                                    backend.capture_sensor_frame(), source="mujoco_camera"
+                                )
+                                save_servo_frame(
+                                    servo_reference,
+                                    folder / "servo-frames" / step.step_id / "reference",
+                                )
+                                servo_feedback = OpenCVServoFeedback(
+                                    servo_reference, tracker, evidence, skill=step.skill.value,
+                                    initial_target=Pose.model_validate(step.parameters["target_pose"]),
+                                    marker_family_id=family_id,
+                                )
+
+                                def servo_sample(
+                                    previous: Any, *, feedback: Any = servo_feedback,
+                                    step: Any = step, safety: Any = safety,
+                                ) -> Any:
+                                    sample_started = time.perf_counter()
+                                    # Source files are already fully attested at
+                                    # the skill boundary, as in the legacy owner.
+                                    # The hot loop rechecks live lease/cancellation.
+                                    active(verify_sources=False)
+                                    checked_at = time.perf_counter()
+                                    paired = backend.capture_sensor_frame()
+                                    observation = observation_from_sensor_frame(
+                                        paired, source="mujoco_camera"
+                                    )
+                                    save_servo_frame(
+                                        observation, folder / "servo-frames" / step.step_id
+                                        / f"sample-{len(feedback.records):04d}",
+                                    )
+                                    captured_at = time.perf_counter()
+                                    target = feedback.update(observation)
+                                    measured_at = time.perf_counter()
+                                    updated_step = step.model_copy(update={"parameters": {
+                                        **step.parameters, "target_pose": target.model_dump(),
+                                    }}, deep=True)
+                                    check_component_hard_state(backend, robot)
+                                    safety(observation, "SERVO", dynamic_step=updated_step)
+                                    safety_at = time.perf_counter()
+                                    active(verify_sources=False)
+                                    feedback.records[-1]["stage_wall_ms"] = {
+                                        "initial_active": (checked_at - sample_started) * 1000,
+                                        "capture_and_archive": (captured_at - checked_at) * 1000,
+                                        "vision": (measured_at - captured_at) * 1000,
+                                        "safety": (safety_at - measured_at) * 1000,
+                                        "final_active": (time.perf_counter() - safety_at) * 1000,
+                                    }
+                                    return motion_controller.MotionTarget(
+                                        target, previous.orientation_wxyz
+                                    )
+
+                                servo_session = VisualServoSession(servo_sample)
+                            execution_session = (
+                                robot.visual_servo(servo_session)
+                                if servo_session else nullcontext()
                             )
+                            with execution_session:
+                                outcome = executor.execute_attempt(
+                                    contract=action_contract, step=step, attempt=1
+                                )
                             action["controller_result"] = asdict(outcome)
                             action["controller_return_step"] = backend.total_physics_steps
                             if not outcome.success:
                                 raise ComponentStopped(
                                     "CONTROLLER_FAILURE:" + (outcome.error_code or "UNKNOWN")
                                 )
-                            # Check controller return before the separate observation hold.
-                            # Keep the real pre-action timestamp subject to the scene TTL.
-                            safety(current, "POST")
+                            if servo_session is not None and servo_feedback is not None:
+                                final_step = step.model_copy(update={"parameters": {
+                                    **step.parameters,
+                                    "target_pose": servo_feedback.records[-1]["target_pose"],
+                                }}, deep=True)
+                                safety(servo_feedback.last_observation, "POST",
+                                       dynamic_step=final_step)
+                            else:
+                                # Legacy mode retains its original pre-action TTL.
+                                safety(current, "POST")
                             action["diagnostic_settle_steps"] = _SETTLE_STEPS[step.skill.value]
                             backend.step(_SETTLE_STEPS[step.skill.value])
                         finally:
+                            if servo_session is not None and servo_feedback is not None:
+                                action["visual_servo"] = {
+                                    "control_samples": servo_session.records,
+                                    "visual_samples": servo_feedback.records,
+                                    "terminal_reason": servo_session.terminal_reason,
+                                }
                             action["end_step"] = backend.total_physics_steps
                             row["executed_actions"] += int(backend.total_physics_steps > beginning)
                         frame(f"post-{index:02d}-{step.skill.value.lower()}")

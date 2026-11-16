@@ -58,11 +58,13 @@ class RGBPointFixture:
 
 
 @pytest.mark.parametrize(
-    "through_entry,after_capture_fails,scene_split",
-    [(False, False, None), (True, False, None), (False, True, None), (True, False, "held-out")],
+    "through_entry,after_capture_fails,scene_split,servo",
+    [(False, False, None, False), (True, False, None, False),
+     (False, True, None, False), (True, False, "held-out", False),
+     (True, False, None, True)],
 )
 def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical_evidence(
-    tmp_path, monkeypatch, through_entry, after_capture_fails, scene_split
+    tmp_path, monkeypatch, through_entry, after_capture_fails, scene_split, servo
 ):
     from cloud_edge_robot_arm.model_control.service import ModelControlService
     from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
@@ -153,6 +155,7 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
             model_directory=tmp_path / "software-only-model",
             asset_manifest=manifest,
             allow_paid=True,
+            **({"visual_servo": True, "camera_position_m": (0.35, 0, 1.35)} if servo else {}),
             **({"scene_split": scene_split} if scene_split else {}),
         )
     else:
@@ -183,6 +186,30 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
     assert len(requests) == 1 and points.calls == 4, result.get("terminal_reason")
     assert result["execution_scope"] == "MUJOCO_COMPONENT_DIAGNOSTIC"
     assert result["online_reported_complete"] is None
+    if servo:
+        outcome = result["outcome"]
+        assert outcome["visual_servo_enabled"] is True
+        assert outcome["camera_position_m"] == [0.35, 0, 1.35]
+        servo_actions = [action for action in outcome["actions"] if "visual_servo" in action]
+        assert servo_actions and servo_actions[0]["visual_servo"]["control_samples"]
+        assert servo_actions[0]["controller_result"]["success"], outcome.get("terminal_reason")
+        first_post = next(check for check in outcome["safety_checks"] if check["phase"] == "POST")
+        assert first_post["verdict"]["allowed"], outcome.get("terminal_reason")
+        dynamic = [check for check in outcome["safety_checks"] if check["phase"] == "SERVO"]
+        assert len(dynamic) > 3
+        assert all(check["checked_target_pose"] for check in dynamic)
+        raw_frames = list((output / "component/servo-frames").rglob("observation.json"))
+        archived = {json.loads(path.read_text())["observation_id"]: path for path in raw_frames}
+        assert all(check["observation_id"] in archived for check in dynamic)
+        for check in (dynamic[0], dynamic[-1]):
+            metadata = archived[check["observation_id"]]
+            values = json.loads(metadata.read_text())
+            assert hashlib.sha256((metadata.parent / "depth.f32").read_bytes()).hexdigest() == (
+                values["depth_sha256"]
+            )
+            assert len(values["camera_to_world"]) == 16
+        assert result["outcome"]["native_action_qualification"] == "UNKNOWN_NOT_GRANTED"
+        return
     assert result["executed_actions"] >= 7, result.get("terminal_reason")
     assert result["physical_success"] is True
     assert result["outcome"]["native_action_qualification"] == "UNKNOWN_NOT_GRANTED"

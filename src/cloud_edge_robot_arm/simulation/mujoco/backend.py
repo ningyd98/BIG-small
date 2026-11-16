@@ -209,6 +209,7 @@ def _observed_operation(kind: str) -> Callable[[Callable[..., Any]], Callable[..
                     "apply_gripper_command": "gripper",
                     "hold_current_joints": "hold_current_joints",
                     "_emergency_stop_observed": "emergency_stop",
+                    "set_camera_position": "camera_position",
                 }
                 parameters["command_type"] = names[function.__name__]
             if requested is not None:
@@ -268,6 +269,7 @@ class MuJoCoPhysicsBackend:
         self._actuator_delay_steps = 0
         self._pending_joint_targets: list[tuple[int, np.ndarray[Any, Any]]] = []
         self._camera: MuJoCoRGBDCamera | None = None
+        self._sensor_capture_on_demand = False
         self._episode_id: str | None = None
         self._step_observer: Callable[[PhysicsStepObservation], None] | None = None
         self._actuator_observer: Callable[[ActuatorStepObservation], None] | None = None
@@ -1026,6 +1028,69 @@ class MuJoCoPhysicsBackend:
             episode_id=self._episode_id,
         )
 
+    def capture_sensor_frame(self) -> SensorFrame:
+        """Capture paired RGBD without segmentation or a physics step."""
+        self._require_not_in_observer_callback()
+        self._require_loaded()
+        if self._config is None or self._scenario is None or not (
+            self._config.render_rgb and self._config.render_depth
+        ):
+            raise RuntimeError("RGB-D rendering and an active episode are required")
+        frame = cast(SensorFrame, self._capture_cached_observed()[0])
+        if self._sensor_capture_on_demand:
+            self._sensor_frame = frame
+        return frame
+
+    @contextmanager
+    def sensor_capture_on_demand(self) -> Iterator[None]:
+        """Let an explicit synchronous servo own captures on its sensor grid.
+
+        Step returns the most recent owned frame; the servo must request a fresh
+        paired capture at each visual deadline. Default step rendering resumes
+        on exit. Frozen executions cannot enable this development optimization.
+        """
+        self._require_not_in_observer_callback()
+        self._require_guard_lifecycle_mutable()
+        self._require_loaded()
+        if self._sensor_capture_on_demand:
+            raise RuntimeError("on-demand sensor scope already active")
+        self._sensor_capture_on_demand = True
+        try:
+            yield
+        except BaseException:
+            self._sensor_capture_on_demand = False
+            raise
+        else:
+            self._sensor_capture_on_demand = False
+            self._update_sensor_frame()
+
+    @_observed_operation("COMMAND")
+    def set_camera_position(self, position_m: tuple[float, float, float]) -> None:
+        """Translate the world-attached top-down development camera.
+
+        The next paired capture computes its own extrinsics/calibration hash.
+        Guarded/frozen executions retain their existing configuration boundary.
+        """
+        self._require_not_in_observer_callback()
+        self._require_guard_lifecycle_mutable()
+        self._require_loaded()
+        position = np.asarray(position_m, dtype=float)
+        if position.shape != (3,) or not np.isfinite(position).all():
+            raise ValueError("camera position must contain three finite metres")
+        if not (-0.1 <= position[0] <= 0.8 and -0.5 <= position[1] <= 0.5
+                and 0.6 <= position[2] <= 2.0):
+            raise ValueError("camera position outside development workspace")
+        assert self._model is not None and self._data is not None and self._mujoco is not None
+        camera = self._model.camera("rgbd").id
+        if self._model.cam_bodyid[camera] != 0 or self._model.cam_mode[camera] != 0:
+            raise ValueError("camera must be fixed to world")
+        self._model.cam_pos[camera] = position
+        self._mujoco.mj_camlight(self._model, self._data)
+        self._record_command(
+            "camera_position", accepted=True, reason="development_camera_translation",
+            position_m=position.tolist(),
+        )
+
     @_observed_operation("COMMAND")
     def apply_joint_targets(self, targets: JointCommand) -> None:
         self._require_not_in_observer_callback()
@@ -1363,6 +1428,8 @@ class MuJoCoPhysicsBackend:
         return contacts
 
     def _update_sensor_frame(self) -> None:
+        if self._sensor_capture_on_demand:
+            return
         if self._config is not None and (self._config.render_rgb or self._config.render_depth):
             if self._operation_observer is not None:
                 self._sensor_frame, _, _, _ = self._capture_cached_observed()

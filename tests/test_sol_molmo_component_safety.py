@@ -134,3 +134,24 @@ def test_split_visible_support_unions_inside_reference_and_rejects_outside_decoy
     decoy_obs = rebuild(observation, rgb_png_base64=base64.b64encode(buf2.getvalue()).decode())
     with pytest.raises(module.ComponentStopped, match="IDENTITY"):
         module._visible_support(decoy_obs, green, reference_mask=ref_mask)
+
+
+@pytest.mark.parametrize("damage", ["job", "policy", "camera", "nonbool"])
+def test_continuous_servo_cannot_bypass_exact_job_role_binding(damage):
+    from dataclasses import asdict
+
+    from cloud_edge_robot_arm.simulation.mujoco.visual_servo import VisualServoConfig
+
+    module = importlib.import_module("cloud_edge_robot_arm.research.sol_molmo_components")
+    parameters = {"sol_molmo_visual_servo": True, "sol_molmo_camera_position_m": "[0.35,0,1.4]"}
+    policy = {"visual_servo": asdict(VisualServoConfig()), "camera_position_m": [0.35, 0, 1.4]}
+    if damage == "job":
+        parameters["sol_molmo_visual_servo"] = False
+    elif damage == "policy":
+        policy["visual_servo"]["max_correction_m"] = 1.0
+    elif damage == "camera":
+        parameters["sol_molmo_camera_position_m"] = "[0.36,0,1.4]"
+    else:
+        parameters["sol_molmo_visual_servo"] = 1
+    with pytest.raises(ValueError):
+        module.component_servo_settings(parameters, policy)

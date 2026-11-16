@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
 
 from cloud_edge_robot_arm.contracts import ActionResult, Pose, RobotState
@@ -12,6 +14,10 @@ from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
 from cloud_edge_robot_arm.simulation.mujoco.motion_controller import (
     MotionTarget,
     MuJoCoMotionController,
+)
+from cloud_edge_robot_arm.simulation.mujoco.visual_servo import (
+    MuJoCoVisualServoController,
+    VisualServoSession,
 )
 
 _DOWNWARD = (math.sqrt(0.5), 0.0, math.sqrt(0.5), 0.0)
@@ -31,6 +37,18 @@ class MuJoCoSkillRobot:
         self._motion = MuJoCoMotionController(backend)
         self._holding_object_id: str | None = None
         self._connected = True
+        self._visual_servo_session: VisualServoSession | None = None
+
+    @contextmanager
+    def visual_servo(self, session: VisualServoSession) -> Iterator[None]:
+        """Bind one explicit feedback session; never leak it into later skills."""
+        if self._visual_servo_session is not None:
+            raise RuntimeError("visual servo session already active")
+        self._visual_servo_session = session
+        try:
+            yield
+        finally:
+            self._visual_servo_session = None
 
     def home(self, *, timeout_ms: int | None = None) -> ActionResult:
         return self._move(
@@ -157,14 +175,25 @@ class MuJoCoSkillRobot:
         requested_hold_steps = math.ceil(0.5 / config.physics_dt_s)
         held_steps = 0
         bilateral_held = True
-        while held_steps < requested_hold_steps:
-            chunk = min(5, requested_hold_steps - held_steps)
-            self._backend.step(steps=chunk)
-            held_steps += chunk
-            contacts = self._grasp_contacts()
-            if contacts["left"] == 0 or contacts["right"] == 0:
-                bilateral_held = False
-                break
+        session = self._visual_servo_session
+        visual_steps = max(1, math.ceil(
+            session.config.vision_period_s / config.physics_dt_s
+        )) if session else requested_hold_steps
+        next_visual = visual_steps
+        hold_target = MotionTarget(resolved_target, _DOWNWARD)
+        scope = self._backend.sensor_capture_on_demand() if session else nullcontext()
+        with scope:
+            while held_steps < requested_hold_steps:
+                chunk = min(5, requested_hold_steps - held_steps, next_visual - held_steps)
+                self._backend.step(steps=chunk)
+                held_steps += chunk
+                contacts = self._grasp_contacts()
+                if contacts["left"] == 0 or contacts["right"] == 0:
+                    bilateral_held = False
+                    break
+                if session and held_steps >= next_visual:
+                    MuJoCoVisualServoController(self._backend).monitor_hold(hold_target, session)
+                    next_visual += visual_steps
         tcp_lift_m = self._backend.get_tcp_pose().z - current.z
         success = bilateral_held and held_steps >= requested_hold_steps and tcp_lift_m >= 0.05
         error = None if success else (
@@ -325,16 +354,29 @@ class MuJoCoSkillRobot:
             )
         velocity = 1.5 if tcp_velocity is None else tcp_velocity / 0.3
         accel = 4.0 if acceleration is None else acceleration / 0.3
+        motion_started = self._backend.total_physics_steps
         try:
-            outcome = self._motion.move_tcp(
-                MotionTarget(position=target, orientation_wxyz=orientation),
-                timeout_s=(timeout_ms if timeout_ms is not None else 8000) / 1000.0,
-                max_joint_velocity_rad_s=velocity,
-                max_joint_acceleration_rad_s2=accel,
-            )
+            if self._visual_servo_session is not None:
+                outcome = MuJoCoVisualServoController(self._backend).move_tcp(
+                    MotionTarget(position=target, orientation_wxyz=orientation),
+                    timeout_s=(timeout_ms if timeout_ms is not None else 8000) / 1000.0,
+                    max_joint_velocity_rad_s=velocity,
+                    max_joint_acceleration_rad_s2=accel,
+                    session=self._visual_servo_session,
+                )
+            else:
+                outcome = self._motion.move_tcp(
+                    MotionTarget(position=target, orientation_wxyz=orientation),
+                    timeout_s=(timeout_ms if timeout_ms is not None else 8000) / 1000.0,
+                    max_joint_velocity_rad_s=velocity,
+                    max_joint_acceleration_rad_s2=accel,
+                )
         except ValueError as exc:
+            servo = self._visual_servo_session
             return self._result(
-                action_type, False, before, started, 0, "INVALID_MOTION_REQUEST",
+                action_type, False, before, started,
+                self._backend.total_physics_steps - motion_started,
+                "VISUAL_SERVO_REJECTED" if servo else "INVALID_MOTION_REQUEST",
                 details={"reason": str(exc)},
             )
         movement_details: dict[str, object] = {
@@ -345,6 +387,11 @@ class MuJoCoSkillRobot:
             "motion_status": outcome.status,
             "max_load_compensation_rad": outcome.max_load_compensation_rad,
         }
+        if self._visual_servo_session is not None:
+            movement_details["visual_servo"] = {
+                "feedback_count": len(self._visual_servo_session.records),
+                "terminal_reason": self._visual_servo_session.terminal_reason,
+            }
         return self._result(
             action_type, outcome.status == "SUCCEEDED", before, started,
             outcome.physics_steps,

@@ -369,6 +369,8 @@ def create_molmo_opencv_bridge(
         marker_family_id=assignment["marker_family_id"],
         component_diagnostic=assignment.get("component_diagnostic", False),
         component_scene=assignment.get("component_scene"),
+        visual_servo=assignment.get("visual_servo", False),
+        camera_position_m=assignment.get("camera_position_m"),
     )
     _write(output / "role-binding.json", binding.evidence())
     return planner, binding
@@ -422,6 +424,10 @@ def run_worker_episode(
                     "sol_molmo_cloud_vision_fallback": assignment.get(
                         "cloud_vision_fallback", False
                     ),
+                    **({"sol_molmo_visual_servo": True} if assignment.get("visual_servo") else {}),
+                    **({"sol_molmo_camera_position_m": json.dumps(
+                        assignment["camera_position_m"], separators=(",", ":"), allow_nan=False,
+                    )} if "camera_position_m" in assignment else {}),
                     **({
                         "sol_molmo_component_scene": json.dumps(
                             assignment["component_scene"], sort_keys=True,
@@ -631,6 +637,8 @@ def run_single_episode(
     component_diagnostic: bool = False,
     scene_split: str | None = None,
     cloud_vision_fallback: bool = False,
+    visual_servo: bool = False,
+    camera_position_m: tuple[float, float, float] | None = None,
 ) -> dict[str, Any]:
     """显式组件诊断可执行；正式T10路径仍须原生资格，不混淆两者。"""
     if mode not in MODES:
@@ -643,6 +651,24 @@ def run_single_episode(
         raise ValueError("cloud vision fallback requires explicit component diagnostic execution")
     if scene_split is not None and not component_diagnostic:
         raise ValueError("scene variations require explicit component diagnostic execution")
+    if type(visual_servo) is not bool or (
+        (visual_servo or camera_position_m is not None) and not component_diagnostic
+    ):
+        raise ValueError("visual servo requires explicit component diagnostic execution")
+    if camera_position_m is not None and not visual_servo:
+        raise ValueError("camera translation requires visual servo")
+    if visual_servo:
+        from cloud_edge_robot_arm.research.sol_molmo_components import component_servo_settings
+        from cloud_edge_robot_arm.simulation.mujoco.visual_servo import VisualServoConfig
+
+        camera_policy: dict[str, Any] = {"visual_servo": asdict(VisualServoConfig())}
+        if camera_position_m is not None:
+            camera_policy["camera_position_m"] = list(camera_position_m)
+        component_servo_settings({
+            "sol_molmo_visual_servo": True,
+            **({"sol_molmo_camera_position_m": json.dumps(list(camera_position_m),
+                 separators=(",", ":"), allow_nan=False)} if camera_position_m is not None else {}),
+        }, camera_policy)
     if mode in {"plan-only", "execute"} and (
         not allow_paid
         or not profile_id
@@ -656,6 +682,10 @@ def run_single_episode(
     assignment = scene_assignment(seed, marker_family_id, scene_split=scene_split)
     assignment["component_diagnostic"] = component_diagnostic
     assignment["cloud_vision_fallback"] = cloud_vision_fallback
+    if visual_servo:
+        assignment["visual_servo"] = True
+        if camera_position_m is not None:
+            assignment["camera_position_m"] = list(camera_position_m)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     sources: dict[str, str] = {}
@@ -699,7 +729,14 @@ def run_single_episode(
     started = time.monotonic()
     try:
         _write(output / "scene-assignment.json", assignment)
-        for name in (*SOURCE_PATHS, assignment["model_path"]):
+        servo_sources = (
+            "src/cloud_edge_robot_arm/vision/servo.py",
+            "src/cloud_edge_robot_arm/simulation/mujoco/visual_servo.py",
+            "src/cloud_edge_robot_arm/simulation/mujoco/motion_controller.py",
+            "src/cloud_edge_robot_arm/simulation/mujoco/camera.py",
+            "src/cloud_edge_robot_arm/simulation/config.py",
+        ) if visual_servo else ()
+        for name in (*SOURCE_PATHS, *servo_sources, assignment["model_path"]):
             sources[name] = _sha(ROOT / name)
         _write(output / "source-hashes.json", {"scope": "SELECTED_ENTRY_SOURCES", "files": sources})
         result["source_snapshot_status"] = "COMPLETE"
