@@ -1,0 +1,233 @@
+"""Run every collected test on the frozen development checkout with native pytest."""
+import concurrent.futures
+import hashlib
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+from collections import Counter, defaultdict
+from pathlib import Path
+
+ROOT = Path.cwd()
+OUT = Path(__file__).resolve().parent
+OLDRUN = ROOT / "experiments/results/phase9/grasp-place-repair-20261117"
+COMMIT = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+ENV = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=f"{ROOT}/src:{ROOT}",
+           MUJOCO_GL="egl", OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1",
+           MKL_NUM_THREADS="1", NUMEXPR_NUM_THREADS="1")
+ENV.pop("PYTEST_ADDOPTS", None)
+ENV.pop("BIGSMALL_RGBD_INTEGRATION_ROOT", None)
+ENV.pop("PYTEST_XDIST_WORKER", None)
+
+
+def dump(path, value):
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
+
+
+def digest(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def manifest():
+    scopes = ("src", "tests", "scripts", "configs", "assets", "pyproject.toml", "README.md", "AGENTS.md")
+    files = subprocess.check_output(["git", "ls-files", "-z", "--", *scopes]).decode().split("\0")
+    return {p: digest(ROOT / p) for p in files if p and (ROOT / p).is_file()}
+
+
+def read_nodes(path):
+    return [s for s in path.read_text().splitlines() if s.startswith("tests/") and "::" in s]
+
+
+def junit_key(node):
+    base, lb, param = node.partition("[")
+    path, *parts = base.split("::")
+    return (".".join([path.removesuffix(".py").replace("/", "."), *parts[:-1]]),
+            parts[-1] + lb + param)
+
+
+def run(job, cpus, categories):
+    label, nodes, cap, category = job
+    directory = OUT / label
+    directory.mkdir()
+    input_args = directory / "nodes.txt"
+    input_args.write_text("\n".join(nodes) + "\n")
+    xml = directory / "pytest.xml"
+    argv = ["taskset", "-c", ",".join(map(str, cpus)), str(ROOT / ".venv/bin/python"),
+            "-m", "pytest", f"@{input_args}", "-vv", "--tb=short", "-ra",
+            "-o", "faulthandler_timeout=0", "-p", "no:cacheprovider",
+            f"--basetemp={directory/'tmp'}", f"--junitxml={xml}"]
+    env = dict(ENV)
+    if category != "render":
+        env["CUDA_VISIBLE_DEVICES"] = ""
+    start = time.monotonic()
+    info = {"group": label, "category": category, "source_commit": COMMIT, "argv": argv,
+            "node_count": len(nodes), "timeout_s": cap, "cpu_affinity": cpus,
+            "nodes_sha256": digest(input_args), "runtime_environment": categories}
+    print(f"START {label} {len(nodes)} tests, cap {cap}s", flush=True)
+    dump(directory / "start.json", info)
+    log = directory / "pytest.log"
+    expired = False
+    with log.open("xb") as stream:
+        proc = subprocess.Popen(argv, cwd=ROOT, env=env, stdout=stream,
+                                stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            proc.wait(timeout=cap)
+        except subprocess.TimeoutExpired:
+            expired = True
+            os.killpg(proc.pid, signal.SIGTERM)
+            try:
+                proc.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+    info.update(returncode=proc.returncode, timed_out=expired,
+                wall_s=time.monotonic()-start, log_sha256=digest(log))
+    wanted = {junit_key(n): n for n in nodes}
+    assert len(wanted) == len(nodes), f"ambiguous JUnit address: {label}"
+    statuses = {}
+    unknown_entries = []
+    if xml.is_file():
+        info["junit_sha256"] = digest(xml)
+        for case in ET.parse(xml).iter("testcase"):
+            key = (case.get("classname"), case.get("name"))
+            if key not in wanted:
+                unknown_entries.append(key)
+                continue
+            node = wanted[key]
+            status = (
+                "ERROR" if case.find("error") is not None
+                else "FAILED" if case.find("failure") is not None
+                else "SKIPPED" if case.find("skipped") is not None
+                else "PASSED"
+            )
+            prior = statuses.get(node)
+            if prior is None or status in ("FAILED", "ERROR"):
+                statuses[node] = status
+    absent = (
+        "TIMEOUT_UNCOMPLETED" if expired else "CRASH_UNCOMPLETED" if proc.returncode < 0
+        else "NOT_RECORDED_UNCOMPLETED"
+    )
+    for node in nodes:
+        statuses.setdefault(node, absent)
+    info.update(counts=dict(Counter(statuses.values())), unknown_junit=unknown_entries,
+                statuses=statuses)
+    dump(directory / "result.json", info)
+    print(f"END {label} rc={proc.returncode} {info['wall_s']:.1f}s {info['counts']}", flush=True)
+    return info
+
+
+if __name__ == "__main__":
+    nodes = read_nodes(OUT.parent / "collection.log")
+    collected = re.search(r"^([0-9]+) tests collected", (OUT.parent / "collection.log").read_text(),
+                          re.M)
+    assert collected and int(collected[1]) == len(nodes) == len(set(nodes))
+    assert not subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"])
+    sources = manifest()
+    dump(OUT / "source-manifest.json", {"commit": COMMIT, "sources": sources})
+
+    old = json.loads((ROOT / "artifacts/research/process/20261117-grasp-place-repair/"
+                      "regression-summary.json").read_text())
+    closure = [x["node"] for x in old["uncompleted"]]
+    assert set(closure) <= set(nodes) and len(set(closure)) == 9
+    utc = [n for n in closure if "utc_jump" in n]
+    assert len(utc) == 2
+
+    special = [("utc-diagnostic-"+n.rsplit("[",1)[-1][:-1], [n], 3600, "cpu")
+               for n in utc]
+    special += [(f"closure-{i+1:02d}", [n], 600, "cpu")
+                for i, n in enumerate(n for n in closure if n not in utc)]
+    old_long = set(json.loads((OLDRUN / "phase12-separate-nodes.json").read_text()))
+    old_long.add("tests/test_phase12_1_actual_runner_semantics.py::"
+                 "test_validation_uses_actual_runners_but_gates_authority_on_provenance")
+    old_long.add("tests/test_phase8_2_experiment_sensitivity.py::"
+                 "test_validation_summary_contains_non_identical_mode_and_network_metrics")
+    assert old_long <= set(nodes)
+    rest = defaultdict(list)
+    for n in nodes:
+        if n not in closure and n not in old_long:
+            rest[n.partition("::")[0]].append(n)
+    graphics = []
+    regular = []
+    render_re = re.compile(r"MUJOCO_GL|\.Renderer\(|render_(?:rgb|depth)=True"
+                           r"|verify_visual_servo|\.capture_sensor_frame(?:_with_instances)?\(")
+    for f, nn in rest.items():
+        ft = (ROOT / f).read_text()
+        if (render_re.search(ft) or re.search(
+            r"test_(?:sol_molmo|lift_camera|pose_marker|native_(?:clock|horizon)"
+            r"|registered_collection|pilot_visual_worker|operational_capture)", f
+        )):
+            graphics.extend(nn)
+        elif f.endswith("/test_operational_runtime_closure.py"):
+            groups = defaultdict(list)
+            for n in nn:
+                groups[n.partition("[")[0]].append(n)
+            pieces = [[] for _ in range(4)]
+            for group in groups.values():
+                min(pieces, key=len).extend(group)
+            regular.extend((f"closure-rest-{i}", g, 2100, "cpu") for i,g in enumerate(pieces,1))
+        else:
+            regular.append((f, nn, None, None))
+    queue = special + [(f"phase-long-{i+1:02d}", [n], 1900, "cpu") for i,n in
+                       enumerate(sorted(old_long))]
+    queue.extend(x for x in regular if x[2])
+    bins = [[] for _ in range(9)]
+    for f, nn, cap, _ in sorted(regular, key=lambda x: (-len(x[1]), x[0])):
+        if not cap:
+            min(bins, key=len).extend(nn)
+    queue.extend((f"suite-{i+1:02d}", nn, 2100, "cpu") for i, nn in enumerate(bins))
+    jobs = queue + [("render-suite", graphics, 2100, "render")]
+    assert Counter(n for _, nn, _, _ in jobs for n in nn) == Counter(nodes)
+    gate = ("utc-joint-600s-gate", utc, 600, "gate")
+    dump(OUT / "partition.json", {name: nn for name,nn,_,_ in jobs})
+    cores = defaultdict(list)
+    for c in sorted(os.sched_getaffinity(0)):
+        p = Path(f"/sys/devices/system/cpu/cpu{c}/topology")
+        cores[(p.joinpath("physical_package_id").read_text().strip(),
+               p.joinpath("core_id").read_text().strip())].append(c)
+    affinity = list(cores.values())
+    assert len(affinity) >= 8, affinity
+    limits = {k: ENV[k] for k in ("PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "OMP_NUM_THREADS",
+                                 "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "MUJOCO_GL")}
+    meta = {"executed_source_sha256": digest(OUT/"source-manifest.json"), "total_nodes": len(nodes),
+            "commit": COMMIT, "render_core": affinity[0], "cpu_cores": affinity[1:7],
+            "utc_gate_core": affinity[7], "limits": limits, "utc_mode": "diagnostic-only-with-separate-combined-600s-gate"}
+    dump(OUT/"launch.json", meta)
+    cpu_queue = list(queue)
+    def lane(core):
+        results = []
+        while cpu_queue:
+            try:
+                job = cpu_queue.pop(0)
+            except IndexError:
+                break
+            results.append(run(job, core, limits))
+        return results
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(lane, core) for core in affinity[1:7]]
+        render_result = pool.submit(run, jobs[-1], affinity[0], limits)
+        gate_result = pool.submit(run, gate, affinity[7], limits)
+        completed = [r for f in futures for r in f.result()] + [render_result.result()]
+        gate_run = gate_result.result()
+    final = {n: {"status": status, "group": r["group"]}
+             for r in completed for n,status in r["statuses"].items()}
+    assert set(final) == set(nodes)
+    counts = Counter(v["status"] for v in final.values())
+    same_source = (manifest() == sources and COMMIT ==
+                   subprocess.check_output(["git","rev-parse","HEAD"], text=True).strip())
+    dump(OUT/"summary.json", {
+        **meta, "counts": dict(counts), "same_source_at_finish": same_source,
+        "all_executions_completed": all("UNCOMPLETED" not in s for s in counts),
+        "all_applicable_checks_green": (same_source and set(counts) <= {"PASSED","SKIPPED"}
+                                        and all(not r["unknown_junit"] and r["returncode"] == 0
+                                                for r in completed)),
+        "utc_600s_gate": {"group": gate_run["group"], "wall_s": gate_run["wall_s"],
+                          "counts": gate_run["counts"], "returncode": gate_run["returncode"],
+                          "passed": not gate_run["timed_out"] and gate_run["returncode"] == 0},
+        "node_results": final,
+    })
+    print("COMPLETE", dict(counts), "source intact", same_source, flush=True)

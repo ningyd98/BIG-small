@@ -1,0 +1,125 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-8.4.2, pluggy-1.6.0 -- /home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... collected 23 items / 15 deselected / 8 selected
+
+tests/test_visual_servo_control.py::test_lift_hold_step_exception_stops_and_returns_failure[visual] FAILED [ 12%]
+tests/test_visual_servo_control.py::test_lift_hold_step_exception_stops_and_returns_failure[without-visual-session] FAILED [ 25%]
+tests/test_visual_servo_control.py::test_lift_hold_feedback_exception_preserves_reason[ValueError] FAILED [ 37%]
+tests/test_visual_servo_control.py::test_lift_hold_feedback_exception_preserves_reason[RuntimeError] FAILED [ 50%]
+tests/test_visual_servo_control.py::test_lift_hold_base_exception_stops_and_propagates[step] FAILED [ 62%]
+tests/test_visual_servo_control.py::test_lift_hold_base_exception_stops_and_propagates[sample] FAILED [ 75%]
+tests/test_visual_servo_control.py::test_lift_hold_guard_failure_keeps_domain_code[GRASP_LOST] FAILED [ 87%]
+tests/test_visual_servo_control.py::test_lift_hold_guard_failure_keeps_domain_code[CLEARANCE_PATH_VIOLATION] FAILED [100%]
+
+=================================== FAILURES ===================================
+_______ test_lift_hold_step_exception_stops_and_returns_failure[visual] ________
+tests/test_visual_servo_control.py:233: in test_lift_hold_step_exception_stops_and_returns_failure
+    action = robot.lift(**options)
+             ^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py:199: in lift
+    self._backend.step(steps=1)
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:197: in guarded
+    result = function(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:863: in step
+    observer(snapshot)
+tests/test_visual_servo_control.py:227: in fail_in_hold
+    raise error
+E   RuntimeError: physics observer failed during lift hold
+_ test_lift_hold_step_exception_stops_and_returns_failure[without-visual-session] _
+tests/test_visual_servo_control.py:233: in test_lift_hold_step_exception_stops_and_returns_failure
+    action = robot.lift(**options)
+             ^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py:199: in lift
+    self._backend.step(steps=1)
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:197: in guarded
+    result = function(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:863: in step
+    observer(snapshot)
+tests/test_visual_servo_control.py:227: in fail_in_hold
+    raise error
+E   RuntimeError: physics observer failed during lift hold
+________ test_lift_hold_feedback_exception_preserves_reason[ValueError] ________
+tests/test_visual_servo_control.py:257: in test_lift_hold_feedback_exception_preserves_reason
+    action = robot.lift(**options)
+             ^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py:214: in lift
+    MuJoCoVisualServoController(self._backend).monitor_hold(hold_target, session)
+src/cloud_edge_robot_arm/simulation/mujoco/visual_servo.py:79: in monitor_hold
+    measured = session.sample(target)
+               ^^^^^^^^^^^^^^^^^^^^^^
+tests/test_visual_servo_control.py:252: in sample
+    raise error
+E   ValueError: first hold sample lost its observation
+_______ test_lift_hold_feedback_exception_preserves_reason[RuntimeError] _______
+tests/test_visual_servo_control.py:257: in test_lift_hold_feedback_exception_preserves_reason
+    action = robot.lift(**options)
+             ^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py:214: in lift
+    MuJoCoVisualServoController(self._backend).monitor_hold(hold_target, session)
+src/cloud_edge_robot_arm/simulation/mujoco/visual_servo.py:79: in monitor_hold
+    measured = session.sample(target)
+               ^^^^^^^^^^^^^^^^^^^^^^
+tests/test_visual_servo_control.py:252: in sample
+    raise error
+E   RuntimeError: first hold sample lost its observation
+___________ test_lift_hold_base_exception_stops_and_propagates[step] ___________
+tests/test_visual_servo_control.py:292: in test_lift_hold_base_exception_stops_and_propagates
+    _assert_lift_hold_stopped(backend, fault_step, estop=True)
+tests/test_visual_servo_control.py:181: in _assert_lift_hold_stopped
+    assert at_fault and all(row["accepted"] for row in at_fault)
+E   assert ([])
+__________ test_lift_hold_base_exception_stops_and_propagates[sample] __________
+tests/test_visual_servo_control.py:292: in test_lift_hold_base_exception_stops_and_propagates
+    _assert_lift_hold_stopped(backend, fault_step, estop=True)
+tests/test_visual_servo_control.py:182: in _assert_lift_hold_stopped
+    assert {row["type"] for row in at_fault} == (
+E   AssertionError: assert {'hold_current_joints'} == {'emergency_stop', 'hold_current_joints'}
+E     
+E     Extra items in the right set:
+E     'emergency_stop'
+E     
+E     Full diff:
+E       {
+E     -     'emergency_stop',
+E           'hold_current_joints',
+E       }
+__________ test_lift_hold_guard_failure_keeps_domain_code[GRASP_LOST] __________
+tests/test_visual_servo_control.py:316: in test_lift_hold_guard_failure_keeps_domain_code
+    _assert_lift_hold_failure(action, error, fault_step - start, session, code)
+tests/test_visual_servo_control.py:194: in _assert_lift_hold_failure
+    assert details["failure_phase"] == "LIFT_HOLD"
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'failure_phase'
+___ test_lift_hold_guard_failure_keeps_domain_code[CLEARANCE_PATH_VIOLATION] ___
+tests/test_visual_servo_control.py:316: in test_lift_hold_guard_failure_keeps_domain_code
+    _assert_lift_hold_failure(action, error, fault_step - start, session, code)
+tests/test_visual_servo_control.py:194: in _assert_lift_hold_failure
+    assert details["failure_phase"] == "LIFT_HOLD"
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'failure_phase'
+------ generated xml file: /tmp/bigsmall-lift-stop.9TTYhWld/lift-red.xml -------
+=========================== short test summary info ============================
+FAILED tests/test_visual_servo_control.py::test_lift_hold_step_exception_stops_and_returns_failure[visual] - RuntimeError: physics observer failed during lift hold
+FAILED tests/test_visual_servo_control.py::test_lift_hold_step_exception_stops_and_returns_failure[without-visual-session] - RuntimeError: physics observer failed during lift hold
+FAILED tests/test_visual_servo_control.py::test_lift_hold_feedback_exception_preserves_reason[ValueError] - ValueError: first hold sample lost its observation
+FAILED tests/test_visual_servo_control.py::test_lift_hold_feedback_exception_preserves_reason[RuntimeError] - RuntimeError: first hold sample lost its observation
+FAILED tests/test_visual_servo_control.py::test_lift_hold_base_exception_stops_and_propagates[step] - assert ([])
+FAILED tests/test_visual_servo_control.py::test_lift_hold_base_exception_stops_and_propagates[sample] - AssertionError: assert {'hold_current_joints'} == {'emergency_stop', 'hold_current_joints'}
+  
+  Extra items in the right set:
+  'emergency_stop'
+  
+  Full diff:
+    {
+  -     'emergency_stop',
+        'hold_current_joints',
+    }
+FAILED tests/test_visual_servo_control.py::test_lift_hold_guard_failure_keeps_domain_code[GRASP_LOST] - KeyError: 'failure_phase'
+FAILED tests/test_visual_servo_control.py::test_lift_hold_guard_failure_keeps_domain_code[CLEARANCE_PATH_VIOLATION] - KeyError: 'failure_phase'
+======================= 8 failed, 15 deselected in 3.28s =======================

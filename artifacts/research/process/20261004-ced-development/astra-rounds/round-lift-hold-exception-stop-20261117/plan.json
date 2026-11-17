@@ -1,0 +1,219 @@
+{
+  "schema_version": 1,
+  "round": "round-lift-hold-exception-stop-20261117",
+  "status": "PLANNED_NOT_IMPLEMENTED",
+  "planner": {
+    "model": "gpt-6-astra",
+    "role": "Explicitly dispatched Astra planning subagent",
+    "alternate_model_substitution": false
+  },
+  "created_at_utc": "2026-11-17T14:06:40.386947+00:00",
+  "worktree": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall",
+  "baseline_commit": "4ed5cb50ada7b6b0ca6b3a2fd168aeca637e3cfa",
+  "baseline_worktree_status": "clean before plan creation",
+  "authority": "Current user/parent explicitly requests Astra; disk AGENTS.md is 2026-11-13 on-demand Astra update. Local delivery only; public push deferred.",
+  "problem": "LIFT post-motion hold lacks adapter abnormal-exit boundary: first observer RuntimeError leaves retained target active, no stop and stale SUCCEEDED.",
+  "original_failure": {
+    "provenance": "Parent-run probe/stdout independently read by planner; planner did not re-run",
+    "raw": {
+      "scope": "isolated headless LIFT, identity visual callback; not full worker",
+      "fault_step": 1821,
+      "last_command_type": "joint_target",
+      "last_command_step": 1820,
+      "commands_at_or_after_fault": [],
+      "estop_engaged": false,
+      "session_terminal_reason": "SUCCEEDED",
+      "max_retained_target_minus_feedback_rad": 0.014529058112937115
+    }
+  },
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "7f4f8b080b2f1e99b53d24aeebf62f51815315c69a40dc9223d2e974c3c40cdb"
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "42fdefae6dff25d26e3ded9ab39c7910ee8116f4aed2e9d8f60eee23809e0933"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py",
+      "sha256": "db59243b66f0279948cd4f3df7e57587494a26f7df7ae719b5904fd640e045b2"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/visual_servo.py",
+      "sha256": "71218ee666b8b90772cc9e3a03bab93c45c57d3ae6017c8ec734e9dd3fb13ff8"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+      "sha256": "c4f8104b39f2f0d4d489f1b4e105bf98f129bc7b9bbf6ae99c4804aeac307445"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/edge/robot_adapter.py",
+      "sha256": "f488086f82b32156a68409760ab6407b69bf2ddda0434524971143bfb8711f01"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/contracts/models.py",
+      "sha256": "448be02bb26ca7546624c8a5ceece12b430ab423b94d28a2b6aac7741318fc9c"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/sol_molmo_components.py",
+      "sha256": "9b43e32204a80c3b2f6ecf1c5c3f28fc9aa7e5579a96636a2bc0726034d36af8"
+    },
+    {
+      "path": "tests/test_visual_servo_control.py",
+      "sha256": "ca1c79a2e40c55c1cc65364bd7778cf0ef7006c989e68111459753f5cb3f6489"
+    },
+    {
+      "path": "tests/test_rgbd_physical_skills.py",
+      "sha256": "83752e289c6c6156c1952511d949c3e2f067d3f1bac4ca69a971a31716e74b57"
+    },
+    {
+      "path": "/tmp/bigsmall-grasp-audit-20261117/lift-hold-exception-probe.py",
+      "sha256": "ed58efcc42c198fbfad1cac91266c2ee4392058230141dd13307850b6f1e20b6"
+    },
+    {
+      "path": "/tmp/bigsmall-grasp-audit-20261117/lift-hold-exception-probe.stdout.json",
+      "sha256": "1593f3aa73bb341970e7e9060ba3df90caf0994c95a3a2a500595b8eb6fb719a"
+    }
+  ],
+  "root_cause": [
+    "lift catches only MotionGuardViolation inside per-step loop; step, contacts and monitor_hold ordinary failures have no whole-hold result/stop boundary.",
+    "monitor_hold holds on BaseException and rethrows; adapter must translate ordinary exceptions and preserve cancellation semantics.",
+    "move_tcp sets motion SUCCEEDED before 0.5-second hold; failed hold must replace session terminal reason.",
+    "Observer can throw after backend physics count increments but before held_steps increment; use backend delta for failure accounting."
+  ],
+  "scope": {
+    "production_modify": [
+      "src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py"
+    ],
+    "tests_modify": [
+      "tests/test_visual_servo_control.py"
+    ],
+    "read_only": [
+      "visual_servo.py",
+      "backend.py",
+      "edge/robot_adapter.py",
+      "sol_molmo_components.py"
+    ],
+    "artifacts": "New round evidence/report and stage-summary entry only; historical bytes frozen"
+  },
+  "contract": {
+    "ordinary_exception": "After successful movement, catch Exception across full hold context, guards/steps/contacts/samples and final measurement. Direct backend.emergency_stop() before result avoids safe_stop pre-snapshot. Return success=false, action_type=LIFT, error_code=LIFT_HOLD_FAILED; details.failure_phase=LIFT_HOLD, reason=str(original), exception_type=type(original).__name__. build_action_result already copies details into error.details.",
+    "base_exception": "For non-Exception BaseException, stop then re-raise same original object. No ordinary result conversion.",
+    "guard": "Catch MotionGuardViolation first; preserve code/reason and existing hold_current_joints stop policy, including GRASP_LOST and CLEARANCE_PATH_VIOLATION.",
+    "session": "Failed hold terminal_reason is type(error).__name__ + colon + str(error); refresh result visual_servo summary from current session. Never overwrite original reason with generic code.",
+    "accounting": "Before hold record hold_start_steps; physics_steps = prior action physics_steps + backend.total_physics_steps - hold_start_steps. Stop advances zero physics steps.",
+    "stop_precondition": "Existing backend stop and snapshot remain operational. Cleanup failure must not be reported as successful stop or erase original exception context; a new cleanup/backend root cause requires next plan, not generic recovery work here."
+  },
+  "acceptance_cases": [
+    {
+      "id": "H1",
+      "test": "test_lift_hold_step_exception_stops_and_returns_failure",
+      "fault": "First post-motion hold observer RuntimeError; real headless MuJoCo, identity visual callback",
+      "assertions": [
+        "failure result LIFT_HOLD_FAILED",
+        "details and error.details preserve reason and exception_type",
+        "hold_current_joints and emergency_stop at fault step; estop true; pending queue empty; target equals feedback",
+        "no later physics or joint_target; exact physics delta includes fault step",
+        "session no longer SUCCEEDED; result visual summary agrees; session unbinds"
+      ]
+    },
+    {
+      "id": "H2",
+      "test": "test_lift_hold_feedback_exception_preserves_reason",
+      "fault": "First HOLD session.sample raises ValueError or RuntimeError with unique message",
+      "assertions": [
+        "same ordinary-exception contract as H1",
+        "underlying reason not replaced by generic code or stale SUCCEEDED",
+        "existing monitor_hold cancellation remains compatible; duplicate harmless holds allowed"
+      ]
+    },
+    {
+      "id": "H3",
+      "test": "test_lift_hold_base_exception_stops_and_propagates",
+      "fault": "custom BaseException instance from hold step and hold sample, parameterized",
+      "assertions": [
+        "same original exception object re-raised",
+        "cancel and emergency_stop at fault step; no added physics or joint_target",
+        "session reason records original type/message; context releases session binding"
+      ]
+    },
+    {
+      "id": "H4",
+      "test": "test_lift_hold_guard_failure_keeps_domain_code",
+      "fault": "MotionGuardViolation only after movement success, parameterized GRASP_LOST and CLEARANCE_PATH_VIOLATION",
+      "assertions": [
+        "original domain code/reason, no generic remap",
+        "existing hold_current_joints policy unchanged",
+        "actual physics delta correct; session no stale SUCCEEDED"
+      ]
+    },
+    {
+      "id": "H5",
+      "test": "test_lift_hold_step_exception_without_visual_session_stops",
+      "fault": "Nonvisual first post-motion hold RuntimeError; wrapper around successful _move arms fault; real MuJoCo",
+      "assertions": [
+        "same ordinary structured failure/stop contract",
+        "fault occurs in hold not movement; no later physics"
+      ]
+    },
+    {
+      "id": "H6",
+      "test": "existing successful LIFT/transport/place and grasp-loss regressions",
+      "fault": "none / existing loss regression",
+      "assertions": [
+        "0.5-second hold, fixed endpoint, cadence, velocity/acceleration and attitude limits unchanged",
+        "retained equilibrium target and normal handoff preserved; no unconditional success-path stop",
+        "real bilateral contact and vertical corridor criteria unchanged"
+      ]
+    }
+  ],
+  "validation": {
+    "red": ".venv/bin/python -m pytest tests/test_visual_servo_control.py -k lift_hold_ -v; add H1-H5 first, retain stdout/stderr/JUnit/exit status before production edits. Expected semantic failures, not fixture/import failures.",
+    "green": ".venv/bin/python -m pytest tests/test_visual_servo_control.py tests/test_rgbd_physical_skills.py tests/test_visual_servo.py -q; all applicable pass, skipped is not passed.",
+    "lint": ".venv/bin/ruff check src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py tests/test_visual_servo_control.py; git diff --check",
+    "probe": "Never edit old probe/stdout. Old probe expects RuntimeError, so create separately named post-fix diagnostic that checks new ActionResult/stop; retain both.",
+    "scope": "Development checks and bounded actual MuJoCo with model substitute, not full worker or real hardware or research qualification"
+  },
+  "preconditions": {
+    "observed_versions": {
+      "python": "3.12.3",
+      "mujoco": "3.3.7",
+      "numpy": "2.5.3",
+      "pytest": "8.4.2",
+      "ruff": "0.14.14"
+    },
+    "required": [
+      "Verify HEAD/input hashes before implementation; use worktree .venv and PYTHONPATH=src.",
+      "S01_NORMAL_STATIC seed 31; physics dt 1/240; new tests disable RGB/depth rendering.",
+      "Existing render-enabled regressions need existing available headless GL setup; do not change production defaults.",
+      "No paid credentials/network; identity callback and local exception injection.",
+      "Capture environment, commands, statuses and skips."
+    ]
+  },
+  "exclusions": [
+    "Nine-item operational closure",
+    "Cloud/edge/endpoint architecture, marker/top-view/controller choice",
+    "Motion/guard thresholds/budgets/hold duration/normal handoff",
+    "Backend or visual servo generic refactoring/persistent-backend recovery",
+    "Full worker, paid services, real hardware, new model evaluation, research qualification",
+    "Public push or rewriting old evidence"
+  ],
+  "steps": [
+    "Freeze original inputs/failure bytes in new round; write H1-H5.",
+    "Run expected RED and retain raw evidence.",
+    "Implement one complete hold exception boundary and correct result accounting in skill_robot.py.",
+    "Run GREEN, adjacent regressions, lint and diff checks.",
+    "Write step report and stage-summary entry distinguishing software, simulation, real run and research acceptance; local commit only."
+  ],
+  "replan_conditions": [
+    "Source/baseline mismatch: inspect and record applicability before edits.",
+    "New root cause, production scope beyond skill_robot.py, cleanup interface failure or unexpected non-RED failure: stop affected work and return to Astra under current explicit user process."
+  ],
+  "planner_actions": [
+    "Read-only source/evidence inspection",
+    "Read-only environment package versions",
+    "Write and validate plan.md/plan.json"
+  ],
+  "planner_tool_note": "Initial plan-writing command used unavailable unqualified python and failed before any file changes; repeated with verified .venv/bin/python. No application/test failure or scope change."
+}
