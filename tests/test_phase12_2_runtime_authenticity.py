@@ -349,7 +349,16 @@ def test_paired_summary_marks_isaac_blocked_as_not_accepted(tmp_path: Path) -> N
     assert verification["paired_backend_experiment_accepted"] is False
     assert verification["usable_authoritative_pair_count"] == 0
     assert verification["blocked_pair_count"] == paired["blocked_pair_count"]
-    _assert_validation_status_matches_provenance(verification)
+    # F20's default Mock/RGBD route is blocked even with clean source provenance.
+    assert verification["checks"]["recovery_evidence_valid"] is False
+    assert verification["checks"]["duplicate_competition_evidence_exists"] is False
+    assert verification["checks"]["runner_invocation_count_exactly_one"] is False
+    assert (
+        verification["status"]
+        == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+    )
+    assert verification["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_NOT_READY"
+    assert verification["full_profile_execution_status"] == "NOT_RUN"
 
 
 def test_verifier_rejects_runtime_gap_when_runtime_receipt_missing(tmp_path: Path) -> None:
@@ -522,6 +531,36 @@ def test_validation_acceptance_uses_readiness_only_full_profile_status(
     assert summary["full_profile_claimed"] is False
     assert summary["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_PREREQUISITES_READY"
     assert summary["full_profile_execution_status"] == "NOT_RUN"
+
+
+@pytest.mark.parametrize(
+    "check,validator",
+    [
+        ("recovery_evidence_valid", "_recovery_evidence_valid_for_rows"),
+        ("duplicate_competition_evidence_exists", "_duplicate_competition_evidence_exists"),
+        ("runner_invocation_count_exactly_one", "_runner_invocation_count_exactly_one"),
+    ],
+)
+def test_clean_provenance_does_not_accept_runtime_evidence_gaps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, check: str, validator: str,
+) -> None:
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    _patch_minimal_validation_verifier(monkeypatch)
+    monkeypatch.setattr(phase12_validation, validator, lambda *_: False)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["checks"]["source_tree_provenance_present"] is True
+    assert summary["checks"][check] is False
+    assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+    assert summary["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_NOT_READY"
+    assert summary["full_profile_execution_status"] == "NOT_RUN"
+    assert summary["verifier_gated_authoritative_thesis_run_count"] == 0
 
 
 def test_summary_hardware_claims_are_derived_from_raw_runs(
@@ -1944,26 +1983,6 @@ def _minimal_metric_counts() -> dict[str, int]:
         "valid_metric_sample_count": 1,
         "excluded_metric_sample_count": 0,
     }
-
-
-def _assert_validation_status_matches_provenance(verification: Mapping[str, object]) -> None:
-    """validation 状态必须跟 provenance 是否来自 clean worktree 保持一致。"""
-
-    checks = cast("Mapping[str, object]", verification["checks"])
-    if checks["source_tree_provenance_present"]:
-        assert verification["status"] == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
-        assert (
-            verification["full_profile_readiness_status"]
-            == "PHASE12_FULL_PROFILE_PREREQUISITES_READY"
-        )
-        assert verification["full_profile_execution_status"] == "NOT_RUN"
-    else:
-        assert (
-            verification["status"]
-            == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
-        )
-        assert verification["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_NOT_READY"
-        assert verification["full_profile_execution_status"] == "NOT_RUN"
 
 
 def _patch_minimal_full_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
