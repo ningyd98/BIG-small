@@ -1,0 +1,77 @@
+"""Log existing LIFT safety inputs without changing its returned context or decision."""
+
+import hashlib
+import inspect
+import json
+import math
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path.cwd()
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
+
+import pytest
+
+from cloud_edge_robot_arm.edge.safety.context_builder import SafetyContextBuilder
+from cloud_edge_robot_arm.edge.safety.rules import MinimumHeightRule
+
+output = Path(__file__).resolve().parent
+original = SafetyContextBuilder.build
+records = []
+
+
+def observed_build(self, **kwargs):
+    context = original(self, **kwargs)
+    if context.skill == "LIFT":
+        target = context.parameters["target_pose"]
+        dx, dy = target["x"] - context.tcp_x, target["y"] - context.tcp_y
+        # Evaluate the same pure rule only to log its local result; the actual
+        # shield still evaluates and returns its own unchanged verdict.
+        rule = MinimumHeightRule().evaluate(context)
+        caller = inspect.currentframe().f_back
+        phase = caller.f_locals.get("phase")
+        backend = caller.f_locals.get("backend")
+        step = getattr(backend, "total_physics_steps", None)
+        del caller
+        records.append({
+            "phase": phase, "physics_step": step,
+            "tcp_m": [context.tcp_x, context.tcp_y, context.tcp_z],
+            "target_m": [target[a] for a in "xyz"],
+            "target_minus_tcp_xy_m": [dx, dy],
+            "horizontal_target_error_m": math.hypot(dx, dy),
+            "xy_exactly_equal": dx == 0 and dy == 0,
+            "holding_object": context.holding_object,
+            "minimum_safe_height_m": context.merged_minimum_safe_height,
+            "minimum_height_rule_decision": rule.decision.value,
+            "minimum_height_rule_reason": rule.reason_code,
+        })
+    return context
+
+
+node = (
+    "tests/test_sol_molmo_worker_integration.py::"
+    "test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical_evidence"
+    "[True-False-None-True]"
+)
+protocol = {
+    "head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+    "node": node, "scope": "OBSERVATIONAL_IN_PROCESS_INSTRUMENTATION",
+    "semantics": "call original builder once, return same object; append LIFT input snapshot",
+    "models": "EXISTING_SOFTWARE_PROTOCOL_STUBS", "paid_model_calls": 0,
+    "hardware_dispatch": False, "safety_thresholds_modified": False,
+    "probe_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+}
+with (output / "protocol.json").open("x") as stream:
+    json.dump(protocol, stream, indent=2)
+
+SafetyContextBuilder.build = observed_build
+try:
+    code = pytest.main([node, "-q", "--tb=short", "--basetemp", str(output / "pytest")])
+finally:
+    SafetyContextBuilder.build = original
+    with (output / "lift-contexts.json").open("x") as stream:
+        json.dump(records, stream, indent=2)
+print(json.dumps({"pytest_exit_code": int(code), "lift_contexts": records}, indent=2))
+raise SystemExit(code)
