@@ -5,8 +5,13 @@ import importlib
 import json
 import subprocess
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
+
+_COMPATIBLE_CURRENT_COMMIT = "5e68e2f9f1ed7d865f483f41534dec9404c83394"
+_SCENE_ASSET = "assets/robots/franka_panda/scene_pose_marker_side_y_plus_75mm_component_v1.xml"
+_BACKEND_PATH = "src/cloud_edge_robot_arm/simulation/mujoco/backend.py"
 
 
 def verifier():
@@ -134,28 +139,56 @@ def test_diagnostic_snapshots_require_frozen_identity_hashes_and_full_coverage(t
             verifier().verified_diagnostics(episode, diagnosis)
 
 
+@pytest.fixture
+def compatible_current_sources(tmp_path, monkeypatch):
+    from cloud_edge_robot_arm.research.sol_molmo_single_episode import SOURCE_PATHS
+
+    module = verifier()
+    repo = module.SOURCE
+    source = tmp_path / "compatible-sources"
+    subprocess.run(["git", "init", "-q", str(source)], check=True)
+    common_git_dir = Path(subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        text=True,
+    ).strip())
+    (source / ".git/objects/info/alternates").write_text(f"{common_git_dir / 'objects'}\n")
+    for name in (*SOURCE_PATHS, _SCENE_ASSET):
+        fixture_file = source / name
+        fixture_file.parent.mkdir(parents=True, exist_ok=True)
+        fixture_file.write_bytes(subprocess.check_output(
+            ["git", "-C", str(source), "show", f"{_COMPATIBLE_CURRENT_COMMIT}:{name}"]
+        ))
+
+    monkeypatch.setattr(module, "SOURCE", source)
+    module.original_source_bytes.cache_clear()
+    module.original_source_sha.cache_clear()
+    try:
+        yield
+    finally:
+        module.original_source_bytes.cache_clear()
+        module.original_source_sha.cache_clear()
+
+
 def source_bound_episode(tmp_path, *, has_actions=False, damage=None):
     from cloud_edge_robot_arm.research.sol_molmo_single_episode import SOURCE_PATHS
 
     module = verifier()
-    asset = "assets/robots/franka_panda/scene_pose_marker_side_y_plus_75mm_component_v1.xml"
     pins = {
         name: hashlib.sha256(
             subprocess.check_output(
                 ["git", "-C", str(module.SOURCE), "show", module.BASE_COMMIT + ":" + name]
             )
         ).hexdigest()
-        for name in (*SOURCE_PATHS, asset)
+        for name in (*SOURCE_PATHS, _SCENE_ASSET)
     }
-    backend_path = "src/cloud_edge_robot_arm/simulation/mujoco/backend.py"
     if damage == "backend_pin":
-        pins[backend_path] = "0" * 64
+        pins[_BACKEND_PATH] = "0" * 64
     elif damage == "current_guard_as_original":
         pins[module.GUARD_PATH] = hashlib.sha256(
             (module.SOURCE / module.GUARD_PATH).read_bytes()
         ).hexdigest()
     elif damage == "missing_pin":
-        del pins[backend_path]
+        del pins[_BACKEND_PATH]
     elif damage == "extra_path":
         pins["../unbound.py"] = "0" * 64
     episode = tmp_path / "fixed-042001"
@@ -164,7 +197,7 @@ def source_bound_episode(tmp_path, *, has_actions=False, damage=None):
         "result.json": {
             "episode_id": "old",
             "physical_success": False,
-            "scene_file": asset,
+            "scene_file": _SCENE_ASSET,
             "seed": 42001,
         },
         "source-hashes.json": {"scope": "SELECTED_ENTRY_SOURCES", "files": pins},
@@ -189,7 +222,7 @@ def source_bound_episode(tmp_path, *, has_actions=False, damage=None):
     "damage", ["backend_pin", "current_guard_as_original", "missing_pin", "extra_path"]
 )
 def test_self_consistent_manifest_cannot_hide_original_source_pin_drift(
-    tmp_path, monkeypatch, has_actions, damage
+    tmp_path, monkeypatch, compatible_current_sources, has_actions, damage
 ):
     # The old verifier ignored Python source pins; even evidence-only records must fail closed.
     episode = source_bound_episode(tmp_path, has_actions=has_actions, damage=damage)
@@ -198,15 +231,38 @@ def test_self_consistent_manifest_cannot_hide_original_source_pin_drift(
         pytest.fail("unverified original runtime reached physics initialization")
 
     monkeypatch.setattr(verifier().MuJoCoPhysicsBackend, "initialize", cannot_initialize)
-    with pytest.raises(ValueError, match="original runtime"):
+    expected = {
+        "backend_pin": "original runtime source pin mismatch: " + _BACKEND_PATH,
+        "current_guard_as_original": (
+            "original runtime source pin mismatch: " + verifier().GUARD_PATH
+        ),
+        "missing_pin": "original runtime source inventory does not match",
+        "extra_path": "original runtime source inventory does not match",
+    }
+    with pytest.raises(ValueError) as rejected:
         verifier().replay_case(episode, tmp_path / "derived")
+    assert str(rejected.value) == expected[damage]
     assert not (tmp_path / "derived").exists()
 
 
-def test_unchanged_original_source_pins_allow_evidence_only_record(tmp_path):
+def test_unchanged_original_source_pins_allow_evidence_only_record(
+    tmp_path, compatible_current_sources,
+):
     episode = source_bound_episode(tmp_path)
     report = verifier().replay_case(episode, tmp_path / "derived")
     assert report["verified"]
     assert report["original_runtime_verified"]
     assert report["scope"] == "EVIDENCE_ONLY_NO_RECORDED_ACTIONS"
     assert not report["fresh_planning_test"]
+
+
+def test_legacy_verifier_refuses_drifted_live_source_before_output(tmp_path, monkeypatch):
+    def cannot_initialize(_self, _config):
+        pytest.fail("drifted runtime reached physics initialization")
+
+    module = verifier()
+    monkeypatch.setattr(module.MuJoCoPhysicsBackend, "initialize", cannot_initialize)
+    episode = source_bound_episode(tmp_path, has_actions=True)
+    with pytest.raises(ValueError, match="original runtime source differs from current source"):
+        module.replay_case(episode, tmp_path / "derived")
+    assert not (tmp_path / "derived").exists()

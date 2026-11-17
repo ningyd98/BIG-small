@@ -52,7 +52,7 @@ def test_fallback_cli_recognizes_flag_and_rejects_missing_scope(tmp_path, capsys
 @pytest.mark.parametrize("seed,split,action,completed", [
     (42001, None, "CANDIDATE", True),
     (42001, None, "REOBSERVE", False),
-    (43001, "development", "CANDIDATE", False),
+    (43001, "development", "CANDIDATE", True),
 ])
 def test_actual_worker_cloud_image_route_preserves_geometry_and_one_request_budget(
     tmp_path, monkeypatch, seed, split, action, completed
@@ -119,16 +119,29 @@ def test_actual_worker_cloud_image_route_preserves_geometry_and_one_request_budg
     if completed:
         assert result["physical_success"] is True
         assert result["executed_actions"] == 8
+        first = json.loads((output / "planning/planning-stage-01.json").read_text())
         second = json.loads((output / "planning/planning-stage-02.json").read_text())
+        ref = first["attempts"][-1]["draft"]["observation_evidence"]
         e = second["attempts"][-1]["draft"]["observation_evidence"]
+        captured = json.loads((output / "component/frames/post-cloud/observation.json").read_text())
+        assert first["outcome"] == "REQUEST_MORE_OBSERVATION" and first["contract"] is None
+        assert ref["owned_refresh_required"] is True
+        assert second["outcome"] == "PLANNED" and second["dispatch"] is None
         assert e["grounding_point_source"] == "CLOUD_VISION_CANDIDATE"
-        assert e["post_cloud_revalidation"]["status"] == "PASSED"
+        assert e["final_plan_admission"] == {"status": "PASSED", "phase": "final_contract"}
+        revalidation = e["post_cloud_revalidation"]
+        assert revalidation["status"] == "PASSED"
+        assert revalidation["capture_protocol"] == "WORKER_OWNED_REOBSERVATION"
+        for key in ("observation_id", "checksum_sha256"):
+            assert e["cloud_reference"][key] == ref[key] != e[key] == captured[key]
+        for key in ("episode_id", "calibration_version"):
+            assert e["cloud_reference"][key] == ref[key] == e[key] == captured[key]
+        assert revalidation["policy"]["reference_checksum"] == ref["checksum_sha256"]
+        assert revalidation["policy"]["fresh_checksum"] == e["checksum_sha256"]
+        assert ref["hardware_dispatch"] is False and e["hardware_dispatch"] is False
     else:
         assert result["executed_actions"] == 0
         assert result["planning_passed"] is False
-        if action == "CANDIDATE":
-            second = json.loads((output / "planning/planning-stage-02.json").read_text())
-            # 栅格轮廓已恢复；这个真实帧仍须拒绝未证明的外圈深度。
-            assert "target_outer_boundary_depth_unresolved" in second["reason"]
+        assert action == "REOBSERVE"
     assert (output / "raw/cloud/request.json").is_file()
     assert (output / "raw/cloud/response.json").is_file()

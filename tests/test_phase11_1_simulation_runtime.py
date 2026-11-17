@@ -845,8 +845,12 @@ def test_runtime_cancel_timeout_retry_and_recovery_api(
 def test_repeated_identical_batches_do_not_merge_historical_runs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    from cloud_edge_robot_arm.simulation_runtime.dispatcher import SimulationJobDispatcher
+
     # 同一批量配置可以重复提交；batch_id 必须代表一次提交，而不是只代表
     # reproducibility manifest，否则旧 job 会被 list_batch_jobs 合并进新批次。
+    # 此用例只检查 API 写入和查询的归属；后台执行由其它用例覆盖。
+    monkeypatch.setattr(SimulationJobDispatcher, "start", lambda self: None)
     client = _client(monkeypatch, tmp_path)
     payload = _draft(seeds=[0, 1, 2])
 
@@ -866,12 +870,25 @@ def test_repeated_identical_batches_do_not_merge_historical_runs(
     first_batch = first.json()
     second_batch = second.json()
     assert first_batch["batch_id"] != second_batch["batch_id"]
+    assert first_batch["manifest"]["reproducibility_hash"] == (
+        second_batch["manifest"]["reproducibility_hash"]
+    )
     assert first_batch["progress"]["total"] == 3
     assert second_batch["progress"]["total"] == 3
     first_runs = client.get(f"/api/v1/simulation/batches/{first_batch['batch_id']}/runs")
     second_runs = client.get(f"/api/v1/simulation/batches/{second_batch['batch_id']}/runs")
-    assert len(first_runs.json()["runs"]) == 3
-    assert len(second_runs.json()["runs"]) == 3
+    assert first_runs.status_code == second_runs.status_code == 200
+    repository = client.app.state.simulation_workbench_service.runtime.repository
+    groups = []
+    for batch, response in ((first_batch, first_runs), (second_batch, second_runs)):
+        runs = response.json()["runs"]
+        ids = {run["run_id"] for run in runs}
+        assert len(runs) == len(ids) == 3
+        assert ids == set(batch["run_ids"])
+        assert all(repository.get_job_by_run_id(run_id).batch_id == batch["batch_id"]
+                   for run_id in ids)
+        groups.append(ids)
+    assert groups[0].isdisjoint(groups[1])
 
 
 def test_runtime_health_queue_workers_websocket_replay_and_no_hardware(

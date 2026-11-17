@@ -178,49 +178,76 @@ class MuJoCoSkillRobot:
         )
         if not action.success:
             return action
-        config = self._backend._config
-        assert config is not None
-        requested_hold_steps = math.ceil(0.5 / config.physics_dt_s)
-        held_steps = 0
-        bilateral_held = True
         session = self._visual_servo_session
-        visual_steps = max(1, math.ceil(
-            session.config.vision_period_s / config.physics_dt_s
-        )) if session else requested_hold_steps
-        next_visual = visual_steps
-        hold_target = MotionTarget(resolved_target, _DOWNWARD)
-        scope = self._backend.sensor_capture_on_demand() if session else nullcontext()
-        with scope:
-            while held_steps < requested_hold_steps:
-                chunk = min(5, requested_hold_steps - held_steps, next_visual - held_steps)
-                try:
+        hold_start = self._backend.total_physics_steps
+        try:
+            config = self._backend._config
+            assert config is not None
+            requested_hold_steps = math.ceil(0.5 / config.physics_dt_s)
+            held_steps = 0
+            bilateral_held = True
+            visual_steps = max(1, math.ceil(
+                session.config.vision_period_s / config.physics_dt_s
+            )) if session else requested_hold_steps
+            next_visual = visual_steps
+            hold_target = MotionTarget(resolved_target, _DOWNWARD)
+            scope = self._backend.sensor_capture_on_demand() if session else nullcontext()
+            with scope:
+                while held_steps < requested_hold_steps:
+                    chunk = min(5, requested_hold_steps - held_steps, next_visual - held_steps)
                     for _ in range(chunk):
                         guard()
                         self._backend.step(steps=1)
                         held_steps += 1
                         guard()
-                except MotionGuardViolation as exc:
-                    self._backend.hold_current_joints()
-                    return self._result(
-                        "LIFT", False, action.state_before, action.started_at,
-                        int(action.details["physics_steps"]) + held_steps, exc.code,
-                        details={"reason": str(exc)},
-                    )
-                contacts = self._grasp_contacts()
-                if contacts["left"] == 0 or contacts["right"] == 0:
-                    bilateral_held = False
-                    break
-                if session and held_steps >= next_visual:
-                    MuJoCoVisualServoController(self._backend).monitor_hold(hold_target, session)
-                    next_visual += visual_steps
-        tcp_lift_m = self._backend.get_tcp_pose().z - current.z
+                    contacts = self._grasp_contacts()
+                    if contacts["left"] == 0 or contacts["right"] == 0:
+                        bilateral_held = False
+                        break
+                    if session and held_steps >= next_visual:
+                        MuJoCoVisualServoController(self._backend).monitor_hold(
+                            hold_target, session,
+                        )
+                        next_visual += visual_steps
+            tcp_lift_m = self._backend.get_tcp_pose().z - current.z
+        except BaseException as error:
+            if isinstance(error, MotionGuardViolation):
+                self._backend.hold_current_joints()
+                code = error.code
+            else:
+                # Stop before reading state or constructing the failure result.
+                self._backend.emergency_stop()
+                code = "LIFT_HOLD_FAILED"
+            reason = str(error)
+            if session is not None:
+                session.terminal_reason = f"{type(error).__name__}:{reason}"
+            if not isinstance(error, Exception):
+                raise
+            details: dict[str, object] = {
+                **{key: value for key, value in action.details.items() if key != "physics_steps"},
+                "failure_phase": "LIFT_HOLD",
+                "reason": reason,
+                "exception_type": type(error).__name__,
+            }
+            if session is not None:
+                details["visual_servo"] = {
+                    "feedback_count": len(session.records),
+                    "terminal_reason": session.terminal_reason,
+                }
+            # An observation callback can fail after physics has already advanced.
+            steps = int(action.details["physics_steps"]) + (
+                self._backend.total_physics_steps - hold_start
+            )
+            return self._result(
+                "LIFT", False, action.state_before, action.started_at, steps, code, details=details,
+            )
         success = bilateral_held and held_steps >= requested_hold_steps and tcp_lift_m >= 0.05
-        error = None if success else (
+        error_code = None if success else (
             "GRASP_LOST" if not bilateral_held else "LIFT_SHORTFALL"
         )
         return self._result(
             "LIFT", success, action.state_before, action.started_at,
-            int(action.details["physics_steps"]) + held_steps, error,
+            int(action.details["physics_steps"]) + held_steps, error_code,
             details={
                 **{key: value for key, value in action.details.items() if key != "physics_steps"},
                 "measured_tcp_lift_m": tcp_lift_m,

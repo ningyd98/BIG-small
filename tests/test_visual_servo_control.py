@@ -1,15 +1,21 @@
 """Continuous feedback acts inside real MuJoCo motion, with bounded commands."""
 
+from contextlib import nullcontext
 from math import sqrt
 
 import numpy as np
 import pytest
 
 from cloud_edge_robot_arm.contracts import Pose
+from cloud_edge_robot_arm.edge.safety.clearance import VerticalClearancePath
 from cloud_edge_robot_arm.simulation.config import SimulatorConfig
 from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
 from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
 from cloud_edge_robot_arm.simulation.mujoco.motion_controller import MotionTarget
+from cloud_edge_robot_arm.simulation.mujoco.skill_robot import (
+    MotionGuardViolation,
+    MuJoCoSkillRobot,
+)
 
 DOWNWARD = (sqrt(0.5), 0.0, sqrt(0.5), 0.0)
 
@@ -152,6 +158,162 @@ def test_lift_keeps_visual_feedback_through_contact_hold(backend):
     assert len(held) >= 15
     assert held[-1]["sim_time_s"] == backend.get_sim_time()
     assert max(np.diff([record["physics_step"] for record in session.records])) <= 8
+
+
+@pytest.fixture
+def lift_hold_case(backend):
+    robot = MuJoCoSkillRobot(backend)
+    assert robot.approach("object", resolved_target=Pose(x=0.45, y=0, z=0.045)).success
+    assert robot.grasp("object", timeout_ms=1000).success
+    start = backend.get_tcp_pose()
+    target = Pose(x=start.x, y=start.y, z=0.16)
+    path = VerticalClearancePath(
+        "task", "lift", "LIFT", (start.x, start.y, start.z), (target.x, target.y, target.z), 0.08,
+    )
+    options = {"resolved_target": target, "timeout_ms": 10000,
+               "tcp_velocity": 0.15, "acceleration": 0.5}
+    return robot, path, options
+
+
+def _assert_lift_hold_stopped(backend, fault_step, *, estop):
+    assert fault_step is not None and backend.total_physics_steps == fault_step
+    at_fault = [row for row in backend.command_records if row["physics_step"] >= fault_step]
+    assert at_fault and all(row["accepted"] for row in at_fault)
+    assert {row["type"] for row in at_fault} == (
+        {"hold_current_joints", "emergency_stop"} if estop else {"hold_current_joints"}
+    )
+    assert backend.estop_engaged is estop
+    assert not backend._pending_joint_targets
+    np.testing.assert_array_equal(backend._target_positions, backend.get_joint_state().positions)
+
+
+def _assert_lift_hold_failure(action, error, steps, session, code="LIFT_HOLD_FAILED"):
+    assert not action.success and action.action_type == "LIFT" and action.error_code == code
+    assert action.error is not None
+    for details in (action.details, action.error.details):
+        assert details["failure_phase"] == "LIFT_HOLD"
+        assert details["reason"] == str(error)
+        assert details["exception_type"] == type(error).__name__
+        assert details["physics_steps"] == steps
+    if session is not None:
+        assert session.terminal_reason == f"{type(error).__name__}:{error}"
+        assert action.details["visual_servo"]["terminal_reason"] == session.terminal_reason
+        assert action.details["visual_servo"]["feedback_count"] == len(session.records)
+
+
+@pytest.mark.parametrize("visual", [True, False], ids=["visual", "without-visual-session"])
+def test_lift_hold_step_exception_stops_and_returns_failure(backend, lift_hold_case, monkeypatch,
+                                                            visual):
+    robot, path, options = lift_hold_case
+    _, _, session_type = api()
+    session = session_type(lambda value: value, vertical_clearance=path) if visual else None
+    start = backend.total_physics_steps
+    fault_step = None
+    motion_end = None
+    error = RuntimeError("physics observer failed during lift hold")
+    move = robot._move
+
+    def measure_move(*args, **kwargs):
+        nonlocal motion_end
+        result = move(*args, **kwargs)
+        assert result.success, result.error_code
+        motion_end = backend.total_physics_steps
+        return result
+
+    def fail_in_hold(snapshot):
+        nonlocal fault_step
+        if motion_end is not None:
+            fault_step = snapshot.physics_step
+            raise error
+
+    monkeypatch.setattr(robot, "_move", measure_move)
+    with backend.observe_physics_steps(fail_in_hold), (
+        robot.visual_servo(session) if session is not None else nullcontext()
+    ):
+        action = robot.lift(**options)
+    assert motion_end is not None and fault_step == motion_end + 1
+    _assert_lift_hold_stopped(backend, fault_step, estop=True)
+    _assert_lift_hold_failure(action, error, fault_step - start, session)
+    assert robot._visual_servo_session is None
+
+
+@pytest.mark.parametrize("error_type", [ValueError, RuntimeError])
+def test_lift_hold_feedback_exception_preserves_reason(backend, lift_hold_case, error_type):
+    robot, path, options = lift_hold_case
+    _, _, session_type = api()
+    start = backend.total_physics_steps
+    fault_step = None
+    error = error_type("first hold sample lost its observation")
+
+    def sample(target):
+        nonlocal fault_step
+        if session.terminal_reason == "SUCCEEDED":
+            fault_step = backend.total_physics_steps
+            raise error
+        return target
+
+    session = session_type(sample, vertical_clearance=path)
+    with robot.visual_servo(session):
+        action = robot.lift(**options)
+    assert fault_step is not None
+    _assert_lift_hold_stopped(backend, fault_step, estop=True)
+    _assert_lift_hold_failure(action, error, fault_step - start, session)
+
+
+class _CancelLift(BaseException):
+    pass
+
+
+@pytest.mark.parametrize("fault_source", ["step", "sample"])
+def test_lift_hold_base_exception_stops_and_propagates(backend, lift_hold_case, fault_source):
+    robot, path, options = lift_hold_case
+    _, _, session_type = api()
+    fault_step = None
+    original = _CancelLift("caller cancelled lift")
+
+    def fail_in_hold(source, step):
+        nonlocal fault_step
+        if source == fault_source and session.terminal_reason == "SUCCEEDED":
+            fault_step = step
+            raise original
+
+    def sample(target):
+        fail_in_hold("sample", backend.total_physics_steps)
+        return target
+
+    session = session_type(sample, vertical_clearance=path)
+    with (
+        backend.observe_physics_steps(lambda event: fail_in_hold("step", event.physics_step)),
+        robot.visual_servo(session),
+        pytest.raises(_CancelLift) as caught,
+    ):
+        robot.lift(**options)
+    assert caught.value is original
+    _assert_lift_hold_stopped(backend, fault_step, estop=True)
+    assert session.terminal_reason == "_CancelLift:caller cancelled lift"
+    assert robot._visual_servo_session is None
+
+
+@pytest.mark.parametrize("code", ["GRASP_LOST", "CLEARANCE_PATH_VIOLATION"])
+def test_lift_hold_guard_failure_keeps_domain_code(backend, lift_hold_case, code):
+    robot, path, options = lift_hold_case
+    _, _, session_type = api()
+    session = session_type(lambda value: value, vertical_clearance=path)
+    start = backend.total_physics_steps
+    fault_step = None
+    error = MotionGuardViolation(code, "hold guard rejected measured state")
+
+    def fail_in_hold(snapshot):
+        nonlocal fault_step
+        if session.terminal_reason == "SUCCEEDED":
+            fault_step = snapshot.physics_step
+            raise error
+
+    with backend.observe_physics_steps(fail_in_hold), robot.visual_servo(session):
+        action = robot.lift(**options)
+    assert fault_step is not None
+    _assert_lift_hold_stopped(backend, fault_step, estop=False)
+    _assert_lift_hold_failure(action, error, fault_step - start, session, code)
 
 
 @pytest.mark.parametrize("visual", [False, True])
