@@ -12,6 +12,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from cloud_edge_robot_arm.contracts import SafetyDecision, TaskContract
+from cloud_edge_robot_arm.edge.safety.clearance import VerticalClearancePath
 from cloud_edge_robot_arm.errors import StructuredError
 
 
@@ -97,6 +98,9 @@ class SafetyContext(BaseModel):
     obstacles: list[Obstacle] = Field(default_factory=list)
     forbidden_zones: list[WorkspaceDefinition] = Field(default_factory=list)
     holding_object: bool = False
+    holding_object_id: str | None = None
+    expected_holding_object_id: str | None = None
+    vertical_clearance: VerticalClearancePath | None = None
     step_started_at: float | None = None
     task_started_at_mono: float | None = None
     monotonic_now: float | None = None

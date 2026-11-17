@@ -12,7 +12,7 @@ import struct
 import sys
 from array import array
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, cast
 
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -46,7 +46,7 @@ def _validated_depth_mask(depth: bytes) -> bytes:
                 ((words & 0x80000000) != 0) & (magnitude != 0)
             ).any():
                 raise ValueError("depth must be finite nonnegative metres (zero = invalid)")
-            return (magnitude > 0).astype(numpy.uint8).tobytes()
+            return cast(bytes, (magnitude > 0).astype(numpy.uint8).tobytes())
     values.frombytes(depth)
     if sys.byteorder == "big":
         values.byteswap()
@@ -248,7 +248,9 @@ class RGBDObservation(BaseModel):
         }
 
 
-def observation_from_sensor_frame(frame: SensorFrame, *, source: str) -> RGBDObservation:
+def observation_from_sensor_frame(
+    frame: SensorFrame, *, source: str, png_compress_level: int = 6,
+) -> RGBDObservation:
     if not frame.rgb or not frame.depth or not frame.intrinsics or not frame.camera_to_world:
         raise ValueError("RGBD_CAMERA_DATA_MISSING")
     if frame.captured_at is None:
@@ -265,9 +267,11 @@ def observation_from_sensor_frame(frame: SensorFrame, *, source: str) -> RGBDObs
         raise ValueError("RGB size must equal width * height * 3")
     if len(frame.depth) != pixel_count:
         raise ValueError("depth size must equal width * height")
+    if type(png_compress_level) is not int or not 0 <= png_compress_level <= 9:
+        raise ValueError("PNG compression level must be an integer in 0..9")
     image = Image.frombytes("RGB", (frame.width, frame.height), frame.rgb)
     output = io.BytesIO()
-    image.save(output, format="PNG")
+    image.save(output, format="PNG", compress_level=png_compress_level)
     return RGBDObservation.model_validate(
         {
             "frame_id": frame.frame_id,

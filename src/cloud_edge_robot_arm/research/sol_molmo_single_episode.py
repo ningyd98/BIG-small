@@ -730,8 +730,18 @@ def run_single_episode(
     try:
         _write(output / "scene-assignment.json", assignment)
         servo_sources = (
+            "src/cloud_edge_robot_arm/edge/safety/clearance.py",
+            "src/cloud_edge_robot_arm/edge/safety/models.py",
+            "src/cloud_edge_robot_arm/edge/safety/context_builder.py",
+            "src/cloud_edge_robot_arm/edge/safety/rules.py",
+            "src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py",
             "src/cloud_edge_robot_arm/vision/servo.py",
+            "src/cloud_edge_robot_arm/vision/servo_region.py",
+            "src/cloud_edge_robot_arm/vision/camera_positioning.py",
+            "src/cloud_edge_robot_arm/vision/observations.py",
+            "src/cloud_edge_robot_arm/vision/pose_markers.py",
             "src/cloud_edge_robot_arm/simulation/mujoco/visual_servo.py",
+            "src/cloud_edge_robot_arm/simulation/mujoco/clearance_control.py",
             "src/cloud_edge_robot_arm/simulation/mujoco/motion_controller.py",
             "src/cloud_edge_robot_arm/simulation/mujoco/camera.py",
             "src/cloud_edge_robot_arm/simulation/config.py",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -58,6 +59,29 @@ class MuJoCoMotionController:
         *,
         max_joint_velocity_rad_s: float = 1.5,
         max_joint_acceleration_rad_s2: float = 4.0,
+        state_guard: Callable[[], None] | None = None,
+    ) -> MotionResult:
+        try:
+            if state_guard is not None:
+                state_guard()
+            return self._move_tcp(
+                target, timeout_s,
+                max_joint_velocity_rad_s=max_joint_velocity_rad_s,
+                max_joint_acceleration_rad_s2=max_joint_acceleration_rad_s2,
+                state_guard=state_guard,
+            )
+        finally:
+            if state_guard is not None:
+                self._backend.hold_current_joints()
+
+    def _move_tcp(
+        self,
+        target: MotionTarget,
+        timeout_s: float,
+        *,
+        max_joint_velocity_rad_s: float = 1.5,
+        max_joint_acceleration_rad_s2: float = 4.0,
+        state_guard: Callable[[], None] | None = None,
     ) -> MotionResult:
         if not math.isfinite(timeout_s) or timeout_s <= 0:
             raise ValueError("timeout_s must be positive and finite")
@@ -104,6 +128,8 @@ class MuJoCoMotionController:
         max_load_compensation_rad = 0.0
         settled_time_s = 0.0
         while self._backend.total_physics_steps - start_steps < max_steps:
+            if state_guard is not None:
+                state_guard()
             if self._backend.estop_engaged:
                 status = "EMERGENCY_STOP"
                 break
@@ -164,7 +190,12 @@ class MuJoCoMotionController:
             self._backend.apply_joint_targets(
                 JointCommand(positions=command.tolist(), max_velocity=max_joint_velocity_rad_s)
             )
-            self._backend.step(steps=chunk)
+            if state_guard is None:
+                self._backend.step(steps=chunk)
+            else:
+                for _ in range(chunk):
+                    self._backend.step(steps=1)
+                    state_guard()
         else:
             status = "TIMED_OUT"
         if status == "TIMED_OUT":

@@ -111,6 +111,16 @@ class ActuatorStepObservation:
     actuator_ctrl_ranges: tuple[tuple[float, float], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class JointCommandState:
+    """Last accepted arm target and its sent velocity, without object state."""
+
+    positions_rad: tuple[float, ...]
+    velocity_rad_s: tuple[float, ...]
+    sim_time_s: float
+    retained_target: bool = False
+
+
 def _operation_detach(value: Any) -> Any:
     # Exact builtins are immutable; subclasses retain their copy hooks below.
     value_type = type(value)
@@ -951,6 +961,34 @@ class MuJoCoPhysicsBackend:
     def get_sensor_frame(self) -> SensorFrame:
         return self._sensor_frame
 
+    def get_joint_command_state(self) -> JointCommandState:
+        """Resume a held target, including a target still in the delay queue."""
+        self._require_loaded()
+        rows = []
+        for row in reversed(self._command_records):
+            if row["accepted"] and row["type"] in {"joint_target", "hold_current_joints"}:
+                rows.append(row)
+                if len(rows) == 2:
+                    break
+        if not rows:
+            return JointCommandState(
+                tuple(float(v) for v in self._target_positions), (0.0,) * 7, self.get_sim_time(),
+            )
+        last = rows[0]
+        positions = np.asarray(last["applied_target_positions_rad"], dtype=float)
+        velocity = np.zeros(7)
+        timestamp = float(cast(float, last["sim_time_s"]))
+        if last["type"] == "joint_target" and len(rows) > 1:
+            previous = np.asarray(rows[1]["applied_target_positions_rad"], dtype=float)
+            dt = timestamp - float(cast(float, rows[1]["sim_time_s"]))
+            if dt > 0:
+                velocity = (positions - previous) / dt
+            elif not np.array_equal(positions, previous):
+                raise ValueError("joint command handoff has conflicting targets at one time")
+        return JointCommandState(
+            tuple(positions), tuple(velocity), timestamp, last["type"] == "joint_target",
+        )
+
     @contextmanager
     def observe_actuator_steps(
         self, callback: Callable[[ActuatorStepObservation], None]
@@ -1065,8 +1103,11 @@ class MuJoCoPhysicsBackend:
             self._update_sensor_frame()
 
     @_observed_operation("COMMAND")
-    def set_camera_position(self, position_m: tuple[float, float, float]) -> None:
-        """Translate the world-attached top-down development camera.
+    def set_camera_position(
+        self, position_m: tuple[float, float, float], *,
+        look_at_m: tuple[float, float, float] | None = None,
+    ) -> None:
+        """Reposition the world-attached development camera, optionally aiming it.
 
         The next paired capture computes its own extrinsics/calibration hash.
         Guarded/frozen executions retain their existing configuration boundary.
@@ -1084,11 +1125,28 @@ class MuJoCoPhysicsBackend:
         camera = self._model.camera("rgbd").id
         if self._model.cam_bodyid[camera] != 0 or self._model.cam_mode[camera] != 0:
             raise ValueError("camera must be fixed to world")
+        quaternion = None
+        if look_at_m is not None:
+            aim = np.asarray(look_at_m, dtype=float)
+            if aim.shape != (3,) or not np.isfinite(aim).all() or aim[2] >= position[2]:
+                raise ValueError("camera look-at must be finite and below the camera")
+            backward = position - aim
+            backward /= np.linalg.norm(backward)
+            right = np.cross([0.0, 1.0, 0.0], backward)
+            right /= np.linalg.norm(right)
+            up = np.cross(backward, right)
+            quaternion = np.empty(4)
+            self._mujoco.mju_mat2Quat(
+                quaternion, np.column_stack((right, up, backward)).ravel(),
+            )
         self._model.cam_pos[camera] = position
+        if quaternion is not None:
+            self._model.cam_quat[camera] = quaternion
         self._mujoco.mj_camlight(self._model, self._data)
         self._record_command(
             "camera_position", accepted=True, reason="development_camera_translation",
             position_m=position.tolist(),
+            **({"look_at_m": list(look_at_m)} if look_at_m is not None else {}),
         )
 
     @_observed_operation("COMMAND")

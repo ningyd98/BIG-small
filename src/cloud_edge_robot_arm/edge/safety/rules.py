@@ -668,6 +668,28 @@ class MinimumHeightRule(SafetyRuleEvaluator):
                 message="skill is not a motion skill",
             )
         min_height = _get_merged_min_height(ctx)
+        if ctx.vertical_clearance is not None:
+            try:
+                clearance_height = max(
+                    min_height, ctx.merged_minimum_safe_height or 0.0,
+                    ctx.contract.safety_constraints.minimum_safe_height,
+                )
+                ctx.vertical_clearance.check_binding(
+                    task_id=ctx.task_id, step_id=ctx.step_id, skill=ctx.skill,
+                    target=ctx.parameters.get("target_pose"), minimum_height_m=clearance_height,
+                )
+                ctx.vertical_clearance.check_position((ctx.tcp_x, ctx.tcp_y, ctx.tcp_z))
+            except ValueError as exc:
+                return SafetyRuleResult(
+                    rule_id=self.rule_id, decision=SafetyDecision.REJECT,
+                    reason_code=MINIMUM_HEIGHT_VIOLATION, message=str(exc),
+                )
+            return SafetyRuleResult(
+                rule_id=self.rule_id, decision=SafetyDecision.ALLOW,
+                reason_code="BOUND_UPWARD_CLEARANCE",
+                message="TCP remains inside the step-bound vertical clearance path",
+                measured_value=ctx.tcp_z, limit_value=min_height,
+            )
         low_height_skills = {"APPROACH", "GRASP", "PLACE", "RELEASE"}
         if ctx.skill in low_height_skills:
             if ctx.scene_updated_at is None:
@@ -827,6 +849,14 @@ class CarrySafetyRule(SafetyRuleEvaluator):
 
     def evaluate(self, ctx: object) -> SafetyRuleResult:
         assert isinstance(ctx, SafetyContext)
+        if ctx.expected_holding_object_id is not None and (
+            not ctx.holding_object or ctx.holding_object_id != ctx.expected_holding_object_id
+        ):
+            return SafetyRuleResult(
+                rule_id=self.rule_id, decision=SafetyDecision.REJECT,
+                reason_code="GRASP_FEEDBACK_LOST",
+                message="required object is no longer confirmed by gripper feedback",
+            )
         if not ctx.holding_object:
             return SafetyRuleResult(
                 rule_id=self.rule_id,

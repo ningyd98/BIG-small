@@ -122,7 +122,7 @@ def _decode_subpix_rejected_candidates(
                     col * ppc + margin : (col + 1) * ppc - margin,
                 ]
                 bits[row, col] = 1 if float(cell.mean()) > 127.5 else 0
-        matches = []
+        matches: list[tuple[int, int]] = []
         for rotation_k in range(4):
             marker_ids = np.flatnonzero(np.all(expected == np.rot90(bits, rotation_k), axis=(1, 2)))
             matches.extend((int(marker_id), rotation_k) for marker_id in marker_ids)
@@ -206,7 +206,9 @@ def detect_pose_marker(
     side_px = np.linalg.norm(np.roll(points, -1, axis=0) - points, axis=1)
     if float(side_px.min()) < 8:
         return unknown("marker_resolution_insufficient", observed)
-    depths = np.asarray(current.depth_values()).reshape(current.height, current.width)
+    depths = np.frombuffer(
+        base64.b64decode(current.depth_float32_base64), dtype="<f4",
+    ).reshape(current.height, current.width)
     transform = np.asarray(current.camera_to_world).reshape(4, 4)
     fx, fy, cx, cy = current.intrinsics
     world = []

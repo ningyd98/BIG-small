@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
 
@@ -22,6 +22,12 @@ from cloud_edge_robot_arm.simulation.mujoco.visual_servo import (
 
 _DOWNWARD = (math.sqrt(0.5), 0.0, math.sqrt(0.5), 0.0)
 _IDENTITY = (1.0, 0.0, 0.0, 0.0)
+
+
+class MotionGuardViolation(ValueError):
+    def __init__(self, code: str, reason: str) -> None:
+        super().__init__(reason)
+        self.code = code
 
 
 class MuJoCoSkillRobot:
@@ -163,10 +169,12 @@ class MuJoCoSkillRobot:
             return self._reject("LIFT", "INVALID_LIFT_HEIGHT")
         if self.get_state().holding_object_id is None:
             return self._reject("LIFT", "NO_GRASP_CONTACT")
+        guard = self._motion_guard("LIFT", resolved_target)
         action = self._move(
             "LIFT", resolved_target, timeout_ms=timeout_ms,
             tcp_velocity=tcp_velocity, acceleration=acceleration,
             details={"requested_height_m": height_m},
+            state_guard=guard,
         )
         if not action.success:
             return action
@@ -185,8 +193,19 @@ class MuJoCoSkillRobot:
         with scope:
             while held_steps < requested_hold_steps:
                 chunk = min(5, requested_hold_steps - held_steps, next_visual - held_steps)
-                self._backend.step(steps=chunk)
-                held_steps += chunk
+                try:
+                    for _ in range(chunk):
+                        guard()
+                        self._backend.step(steps=1)
+                        held_steps += 1
+                        guard()
+                except MotionGuardViolation as exc:
+                    self._backend.hold_current_joints()
+                    return self._result(
+                        "LIFT", False, action.state_before, action.started_at,
+                        int(action.details["physics_steps"]) + held_steps, exc.code,
+                        details={"reason": str(exc)},
+                    )
                 contacts = self._grasp_contacts()
                 if contacts["left"] == 0 or contacts["right"] == 0:
                     bilateral_held = False
@@ -343,6 +362,7 @@ class MuJoCoSkillRobot:
         acceleration: float | None,
         orientation: tuple[float, float, float, float] = _DOWNWARD,
         details: dict[str, object] | None = None,
+        state_guard: Callable[[], None] | None = None,
     ) -> ActionResult:
         before = self._snapshot()
         started = datetime.now(UTC)
@@ -356,6 +376,13 @@ class MuJoCoSkillRobot:
         accel = 4.0 if acceleration is None else acceleration / 0.3
         motion_started = self._backend.total_physics_steps
         try:
+            guard = state_guard
+            if guard is None and (
+                action_type in {"LIFT", "MOVE_TO_REGION", "PLACE"}
+                or (self._visual_servo_session is not None
+                    and self._visual_servo_session.vertical_clearance is not None)
+            ):
+                guard = self._motion_guard(action_type, target)
             if self._visual_servo_session is not None:
                 outcome = MuJoCoVisualServoController(self._backend).move_tcp(
                     MotionTarget(position=target, orientation_wxyz=orientation),
@@ -363,6 +390,8 @@ class MuJoCoSkillRobot:
                     max_joint_velocity_rad_s=velocity,
                     max_joint_acceleration_rad_s2=accel,
                     session=self._visual_servo_session,
+                    state_guard=guard,
+                    keep_cartesian_attitude=action_type in {"MOVE_TO_REGION", "PLACE"},
                 )
             else:
                 outcome = self._motion.move_tcp(
@@ -370,13 +399,16 @@ class MuJoCoSkillRobot:
                     timeout_s=(timeout_ms if timeout_ms is not None else 8000) / 1000.0,
                     max_joint_velocity_rad_s=velocity,
                     max_joint_acceleration_rad_s2=accel,
+                    state_guard=guard,
                 )
         except ValueError as exc:
             servo = self._visual_servo_session
             return self._result(
                 action_type, False, before, started,
                 self._backend.total_physics_steps - motion_started,
-                "VISUAL_SERVO_REJECTED" if servo else "INVALID_MOTION_REQUEST",
+                exc.code if isinstance(exc, MotionGuardViolation) else (
+                    "VISUAL_SERVO_REJECTED" if servo else "INVALID_MOTION_REQUEST"
+                ),
                 details={"reason": str(exc)},
             )
         movement_details: dict[str, object] = {
@@ -398,6 +430,33 @@ class MuJoCoSkillRobot:
             None if outcome.status == "SUCCEEDED" else outcome.status,
             details=movement_details,
         )
+
+    def _motion_guard(self, action_type: str, target: Pose) -> Callable[[], None]:
+        expected = self._holding_object_id if action_type in {
+            "LIFT", "MOVE_TO_REGION", "PLACE"
+        } else None
+        session = self._visual_servo_session
+        path = session.vertical_clearance if session is not None else None
+        peak_z = self._backend.get_tcp_pose().z
+
+        def guard() -> None:
+            nonlocal peak_z
+            state = self.get_state()
+            if expected is not None and state.holding_object_id != expected:
+                raise MotionGuardViolation("GRASP_LOST", "required bilateral grasp contact lost")
+            if path is not None:
+                try:
+                    path.check_binding(
+                        task_id=path.task_id, step_id=path.step_id, skill=action_type,
+                        target=target.model_dump(), minimum_height_m=path.minimum_height_m,
+                    )
+                    pose = state.tcp_pose
+                    path.check_position((pose.x, pose.y, pose.z), peak_z=peak_z)
+                    peak_z = max(peak_z, pose.z)
+                except ValueError as exc:
+                    raise MotionGuardViolation("CLEARANCE_PATH_VIOLATION", str(exc)) from exc
+
+        return guard
 
     def _move_while_holding(
         self,

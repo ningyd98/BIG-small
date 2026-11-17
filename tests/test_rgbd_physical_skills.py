@@ -241,6 +241,47 @@ def test_empty_hand_cannot_claim_place_or_carry(
     assert backend.total_physics_steps == before
 
 
+@pytest.mark.parametrize("visual", [False, True])
+def test_real_contact_loss_stops_at_first_lost_physics_step(backend, monkeypatch, visual):
+    from contextlib import nullcontext
+
+    from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+    from cloud_edge_robot_arm.simulation.mujoco.visual_servo import VisualServoSession
+
+    robot = MuJoCoSkillRobot(backend)
+    assert robot.approach("object", resolved_target=Pose(x=0.45, y=0, z=0.045)).success
+    assert robot.grasp("object", timeout_ms=1000).success
+    assert robot.lift(resolved_target=Pose(x=0.45, y=0, z=0.16)).success
+    original_step = backend.step
+    start = backend.total_physics_steps
+    first_lost = []
+    opened = False
+
+    def external_open_during_step(steps=1):
+        nonlocal opened
+        for _ in range(steps):
+            if not opened and backend.total_physics_steps >= start + 3:
+                # Test fault only: external finger actuation, no object-pose writes.
+                backend.apply_gripper_command(GripperCommand(open=True))
+                opened = True
+            result = original_step(1)
+            if robot.get_state().holding_object_id is None and not first_lost:
+                first_lost.append(backend.total_physics_steps)
+        return result
+
+    monkeypatch.setattr(backend, "step", external_open_during_step)
+    session = VisualServoSession(lambda target: target)
+    with robot.visual_servo(session) if visual else nullcontext():
+        action = robot.move_to_region(
+            "target_region", resolved_target=Pose(x=0.20, y=0.25, z=0.16), timeout_ms=10000,
+        )
+    assert not action.success and action.error_code == "GRASP_LOST"
+    assert first_lost and backend.total_physics_steps == first_lost[0]
+    assert backend.command_records[-1]["type"] == "hold_current_joints"
+    assert not [record for record in backend.command_records
+                if record["type"] == "joint_target" and record["physics_step"] >= first_lost[0]]
+
+
 def test_contact_grasp_lifts_object_and_holds(backend: MuJoCoPhysicsBackend) -> None:
     from cloud_edge_robot_arm.simulation.mujoco.motion_controller import (
         MotionTarget,

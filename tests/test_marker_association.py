@@ -22,8 +22,10 @@ from cloud_edge_robot_arm.contracts.models import TaskTarget
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs/research/ced_marker_registration_v3.yaml"
-CONFIG_SHA256 = "4c94107e2c9750d576f220a660e5a7abb6b896a64833c6844b98db464511920e"
+CONFIG = ROOT / "configs/research/ced_marker_registration_v4.yaml"
+CONFIG_SHA256 = "258725fd7baa73a416b69addc3c9b3dcb2eca9a4158ee05153cad64047123045"
+FROZEN_V3 = ROOT / "configs/research/ced_marker_registration_v3.yaml"
+FROZEN_V3_SHA256 = "4c94107e2c9750d576f220a660e5a7abb6b896a64833c6844b98db464511920e"
 FROZEN_V2 = ROOT / "configs/research/ced_marker_registration_v2.yaml"
 FROZEN_V2_SHA256 = "d009cd6b06b1a429b6c67429c6d4da4c8ea9c4bc0e5f50a81cab237e1d54f8e9"
 FROZEN_V1 = ROOT / "configs/research/ced_marker_registration_v1.yaml"
@@ -42,7 +44,8 @@ def api():
 
 
 @pytest.mark.parametrize(
-    "path,digest", [(FROZEN_V1, FROZEN_V1_SHA256), (FROZEN_V2, FROZEN_V2_SHA256)]
+    "path,digest", [(FROZEN_V1, FROZEN_V1_SHA256), (FROZEN_V2, FROZEN_V2_SHA256),
+                     (FROZEN_V3, FROZEN_V3_SHA256)]
 )
 def test_frozen_registrations_reject_current_sources(path, digest):
     assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
@@ -81,7 +84,7 @@ def test_frozen_v2_preserves_reviewed_association_source_binding():
 def test_v3_registration_changes_only_identity_and_reviewed_source_bindings():
     module = api()
     previous = yaml.safe_load(FROZEN_V2.read_text())
-    current = yaml.safe_load(CONFIG.read_text())
+    current = yaml.safe_load(FROZEN_V3.read_text())
     source = "src/cloud_edge_robot_arm/vision/pose_markers.py"
     expected = {
         **previous,
@@ -97,17 +100,46 @@ def test_v3_registration_changes_only_identity_and_reviewed_source_bindings():
     assert current == expected
     assert len(current["registration_source_hashes"]) == 6
     assert current["admission_scope"] == "DEVELOPMENT_ONLY"
+    assert hashlib.sha256(FROZEN_V3.read_bytes()).hexdigest() == FROZEN_V3_SHA256
+    frozen = module.MarkerObjectRegistration.from_payload(current, root=ROOT)
+    assert not frozen.sources_valid()
+    with pytest.raises(ValueError, match="source/asset binding"):
+        module.load_marker_registration(
+            FROZEN_V3, expected_registry_sha256=FROZEN_V3_SHA256, root=ROOT,
+        )
+
+
+def test_v4_registration_refreshes_only_identity_and_current_source_pins():
+    module = api()
+    previous = yaml.safe_load(FROZEN_V3.read_text())
+    current = yaml.safe_load(CONFIG.read_text())
+    expected = {
+        **previous,
+        "registration_id": "ced-marker-color-v2-object-development-v4",
+        "registration_source_hashes": {
+            **previous["registration_source_hashes"],
+            "src/cloud_edge_robot_arm/vision/pose_markers.py": (
+                "bac63d8245dc05b8822f82e85e8bd6949f3c5bedee9070b97081bc0aba63726e"
+            ),
+            "src/cloud_edge_robot_arm/vision/observations.py": (
+                "ba4084710e44ad6dfa4b1e94ab94a3e645e09839f600f5bc18628acb23fb60fc"
+            ),
+        },
+    }
+    assert current == expected
+    assert len(current["registration_source_hashes"]) == 6
+    assert current["admission_scope"] == "DEVELOPMENT_ONLY"
     assert hashlib.sha256(CONFIG.read_bytes()).hexdigest() == CONFIG_SHA256
     successor = module.load_marker_registration(
-        CONFIG, expected_registry_sha256=CONFIG_SHA256, root=ROOT
+        CONFIG, expected_registry_sha256=CONFIG_SHA256, root=ROOT,
     )
     frozen = module.MarkerObjectRegistration.from_payload(previous, root=ROOT)
     assert successor.sources_valid() and not frozen.sources_valid()
     assert successor.digest() != frozen.digest()
-    for path, mismatched_sha in [(CONFIG, FROZEN_V2_SHA256), (FROZEN_V2, CONFIG_SHA256)]:
+    for path, mismatched_sha in [(CONFIG, FROZEN_V3_SHA256), (FROZEN_V3, CONFIG_SHA256)]:
         with pytest.raises(ValueError, match="registry"):
             module.load_marker_registration(
-                path, expected_registry_sha256=mismatched_sha, root=ROOT
+                path, expected_registry_sha256=mismatched_sha, root=ROOT,
             )
 
 

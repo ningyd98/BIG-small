@@ -192,6 +192,10 @@ def _ground_component(
         observation, tracker.destination_color, target=False,
         occlusion_geometry=None if moving_camera else target,
     )
+    if moving_camera:
+        from cloud_edge_robot_arm.vision.servo_region import measure_servo_region
+
+        region, region_reason = measure_servo_region(observation, tracker)
     family = marker_family(family_id)
     marker = detect_pose_marker(
         observation,
@@ -212,11 +216,12 @@ def _ground_component(
         if getattr(tracker, "destination", None) is not None
         else None
     )
-    _visible_support(
-        observation,
-        tracker.destination_color,
-        reference_mask=destination_reference_mask,
-    )
+    if not moving_camera or (region is None and skill in {"MOVE_TO_REGION", "PLACE"}):
+        _visible_support(
+            observation,
+            tracker.destination_color,
+            reference_mask=destination_reference_mask,
+        )
     current = dict(evidence)
     audit: dict[str, Any] = {
         "observation_id": observation.observation_id,
@@ -257,12 +262,110 @@ def _ground_component(
         current["grounded_destination"] = dict(
             zip("xyz", map(float, region["center"]), strict=True)
         )
-        audit["destination_source"] = "CURRENT_OPENCV_RGBD"
+        audit["destination_source"] = region.get("source", "CURRENT_OPENCV_RGBD")
     else:
         if moving_camera and skill in {"MOVE_TO_REGION", "PLACE"}:
             raise ComponentStopped("CURRENT_SERVO_DESTINATION_GEOMETRY_UNAVAILABLE")
-        audit["destination_source"] = "REFERENCE_REGION_CENTER_WITH_CURRENT_VISIBLE_COLOR_SUPPORT"
+        audit["destination_source"] = (
+            "REFERENCE_REGION_NOT_USED_BY_THIS_MOTION" if moving_camera else
+            "REFERENCE_REGION_CENTER_WITH_CURRENT_VISIBLE_COLOR_SUPPORT"
+        )
     return current, audit
+
+
+def component_motion_phases(step: Any, current: Any) -> list[Any]:
+    """Keep the registered endpoint and escape vertically before a low retreat.
+
+    A low release pose first escapes vertically before the registered lateral
+    marker-clearing retreat. The owner must share the original step clock.
+    """
+    target = step.parameters.get("target_pose")
+    if not isinstance(target, dict):
+        return [step]
+    intermediate = None
+    suffix = ""
+    if step.skill.value == "RETREAT" and current.z < 0.08 and (
+        current.x != target["x"] or current.y != target["y"]
+    ):
+        intermediate = {"x": current.x, "y": current.y, "z": target["z"]}
+        suffix = "clearance"
+    if intermediate is None:
+        return [step]
+    return [step.model_copy(update={
+        "step_id": step.step_id + "-" + suffix,
+        "parameters": {**step.parameters, "target_pose": intermediate},
+    }, deep=True), step]
+
+
+def _transport_camera_position(
+    observation: RGBDObservation, tracker: Any, evidence: dict[str, Any], family_id: str,
+    *, lift_height_m: float = 0.0,
+) -> tuple[tuple[float, float, float] | None, dict[str, Any]]:
+    from cloud_edge_robot_arm.vision.camera_positioning import oblique_camera_for_features
+
+    if not math.isfinite(lift_height_m) or lift_height_m < 0:
+        raise ValueError("camera framing requires a finite nonnegative planned lift")
+    family = marker_family(family_id)
+    marker = detect_pose_marker(observation, PoseMarkerRegistration(
+        marker_id=family.marker_id, marker_size_m=family.marker_size_m,
+        dictionary=cast(Literal["DICT_4X4_50"], family.dictionary),
+        marked_asset_sha256=family.asset_sha256,
+    ), corner_refinement="SUBPIX")
+    if marker.status != "OBSERVED":
+        raise ComponentStopped("CAMERA_POSITIONING_REQUIRES_CURRENT_MARKER")
+    assert marker.marker_center_world_m is not None and marker.rotation_marker_to_world is not None
+    rotation = np.array(marker.rotation_marker_to_world).reshape(3, 3)
+    attachment = np.array(family.marker_to_object).reshape(4, 4)
+    object_rotation = rotation @ attachment[:3, :3].T
+    offset = object_rotation @ attachment[:3, 3]
+    marker_center = np.array(marker.marker_center_world_m)
+    current_object = marker_center - offset
+    destination = np.array(tracker.destination["center"])
+    initial_grasp = evidence["resolved_top_grasp_tcp"]
+    final_object = np.array([
+        destination[0], destination[1], initial_grasp["z"] - 0.01
+        + destination[2] - evidence["top_grasp_support_height_m"],
+    ])
+    final_marker = final_object + offset
+    points = []
+    for center in (marker_center, final_marker):
+        for x in (-0.5, 0.5):
+            for y in (-0.5, 0.5):
+                points.append(center + rotation @ np.array([x, y, 0]) * family.marker_size_m)
+    marker_points = list(points)
+    if lift_height_m:
+        lifted = [point + np.array([0, 0, lift_height_m]) for point in points[:4]]
+        points.extend(lifted)
+        marker_points.extend(lifted)
+    extent = (np.array(tracker.initial["max"]) - np.array(tracker.initial["min"]))[:2] / 2
+    for center in (current_object, final_object):
+        for dx in (-1, 1):
+            for dy in (-1, 1):
+                points.append(np.array([
+                    center[0] + dx * extent[0], center[1] + dy * extent[1], center[2] + 0.04,
+                ]))
+    for x in (tracker.destination["min"][0], tracker.destination["max"][0]):
+        for y in (tracker.destination["min"][1], tracker.destination["max"][1]):
+            points.append(np.array([x, y, destination[2]]))
+    framing: dict[str, Any] = {
+        "marker_corners_m": np.array(marker_points),
+        "current_height_m": observation.camera_to_world[11],
+        "intrinsics": observation.intrinsics, "image_size": (observation.width, observation.height),
+    }
+    view = oblique_camera_for_features(np.array(points), **framing)
+    position, aim = view if view is not None else (None, None)
+    side_views = [oblique_camera_for_features(
+        np.array([*marker_points, *points[-4:]]), **framing,
+        view_direction_xy=direction, angles_deg=(angle,), image_margin_px=8, look_at_m=aim,
+    ) for direction, angle in (((-1, 0), 35), ((1, 0), 35))]
+    return position, {
+        "source": "CURRENT_REGISTERED_MARKER_AND_INITIAL_COMPLETE_WORLD_GEOMETRY",
+        "observation_id": observation.observation_id,
+        "previous_marker_side_px": marker.measured_min_side_px,
+        "position_m": position, "look_at_m": aim, "hardware_dispatch": False,
+        "planned_lift_height_m": lift_height_m,
+        "fallback_views": [candidate for candidate in [view, *side_views] if candidate is not None],
+    }
 
 
 def run_component_episode(
@@ -272,6 +375,7 @@ def run_component_episode(
     from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest
     from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor
     from cloud_edge_robot_arm.edge.runtime.skill_registry import SkillRegistry
+    from cloud_edge_robot_arm.edge.safety.clearance import VerticalClearancePath
     from cloud_edge_robot_arm.simulation.config import SimulatorConfig
     from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
     from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
@@ -356,6 +460,7 @@ def run_component_episode(
     criteria = CompletionCriteria("object", "target_region")
     backend = MuJoCoPhysicsBackend()
     samples: list[Any] = []
+    robot_feedback: list[dict[str, Any]] = []
     actions: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
     frames: list[dict[str, Any]] = []
@@ -447,6 +552,17 @@ def run_component_episode(
             def collect(snapshot: Any) -> None:
                 nonlocal last_job_poll
                 samples.append(sample_physical_observation(snapshot, criteria))
+                # Offline evidence only. These records never enter the planner,
+                # servo measurement or safety/context inputs.
+                robot_feedback.append({
+                    "physics_step": snapshot.physics_step,
+                    "sim_time_s": snapshot.sim_time_s,
+                    "tcp_position_m": snapshot.tcp_position_m,
+                    "joint_positions_rad": snapshot.joint_positions_rad,
+                    "joint_velocities_rad_s": snapshot.joint_velocities_rad_s,
+                    "finger_positions_m": snapshot.finger_positions_m,
+                    "object_geom_rotation_row_major": snapshot.object_geom_rotation_row_major,
+                })
                 if backend.total_physics_steps >= 16000:
                     raise ComponentStopped("COMPONENT_PHYSICS_BUDGET_EXHAUSTED")
                 now = time.monotonic()
@@ -518,8 +634,26 @@ def run_component_episode(
                 row["contract"] = contract.model_dump(mode="json")
                 row["pipeline_validated_contract"] = response["contract"]
                 with backend.observe_physics_steps(collect):
-                    for index, original in enumerate(contract.steps):
+                    camera_reframed = False
+                    camera_views: list[Any] = []
+                    pending: list[tuple[Any, Any, float | None]] = [
+                        (original, None, None) for original in contract.steps
+                    ]
+                    for index, (original, frozen_step, inherited_start) in enumerate(pending):
                         active()
+                        if servo_enabled and original.skill.value == "PLACE" and camera_views:
+                            # Reacquire the measured overview before descending,
+                            # rather than spend a motion sample on the known
+                            # side-to-overview visibility transition near contact.
+                            place_position, place_aim = camera_views[0]
+                            backend.set_camera_position(place_position, look_at_m=place_aim)
+                            row.setdefault("camera_adjustments", []).append({
+                                "source": "CURRENT_MEASURED_PLACE_OVERVIEW",
+                                "step_id": original.step_id,
+                                "physics_step": backend.total_physics_steps,
+                                "position_m": place_position, "look_at_m": place_aim,
+                                "hardware_dispatch": False,
+                            })
                         current = frame(f"pre-{index:02d}-{original.skill.value.lower()}")
                         if (datetime.now(UTC) - current.captured_at).total_seconds() > 5:
                             raise ComponentStopped("CURRENT_COMPONENT_FRAME_EXPIRED")
@@ -532,16 +666,53 @@ def run_component_episode(
                             robot.get_state(),
                             moving_camera=servo_enabled,
                         )
+                        if servo_enabled and original.skill.value == "MOVE_TO_REGION" and (
+                            not camera_reframed
+                        ):
+                            position, camera_audit = _transport_camera_position(
+                                current, tracker, evidence, family_id,
+                            )
+                            camera_reframed = True
+                            camera_views = camera_audit["fallback_views"]
+                            if position is not None:
+                                backend.set_camera_position(
+                                    position, look_at_m=camera_audit["look_at_m"],
+                                )
+                                row.setdefault("camera_adjustments", []).append(camera_audit)
+                                current = frame(f"pre-{index:02d}-camera-positioned")
+                                measured, audit = _ground_component(
+                                    current, tracker, evidence, family_id,
+                                    original.skill.value, robot.get_state(), moving_camera=True,
+                                )
                         if servo_enabled and original.skill.value in {"MOVE_TO_REGION", "PLACE"}:
                             # Preserve the initial tool/support offset after lifting.
                             measured["resolved_top_grasp_tcp"]["z"] = evidence[
                                 "resolved_top_grasp_tcp"
                             ]["z"]
-                        step = resolved_step(original, robot, measured)
-                        if step.skill.value == "MOVE_ABOVE" and family_id in {
+                        step = frozen_step if frozen_step is not None else resolved_step(
+                            original, robot, measured,
+                        )
+                        if servo_enabled and step.skill.value == "LIFT":
+                            # Visibility can fail before transport starts. Prepare
+                            # bounded alternatives from this current marker and
+                            # the frozen lift endpoint, but move the camera only
+                            # if a fresh sample actually needs recovery.
+                            _, proposal = _transport_camera_position(
+                                current, tracker, evidence, family_id,
+                                lift_height_m=max(
+                                    0.0, step.parameters["target_pose"]["z"]
+                                    - robot.get_state().tcp_pose.z,
+                                ),
+                            )
+                            camera_views = proposal["fallback_views"]
+                            row.setdefault("camera_view_proposals", []).append(proposal)
+                        if (
+                            frozen_step is None and step.skill.value == "MOVE_ABOVE"
+                            and family_id in {
                             "side_y_plus_id7_75mm_r593",
                             "side_y_plus_id7_75mm_component_v1",
-                        }:
+                            }
+                        ):
                             target = dict(step.parameters["target_pose"])
                             target["y"] -= 0.005
                             step = step.model_copy(
@@ -551,6 +722,7 @@ def run_component_episode(
                         if (
                             step.skill.value == "RETREAT"
                             and family_id == "side_y_plus_id7_75mm_component_v1"
+                            and frozen_step is None
                         ):
                             # Vertical-only retreat leaves the wrist over this tag's quiet zone.
                             # Keep the registered controller; move its diagnostic endpoint clear.
@@ -560,14 +732,38 @@ def run_component_episode(
                                 update={"parameters": step.parameters | {"target_pose": target}}
                             )
                             audit["component_marker_clear_retreat_offset_m"] = [0, -0.100, 0]
-                        step_started = time.monotonic()
+                        step_started = inherited_start if inherited_start is not None else (
+                            time.monotonic()
+                        )
+                        if servo_enabled and frozen_step is None:
+                            phases = component_motion_phases(step, robot.get_state().tcp_pose)
+                            if len(phases) == 2:
+                                pending.insert(index + 1, (original, phases[1], step_started))
+                                step = phases[0]
+                        vertical_clearance = None
+                        if servo_enabled and step.skill.value in {"LIFT", "RETREAT"}:
+                            start_pose = robot.get_state().tcp_pose
+                            target = step.parameters["target_pose"]
+                            if (target["x"], target["y"]) == (start_pose.x, start_pose.y):
+                                vertical_clearance = VerticalClearancePath(
+                                    task_id=contract.task_id, step_id=step.step_id,
+                                    skill=step.skill.value,
+                                    start_m=(start_pose.x, start_pose.y, start_pose.z),
+                                    target_m=(target["x"], target["y"], target["z"]),
+                                    minimum_height_m=max(
+                                        0.08, contract.safety_constraints.minimum_safe_height,
+                                    ),
+                                )
+                        expected_holding = "object" if step.skill.value in {
+                            "LIFT", "MOVE_TO_REGION", "PLACE"
+                        } else None
                         # The diagnostic execution view binds the actual registered resolver's
                         # parameters/timeouts. Preserve the source template separately; neither
                         # SafetyShield nor SkillExecutor may inspect a different step payload.
                         action_contract = contract.model_copy(
                             update={
                                 "steps": [
-                                    step if item.step_id == step.step_id else item
+                                    step if item.step_id == original.step_id else item
                                     for item in contract.steps
                                 ]
                             },
@@ -582,6 +778,8 @@ def run_component_episode(
                             step: Any = step,
                             step_started: float = step_started,
                             dynamic_step: Any = None,
+                            vertical_clearance: Any = vertical_clearance,
+                            expected_holding: str | None = expected_holding,
                         ) -> None:
                             checked_step = dynamic_step if dynamic_step is not None else step
                             checked_contract = action_contract.model_copy(update={
@@ -613,6 +811,8 @@ def run_component_episode(
                                 requested_acceleration=float(
                                     checked_step.parameters.get("acceleration", 0)
                                 ),
+                                vertical_clearance=vertical_clearance,
+                                expected_holding_object_id=expected_holding,
                             )
                             verdict = getattr(
                                 shield, "post_check" if phase == "POST" else "pre_check"
@@ -643,6 +843,9 @@ def run_component_episode(
                         beginning = backend.total_physics_steps
                         action = {
                             "step_id": step.step_id,
+                            "source_step_id": original.step_id,
+                            "continuation": inherited_start is not None,
+                            "step_started_monotonic": step_started,
                             "skill": step.skill.value,
                             "resolved_step": step.model_dump(mode="json"),
                             "grounding": audit,
@@ -651,6 +854,8 @@ def run_component_episode(
                             "original_conditions_preserved_in_contract": True,
                             "original_full_effect_conditions_certified": False,
                             "start_step": beginning,
+                            **({"vertical_clearance": asdict(vertical_clearance)}
+                               if vertical_clearance is not None else {}),
                         }
                         actions.append(action)
                         servo_session = None
@@ -687,6 +892,10 @@ def run_component_episode(
                                 def servo_sample(
                                     previous: Any, *, feedback: Any = servo_feedback,
                                     step: Any = step, safety: Any = safety,
+                                    views: Any = (
+                                        camera_views if step.skill.value in {"LIFT", "PLACE"}
+                                        else camera_views[1:]
+                                    ),
                                 ) -> Any:
                                     sample_started = time.perf_counter()
                                     # Source files are already fully attested at
@@ -694,16 +903,44 @@ def run_component_episode(
                                     # The hot loop rechecks live lease/cancellation.
                                     active(verify_sources=False)
                                     checked_at = time.perf_counter()
-                                    paired = backend.capture_sensor_frame()
-                                    observation = observation_from_sensor_frame(
-                                        paired, source="mujoco_camera"
+                                    capture_s = 0.0
+                                    reposition_s = 0.0
+
+                                    def paired_capture(attempt: int) -> RGBDObservation:
+                                        nonlocal capture_s
+                                        begin = time.perf_counter()
+                                        paired = backend.capture_sensor_frame()
+                                        observation = observation_from_sensor_frame(
+                                            paired, source="mujoco_camera", png_compress_level=0,
+                                        )
+                                        suffix = f"-view-{attempt:02d}" if attempt else ""
+                                        save_servo_frame(
+                                            observation, folder / "servo-frames" / step.step_id
+                                            / f"sample-{len(feedback.records):04d}{suffix}",
+                                        )
+                                        capture_s += time.perf_counter() - begin
+                                        return observation
+
+                                    def set_view(
+                                        camera_position: Any, aim: Any, reason: str,
+                                    ) -> None:
+                                        nonlocal reposition_s
+                                        begin = time.perf_counter()
+                                        active(verify_sources=False)
+                                        backend.set_camera_position(camera_position, look_at_m=aim)
+                                        row.setdefault("camera_adjustments", []).append({
+                                            "source": "CURRENT_RGBD_VISIBILITY_RECOVERY",
+                                            "physics_step": backend.total_physics_steps,
+                                            "step_id": step.step_id, "reason": reason,
+                                            "position_m": camera_position, "look_at_m": aim,
+                                            "hardware_dispatch": False,
+                                        })
+                                        reposition_s += time.perf_counter() - begin
+
+                                    target = feedback.update_with_camera_views(
+                                        paired_capture, set_view, views,
                                     )
-                                    save_servo_frame(
-                                        observation, folder / "servo-frames" / step.step_id
-                                        / f"sample-{len(feedback.records):04d}",
-                                    )
-                                    captured_at = time.perf_counter()
-                                    target = feedback.update(observation)
+                                    observation = feedback.last_observation
                                     measured_at = time.perf_counter()
                                     updated_step = step.model_copy(update={"parameters": {
                                         **step.parameters, "target_pose": target.model_dump(),
@@ -714,8 +951,11 @@ def run_component_episode(
                                     active(verify_sources=False)
                                     feedback.records[-1]["stage_wall_ms"] = {
                                         "initial_active": (checked_at - sample_started) * 1000,
-                                        "capture_and_archive": (captured_at - checked_at) * 1000,
-                                        "vision": (measured_at - captured_at) * 1000,
+                                        "capture_and_archive": capture_s * 1000,
+                                        "camera_reposition": reposition_s * 1000,
+                                        "vision": (
+                                            measured_at - checked_at - capture_s - reposition_s
+                                        ) * 1000,
                                         "safety": (safety_at - measured_at) * 1000,
                                         "final_active": (time.perf_counter() - safety_at) * 1000,
                                     }
@@ -723,7 +963,9 @@ def run_component_episode(
                                         target, previous.orientation_wxyz
                                     )
 
-                                servo_session = VisualServoSession(servo_sample)
+                                servo_session = VisualServoSession(
+                                    servo_sample, vertical_clearance=vertical_clearance,
+                                )
                             execution_session = (
                                 robot.visual_servo(servo_session)
                                 if servo_session else nullcontext()
@@ -799,6 +1041,9 @@ def run_component_episode(
         row["model_calls"] = row["cloud_requests"] + row["local_generations"]
         try:
             _save(folder / "physical-evidence.json", [asdict(sample) for sample in samples])
+            if servo_enabled:
+                _save(folder / "robot-feedback.json", robot_feedback)
+                _save(folder / "commands.json", backend.command_records)
             archived_episode = _save(folder / "episode.json", row)
         finally:
             backend.shutdown()

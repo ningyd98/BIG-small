@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from cloud_edge_robot_arm.contracts import RobotState, TaskContract, TaskStep
+from cloud_edge_robot_arm.edge.safety.clearance import VerticalClearancePath
 from cloud_edge_robot_arm.edge.safety.models import (
     HardSafetyLimits,
     Obstacle,
@@ -52,6 +53,8 @@ class SafetyContextBuilder:
         obstacles: list[Obstacle] | None = None,
         forbidden_zones: list[WorkspaceDefinition] | None = None,
         wall_clock_now: datetime | None = None,
+        vertical_clearance: VerticalClearancePath | None = None,
+        expected_holding_object_id: str | None = None,
     ) -> SafetyContext:
         now = wall_clock_now or datetime.now(UTC)
         parameters = (
@@ -85,6 +88,9 @@ class SafetyContextBuilder:
                 forbidden_zones if forbidden_zones is not None else self._forbidden_zones
             ),
             holding_object=robot_state.holding_object_id is not None,
+            holding_object_id=robot_state.holding_object_id,
+            expected_holding_object_id=expected_holding_object_id,
+            vertical_clearance=vertical_clearance,
             step_started_at=step_started_at_mono,
             task_started_at_mono=task_started_at_mono,
             monotonic_now=monotonic_now,

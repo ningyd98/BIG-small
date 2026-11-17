@@ -14,8 +14,10 @@ from typing import Any
 
 import numpy as np
 
+from cloud_edge_robot_arm.edge.safety.clearance import VerticalClearancePath
 from cloud_edge_robot_arm.simulation.models import JointCommand
 from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+from cloud_edge_robot_arm.simulation.mujoco.clearance_control import CartesianMotionReference
 from cloud_edge_robot_arm.simulation.mujoco.motion_controller import (
     MotionResult,
     MotionTarget,
@@ -49,6 +51,7 @@ class VisualServoConfig:
 class VisualServoSession:
     sample: Callable[[MotionTarget], MotionTarget]
     config: VisualServoConfig = field(default_factory=VisualServoConfig)
+    vertical_clearance: VerticalClearancePath | None = None
     records: list[dict[str, Any]] = field(default_factory=list, init=False)
     started: bool = field(default=False, init=False)
     terminal_reason: str | None = field(default=None, init=False)
@@ -105,12 +108,16 @@ class MuJoCoVisualServoController:
         session: VisualServoSession,
         max_joint_velocity_rad_s: float = 1.5,
         max_joint_acceleration_rad_s2: float = 4.0,
+        state_guard: Callable[[], None] | None = None,
+        keep_cartesian_attitude: bool = False,
     ) -> MotionResult:
         with self.backend.sensor_capture_on_demand():
             return self._move_tcp(
                 target, timeout_s, session=session,
                 max_joint_velocity_rad_s=max_joint_velocity_rad_s,
                 max_joint_acceleration_rad_s2=max_joint_acceleration_rad_s2,
+                state_guard=state_guard,
+                keep_cartesian_attitude=keep_cartesian_attitude,
             )
 
     def _move_tcp(
@@ -121,6 +128,8 @@ class MuJoCoVisualServoController:
         session: VisualServoSession,
         max_joint_velocity_rad_s: float = 1.5,
         max_joint_acceleration_rad_s2: float = 4.0,
+        state_guard: Callable[[], None] | None = None,
+        keep_cartesian_attitude: bool = False,
     ) -> MotionResult:
         backend = self.backend
         model, data, config = backend._model, backend._data, backend._config
@@ -129,6 +138,7 @@ class MuJoCoVisualServoController:
         start = backend.total_physics_steps
         wall_start = time.monotonic()
         status = "TIMED_OUT"
+        retain_reference_hold = False
         try:
             for value in (timeout_s, max_joint_velocity_rad_s, max_joint_acceleration_rad_s2):
                 if not math.isfinite(value) or value <= 0:
@@ -138,6 +148,24 @@ class MuJoCoVisualServoController:
             session.started = True
             session.started_at_monotonic = wall_start
             initial = self._validate_target(target)
+            path = session.vertical_clearance
+            peak_z = backend.get_tcp_pose().z
+
+            def guard() -> None:
+                nonlocal peak_z
+                if state_guard is not None:
+                    state_guard()
+                if path is not None:
+                    pose = backend.get_tcp_pose()
+                    path.check_position((pose.x, pose.y, pose.z), peak_z=peak_z)
+                    peak_z = max(peak_z, pose.z)
+
+            if path is not None:
+                path.check_binding(
+                    task_id=path.task_id, step_id=path.step_id, skill=path.skill,
+                    target=target.position.model_dump(), minimum_height_m=path.minimum_height_m,
+                )
+            guard()
             if backend.estop_engaged:
                 error, angle = self.kinematics._pose_error(
                     initial, np.asarray(target.orientation_wxyz), model.site("tcp").id
@@ -149,9 +177,21 @@ class MuJoCoVisualServoController:
             control_steps = max(1, round(config.control_dt_s / config.physics_dt_s))
             vision_steps = max(1, math.ceil(session.config.vision_period_s / config.physics_dt_s))
             next_vision = 0
-            next_control = 0
-            command = np.array(data.qpos[:7], dtype=float)
-            velocity = np.zeros(7)
+            sent = backend.get_joint_command_state()
+            command = np.array(sent.positions_rad if sent.retained_target else data.qpos[:7])
+            velocity = np.array(sent.velocity_rad_s) if sent.retained_target else np.zeros(7)
+            held_s = backend.get_sim_time() - sent.sim_time_s
+            if held_s < -1e-9 or np.max(np.abs(velocity)) > max_joint_velocity_rad_s + 1e-8:
+                raise ValueError("joint command handoff exceeds the requested limits")
+            reaffirm_hold = sent.retained_target and held_s > 1e-9
+            if reaffirm_hold:
+                # Explicitly reaffirm the retained equilibrium before restarting
+                # the fixed grid. The preceding finite-difference velocity must
+                # be able to reach zero over the actual handoff interval.
+                if np.max(np.abs(velocity)) > max_joint_acceleration_rad_s2 * held_s + 1e-8:
+                    raise ValueError("joint command handoff cannot settle within acceleration")
+                velocity = np.zeros(7)
+            next_control = control_steps if sent.retained_target and not reaffirm_hold else 0
             previous = initial.copy()
             goal = command.copy()
             current = target
@@ -162,7 +202,31 @@ class MuJoCoVisualServoController:
             upper = np.array([model.jnt_range[model.joint(n).id, 1]
                               for n in backend._joint_names]) - 0.001
             site = model.site("tcp").id
+            clearance_quat = np.asarray(target.orientation_wxyz)
+            if path is not None:
+                # The grasp has already converged within the registered 5 deg
+                # tolerance. Preserve that measured tool attitude while leaving
+                # the table; aligning it more tightly here pushes the held cube
+                # sideways before it has cleared the support.
+                _, initial_angle = self.kinematics._pose_error(initial, clearance_quat, site)
+                if initial_angle > 5:
+                    raise ValueError("clearance requires an already aligned tool attitude")
+                assert backend._mujoco is not None
+                clearance_quat = np.empty(4)
+                backend._mujoco.mju_mat2Quat(clearance_quat, data.site_xmat[site])
+            start_pose = backend.get_tcp_pose()
+            reference = CartesianMotionReference(
+                backend, path.start_m if path else (start_pose.x, start_pose.y, start_pose.z),
+                path.target_m if path else (
+                    target.position.x, target.position.y, target.position.z,
+                ),
+                clearance_quat, control_steps=control_steps,
+                timeout_s=timeout_s, max_velocity=max_joint_velocity_rad_s,
+                max_acceleration=max_joint_acceleration_rad_s2,
+                initialize_load_from_feedback=path is None,
+            ) if path is not None or keep_cartesian_attitude else None
             while backend.total_physics_steps - start < max_steps:
+                guard()
                 elapsed = backend.total_physics_steps - start
                 if backend.estop_engaged:
                     status = "EMERGENCY_STOP"
@@ -173,14 +237,22 @@ class MuJoCoVisualServoController:
                     sampled_at = time.perf_counter()
                     current = session.sample(current)
                     position = self._validate_target(current)
+                    if path is not None:
+                        path.check_binding(
+                            task_id=path.task_id, step_id=path.step_id, skill=path.skill,
+                            target=current.position.model_dump(),
+                            minimum_height_m=path.minimum_height_m,
+                        )
+                    elif reference is not None and not np.array_equal(position, initial):
+                        raise ValueError("Cartesian reference endpoint changed")
                     if np.linalg.norm(position - previous) > session.config.max_frame_delta_m:
                         raise ValueError("visual servo target jump")
                     if np.linalg.norm(position - initial) > session.config.max_correction_m:
                         raise ValueError("visual servo correction envelope exceeded")
                     if current.orientation_wxyz != target.orientation_wxyz:
                         raise ValueError("visual servo orientation changes are unsupported")
-                    solved = self.kinematics._inverse_kinematics(
-                        position, np.asarray(current.orientation_wxyz), site
+                    solved = goal if reference is not None else self.kinematics._inverse_kinematics(
+                        position, np.asarray(current.orientation_wxyz), site,
                     )
                     latency = time.perf_counter() - sampled_at
                     if latency > session.config.max_sample_latency_s:
@@ -209,19 +281,42 @@ class MuJoCoVisualServoController:
                         raise ValueError("visual servo feedback budget exhausted")
                     previous = position
                     next_vision += vision_steps
-                    if settled >= session.config.stable_samples:
+                    if settled >= session.config.stable_samples and reference is None:
                         status = "SUCCEEDED"
                         break
                 if elapsed >= next_control:
+                    guard()
                     dt = control_steps * config.physics_dt_s
-                    desired = np.clip((goal - command) / dt,
-                                      -max_joint_velocity_rad_s, max_joint_velocity_rad_s)
-                    change = np.clip(desired - velocity,
-                                     -max_joint_acceleration_rad_s2 * dt,
-                                     max_joint_acceleration_rad_s2 * dt)
-                    velocity += change
-                    max_acceleration = max(max_acceleration, float(np.max(np.abs(change))) / dt)
-                    command += velocity * dt
+                    if reference is not None:
+                        goal = reference.joint_target(elapsed, control_steps)
+                        if (
+                            elapsed * config.physics_dt_s >= (
+                                reference.duration_s + reference.settle_s
+                            )
+                            and settled >= session.config.stable_samples
+                            and np.max(np.abs(velocity)) <= max_joint_acceleration_rad_s2 * dt
+                        ):
+                            # A duplicate final command explicitly sets command
+                            # velocity to zero on the original control grid.
+                            backend.apply_joint_targets(JointCommand(
+                                positions=command.tolist(), max_velocity=max_joint_velocity_rad_s,
+                            ))
+                            retain_reference_hold = True
+                            status = "SUCCEEDED"
+                            break
+                    if reaffirm_hold:
+                        reaffirm_hold = False
+                    else:
+                        desired = np.clip((goal - command) / dt,
+                                          -max_joint_velocity_rad_s, max_joint_velocity_rad_s)
+                        change = np.clip(desired - velocity,
+                                         -max_joint_acceleration_rad_s2 * dt,
+                                         max_joint_acceleration_rad_s2 * dt)
+                        velocity += change
+                        max_acceleration = max(
+                            max_acceleration, float(np.max(np.abs(change))) / dt,
+                        )
+                        command += velocity * dt
                     if np.any(command < lower) or np.any(command > upper):
                         raise ValueError("visual servo joint target outside physical range")
                     backend.apply_joint_targets(JointCommand(
@@ -231,17 +326,28 @@ class MuJoCoVisualServoController:
                 # Independent deadlines keep 30 Hz vision and the original
                 # control grid. Splitting physics must not change command dt.
                 chunk = min(next_control - elapsed, next_vision - elapsed, max_steps - elapsed)
-                backend.step(chunk)
+                if state_guard is None and reference is None:
+                    backend.step(chunk)
+                else:
+                    for _ in range(chunk):
+                        backend.step(1)
+                        if reference is not None:
+                            reference.observe_step()
+                        guard()
             position = self._validate_target(current)
             error, angle = self.kinematics._pose_error(
                 position, np.asarray(current.orientation_wxyz), site
             )
             session.terminal_reason = status
-            return MotionResult(status, error, angle, backend.total_physics_steps - start)
+            return MotionResult(
+                status, error, angle, backend.total_physics_steps - start,
+                reference.max_compensation_rad if reference is not None else 0.0,
+            )
         except BaseException as error:
             session.terminal_reason = f"{type(error).__name__}:{error}"
             raise
         finally:
             # Also cancel queued trajectories after camera, safety, lease or step
             # callbacks throw. Holding never advances the simulation.
-            backend.hold_current_joints()
+            if not retain_reference_hold:
+                backend.hold_current_joints()

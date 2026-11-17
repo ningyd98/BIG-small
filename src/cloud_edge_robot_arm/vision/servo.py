@@ -1,6 +1,6 @@
 """Current-frame PBVS measurements for the explicit MuJoCo development path.
 
-Camera translation is supported using each paired frame's extrinsics. This does
+Camera motion is supported using each paired frame's full extrinsics. This does
 not relax the fixed-camera tracker or grant physical/native acceptance.
 """
 
@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import math
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -19,7 +20,10 @@ from cloud_edge_robot_arm.contracts import Pose
 from cloud_edge_robot_arm.vision.marker_families import marker_family
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
 from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerRegistration, detect_pose_marker
+from cloud_edge_robot_arm.vision.servo_region import measure_servo_region
 from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker
+
+CameraView = tuple[tuple[float, float, float], tuple[float, float, float]]
 
 
 def save_servo_frame(observation: RGBDObservation, directory: Path) -> None:
@@ -92,7 +96,7 @@ class OpenCVServoFeedback:
         self._reference_grasp, _ = self._measure_target(reference)
         self._reference_region = self._region_center
         if skill in {"MOVE_TO_REGION", "PLACE"}:
-            region, reason = tracker._geometry(reference, tracker.destination_color, target=False)
+            region, reason = measure_servo_region(reference, tracker)
             if region is None:
                 raise ValueError("servo reference region geometry unavailable: " + str(reason))
             self._reference_region = np.asarray(region["center"])
@@ -110,9 +114,6 @@ class OpenCVServoFeedback:
         if not observation.episode_id or not observation.calibration_version:
             raise ValueError("servo camera/episode binding missing")
         matrix = np.array(observation.camera_to_world).reshape(4, 4)
-        reference = np.array(identity.camera_to_world).reshape(4, 4)
-        if not np.allclose(matrix[:3, :3], reference[:3, :3], atol=1e-9, rtol=0):
-            raise ValueError("servo supports camera translation only")
         previous = np.array(self._last.camera_to_world).reshape(4, 4)
         moved = not np.array_equal(matrix, previous)
         changed = observation.calibration_version != self._last.calibration_version
@@ -144,6 +145,11 @@ class OpenCVServoFeedback:
             corner_refinement="SUBPIX",
         )
         if estimate.status != "OBSERVED":
+            if estimate.reason not in {
+                "known_marker_not_observed", "marker_boundary_clipped",
+                "marker_resolution_insufficient",
+            }:
+                raise ValueError("servo registered marker rejected: " + estimate.reason)
             return None
         attachment = np.asarray(family.marker_to_object).reshape(4, 4)
         rotation = np.asarray(estimate.rotation_marker_to_world).reshape(3, 3)
@@ -168,21 +174,74 @@ class OpenCVServoFeedback:
             raise ValueError("servo target geometry unavailable: " + str(reason))
         return grasp, source
 
+    def update_with_camera_views(
+        self, capture: Callable[[int], RGBDObservation],
+        set_view: Callable[[tuple[float, float, float], tuple[float, float, float], str], None],
+        views: Sequence[CameraView],
+    ) -> Pose:
+        """Try at most two other views before any further robot physics step.
+
+        The controller's original sample deadline includes every capture and
+        camera change. Each accepted view must independently pass update();
+        orientation, identity, invalid depth and calibration failures still stop.
+        """
+        ordered = list(views)
+        alternatives = iter(ordered)
+        rejected = []
+        recoverable = {
+            "servo registered marker geometry unavailable",
+            "servo region geometry unavailable: region_current_corner_anchors_insufficient",
+            "servo region geometry unavailable: region_missing_color_not_explained_by_foreground",
+            "servo region geometry unavailable: region_color_boundary_depth_unresolved",
+        }
+        for attempt in range(3):
+            observation = capture(attempt)
+            try:
+                target = self.update(observation)
+            except ValueError as error:
+                if str(error) not in recoverable or attempt == 2:
+                    raise
+                position = tuple(observation.camera_to_world[i] for i in (3, 7, 11))
+                if attempt == 0:
+                    # Preserve the framing proposal's preference order. Once a
+                    # side view loses near-plane support, the oblique overview
+                    # can be more informative than the opposite side. Never
+                    # spend the remaining budget recapturing the initial view.
+                    alternatives = iter([view for view in ordered
+                                         if not np.allclose(view[0], position, atol=1e-9, rtol=0)])
+                view = next((view for view in alternatives
+                             if not np.allclose(view[0], position, atol=1e-9, rtol=0)), None)
+                if view is None:
+                    raise
+                rejected.append({"observation_id": observation.observation_id,
+                                 "reason": str(error), "camera_to_world":
+                                 list(observation.camera_to_world)})
+                set_view(view[0], view[1], str(error))
+            else:
+                if rejected and self.records:
+                    self.records[-1]["camera_recovery"] = rejected
+                return target
+        raise AssertionError("camera view budget exhausted")
+
     def update(self, observation: RGBDObservation) -> Pose:
         observation = RGBDObservation.model_validate(observation.model_dump())
         self._validate(observation)
         grasp, source = self._measure_target(observation)
         endpoint = self._initial.copy()
+        region_support = None
         if self.skill in {"MOVE_ABOVE", "APPROACH"}:
             endpoint += grasp - self._reference_grasp
         elif self.skill in {"MOVE_TO_REGION", "PLACE"}:
-            # No old pixel masks or reference-centre fallback after camera motion.
-            region, region_reason = self.tracker._geometry(
-                observation, self.tracker.destination_color, target=False
-            )
+            region, region_reason = measure_servo_region(observation, self.tracker)
             if region is None:
                 raise ValueError("servo region geometry unavailable: " + str(region_reason))
             endpoint += np.asarray(region["center"]) - self._reference_region
+            region_support = {key: region[key] for key in (
+                "source", "occluded_pixels", "observed_corner_anchors",
+                "mixed_foreground_edge_pixels",
+                "low_object_sidewall_pixels",
+                "mixed_occluder_footprint_pixels",
+            ) if key in region}
         if float(np.linalg.norm(endpoint - self._initial)) > self.max_correction_m:
             raise ValueError("servo target left initial correction envelope")
         if float(np.linalg.norm(endpoint - self._last_target)) > self.max_frame_delta_m:
@@ -196,10 +255,12 @@ class OpenCVServoFeedback:
             "captured_at": observation.captured_at.isoformat(),
             "calibration_version": observation.calibration_version,
             "camera_position_m": list(observation.camera_to_world[index] for index in (3, 7, 11)),
+            "camera_to_world": list(observation.camera_to_world),
             "target_pose": dict(zip("xyz", map(float, endpoint), strict=True)),
             "target_source": source,
             "formal_geometry_qualification": "UNKNOWN",
             "ground_truth_used_for_control": False,
+            **({"region_support": region_support} if region_support is not None else {}),
         })
         self._seen.add(observation.observation_id)
         self._last = observation

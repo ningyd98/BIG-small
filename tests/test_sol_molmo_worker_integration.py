@@ -209,6 +209,14 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
             )
             assert len(values["camera_to_world"]) == 16
         assert result["outcome"]["native_action_qualification"] == "UNKNOWN_NOT_GRANTED"
+        assert result["physical_success"] is True, outcome.get("terminal_reason")
+        assert outcome["independent_physical_outcome"]["measured_lift_m"] >= 0.05
+        assert outcome["independent_physical_outcome"]["hold_s"] >= 0.5
+        assert outcome["independent_physical_outcome"]["placed_stable_s"] >= 1.0
+        assert outcome["diagnostic_complete"] is True, outcome.get("terminal_reason")
+        assert outcome["terminal_reason"] is None
+        assert outcome["actions"][-1]["skill"] == "RETREAT"
+        assert outcome["marker_frames"][-1]["status"] == "OBSERVED"
         return
     assert result["executed_actions"] >= 7, result.get("terminal_reason")
     assert result["physical_success"] is True

@@ -123,6 +123,57 @@ def test_future_frame_within_legacy_tolerance_is_rejected():
         provider.update(future)
 
 
+@pytest.mark.parametrize("failure", [
+    "servo registered marker geometry unavailable",
+    "servo region geometry unavailable: region_color_boundary_depth_unresolved",
+    "servo registered object is not upright",
+    "servo region geometry unavailable: region_occluder_depth_invalid",
+])
+@pytest.mark.parametrize("current_view", [None, 0, 1, 3])
+def test_camera_recovery_is_bounded_and_only_for_observability_failures(
+    monkeypatch, failure, current_view,
+):
+    recoverable = failure.endswith(("geometry unavailable", "color_boundary_depth_unresolved"))
+    provider, reference, initial = feedback()
+    observations = [revised(current(reference), frame_id=f"view-{i}", observation_id=f"view-{i}")
+                    for i in range(3)]
+    measured, changes, captured = [], [], []
+
+    def update(observation):
+        measured.append(observation.observation_id)
+        if len(measured) < 3:
+            raise ValueError(failure)
+        return initial
+
+    monkeypatch.setattr(provider, "update", update)
+    views = [((0.1 * i, 0.2, 0.6), (0.2, 0.2, 0.1)) for i in (1, 2, 3, 4)]
+    if current_view is not None:
+        transform = np.array(observations[0].camera_to_world).reshape(4, 4)
+        transform[:3, 3] = views[current_view][0]
+        observations[0] = revised(observations[0], camera_to_world=tuple(transform.ravel()),
+                                  calibration_version="current-side-view")
+
+    def capture(attempt):
+        captured.append(attempt)
+        return observations[attempt]
+
+    def set_view(position, aim, reason):
+        changes.append((position, aim, reason))
+
+    if recoverable:
+        result = provider.update_with_camera_views(capture, set_view, views)
+        assert result == initial and captured == [0, 1, 2] and len(changes) == 2
+        preferred = 1 if current_view == 0 else 0
+        assert changes[0][0] == views[preferred][0]
+        if current_view is not None:
+            assert all(change[0] != views[current_view][0] for change in changes)
+        assert changes[0][0] != changes[1][0]
+    else:
+        with pytest.raises(ValueError, match=failure):
+            provider.update_with_camera_views(capture, set_view, views)
+        assert captured == [0] and changes == []
+
+
 def test_camera_position_changes_calibration_without_advancing_physics():
     from cloud_edge_robot_arm.simulation.config import SimulatorConfig
     from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
@@ -140,6 +191,34 @@ def test_camera_position_changes_calibration_without_advancing_physics():
         transform = np.array(after.camera_to_world).reshape(4, 4)
         assert transform[:3, 3] == pytest.approx([0.36, 0.01, 1.35])
         assert transform[:3, 2] == pytest.approx([0, 0, -1])
+    finally:
+        backend.shutdown()
+
+
+def test_camera_can_look_at_workspace_from_an_oblique_position():
+    from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+    from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+    from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+
+    backend = MuJoCoPhysicsBackend()
+    try:
+        backend.initialize(SimulatorConfig(render_rgb=True, render_depth=True))
+        backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=31))
+        before = backend.get_sensor_frame()
+        position, aim = (-0.05, 0.4, 0.7), (0.3, 0.15, 0.05)
+        backend.set_camera_position(position, look_at_m=aim)
+        after = backend.capture_sensor_frame()
+        transform = np.array(after.camera_to_world).reshape(4, 4)
+        direction = np.array(aim) - position
+        direction /= np.linalg.norm(direction)
+        assert transform[:3, 2] == pytest.approx(direction)
+        assert after.calibration_version != before.calibration_version
+        assert backend.total_physics_steps == 0
+        assert backend.command_records[-1]["look_at_m"] == list(aim)
+        with pytest.raises(ValueError, match="look-at"):
+            backend.set_camera_position(position, look_at_m=position)
+        unchanged = backend.capture_sensor_frame()
+        assert unchanged.calibration_version == after.calibration_version
     finally:
         backend.shutdown()
 

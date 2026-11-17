@@ -70,6 +70,22 @@ def test_historical_sensor_frame_preserves_acquisition_timestamp(sensor_frame: S
     assert restored.crop((0, 0, 1, 1)).captured_at == restored.captured_at
 
 
+@pytest.mark.parametrize("level", [0, 1])
+def test_fast_lossless_camera_encoding_preserves_pixels_depth_and_calibration(sensor_frame, level):
+    from cloud_edge_robot_arm.vision.observations import observation_from_sensor_frame
+
+    normal = observation_from_sensor_frame(sensor_frame, source="mujoco_camera")
+    fast = observation_from_sensor_frame(
+        sensor_frame, source="mujoco_camera", png_compress_level=level,
+    )
+    decoded = Image.open(io.BytesIO(base64.b64decode(fast.rgb_png_base64))).tobytes()
+    assert decoded == sensor_frame.rgb
+    assert fast.depth_float32_base64 == normal.depth_float32_base64
+    assert fast.valid_mask_base64 == normal.valid_mask_base64
+    assert fast.captured_at == normal.captured_at
+    assert fast.camera_to_world == normal.camera_to_world and fast.intrinsics == normal.intrinsics
+
+
 @pytest.mark.parametrize("length", [11, 13])
 def test_sensor_frame_rejects_wrong_rgb_payload_length(
     sensor_frame: SensorFrame, length: int
