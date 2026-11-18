@@ -1,0 +1,190 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/test_verify_fresh.py:3:1
+   |
+ 1 |   """Offline controls for the four-slot independent archive reader."""
+ 2 |
+ 3 | / import copy
+ 4 | | import hashlib
+ 5 | | import json
+ 6 | | import math
+ 7 | | from pathlib import Path
+ 8 | |
+ 9 | | import pytest
+10 | | import verify_fresh as audit
+11 | |
+12 | | from cloud_edge_robot_arm.harness.config import load_config
+13 | | from cloud_edge_robot_arm.vision.role_models import configuration_hash
+14 | | from cloud_edge_robot_arm.vision.servo import save_servo_frame
+15 | | from tests.test_opencv_target_evidence import scene
+   | |___________________________________________________^
+16 |
+17 |   ROUND = Path(__file__).resolve().parent
+   |
+help: Organize imports
+
+E501 Line too long (101 > 100)
+  --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:95:101
+   |
+93 |     commit = freeze["commit"]
+94 |     require(bool(re.fullmatch(r"[0-9a-f]{40}", commit)), "freeze commit is malformed")
+95 |     tree = subprocess.check_output(["git", "rev-parse", commit + "^{tree}"], cwd=checkout, text=True)
+   |                                                                                                     ^
+96 |     require(tree.strip() == freeze["tree"], "freeze commit/tree mismatch")
+97 |     for relative, digest in freeze["product_sources"].items():
+   |
+
+E501 Line too long (101 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:114:101
+    |
+113 | def check_pose(
+114 |     slot: dict[str, Any], config: HarnessConfig, assignment: dict[str, Any], applied: dict[str, Any],
+    |                                                                                                     ^
+115 | ) -> dict[str, Any]:
+116 |     request = {key: value for key, value in slot.items() if key != "id"}
+    |
+
+E501 Line too long (105 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:136:101
+    |
+134 |         isinstance(position, list) and len(position) == 3
+135 |         and isinstance(quaternion, list) and len(quaternion) == 4
+136 |         and all(type(value) in {float, int} and math.isfinite(value) for value in position + quaternion),
+    |                                                                                                     ^^^^^
+137 |         "applied pose is not a finite 3D position and quaternion",
+138 |     )
+    |
+
+E501 Line too long (107 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:157:101
+    |
+155 |         "requested_position_m": wanted,
+156 |         "applied_position_m": position,
+157 |         "position_error_m": [actual - expected for actual, expected in zip(position, wanted, strict=True)],
+    |                                                                                                     ^^^^^^^
+158 |         "requested_yaw_rad": yaw,
+159 |         "applied_yaw_rad": applied_yaw,
+    |
+
+E501 Line too long (111 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:170:101
+    |
+168 |     slot_freeze: dict[str, Any],
+169 | ) -> int:
+170 |     require(configuration_hash(role) == slot_freeze["role_binding_sha256"], "role binding differs from freeze")
+    |                                                                                                     ^^^^^^^^^^^
+171 |     bundle = role["bundle"]
+172 |     cloud = bundle["cloud_snapshot"]
+    |
+
+E501 Line too long (104 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:256:101
+    |
+254 |     names = case.files
+255 |     started = [
+256 |         name for name in names if re.fullmatch(r"raw/molmo/request-\d{4}/generation-started.json", name)
+    |                                                                                                     ^^^^
+257 |     ]
+258 |     completed = [
+    |
+
+E501 Line too long (106 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:259:101
+    |
+257 |     ]
+258 |     completed = [
+259 |         name for name in names if re.fullmatch(r"raw/molmo/request-\d{4}/generation-completed.json", name)
+    |                                                                                                     ^^^^^^
+260 |     ]
+261 |     for sequence, paths, label in (
+    |
+
+E501 Line too long (101 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:266:101
+    |
+264 |     ):
+265 |         values = [case.json(path)[label] for path in sorted(paths)]
+266 |         require(values == list(range(1, len(values) + 1)), f"invalid generation {sequence} evidence")
+    |                                                                                                     ^
+267 |     require(
+268 |         {name.rsplit("/", 1)[0] for name in completed}.issubset(
+    |
+
+E501 Line too long (106 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:294:101
+    |
+292 |         )
+293 |     if response is not None:
+294 |         require(request_exists and response.get("model") == "gpt-6.1-sol", "cloud response model differs")
+    |                                                                                                     ^^^^^^
+295 |     observed = {
+296 |         "cloud_requests": len(cloud), "cloud_request_reservations": int(request_exists),
+    |
+
+E501 Line too long (101 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:330:101
+    |
+328 |         ), f"physical rescoring differs at {key}")
+329 |     commands = case.json("component/commands.json")
+330 |     accepted = sum(row["type"] == "joint_target" and row.get("accepted") is True for row in commands)
+    |                                                                                                     ^
+331 |     complete = result["component_success"] is True
+332 |     if actions:
+    |
+
+E501 Line too long (102 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:373:101
+    |
+371 |             )
+372 |         latencies = [row["sample_and_ik_s"] for row in servo.get("control_samples", [])]
+373 |         require(all(0 <= value <= 0.1 for value in latencies), "accepted servo sample exceeded 100ms")
+    |                                                                                                     ^^
+374 |         details.append({
+375 |             "skill": action["skill"],
+    |
+
+E501 Line too long (108 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:428:101
+    |
+426 |     entry = root / "native" / identity
+427 |     if not start_path.exists():
+428 |         require(not end_path.exists() and not entry.exists(), "slot has raw bytes without a launch receipt")
+    |                                                                                                     ^^^^^^^^
+429 |         return prefix | {"audit_status": "NOT_LAUNCHED", "occupancy": {"cloud": 0, "local": 0}}
+430 |     start = read(start_path)
+    |
+
+E501 Line too long (105 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:436:101
+    |
+434 |         "config_sha256": expected["config_sha256"],
+435 |     }
+436 |     require(all(start.get(key) == value for key, value in binding.items()), "slot start binding differs")
+    |                                                                                                     ^^^^^
+437 |     if not end_path.exists():
+438 |         return prefix | {
+    |
+
+E501 Line too long (103 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:512:101
+    |
+510 |     )
+511 |     pose = check_pose(slot, config, case.json("scene-assignment.json"), applied)
+512 |     sources = check_sources(role, case.json("source-hashes.json"), freeze["product_sources"], expected)
+    |                                                                                                     ^^^
+513 |     models = check_model_evidence(case, result, freeze)
+514 |     return prefix | {
+    |
+
+E501 Line too long (107 > 100)
+   --> artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:516:101
+    |
+514 |     return prefix | {
+515 |         "audit_status": "VERIFIED",
+516 |         "occupancy": {"cloud": models["cloud_request_reservations"], "local": models["local_generations"]},
+    |                                                                                                     ^^^^^^^
+517 |         "observed_counters": models,
+518 |         "manifest_sha256": summary["manifest_sha256"],
+    |
+
+Found 16 errors.
+[*] 1 fixable with the `--fix` option.

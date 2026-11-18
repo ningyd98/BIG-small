@@ -1,0 +1,69 @@
+.................F.                                                      [100%]
+=================================== FAILURES ===================================
+_____________ test_missing_or_replaced_frame_cannot_pass_the_index _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-416/test_missing_or_replaced_frame0')
+
+    def test_missing_or_replaced_frame_cannot_pass_the_index(tmp_path):
+        frame = scene()
+        save_servo_frame(frame, tmp_path / "frame")
+        files = {}
+        for path in (tmp_path / "frame").iterdir():
+            data = path.read_bytes()
+            files[path.relative_to(tmp_path).as_posix()] = {
+                "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        assert audit.read_frame(tmp_path, files, "frame", frame.episode_id) == frame
+        without_depth = dict(files)
+        del without_depth["frame/depth.f32"]
+        with pytest.raises(ValueError, match="index|bound"):
+>           audit.read_frame(tmp_path, without_depth, "frame", frame.episode_id)
+
+artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/test_verify_fresh.py:142: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/verify_fresh.py:222: in read_frame
+    observation = load_observation(case, folder)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py:831: in load_observation
+    values[field] = base64.b64encode(case.read(folder + "/" + name)).decode()
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = FrozenCase(root=PosixPath('/tmp/pytest-of-ningyd/pytest-416/test_missing_or_replaced_frame0'), files={'frame/valid_mas...'frame/rgb.png': {'bytes': 217, 'sha256': '9dfccac0c5f373cafec5554208a213384451b11e8b3e41297cef21d0780715a5'}}, row={})
+name = 'frame/depth.f32'
+
+    def read(self, name: str) -> bytes:
+        """拒绝越界、清单外或字节改变的文件。"""
+        path = _contained(self.root, self.root / name)
+        entry = self.files.get(name)
+        if entry is None or path.relative_to(self.root.resolve()).as_posix() != name:
+>           raise ValueError("FROZEN_FILE_NOT_BOUND")
+E           ValueError: FROZEN_FILE_NOT_BOUND
+
+src/cloud_edge_robot_arm/research/sol_molmo_offline_regression.py:208: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-416/test_missing_or_replaced_frame0')
+
+    def test_missing_or_replaced_frame_cannot_pass_the_index(tmp_path):
+        frame = scene()
+        save_servo_frame(frame, tmp_path / "frame")
+        files = {}
+        for path in (tmp_path / "frame").iterdir():
+            data = path.read_bytes()
+            files[path.relative_to(tmp_path).as_posix()] = {
+                "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        assert audit.read_frame(tmp_path, files, "frame", frame.episode_id) == frame
+        without_depth = dict(files)
+        del without_depth["frame/depth.f32"]
+>       with pytest.raises(ValueError, match="index|bound"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'index|bound'
+E        Input: 'FROZEN_FILE_NOT_BOUND'
+
+artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/test_verify_fresh.py:141: AssertionError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/test_verify_fresh.py::test_missing_or_replaced_frame_cannot_pass_the_index
+1 failed, 18 passed in 0.54s
