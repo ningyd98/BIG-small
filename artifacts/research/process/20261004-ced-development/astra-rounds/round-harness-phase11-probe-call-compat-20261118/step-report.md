@@ -14,4 +14,6 @@
 
 独立只读查询 SQLite 与适配器回执。显式软件生命周期的三个 `LEGACY_PIPELINE` 探针均成功，共 4 次尝试、4 个已释放租约。恢复探针记录租约到期，两个竞争 worker 中实际调用 runner 一次。默认路径的三个 `RGBD` 探针均因 `RGBD_CAMERA_REQUIRED` 阻塞，执行器调用为零。读回 SHA256 `06f835155e6d0202f0f7f3af678e6be32b063aa02e73a7093208ee50c2abd92e`。
 
+最终 v5 冻结提交 `5103e7f483b9fccd40cf2e49d4bd5ef8979f64d2` 再次执行同一原分组，724 项全部通过，退出 0，217.818 s。JUnit SHA256 `2fbe8d8cf2af1f17c45bc06a4be887d67601091bb063953c87fd614615cb852b`。
+
 本地原件存放于 `experiments/results/phase9/harness-candidate-validation-20261118/`。折行前独立专项 72 项通过。折行后首次专项被会话中断，在 37 个通过点之后停止，未生成 JUnit。表内数字来自随后在冻结提交完成的专项与分组，各自单列。正式研究与实机资格仍未验收。

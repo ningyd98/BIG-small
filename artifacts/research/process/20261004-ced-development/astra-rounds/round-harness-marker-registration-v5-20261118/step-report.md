@@ -6,6 +6,6 @@ GPT-6.2 Astra 制定、GPT-6.2 Sol 实施。父冻结 `02dbaef9` 原 suite-01 �
 
 当前 v5 真实加载通过，当前 v4 仍按原绑定规则拒绝，双向错误注册摘要均拒绝。历史检出 `3ca2f641` 的 v4 文件、六项源与资产逐一按该提交原字节核对，再通过该检出的真实加载器。本轮保留 v3→v4 测试身份，历史证据由独立只读运行完成。 [预期 RED](focused-red.log) · [历史正例](historical-v4-verification.json) · [最终焦点](../round-harness-marker-registration-v5-format-20261118/focused.log)
 
-在 `5103e7f483b9fccd40cf2e49d4bd5ef8979f64d2` 冻结的两个模块合计 59 项通过。原 45 个失败节点按原身份全部通过。三个新节点加入原 725 项，待新版本 suite-01 实跑 728 项。归档诊断相关 144 项通过，旧四例的数值报告按候选重跑后 SHA 与先前完全一致。 [节点映射](node-mapping.json) · [归档焦点回归](archive-focus.log)
+在 `5103e7f483b9fccd40cf2e49d4bd5ef8979f64d2` 冻结的两个模块合计 59 项通过。相同冻结版的 suite-01 实跑 728 项全部通过，JUnit 与结果清单覆盖原 725 个和新增 3 个节点，原 45 个失败节点均按原身份通过。归档诊断相关 144 项通过，旧四例的数值报告按候选重跑后 SHA 与先前完全一致。 [节点映射](node-mapping.json) · [新冻结版 suite-01 复核](suite-01-verification.json) · [归档焦点回归](archive-focus.log)
 
 本轮模型、生成、云和实机均零调用。四槽旧冻结与预登记原件保留。重新冻结和同版本运行等待独立 Astra 轮及其放行，正式资格保持 `NOT_ACCEPTED`。
