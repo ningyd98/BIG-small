@@ -1,0 +1,9 @@
+# 恢复 Phase 11 默认探针调用契约
+
+本轮由 GPT-6.2 Astra 制定，GPT-6.2 Sol 实施。实际冻结检出 3ca2f6415b330d38ddc2d834c5f788a56c0d9517 的 suite-07 已终止，退出 1，703 通过、21 失败。独立核查日志、JUnit 与逐项原始失败摘要，20 项在 _projection 中旧的三位置参数探针因不接受 lifecycle_only 而失败，另 1 项在 explicit_legacy(context, *, runtime_delay_ms=0) 因相同多余关键字失败。旧 41bb3334 对应 21 项均通过，三处外层探针和三处内部 _draft 源调用均未传此关键字。现行适配器增加了默认关闭的显式软件生命周期通道，却在 False 时也把新关键字传遍六处。实际故障发生在旧接口形状。原有任务成功、代理指标来源和适配器读回断言仍有独立含义。
+
+1. 实施前检查 plan.json 固定源码、旧版本 git blob、测试、原始失败摘要/log/XML、原收集节点 SHA。候选在方案时为 ca5eb2f1，须确认这个适配器与失败检出仍逐字节一致。把原始小型失败摘要保存在轮次作本地研发证据，完整大日志保持本地。原始 21 个 nodeid 是本轮预期 RED；已取得原失败，无需为了 TDD 重跑整组造红。
+2. 修改范围仅 src/cloud_edge_robot_arm/final_evaluation/adapters/simulation_runtime.py 的调用传播。默认构造以及显式 False 均须保持 _run_completed_job(repo,context,artifact_root)、_run_recovery_job(repo,context,artifact_root)、_run_duplicate_competition_job(repo,context,artifact_root) 三位置原形；在其内部 main/duplicate 调 _draft(context)，recovery 调 _draft(context,runtime_delay_ms=10)。只有 True 传 lifecycle_only=True，同时保留 recovery 的 10ms。可在外层一次生成仅在 True 时有值的小字典，内层用可读的条件展开或同形小函数，避免重复执行业务逻辑。不要通过吞 TypeError、检查签名或把旧测试替身改成 **kwargs 绕过兼容性。
+3. 保留构造器布尔严格类型检查、显式 True 的 LEGACY_PIPELINE 草案和实际 SQLite/租约恢复/恰好一次证据。保留默认适配器的原 input_mode 行为、评估来源、读回/证据校验、主验证器与真实失败。不得改动 worker、物理、规划或视觉代码。若现有 21 个旧节点与 tests/test_phase12_runtime_lifecycle.py 的实际通道正反例已覆盖，不增重复测试；只在未覆盖的具体路径补一个独立回归，不改已有测试含义。
+4. 用原解释器及隔离 HOME/状态目录，运行 python -m pytest -q tests/test_phase11_adapter_receipt_truthfulness.py tests/test_phase12_runtime_lifecycle.py；若 pytest marker 抑制 opt-in，显式运行原有软件生命周期正例原命令并记录真实 SQLite 读出。再按 suite-07/nodes.txt 的完整原 724 项在最终候选重跑，记录 JUnit、退出码、耗时，验证无漏项/重名和 21 项结论。保留旧提交的原失败、在同一冻结最终版本合计整库的已执行/失败/跳过。其他独立组可继续。
+5. 预期旧 21 项绿色、默认调用兼容且 opt-in 通道证据通过。此轮 0 模型/0 云/0 真机，不能授予正式研究/动作资格；四个付费 development 槽仍依其冻结方案。兼容修复必须纳入实际最终候选 freeze 和 wheel，有关验证以产品字节为准，不能把修复前的 wheel 或聚合绿数用作修复后的整库证据。若有新根因，留证并交实际 Astra，保持独立任务推进。

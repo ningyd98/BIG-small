@@ -65,12 +65,11 @@ class Phase11RuntimeAdapter:
         artifact_root = evidence_root / "artifacts"
         repo = SQLiteSimulationJobRepository(database_path, artifact_root=artifact_root)
 
-        main = _run_completed_job(repo, context, artifact_root, lifecycle_only=self.lifecycle_only)
-        recovery = _run_recovery_job(
-            repo, context, artifact_root, lifecycle_only=self.lifecycle_only
-        )
+        lifecycle_options = {"lifecycle_only": True} if self.lifecycle_only else {}
+        main = _run_completed_job(repo, context, artifact_root, **lifecycle_options)
+        recovery = _run_recovery_job(repo, context, artifact_root, **lifecycle_options)
         duplicate = _run_duplicate_competition_job(
-            repo, context, artifact_root, lifecycle_only=self.lifecycle_only
+            repo, context, artifact_root, **lifecycle_options
         )
         outcome = _runtime_outcome(main, recovery, duplicate)
         sqlite_summary = _sqlite_summary(database_path, output_root=context.output_root)
@@ -171,7 +170,7 @@ def _run_completed_job(
         seed=context.seed,
         manifest_id=f"manifest-{context.run_id}",
         reproducibility_hash=stable_hash({"run_id": context.run_id, "kind": "runtime"}),
-        draft=_draft(context, lifecycle_only=lifecycle_only),
+        draft=_draft(context, lifecycle_only=True) if lifecycle_only else _draft(context),
         manifest={"manifest_id": f"manifest-{context.run_id}", "schema_version": "phase12.2"},
         timeout_seconds=30,
         max_attempts=2,
@@ -241,7 +240,11 @@ def _run_recovery_job(
         seed=context.seed,
         manifest_id=f"manifest-{context.run_id}-recovery",
         reproducibility_hash=stable_hash({"run_id": context.run_id, "kind": "recovery"}),
-        draft=_draft(context, runtime_delay_ms=10, lifecycle_only=lifecycle_only),
+        draft=(
+            _draft(context, runtime_delay_ms=10, lifecycle_only=True)
+            if lifecycle_only
+            else _draft(context, runtime_delay_ms=10)
+        ),
         manifest={"manifest_id": f"manifest-{context.run_id}-recovery"},
         timeout_seconds=30,
         max_attempts=2,
@@ -415,7 +418,7 @@ def _run_duplicate_competition_job(
         seed=context.seed,
         manifest_id=f"manifest-{context.run_id}-duplicate",
         reproducibility_hash=stable_hash({"run_id": context.run_id, "kind": "duplicate"}),
-        draft=_draft(context, lifecycle_only=lifecycle_only),
+        draft=_draft(context, lifecycle_only=True) if lifecycle_only else _draft(context),
         manifest={"manifest_id": f"manifest-{context.run_id}-duplicate"},
         timeout_seconds=30,
         max_attempts=2,
