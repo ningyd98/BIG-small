@@ -4,6 +4,10 @@
 
 ## 项目概览
 
+- [项目计划书：BIGsmall Embodied Harness](plan.md)：2026-11-17现行规划，明确具身智能云边端协同Harness的接口、发行物、分层验收和至2027年4月的条件排期；后附历史原文。
+- [开题报告（集成电路工程，2026-11-17修订）](开题报告_集成电路工程_20261024.md)：保持论文题目及三项研究主线，补充Harness工程交付、论文结构和进度安排。
+- [开题三项研究内容与RoboRSI六工作包路线图](superpowers/plans/2026-11-08-proposal-roborsi-development-update.md)：现行工作包依赖和研究目标；与Harness收口规划结合使用。
+- [云边端现行研究设计](superpowers/specs/2026-10-04-cloud-edge-device-research-design.md)：G0—G5、B0—B5、冻结、统计及证据边界；新的工程定位不替代研究验收。
 - [项目入口](../README.md): 当前能力、快速开始和安全声明。
 - [项目状态](project_status.md): 各能力域状态、验证入口、证据和硬件声明边界。
 - [当前权威状态](current_authoritative_status.md): 当前唯一权威状态入口。
@@ -11,7 +15,7 @@
 - [RGB-D 研究证据清单](research/evidence_inventory.md): 历史来源边界与新研究审计规则。
 - [RGB-D 云边协同代理执行计划](superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md): 代理开发入口，按实际依赖、并行边界、阻塞处理和完成证据推进，明确基线与量化目标。
 - [研究设计与量化目标](superpowers/specs/2026-10-03-rgbd-evidence-research-design.md): B0—B5 对照、G0—G5 目标、数据隔离及统计协议的统一依据。
-- [修订开题报告](../output/doc/20261002-opening-proposal/开题报告.md)（[Word](../output/doc/20261002-opening-proposal/开题报告_执行决策闭环与创新提升_20261003.docx)）：执行决策闭环、两项主创新、量化提升判据和十二周研究安排。
+- [历史开题报告（10月3日）](../output/doc/20261002-opening-proposal/开题报告.md)（[历史Word](../output/doc/20261002-opening-proposal/开题报告_执行决策闭环与创新提升_20261003.docx)）：保留早期执行决策闭环、创新与十二周安排，当前口径见上方11月17日修订报告。
 - [开题报告零基础图解说明](../output/doc/20261002-opening-proposal/开题报告_零基础项目准备与图解说明.md)：从抓放案例理解系统、两项创新和实验，附学习顺序、代码入口及开题准备清单。
 - [路线图](roadmap.md): Phase 11 仿真工作台之后的计划。
 - [术语表](glossary.md): PCSC、ETEAC、AUTO、证据、溯源等术语。
@@ -21,7 +25,7 @@
 ## 系统架构
 
 - [架构总览](architecture.md): 当前权威分层、时序图和 Phase 10.2A 边界。
-- [系统规划](plan.md): 历史总体规划，保留用于追溯。
+- [系统规划](plan.md): 顶部为现行Harness项目计划书，后附逐字保留的历史总体规划。
 
 ## 数据契约
 

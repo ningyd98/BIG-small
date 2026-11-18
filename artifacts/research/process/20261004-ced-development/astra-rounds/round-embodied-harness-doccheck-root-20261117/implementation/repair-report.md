@@ -1,0 +1,9 @@
+# 文档检查根目录修复报告
+
+实际Astra先制定本轮plan.md/plan.json，8输入及8快照实施前复核一致。按计划仅将原轮validate_docs.py的ROOT由parents[6]改为parents[7]，完整字节差异验证为这一行；三份正文、原始失败及其他7输入SHA保持。
+
+首次完整复验已运行，原命令、stdout/stderr和退出码1保存在validation-rerun.txt（工具chunk 691d9d）。35项检查中34项通过；根目录错误已消除，原件/输入、历史全文、引用、本地链接、表格、模型/题目、freeze标记和diff检查通过。tracked_change_scope失败：Git默认将中文路径作C转义，检查器将转义文本与Unicode白名单比较。该新根因另交实际Astra轮round-embodied-harness-doccheck-gitpaths-20261117规划；本轮没有修复或放宽这一断言。
+
+根目录修复前脚本SHA256：e09ec40da24408d4df330b65b4b79a799209738a1ef255dd43de31b23f1d98f9；修复后：3d50c5ac671c44e6fe45d77ba61c9dbb4a5a52ec56be5fa22749a8540a7add7c。修复后脚本及原失败结果由下一轮输入清单冻结；脚本diff已按冻结字节直接核对。正文没有因本轮变化。
+
+本轮只恢复文档检查路径，完整验证尚未通过。产品测试、真实API、物理仿真和实机执行均为0；不升级Harness实现或正式研究验收。原始失败和原件继续保留。

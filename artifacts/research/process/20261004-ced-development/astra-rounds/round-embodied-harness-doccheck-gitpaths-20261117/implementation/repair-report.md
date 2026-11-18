@@ -1,0 +1,9 @@
+# Git中文路径读取修复报告
+
+实际Astra计划先行，9输入与9快照实施前SHA全部一致。仅按plan.json精确替换validate_docs.py的changed赋值行：使用git diff --name-only -z及NUL分割，保留原白名单、范围断言、ROOT和三份正文。
+
+原完整验证的34通过/1失败结果已逐字复制到prior-validation-failure.json，SHA256为93ab28810597b9cc68462846ef4ac9e01aa3c0b01701f9f417bc0c1a063d0d9e；上一轮stdout/stderr保持。修复前脚本SHA256为3d50c5ac671c44e6fe45d77ba61c9dbb4a5a52ec56be5fa22749a8540a7add7c，修复后为e33da4631d2eda59cfaf174e85c090e71a3cc363bb238adef6daf34ef268b000。
+
+唯一完整复跑退出0，35/35检查通过（工具chunk 2a4e81），完整输出见validation-rerun.txt，明细在原轮implementation/validation.json。修复范围按字节核对仅一行，除脚本及计划允许重新生成的validation.json外，其余输入SHA不变，包含三份正文。未削弱断言或变更产品。
+
+验收限定为文档检查工具正常及原轮文档校验通过；产品测试、API、仿真、硬件运行均0，未新增正式研究验收。两次历史失败及原件保留，按明确清单交付轻量证据。
