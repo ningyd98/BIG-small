@@ -21,12 +21,14 @@ from verify_fresh import (
     PREALLOCATION_SHA256,
     ROOT,
     ROUND,
+    SUCCESSOR_STAGE,
     audit_slot,
     check_slot_directories,
     read,
     read_allocation,
     read_freeze,
     require,
+    slot_config_path,
     verify_frozen_sources,
     write_new,
 )
@@ -38,6 +40,7 @@ from cloud_edge_robot_arm.harness.checkout import (
     verify_checkout,
 )
 from cloud_edge_robot_arm.harness.config import load_config
+from cloud_edge_robot_arm.harness.evidence import verify_evidence
 from cloud_edge_robot_arm.research.sol_molmo_single_episode import (
     create_molmo_opencv_bridge,
     scene_assignment,
@@ -47,13 +50,23 @@ from cloud_edge_robot_arm.vision.molmo_pointing import _verify_assets
 from cloud_edge_robot_arm.vision.role_models import configuration_hash
 
 PRODUCTION_PATHS = ("pyproject.toml", "src", "assets", "configs", "scripts", OVERLAY)
-REGISTERED_CHECKOUT = Path("/tmp/bigsmall-harness-verified-20261118")
+REGISTERED_CHECKOUT = Path("/tmp/bigsmall-harness-v5-verified-20261118")
 REGISTERED_RAW_ROOT = Path(
     "/home/ningyd/文档/ChatGPT/BIGsmall/cache/worktrees/harness-candidate-20261118/"
     "experiments/results/phase9/harness-four-fresh-20261118"
 )
 DRY_PREPARE_ASSIGNMENT = "verification/dry-prepare/scene-assignment.json"
 DRY_PREPARE_ASSIGNMENT_SHA256 = "cef1ca0bdac6ff21cc99325039eb090069e46b707d3b94f4598c4f9269c0381a"
+OLD_FREEZE_SHA256 = "41ae9cd2a411a1870b41f347c120371af67228dbe95facabecd21326308ca14e"
+OLD_STAGE_ARCHIVE = (
+    REGISTERED_RAW_ROOT.parents[3] / "cache/four-fresh-02dbaef9-frozen-stage-20261118"
+)
+OLD_STAGE_MANIFEST = ROUND.parent / "round-harness-four-v5-refreeze-20261118/old-stage-inputs.json"
+OLD_STAGE_MANIFEST_SHA256 = "fd0365e155b0cf2a73f941891f44a06b170b62628d4a2d6bfdbfc1ac22c5e8c7"
+SUCCESSOR_COMMIT = "5103e7f483b9fccd40cf2e49d4bd5ef8979f64d2"
+SUCCESSOR_WHEEL_SHA256 = "00065493d60e83b9574d1a0530a0a14977ad051053798a271a27f707b1e9bdd2"
+V5_CONFIG_PATH = "configs/research/ced_marker_registration_v5.yaml"
+V5_CONFIG_SHA256 = "64d111c52a08636ee9b3cdae9f874d4a932ed98d357be7cde501279d088216e9"
 RUNTIME_FLAGS = (
     "--native-python",
     "--application-site-packages",
@@ -145,6 +158,8 @@ def _history_values(value: Any) -> tuple[set[int], set[tuple[float, ...]]]:
 def check_history(
     worktrees: tuple[Path, ...],
     slots: list[dict[str, Any]],
+    *,
+    successor_dry_sha: str | None = None,
 ) -> dict[str, Any]:
     """Check archived requests and preallocations before the first launch."""
     proposed = {row["seed"] for row in slots}
@@ -154,6 +169,8 @@ def check_history(
     distinct = set()
     dry_prepare = None
     dry_path = REGISTERED_RAW_ROOT / DRY_PREPARE_ASSIGNMENT
+    new_dry_prepare = None
+    new_dry_path = REGISTERED_RAW_ROOT / SUCCESSOR_STAGE / DRY_PREPARE_ASSIGNMENT
     for worktree in worktrees:
         for subdir in ("experiments", "results", "artifacts/research/process"):
             directory = worktree / subdir
@@ -171,6 +188,16 @@ def check_history(
                         dry_prepare = {
                             "path": DRY_PREPARE_ASSIGNMENT,
                             "sha256": DRY_PREPARE_ASSIGNMENT_SHA256,
+                        }
+                        continue
+                    if path.absolute() == new_dry_path and successor_dry_sha is not None:
+                        require(
+                            resolved == new_dry_path and sha256_file(path) == successor_dry_sha,
+                            "registered successor dry-prepare assignment SHA256 or path changed",
+                        )
+                        new_dry_prepare = {
+                            "path": f"{SUCCESSOR_STAGE}/{DRY_PREPARE_ASSIGNMENT}",
+                            "sha256": successor_dry_sha,
                         }
                         continue
                     if not resolved.is_relative_to(worktree.resolve()) or resolved in distinct:
@@ -191,11 +218,14 @@ def check_history(
         ).hexdigest(),
         "matches": 0,
         "own_dry_prepare": dry_prepare,
+        "successor_dry_prepare": new_dry_prepare,
     }
 
 
 def _verify_installed_wheel(
-    cli: Path, wheel: Path, sources: dict[str, str],
+    cli: Path,
+    wheel: Path,
+    sources: dict[str, str],
 ) -> dict[str, Any]:
     python = cli.parent / "python"
     imported = subprocess.check_output(
@@ -286,15 +316,169 @@ def _role_config(
     return configuration_hash(binding.evidence())
 
 
+def _unclaimed_owner(root: Path) -> None:
+    for path in (root / "receipts", root / "native"):
+        require(path.resolve() == path and path.is_dir(), "batch occupancy directory unavailable")
+        require(not any(path.iterdir()), "batch occupancy exists; refreeze stopped")
+
+
+def _old_stage_inventory() -> dict[str, Any]:
+    require(
+        sha256_file(OLD_STAGE_MANIFEST) == OLD_STAGE_MANIFEST_SHA256,
+        "old stage manifest SHA changed",
+    )
+    manifest = read(OLD_STAGE_MANIFEST)
+    require(manifest["old_freeze_sha256"] == OLD_FREEZE_SHA256, "old stage freeze differs")
+    return manifest["old_stage_files"]
+
+
+def _check_old_stage(root: Path, inventory: dict[str, Any]) -> None:
+    for name, frozen in inventory.items():
+        path = root / name
+        require(
+            path.resolve() == path
+            and path.is_relative_to(root)
+            and path.stat().st_size == frozen["bytes"]
+            and sha256_file(path) == frozen["sha256"],
+            f"old stage changed at {name}",
+        )
+
+
+def _old_stage_snapshot(root: Path, inventory: dict[str, Any]) -> None:
+    target = OLD_STAGE_ARCHIVE
+    if target.exists():
+        _check_old_stage(target, inventory)
+        require(
+            all((target / path).stat().st_mode & 0o222 == 0 for path in inventory),
+            "older archive copy is writable",
+        )
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="old-stage-", dir=target.parent) as temporary:
+        snapshot = Path(temporary)
+        for name in inventory:
+            output = snapshot / name
+            output.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(root / name, output)
+            output.chmod(0o444)
+        _check_old_stage(snapshot, inventory)
+        for directory in sorted(
+            (item for item in snapshot.rglob("*") if item.is_dir()),
+            reverse=True,
+        ):
+            directory.chmod(0o555)
+        snapshot.chmod(0o555)
+        snapshot.rename(target)
+
+
+def _dry_prepare_proof(stage: Path) -> dict[str, str]:
+    prepare = stage / "verification/installed-prepare.json"
+    entry = stage / "verification/dry-prepare"
+    report = read(prepare)
+    verified = verify_evidence(entry)
+    episode = verified["episode"]
+    require(
+        report["status"] == episode["status"] == "PREPARED"
+        and report["source"]["git_revision"] == SUCCESSOR_COMMIT
+        and report["evidence"]["manifest_sha256"] == verified["manifest_sha256"]
+        and all(
+            type(episode[key]) is int and episode[key] == 0
+            for key in (
+                "model_calls",
+                "model_loads",
+                "local_generations",
+                "cloud_requests",
+                "cloud_request_reservations",
+                "executed_actions",
+                "physics_steps",
+            )
+        )
+        and episode["hardware_dispatch"] is False,
+        "successor dry-prepare did not prove recorded zero model and action use",
+    )
+    return {
+        "assignment_sha256": sha256_file(stage / DRY_PREPARE_ASSIGNMENT),
+        "manifest_sha256": verified["manifest_sha256"],
+        "prepare_receipt_sha256": sha256_file(prepare),
+    }
+
+
+def _validate_successor_stage(root: Path, expected_sha: str) -> Path:
+    staged = root / SUCCESSOR_STAGE / "freeze-receipt.json"
+    require(staged.resolve() == staged, "successor freeze file is redirected")
+    freeze = read_freeze(staged, expected_sha)
+    require(
+        freeze["commit"] == SUCCESSOR_COMMIT
+        and freeze.get("staging") == SUCCESSOR_STAGE
+        and freeze["wheel_sha256"] == SUCCESSOR_WHEEL_SHA256,
+        "successor stage differs from the verified product or wheel",
+    )
+    verify_frozen_sources(REGISTERED_CHECKOUT, freeze)
+    require(
+        _dry_prepare_proof(staged.parent) == freeze["dry_prepare"],
+        "successor dry-prepare evidence differs from freeze",
+    )
+    for identity, slot in freeze["slots"].items():
+        require(
+            sha256_file(slot_config_path(root, freeze, identity)) == slot["config_sha256"],
+            f"frozen configuration changed for {identity}",
+        )
+    return staged
+
+
+def _install_active_freeze(root: Path, data: bytes) -> None:
+    with tempfile.NamedTemporaryFile(dir=root, prefix=".pending-freeze-", delete=False) as stream:
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(stream.name, root / "freeze-receipt.json")
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _activate_locked(root: Path, expected_sha: str) -> None:
+    _unclaimed_owner(root)
+    selected = root / "freeze-receipt.json"
+    require(sha256_file(selected) == OLD_FREEZE_SHA256, "old freeze is not the active selection")
+    inventory = _old_stage_inventory()
+    _check_old_stage(root, inventory)
+    staged = _validate_successor_stage(root, expected_sha)
+    _old_stage_snapshot(root, inventory)
+    data = staged.read_bytes()
+    require(hashlib.sha256(data).hexdigest() == expected_sha, "successor freeze changed at cutover")
+    _install_active_freeze(root, data)
+
+
+def activate(args: argparse.Namespace) -> int:
+    checkout = args.checkout.resolve(strict=True)
+    root = args.raw_root.resolve(strict=True)
+    _require_registered_locations(checkout, root)
+    with (root / ".batch-launch.lock").open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _activate_locked(root, args.freeze_sha256)
+    print(json.dumps({"status": "ACTIVE_SUCCESSOR_FREEZE", "freeze_sha256": args.freeze_sha256}))
+    return 0
+
+
 def prepare(args: argparse.Namespace) -> int:
     checkout = args.checkout.resolve(strict=True)
-    raw_root = args.raw_root.resolve()
-    _require_registered_locations(checkout, raw_root)
-    require(not raw_root.exists(), "batch root already exists")
-    require(
-        not any(raw_root.is_relative_to(checkout / path) for path in PRODUCTION_PATHS),
-        "batch output overlaps product sources",
-    )
+    owner = args.raw_root.resolve(strict=True)
+    _require_registered_locations(checkout, owner)
+    with (owner / ".batch-launch.lock").open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return _prepare_locked(args, checkout, owner)
+
+
+def _prepare_locked(args: argparse.Namespace, checkout: Path, owner: Path) -> int:
+    _unclaimed_owner(owner)
+    _check_old_stage(owner, _old_stage_inventory())
+    old = read_freeze(owner / "freeze-receipt.json", OLD_FREEZE_SHA256)
+    raw_root = owner / SUCCESSOR_STAGE
+    require(not raw_root.exists(), "successor staging already exists")
+    require(sha256_file(args.wheel) == SUCCESSOR_WHEEL_SHA256, "wrong rebuilt wheel")
     allocation = read_allocation(ROUND / "preallocation.json")
     resources = _resources(args.resources_from, allocation)
     dirty = _git(
@@ -303,14 +487,23 @@ def prepare(args: argparse.Namespace) -> int:
     require(not dirty, "production source must be committed before the four-slot freeze")
     commit = _git(checkout, "rev-parse", "HEAD").strip()
     tree = _git(checkout, "rev-parse", "HEAD^{tree}").strip()
+    require(commit == SUCCESSOR_COMMIT, "source checkout is not the verified v5 commit")
     files = _git(checkout, "ls-tree", "-r", "--name-only", "-z", commit, "--", *PRODUCTION_PATHS)
     sources = {name: sha256_file(checkout / name) for name in files.split("\0") if name}
-    history_roots = tuple(dict.fromkeys(path.resolve() for path in [checkout, *args.history_root]))
+    require(
+        sources == old["product_sources"] | {V5_CONFIG_PATH: V5_CONFIG_SHA256},
+        "new product inventory differs beyond the approved v5 configuration",
+    )
+    history_roots = tuple(
+        dict.fromkeys(
+            [*(Path(path) for path in old["history_roots"]), checkout],
+        )
+    )
     history = check_history(history_roots, allocation["episodes"])
     raw_root.parent.mkdir(parents=True, exist_ok=True)
     space = _check_free_space(raw_root.parent, Path(resources["--model-directory"]))
     raw_root.mkdir(parents=True, exist_ok=False)
-    for name in ("configs", "receipts", "native", "verification"):
+    for name in ("configs", "verification"):
         (raw_root / name).mkdir()
     package = _verify_installed_wheel(args.cli, args.wheel, sources)
     config = load_config()
@@ -386,6 +579,8 @@ def prepare(args: argparse.Namespace) -> int:
         "history": history,
         "history_roots": [str(path) for path in history_roots],
         "slots": slots,
+        "staging": SUCCESSOR_STAGE,
+        "dry_prepare": _dry_prepare_proof(raw_root),
     } | package
     verify_frozen_sources(checkout, freeze)
     receipt = raw_root / "freeze-receipt.json"
@@ -419,8 +614,7 @@ def _contained_stops(row: dict[str, Any]) -> bool:
     if row["component_success"] is True and row["terminal_reason"] is None:
         expected = 0
     elif (
-        row["component_success"] is False
-        and row["terminal_reason"] in RECOGNIZED_PROTECTIVE_STOPS
+        row["component_success"] is False and row["terminal_reason"] in RECOGNIZED_PROTECTIVE_STOPS
     ):
         expected = 2
     else:
@@ -442,6 +636,8 @@ def _launch_locked(args: argparse.Namespace, raw_root: Path, checkout: Path) -> 
     freeze = read_freeze(raw_root / "freeze-receipt.json", args.freeze_sha256)
     verify_frozen_sources(checkout, freeze)
     require(_git(checkout, "rev-parse", "HEAD").strip() == freeze["commit"], "launch HEAD drift")
+    if freeze["commit"] == SUCCESSOR_COMMIT:
+        _validate_successor_stage(raw_root, args.freeze_sha256)
     resources = _resources(args.resources_from, allocation)
     _check_free_space(raw_root, Path(resources["--model-directory"]))
     require(
@@ -460,7 +656,7 @@ def _launch_locked(args: argparse.Namespace, raw_root: Path, checkout: Path) -> 
     else:
         raise ValueError("unknown slot seed")
     identity = slot["id"]
-    cfg = raw_root / "configs" / f"{identity}.json"
+    cfg = slot_config_path(raw_root, freeze, identity)
     expected = freeze["slots"][identity]
     require(sha256_file(cfg) == expected["config_sha256"], "slot config changed")
     asset_sha = freeze["asset_manifest_sha256"]
@@ -481,7 +677,11 @@ def _launch_locked(args: argparse.Namespace, raw_root: Path, checkout: Path) -> 
     )
     history_receipt = None
     if slot == slots[0]:
-        history = check_history(tuple(Path(path) for path in freeze["history_roots"]), slots)
+        history = check_history(
+            tuple(Path(path) for path in freeze["history_roots"]),
+            slots,
+            successor_dry_sha=freeze.get("dry_prepare", {}).get("assignment_sha256"),
+        )
         history_receipt = raw_root / "verification" / f"prelaunch-history-{time.time_ns()}.json"
         write_new(history_receipt, history)
     binding = {
@@ -512,9 +712,9 @@ def _launch_locked(args: argparse.Namespace, raw_root: Path, checkout: Path) -> 
             "started_at": started,
             "attempt": 1,
             "launcher": str(args.cli),
-        "immediate_prelaunch_history_sha256": (
-            None if history_receipt is None else sha256_file(history_receipt)
-        ),
+            "immediate_prelaunch_history_sha256": (
+                None if history_receipt is None else sha256_file(history_receipt)
+            ),
             "model_quota": {"cloud": 1, "local_generations": 4, "model_loads": 1, "retries": 0},
         },
     )
@@ -585,11 +785,15 @@ def main() -> int:
         sub.add_argument("--resources-from", type=Path, required=True)
     prepare_parser = subparsers.choices["prepare"]
     prepare_parser.add_argument("--wheel", type=Path, required=True)
-    prepare_parser.add_argument("--history-root", type=Path, action="append", default=[])
     launch_parser = subparsers.choices["launch"]
     launch_parser.add_argument("--seed", type=int, required=True)
     launch_parser.add_argument("--freeze-sha256", required=True)
     launch_parser.add_argument("--allow-paid", action="store_true")
+    selection = subparsers.add_parser("activate")
+    selection.set_defaults(operation=activate)
+    selection.add_argument("--checkout", type=Path, default=REGISTERED_CHECKOUT)
+    selection.add_argument("--raw-root", type=Path, required=True)
+    selection.add_argument("--freeze-sha256", required=True)
     args = parser.parse_args()
     return int(args.operation(args))
 

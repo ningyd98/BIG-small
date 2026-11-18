@@ -36,6 +36,7 @@ COUNTER_LIMITS = {
     "local_generations_completed": 4, "model_loads": 1,
 }
 FREEZE_SCHEMA = "bigsmall.development.four-fresh-freeze.v1"
+SUCCESSOR_STAGE = "verification/v5-5103e7f4"
 SUCCESS_SKILLS = (
     "MOVE_ABOVE", "APPROACH", "GRASP", "LIFT", "MOVE_TO_REGION", "PLACE", "RELEASE",
     "RETREAT", "RETREAT",
@@ -110,6 +111,14 @@ def check_slot_directories(native: Path, slots: list[dict[str, Any]]) -> None:
     names = {slot["id"] for slot in slots}
     for path in native.glob("fresh-*"):
         require(path.name in names and path.is_dir() and not path.is_symlink(), "unknown slot path")
+
+
+def slot_config_path(root: Path, freeze: dict[str, Any], identity: str) -> Path:
+    stage = freeze.get("staging", "")
+    require(stage in {"", SUCCESSOR_STAGE}, "freeze configuration staging is unregistered")
+    path = root / stage / "configs" / f"{identity}.json"
+    require(path.resolve() == path, "freeze configuration staging is redirected")
+    return path
 
 
 def check_pose(
@@ -501,7 +510,7 @@ def audit_slot(
             "observed_counters": None,
             "launcher_status": launcher.get("status"),
         } | exit_fields
-    cfg_path = root / "configs" / f"{identity}.json"
+    cfg_path = slot_config_path(root, freeze, identity)
     require(sha256_file(cfg_path) == expected["config_sha256"], "slot config diverges from freeze")
     config = load_config(cfg_path)
     source = verify_checkout(checkout, config)
