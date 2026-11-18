@@ -52,6 +52,8 @@ REGISTERED_RAW_ROOT = Path(
     "/home/ningyd/文档/ChatGPT/BIGsmall/cache/worktrees/harness-candidate-20261118/"
     "experiments/results/phase9/harness-four-fresh-20261118"
 )
+DRY_PREPARE_ASSIGNMENT = "verification/dry-prepare/scene-assignment.json"
+DRY_PREPARE_ASSIGNMENT_SHA256 = "cef1ca0bdac6ff21cc99325039eb090069e46b707d3b94f4598c4f9269c0381a"
 RUNTIME_FLAGS = (
     "--native-python",
     "--application-site-packages",
@@ -150,6 +152,8 @@ def check_history(
     checked = []
     conflicts = []
     distinct = set()
+    dry_prepare = None
+    dry_path = REGISTERED_RAW_ROOT / DRY_PREPARE_ASSIGNMENT
     for worktree in worktrees:
         for subdir in ("experiments", "results", "artifacts/research/process"):
             directory = worktree / subdir
@@ -158,6 +162,17 @@ def check_history(
             for name in ("scene-assignment.json", "scene-application.json", "preallocation.json"):
                 for path in directory.rglob(name):
                     resolved = path.resolve()
+                    if path.absolute() == dry_path:
+                        require(
+                            resolved == dry_path
+                            and sha256_file(path) == DRY_PREPARE_ASSIGNMENT_SHA256,
+                            "registered dry-prepare assignment SHA256 or path changed",
+                        )
+                        dry_prepare = {
+                            "path": DRY_PREPARE_ASSIGNMENT,
+                            "sha256": DRY_PREPARE_ASSIGNMENT_SHA256,
+                        }
+                        continue
                     if not resolved.is_relative_to(worktree.resolve()) or resolved in distinct:
                         continue
                     distinct.add(resolved)
@@ -175,6 +190,7 @@ def check_history(
             json.dumps(sorted(checked)).encode(),
         ).hexdigest(),
         "matches": 0,
+        "own_dry_prepare": dry_prepare,
     }
 
 
