@@ -1,0 +1,28 @@
+# 2026-11-18 动作资格与 B0 实际前置审计
+
+冻结基点 `3ca2f6415b330d38ddc2d834c5f788a56c0d9517`。本次依据实际教师读出、后继发布终态、候选配置/源码和 11 月 18 日开发报告核对。**native 资格 `UNKNOWN`、authority `UNAVAILABLE`、合格组 `0/9`、新增 `0`。真实 B0 selection `NOT_RUN`，正式研究 `NOT_ACCEPTED`，实机 `NOT_STARTED`。**
+
+## 已取得的原件与读出
+
+| 来源 | 实际记录 |
+| --- | --- |
+| 旧 v2 `native-r439-0001` / seed `439001` | R468 与 R470 在同一组上分别进行一次尝试。R470 替代采集 exit 1、独立 reader exit 0，组仍缺全部八种动作，九组分数与联合误差界均为 `null`。其余八组缺登记原件。两次保留在旧组内。[R470 步骤](../../round470-teacher-monitor-transient-file-race-20261108/implementation/step-report.md) · [独立读出](../../round470-teacher-monitor-transient-file-race-20261108/actual/readout/diagnostics.json) |
+| R595 v5 `native-r595-0001` / seed `595001` | v5 预分配 `native-r595-0001` 至 `native-r595-0009`，只释放首组。实际采集 `COLLECTION_PARTIAL`、worker `BLOCKED_BY_ENV`，2,040 物理步、3,389 帧、8,821 次渲染。MOVE_ABOVE 运动及保持时段返回，POST 标记可见，颜色身份不唯一，墙钟约 624.340 秒超过 8 秒。准入 `0/8`；独立 reader exit 0，重建 3,389/3,389 帧，`source_complete=false`、`horizon_complete=false`，九项分数与 `joint_bound_m` 均为 `null`。其余八组未释放、未运行。旧 v3/v4 均零释放。[R595 阶段](../../round595-side-marker-single-teacher-release-20261112/phase-summary.md) · [机器读出](../../round595-side-marker-single-teacher-release-20261112/diagnostic-summary.json) |
+| R595 后继 | R603 只读 PRE124/POST3389，支持机械臂前景遮挡和原墙钟超限的判断。R604 的合成 SQLite 路径无收益，候选撤回。R613/R615/R616 等为采集成本或运行依赖诊断。R620 v6 准备、R627 v7 教师接口和 R643/R675 v8 均零释放。R675 的 seed `593001` 两个朝向、四个实际帧仅覆盖顶视全可见感知，v8 工厂在创建运行目录或任务前拒绝。可见中心误差 0.546/0.615 mm 与九组联合界分别记账。核对到的后继没有新教师组，累计三次实际教师尝试、两个不同历史组，已消耗 R595 剩余额度为 0。[R603](../../round603-post-move-identity-and-time-diagnostic-20261112/step-report.md) · [R604](../../round604-sqlite-schema-read-path-20261112/phase-summary.md) · [R620](../../round620-versioned-registered-grounding-execution-interfaces-20261112/phase-summary.md) · [R627](../../round627-registered-operational-integration-20261112/phase-summary.md) · [R675](../../round675-native-region-reference-compatibility-20261113/phase-summary.md) |
+| 11 月 18 日真实模型开发 | seed `42001` 的 `fixed-02/03` 和 development `44102` 同时满足组件完整与独立物理成功；`44103` 仅独立物理成功。固定修后 2/2 完成（含旧失败 2/3），新 seed 完成 1/4、独立物理 2/4。这些运行来自三个源码组。历史 6 云请求、26 本地生成，账单为 `null`，无硬件。受控正常链已观察到可达，正式动作资格仍待首个完整独立标定组。[开发报告](../../../../20261118-real-model-harness/report.md) · [本候选七例回执](native-seven-verification.md) |
+
+## 正式动作链前置
+
+- **P6 A→B→C→P7/P8→D。** 既有租约、取消、原控制器与教师采集软件为前置准备。首个实际完整组须从当前可追溯的来源取得原八动作的完整时域原件、连续可观测几何、接触与抓放结果、租约/安全/终态，并经独立 reader 通过。首组读回不全时停止扩组。之后按独立冻结分组达到至少九个支持组，完整动作时域保守联合界有限且 ≤10 mm。G1 的独立定位 P90 和覆盖另有分母。
+- **P8 三处原生消费。** 现有 `vision/execution.py::require_native_action_evidence` 接入 `PRE_SAFETY`、`PRE_SKILL` 及 `CLOUD_RETURN`，`test_native_action_submit.py` 覆盖缺界、错身份和 UNKNOWN 拒绝。worker 有 `AFTER_EFFECT` 路由与开发闭环观察记录。仍需同一经完整认证的当前 native 来源绑定 `PRE_SAFETY`、`PRE_SKILL`、`POST_EFFECT`，提供新观测、精确角色与时钟、来源 generation、提交/启动和动作后效果的连续正证据，以及错源/旧帧等拒绝。v7 教师单次 PRE hook 和 v8 六步 SQLite 软件前缀各有独立交付范围，实际授权与完整时域仍待验收。[现行工作包](../../../../../../../docs/superpowers/plans/2026-11-08-proposal-roborsi-development-update.md) · [原三处入口与顺序](../../round461-sol-evidence-reader-and-mainline-plan-20261108/plan.md) · [R643](../../round643-registered-self-occlusion-destination-adaptation-20261112/phase-summary.md)
+- **P6D 两个持久后端。** 历史 Memory/SQLite 软件路径已有租约/版本/重启及停机证据。11 月 18 日两个后端的 UTC 门同次通过；Phase 12 在真实 SQLite 完成 18 项租约恢复、竞争与恰好一次的补充软件验证，原 Mock/RGB-D 物理 F20 缺口继续保留。仍需为 Memory、SQLite 各冻结一个新的独立 development assignment，在 P7/P8 资格通过后提供观测→资格→提交→启动→新帧效果、原 lease/CAS 与独立物理读出。[UTC 结果](../../round-utc-codec-performance-20261118/verification/result.json) · [Phase 12](../../../../20261118-real-model-harness/phase12/step-report.md) · [原 P6D 条件](../../../../../../../docs/superpowers/plans/2026-10-22-post-opening-development-plan.md)
+
+## 最近的受限入口与 B0
+
+首个欠缺件是当前来源的首个完整实际教师组及其独立合格读出。源证据由教师采集 owner 冻结，独立 reader 复核判定。下一步沿原入口，在实际 Astra 计划与授权释放下分别验证已记录的身份遮挡、实际时钟与完整记录成本，再冻结一个新独立组、候选源码/配置/标记/相机/控制器、角色和协议哈希。执行前核对只释放该组、新输出及独立读出路径、GPU/EGL 独占锁及受信环境、磁盘/内存/进程清退与预算、租约、5 秒帧时效和 8 秒 Shield 墙钟。继续使用零云教师、原控制器和故障停止语义。同时保留 R595 已用额度和失败终态。
+
+`scripts/collect_native_calibration.py --prepare-registered-occlusion-collection-protocol --output <新目录>` 目前只能生成零释放的 v8 协议。真实入口是 `scripts/collect_native_calibration.py --collect-once --protocol <新获释协议> --assignment-id <唯一获释组> --output <新采集目录>`，随后独立执行 `scripts/collect_native_calibration.py --verify --protocol <同一冻结协议> --output <新读出目录>`。现有有效范围只有准备和有界只读诊断。本次未发起采集或模型请求。[脚本](../../../../../../../scripts/collect_native_calibration.py) · [R595 资源和收尾回执](../../round595-side-marker-single-teacher-release-20261112/implementation/step-report.md)
+
+B0 前另需当前源码匹配的 `gpt-6.1-sol` 正常角色探针和 CostLedger 原件，固定机会及 200 组离线可恢复性证明（实际故障注入、教师恢复和独立评分，含 RW2/RW3 墙钟守卫），冻结物理/墙钟/网络日程与互斥数据池，并取得实际运行和付费资源授权。R498 有旧源一次真实规划证据。候选 `ced_selection.yaml` 的 `pools_path`、`role_probe`、`selection_evidence`、`protocol_evidence` 尚为 `null`。已有 selection 干跑只覆盖 480 个 `NOT_EXECUTED` 分配，`NO_FEASIBLE_BASELINE` 是该干跑下的诊断字段；真实四周期可行性仍未知。旧 2 秒基础先导的 5/120 保留为历史负结果。[R498](../../round498-persisted-sol-real-rgbd-resume-20261109/step-report.md) · [干跑](../../../t8b-module/fix-round-1-dry-selection/summary.json) · [selection 配置](../../../../../../../configs/research/ced_selection.yaml) · [旧先导](../../../../20261004-t8-foundation/foundation-v2-assessment.md)
+
+前置齐备后按原 `scripts/run_rgbd_pilot.py --stage selection` 入口运行 120 个独立 selection 组 × 0.5/1/2/5 秒四周期（480 个分配），保留所有终态、原件和独立审计。阈值为静态 ≥90%、整体 ≥80%、安全违规 ≤1%，合格者先比云请求再比时延。无合格则 `NO_FEASIBLE_BASELINE`，预算不足则 `INCOMPLETE`。胜出后另用 120 个独立基础先导组，经真实来源与成本核验再冻结 INITIAL。开发种子 `42001`、`44101–44104`、教师与感知阶段的种子均保持原隔离。方案预留的历史调用余量只属于旧试次，本轮模型、云、硬件实际额度为零。[原 Task 4](../../../../../../../docs/superpowers/plans/2026-10-22-post-opening-development-plan.md) · [运行脚本](../../../../../../../scripts/run_rgbd_pilot.py)

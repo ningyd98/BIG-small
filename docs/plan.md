@@ -61,6 +61,14 @@
 
 11月8日路线图记录了已形成的软件框架、历史真实API回放和限定采集证据，也记录了动作资格、正常正链与合格基线仍待补齐。本次不将该历史快照称为11月17日最新运行终态；后续实施必须查阅对应范围的最新验收记录。新增统一接口、安装包、CLI、版本比较及发布验收均为待实现项，不能因已有同类底层模块而标为完成。
 
+#### 2026-11-18 开发交付状态
+
+- **H0/H1 安装与接口。** 11 月 18 日实现的开发包已完成清洁环境安装、七项 CLI 检查及 `pip check`。首场景配置继续使用 Molmo2-ER、`gpt-6.1-sol`、OpenCV、现有可见标记、相机、控制器和 SafetyShield。对合并候选的回归、安装及诊断以本轮阶段总结为准。[实现及安装回执](../artifacts/research/process/20261118-real-model-harness/report.md) · [合并候选阶段总结](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/phase-summary.md)
+- **受控正常链与开发泛化。** 真实模型参与的 MuJoCo 固定场景修后 2/2 完成，计入原失败为 2/3。四个 development seed 中 1/4 完整完成、2/4 独立物理成功；44103 稳定落位后在横向退避被保护门停止。合并候选只读复算了原七例，3/7 组件完整、4/7 独立物理成功，结果逐字节一致。原试次来自三组源码，历史 6 次云请求、26 次本地生成，账单未知。[真实模型报告](../artifacts/research/process/20261118-real-model-harness/report.md) · [七例复算回执](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/native-seven-verification.md)
+- **动作资格与研究门禁。** R595 独立读回 3,389 帧，完整动作和来源资格仍不足，合格组为 0/9，九组分数与联合界均未取得。其后登记的教师协议仍零释放。B0 selection 待首个完整标定组、原生三处消费、Memory/SQLite 正链及后续前置齐备，合格后才进入独立基础先导和 INITIAL。正式研究为 `NOT_ACCEPTED`，实机为 `NOT_STARTED`。[动作资格及 B0 审计](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/qualification.md)
+
+合并候选本轮仅使用原件离线诊断和软件验证。用户后续有条件授权的四例真实开发位姿属下一轮，须经独立方案、预算和运行资源准入后执行。公开交付须先核对已有交付边界，完整批量 raw、运行数据库、模型权重、SDK 和凭据按原边界管理。后续阶段条件与原实验分组继续适用。
+
 | 研究项 | 保持的目标与比较规则 |
 | --- | --- |
 | G0/G1共同基础 | 原G0门禁保持；有效目标定位误差P90≤10 mm并报告覆盖率；独立静态抓放≥90%；抬升≥50 mm保持≥0.5秒，释放后目标区稳定≥1秒 |
