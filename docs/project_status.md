@@ -1,16 +1,45 @@
 # 项目状态
 
+## 2026-11-19 项目组状态
+
+BIGsmall Embodied Harness 已交付 H0/H1 工程开发版，冻结首场景契约并通过清洁环境安装、七条 CLI 正常路径和两条保护拒绝检查。产品冻结于 `5103e7f4`，本页引用的公开证据以研发分支 `research/harness-candidate-20261118` 的 `167bc0ff` 为基点。云端负责规划，边缘按规则和成本约束判断，端侧用 OpenCV/RGB-D 观测，沿用可见姿态标记、顶视相机、现有控制器与安全盾。边缘模型选型后置。 [现行计划](plan.md) · [公开交付范围](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/public-delivery.md)
+
+冻结版首次整库收集 7,259 项，7,225 通过、33 跳过、1 项 dispatcher 清理错误，原判定为 `passed=false`。同版在原测试夹具下独占复验该节点通过，退出 0。 [回归、安装与固定场景回放](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/regression-and-install.md)
+
+### 四个同版本 MuJoCo 开发位姿
+
+四例各运行一次，组件完整执行 **1/4**，独立物理成功 **1/4**，物理记录中检出安全违规 **0/4**。本批实际有 3 次付费云请求（GPT-6.1-Sol）、14 次本地生成（Molmo2-ER）、4 次加载、0 次重试，账单金额未知（`null`）。 [四例报告](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/final-batch-report.md) · [逐槽机器回执](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/final-batch-summary.json)
+
+| 位姿 | 结果与原因 |
+| --- | --- |
+| `2026111801` | 放置阶段第 5400 步，采样与逆运动学耗时 100.041 ms，超过原 100 ms 门，触发保护停止，未形成稳定放置。 |
+| `2026111802` | 全部动作执行完成，两段退避结束，终帧观测到已登记标记。独立物理复算确认稳定放置 9.475 秒。 |
+| `2026111803` | MOVE_ABOVE 初始化停止，尝试 1 次、执行 0 次。在线 worker 只记录 `ValueError`。冻结帧和同版构造器离线复算显示，规划抓取点与标记配准估计相差 30.882 mm，超过原 10 mm 身份门。 [初始化前缀复核](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-fresh-1803-initialization-prefix-20261118/step-report.md) |
+| `2026111804` | 压力位姿的两个本地点位均返回。现有归档复算的目标顶面高度跨度为 8.027 mm，超过原 8.000 mm 门。初始规划请求更多观测，云请求和动作均为 0。 |
+
+历史开发位姿四例仍为组件完成 1/4、独立物理成功 2/4。含这四例的跨版本历史七例分别为 3/7 和 4/7。 [历史七例独立复算](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/native-seven-verification.md)
+
+### 下一步归档诊断
+
+1. **1803 身份差。** 以 1802 为对照，把原指点、深度、坐标变换和标记配准重建到同一坐标系，定位 30.882 mm 差值首次出现的步骤。
+2. **1804 顶面极值。** 在原 RGB-D 帧上标出核心、边界及最高最低像素，核对未舍入高度和邻域深度，判断原帧支持的成因。
+3. **1801 三视图耗时。** 对齐放置阶段三视图及上一接受帧，核对相机移动、捕获归档、视觉处理和逆运动学耗时。实际 100.041 ms 沿用在线记录。
+
+三项使用现有归档，新增模型调用、试次和实机动作预算均为零。 [已登记的诊断次序与方法](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/next-steps.md)
+
+动作资格已合格 **0/9 组**，当前原生动作资格为 `UNKNOWN`。先取得当前来源下首个覆盖全部八种动作与完整时域的教师组及独立合格读出，再按冻结规则取得至少九个合格组，建立有限且不超过 10 mm 的联合误差界。真实 B0 selection 为 `NOT_RUN`，四个周期仍待按独立协议比较。正式研究为 `NOT_ACCEPTED`，实机为 `NOT_STARTED`。 [资格与 B0 前置审计](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/qualification.md) · [当前权威状态](current_authoritative_status.md)
+
+## 2026-10-04 历史分阶段开发状态
+
 当前权威状态入口为 [current_authoritative_status.md](current_authoritative_status.md)。Phase 11 仿真工作台已接受，Phase 11.1 异步运行时已接受，Phase 11.2 Model Control Center 和 Simulation AI Console 已接受。Phase 12 是最终实验评估、论文证据整理和项目软件/仿真封板阶段。Phase 10 仍保持 `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`、`PHASE10_2B_CONSOLE_ACCEPTED` 和 `PHASE10_LEVEL0_FRAMEWORK_ACCEPTED`；这些状态都没有发送真实硬件执行命令。
 
 2026-10-04，T5夹爪修复已迁移到默认运行入口、模型工厂、启动环境、研究配置和任务语义证据。当前使用v2标定与[共用冻结包](../artifacts/research/process/20261004-gripper-project-migration/model-probe/model-frozen.json)；下文T3/T7冻结和在线指标属于历史验收时点。旧模型配置及原实验仍保留在各证据目录，不以新资产覆写。
-
-## 2026-10-04 分阶段开发状态
 
 当前按 [RGB-D 代理执行计划](superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)完成 T1/T2/T3/T6a/T4/T5：100/1000组静态数据、当前资产6/6类真实 MuJoCo 物理技能、20例离线教师各有独立验收。T3 的本地 Qwen3-VL 4B 经归一化坐标协议和顶抓几何适配，固定场景4/4通过并冻结；独立开发场景及拒答失败见[T3 验收](../artifacts/research/process/20261003-t3-small-model-optimization/acceptance.md)，不代表在线抓取成功。T7 为 `DONE`：同 episode 真实闭环、三值验证、预算和独立数据作业已实现，v2 同 20 assignments 全保留，2 成功/18 失败/0 blocked/0 false completion（正常 2/12，全分配 10%）。[独立复算](../artifacts/research/process/20261003-t7-visual-closed-loop/smoke-20-v2-validation.json)核对 34,353 样本、154 帧、52 动作，valid/accepted 均为 true；只限当前 MuJoCo 直立有色方块的开发 smoke，不是正式 G1。最终454项回归及30个源文件Ruff/mypy通过；T8/T17a 为 `READY`，T6b 保持 `TODO`。最新进度、变更、验证和交接见[过程文档](research/process/README.md)。目前没有新正式研究结果。
 
 下表保留历史能力口径；MuJoCo 环境或旧运行时验收不能替代新 RGB-D 物理抓放验收。历史 full 已运行且 `PHASE12_REJECTED`，当前权威论文运行数为 0。
 
-## 历史能力总表
+## 历史能力总表（截至 2026-10-04）
 
 | 能力域 | 状态 | 验证入口 | 证据 | 运行环境 | 硬件声明 |
 | --- | --- | --- | --- | --- | --- |
@@ -32,7 +61,7 @@
 | 真实机械臂只读 | framework 已验收，真实设备未开始 | `scripts/verify_phase10_2c_level0.py --fake` | `artifacts/phase10/level0` | fake 模式 CI 可运行，hardware 模式现场专用 | 尚未声明真实只读验证 |
 | 真实机械臂运动 | 未开始 | 无 | 无 | 现场设备 | 尚未声明运动验证 |
 
-## 历史状态说明
+## 历史状态说明（截至 2026-10-04）
 
 Phase 9.1 当时的结果是 `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`，原因是 Isaac 和跨后端验证受环境限制。Phase 9.2 后续补齐 Isaac smoke、benchmark 和跨后端验证，形成 `PHASE9_2_ACCEPTED`。
 
@@ -46,14 +75,14 @@ Phase 11.2 增加模型控制中心和仿真 AI 控制台。OpenAI-compatible pr
 
 Phase 12 冻结 RQ1-RQ7 和 F01-F20，输出最终实验、统计、图表、表格、论文素材和答辩包。Baseline `7b4c9af` 的 90 条 smoke 记录是 `SYNTHETIC_PIPELINE_SAMPLE`，只能声明 `PHASE12_EXPERIMENT_SUITE_READY` 和 `PHASE12_THESIS_ASSET_PIPELINE_READY`，不能替代 validation 或 full。Phase 12.1 validation 从 actual software runners 产生 evidence；最早的 `artifacts/phase12_2/validation` provenance 为 `worktree_clean=false`，保留为 gap 证据。当前权威 validation evidence 是 `artifacts/phase12_2_clean/validation`：540 条 validation 记录中 466 条 runtime-completed，74 条在 runtime 前因 Isaac、MoveIt 或未配置模型环境阻塞，verifier 输出 `PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED` 和 `PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED`。只有 full profile 能声明 `PHASE12_FINAL_EVALUATION_ACCEPTED` 和 `PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED`。
 
-## 当前阻塞项
+## 2026-10-04 历史阻塞项
 
 - 仓库内没有已授权的真实控制器配置。
 - 还没有读取过现场急停或控制器状态。
 - Level 0 真实硬件验收没有真实设备证据。
 - 没有做过真实机械臂运动测试；MuJoCo 的 T4/T5 物理仿真已单独验收。
 
-## 下一阶段
+## 2026-10-04 历史下一阶段安排
 
 T7 最终 runtime 竞态修复与454项回归已通过，T8/T17a 已 READY，下一步按依赖实施。现行模型使用 [T7 重探 4/4 后的新冻结目录](../artifacts/research/process/20261003-t7-visual-closed-loop/model-probe/)；历史 T3/T5 source freeze 不冒充现行源码，共享 capture 改动与 T5 12 份旧来源归档见 [preservation 清单](../artifacts/research/process/20261003-t7-visual-closed-loop/t5-prerequisite-preservation.json)。T8 先导、T6b 的 10000 组及教师整合尚未运行；95 runtime/277 prerequisite 测试只是阶段记录，最终合并回归为454 passed。随后开发两个优化方法并进行冻结评测。历史 Phase 12 保留为证据追溯。不得绕过后端直接控制硬件，也不能把仿真结论写成真实机械臂结论；真机相关开发保持冻结。
 

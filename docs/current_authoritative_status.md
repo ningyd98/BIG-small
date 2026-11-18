@@ -1,5 +1,11 @@
 # Current Authoritative Status
 
+## 2026-11-19 Harness 工程与研究验收状态
+
+BIGsmall Embodied Harness H0/H1 工程开发版采用冻结产品 `5103e7f4`，公开证据基点为 `167bc0ff`。清洁环境安装通过。整库首次收集 7,259 项，7,225 通过、33 跳过、1 项 dispatcher 清理错误，原判定为 `passed=false`。同版原节点独占复验通过。 [回归与安装回执](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/regression-and-install.md)
+
+四个同版 MuJoCo 开发位姿（`2026111801`–`2026111804`）各运行一次，组件完整执行与独立物理成功均为 1/4，唯一成功位姿为 `2026111802`。记录中安全违规 0/4，实际 3 次云请求、14 次本地生成、4 次加载、0 次重试，账单金额未知。已合格 0/9 组，当前原生动作资格为 `UNKNOWN`。B0 selection 为 `NOT_RUN`，正式研究为 `NOT_ACCEPTED`，实机为 `NOT_STARTED`。 [四例报告](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/final-batch-report.md) · [逐槽机器回执](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/final-batch-summary.json) · [动作资格与 B0 审计](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/qualification.md)
+
 ## 2026-11-02 测试输入与版本登记恢复
 
 T3 原五个失败目标已有针对性完整断言通过证据：完整 manifest 快照、诊断 owner 归属及 commit_close 当前线程独立观察连接分别由 R376/R380/R381 修复；没有重跑九项整体套件。标记新 v2 仅更新登记 id 与已审来源 SHA，旧 v1 保留，仓库外负例使用真正 ROOT 外输入；相关 52+23=75 项通过。资产 manifest 更新当前既有 scene SHA 和 v3 版本，registry 3 项与真实 MuJoCo 加载/物理步进 3 项通过，scene 及三个 marker XML 原字节不变。上述均完成限定独审，不升级真实硬件或正式研究验收。
