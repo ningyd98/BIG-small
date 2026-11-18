@@ -1,0 +1,57 @@
+{
+  "schema_version": "astra.implementation-plan.v1",
+  "round": "round-native-view-reference-20261118",
+  "planner_model": "gpt-6-astra",
+  "status": "PLANNED_NOT_FIXED",
+  "worktree": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall",
+  "inputs": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-native-current-view-coverage-20261118/plan.md",
+      "sha256": "475602ab4174ccc3222f5b9d760c06e6830461d51d09e111d3475d6525162345"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-native-current-view-coverage-20261118/plan.json",
+      "sha256": "73fd4fae8774448e682c7d2cea152f6fb9806a0ecc36f72fa6011f0bbec16f6f"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-native-current-view-coverage-20261118/probe-precondition.json",
+      "sha256": "f8143291f7760b8acf6fb2a9f0d097345da6c78101da22c171b1aae2ca6fbdd7"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/marker_families.py",
+      "sha256": "93fe11e893b3d9caeb0d891e60ad46d9c26ce13b0c88357b5e4751c389c317e1"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/sol_molmo_components.py",
+      "sha256": "51d483eb39fcd24bc45803de7758f5283ae9a9bccb2eaabec870652bda0a2e3d"
+    },
+    {
+      "path": "assets/robots/franka_panda/scene_pose_marker_side_y_plus_75mm_component_v1.xml",
+      "sha256": "18049666e288ce3992d44e8a520ee5b4101a4fa89dc825bcd75f78e408a198f0"
+    }
+  ],
+  "supersedes_only": "round-native-current-view-coverage-20261118 candidate azimuth reference; all other clauses inherited unchanged, original plan frozen.",
+  "root_cause": "Registered75mm side_y_plus marker has horizontal plane and identity attachment rotation. Upright normal is object+Z, XYprojection zero. Measured tiny XYnormal .024649 at3944 is tilt/noise, varying azimuth−49.07..35.96deg. It is an unsuitable horizontal bearing. Registered object-center to marker offset has objectXY[0,.14]m and measured worldXYbearing89.12..91.82deg.",
+  "new_reference": {
+    "attachment": "Exact registered side_y_plus_id7_75mm_component_v1 and assetSHA; t=(0,.14,.03505)m with horizontal mount offset(0,.14)m.",
+    "formula": "R_object_to_world = R_marker_to_world @ R_marker_to_object.T, matching existing _transport_camera_position convention; outward_world = R_object_to_world @ attachment[:3,3]; direction=outward_world[:2]/norm(outward_world[:2]). Use full registered displacement before worldXYprojection, not normalXY or a guessed world+Y.",
+    "validation": [
+      "Require finite proper measured rotation and exact registered attachment/hash; original marker pose acceptance unchanged.",
+      "Registered horizontal offset must be nonzero and matching this family; worldXYnorm must be finite and >=0.5*norm(registered_offsetXY)=0.07m for thisproposal. Invalid/degenerate => stop/blocked, no guessed direction.",
+      "Log supporting observationID/checksum/frameSHA, measured rotation and derived objectrotation/offset/norm/azimuth, candidate-order recipe; current marker unavailable may only use previously accepted proposal lineage as previousplan allows, never authorize motion without fresh validated frame."
+    ]
+  },
+  "steps": [
+    "Rehash6inputs and confirm precondition receipt rendered_slots=0/reconstruction_runs=0/protocol_calls=0.",
+    "Replace only proposed azimuth basis and add focused rigidrotation/translation, invalidoffset/rotation, degenerateXY/rejection and framebinding checks.",
+    "Pre-register same8slots fourorthogonal directions at0.80/1.05m,35deg using newbearing; execute inherited probe/replay only within original remaining budget."
+  ],
+  "budget": "No new allocation: previous1reconstruction+8singlecapture slots+1fullprotocol replay all remain unconsumed; no reset or additive allowance. Live<=2alternatives, sample+IK<=100ms, worker120s, paidquota unchanged6cloud/24local.",
+  "forbidden": [
+    "Change original plan files, geometry/TTL/safety/marker validators or sampling limits.",
+    "Use plane normalXY, hardcoded worldY, teacher object pose orinstance labels to silently fill missing basis.",
+    "Treat stable bearing as physical or geometry acceptance."
+  ],
+  "acceptance": "Correct proposal basis only; inherited strict frame validation/fullreplay/negative gates required before actualremaining6episodes. fixed01failed and prior2failedprotocol runs retained.",
+  "stop_and_replan": "Invalidoffset/degeneratenorm or unforeseen failure => stop affectedstream and actualAstra nextplan; other work independent."
+}

@@ -1,0 +1,322 @@
+.........FF..........FFFFFFFF                                            [100%]
+=================================== FAILURES ===================================
+_______ test_configuration_rejects_unsupported_scope_and_values[change8] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_configuration_rejects_uns8')
+change = {'visual_servo': 1}
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"seed": True},
+            {"hardware_dispatch": True},
+            {"local_recover_enabled": True},
+            {"allow_paid": True},
+            {"cloud_model": "different-model"},
+            {"scene_split": "held-out"},
+            {"camera_position_m": [0, 0, 12]},
+            {"camera_position_m": [0, 0, True]},
+            {"visual_servo": 1},
+            {"visual_servo": 1.0},
+        ],
+    )
+    def test_configuration_rejects_unsupported_scope_and_values(
+        tmp_path: Path, change: dict[str, Any],
+    ) -> None:
+        config = _valid_config(tmp_path)
+        config.update(change)
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+        reply = _cli("validate", "--config", path, cwd=tmp_path)
+>       assert reply.returncode == 2
+E       assert 0 == 2
+E        +  where 0 = CompletedProcess(args=['/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/.venv/bin/python', '-B', '-m', 'clo...]\n  },\n  "configuration_sha256": "4e70698b1c748fbb87ffd70368cc80cc348a6a9dc47cf0f1b3e78ef80a9957de"\n}\n', stderr='').returncode
+
+tests/test_embodied_harness.py:82: AssertionError
+_______ test_configuration_rejects_unsupported_scope_and_values[change9] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_configuration_rejects_uns9')
+change = {'visual_servo': 1.0}
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"seed": True},
+            {"hardware_dispatch": True},
+            {"local_recover_enabled": True},
+            {"allow_paid": True},
+            {"cloud_model": "different-model"},
+            {"scene_split": "held-out"},
+            {"camera_position_m": [0, 0, 12]},
+            {"camera_position_m": [0, 0, True]},
+            {"visual_servo": 1},
+            {"visual_servo": 1.0},
+        ],
+    )
+    def test_configuration_rejects_unsupported_scope_and_values(
+        tmp_path: Path, change: dict[str, Any],
+    ) -> None:
+        config = _valid_config(tmp_path)
+        config.update(change)
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config))
+        reply = _cli("validate", "--config", path, cwd=tmp_path)
+>       assert reply.returncode == 2
+E       assert 0 == 2
+E        +  where 0 = CompletedProcess(args=['/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/.venv/bin/python', '-B', '-m', 'clo...]\n  },\n  "configuration_sha256": "4e70698b1c748fbb87ffd70368cc80cc348a6a9dc47cf0f1b3e78ef80a9957de"\n}\n', stderr='').returncode
+
+tests/test_embodied_harness.py:82: AssertionError
+__ test_prepare_distinguishes_planned_development_from_effective_fixed_scene ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_prepare_distinguishes_pla0')
+
+    def test_prepare_distinguishes_planned_development_from_effective_fixed_scene(tmp_path: Path) -> None:
+        config = _valid_config(tmp_path)
+        config.update(seed=44101, scene_split="development", camera_position_m=[0.3, 0.1, 1.4])
+        path = tmp_path / "planned.json"
+        path.write_text(json.dumps(config))
+        output = tmp_path / "episode"
+        reply = _cli(
+            "prepare", "--source-checkout", ROOT, "--output", output, "--config", path, cwd=tmp_path,
+        )
+        assert reply.returncode == 0, reply.stderr or reply.stdout
+        report = json.loads(reply.stdout)
+>       assert report["planned_configuration"] == config
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'planned_configuration'
+
+tests/test_embodied_harness.py:190: KeyError
+_ test_spawned_child_with_only_stage_evidence_keeps_unknown_terminal_state[os._exit(7)-7-None-7] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_spawned_child_with_only_s0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70d93e8aa090>
+capsys = <_pytest.capture.CaptureFixture object at 0x70d93e8aa690>
+child_exit = 'os._exit(7)', raw_code = 7, signal_number = None, wrapper_code = 7
+
+    @pytest.mark.parametrize(
+        ("child_exit", "raw_code", "signal_number", "wrapper_code"),
+        [
+            ("os._exit(7)", 7, None, 7),
+            ("os.kill(os.getpid(), signal.SIGTERM)", -signal.SIGTERM, signal.SIGTERM, 143),
+        ],
+    )
+    def test_spawned_child_with_only_stage_evidence_keeps_unknown_terminal_state(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        child_exit: str,
+        raw_code: int,
+        signal_number: int | None,
+        wrapper_code: int,
+    ) -> None:
+        from cloud_edge_robot_arm.harness import cli
+        from cloud_edge_robot_arm.harness.checkout import ENTRY, SourceCheckout
+    
+        entry = tmp_path / ENTRY
+        entry.parent.mkdir()
+        entry.write_text(
+            "import os, signal, sys\n"
+            "from pathlib import Path\n"
+            "output = Path(sys.argv[sys.argv.index('--output') + 1])\n"
+            "output.mkdir()\n"
+            "(output / 'scene-assignment.json').write_text('{}')\n"
+            f"{child_exit}\n",
+        )
+        monkeypatch.setattr(cli, "verify_checkout", lambda *_: SourceCheckout(tmp_path, None, {}))
+        output = tmp_path / "episode"
+        code = cli.main(["prepare", "--source-checkout", str(tmp_path), "--output", str(output)])
+        report = json.loads(capsys.readouterr().out)
+>       assert code == report["wrapper_exit_code"] == wrapper_code
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'wrapper_exit_code'
+
+tests/test_embodied_harness.py:234: KeyError
+_ test_spawned_child_with_only_stage_evidence_keeps_unknown_terminal_state[os.kill(os.getpid(), signal.SIGTERM)--15-15-143] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_spawned_child_with_only_s1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70d93e8af3b0>
+capsys = <_pytest.capture.CaptureFixture object at 0x70d93e8af590>
+child_exit = 'os.kill(os.getpid(), signal.SIGTERM)', raw_code = -15
+signal_number = <Signals.SIGTERM: 15>, wrapper_code = 143
+
+    @pytest.mark.parametrize(
+        ("child_exit", "raw_code", "signal_number", "wrapper_code"),
+        [
+            ("os._exit(7)", 7, None, 7),
+            ("os.kill(os.getpid(), signal.SIGTERM)", -signal.SIGTERM, signal.SIGTERM, 143),
+        ],
+    )
+    def test_spawned_child_with_only_stage_evidence_keeps_unknown_terminal_state(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        child_exit: str,
+        raw_code: int,
+        signal_number: int | None,
+        wrapper_code: int,
+    ) -> None:
+        from cloud_edge_robot_arm.harness import cli
+        from cloud_edge_robot_arm.harness.checkout import ENTRY, SourceCheckout
+    
+        entry = tmp_path / ENTRY
+        entry.parent.mkdir()
+        entry.write_text(
+            "import os, signal, sys\n"
+            "from pathlib import Path\n"
+            "output = Path(sys.argv[sys.argv.index('--output') + 1])\n"
+            "output.mkdir()\n"
+            "(output / 'scene-assignment.json').write_text('{}')\n"
+            f"{child_exit}\n",
+        )
+        monkeypatch.setattr(cli, "verify_checkout", lambda *_: SourceCheckout(tmp_path, None, {}))
+        output = tmp_path / "episode"
+        code = cli.main(["prepare", "--source-checkout", str(tmp_path), "--output", str(output)])
+        report = json.loads(capsys.readouterr().out)
+>       assert code == report["wrapper_exit_code"] == wrapper_code
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'wrapper_exit_code'
+
+tests/test_embodied_harness.py:234: KeyError
+_________ test_evidence_rejects_schema_only_and_missing_status[extra0] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_rejects_schema_o0')
+extra = {}
+
+    @pytest.mark.parametrize("extra", [{}, {"mode": "dry-run"}])
+    def test_evidence_rejects_schema_only_and_missing_status(
+        tmp_path: Path, extra: dict[str, str],
+    ) -> None:
+        output = _evidence(tmp_path, {"schema_version": "sol-molmo.single-episode-result.v1", **extra})
+>       assert _cli("evidence", output, cwd=tmp_path).returncode == 2
+E       assert 0 == 2
+E        +  where 0 = CompletedProcess(args=['/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/.venv/bin/python', '-B', '-m', 'clo...d6bd015b9252f452924d0a671c9c16ac94a99024f33f402a00973203bf5a87",\n  "file_count": 1,\n  "episode": {}\n}\n', stderr='').returncode
+E        +    where CompletedProcess(args=['/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/.venv/bin/python', '-B', '-m', 'clo...d6bd015b9252f452924d0a671c9c16ac94a99024f33f402a00973203bf5a87",\n  "file_count": 1,\n  "episode": {}\n}\n', stderr='') = _cli('evidence', PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_rejects_schema_o0/episode'), cwd=PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_rejects_schema_o0'))
+
+tests/test_embodied_harness.py:261: AssertionError
+_________ test_evidence_rejects_schema_only_and_missing_status[extra1] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_rejects_schema_o1')
+extra = {'mode': 'dry-run'}
+
+    @pytest.mark.parametrize("extra", [{}, {"mode": "dry-run"}])
+    def test_evidence_rejects_schema_only_and_missing_status(
+        tmp_path: Path, extra: dict[str, str],
+    ) -> None:
+        output = _evidence(tmp_path, {"schema_version": "sol-molmo.single-episode-result.v1", **extra})
+>       assert _cli("evidence", output, cwd=tmp_path).returncode == 2
+E       assert 0 == 2
+E        +  where 0 = CompletedProcess(args=['/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/.venv/bin/python', '-B', '-m', 'clo...185987386502f124ebc8f3aa4d7a3e60a49",\n  "file_count": 1,\n  "episode": {\n    "mode": "dry-run"\n  }\n}\n', stderr='').returncode
+E        +    where CompletedProcess(args=['/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/.venv/bin/python', '-B', '-m', 'clo...185987386502f124ebc8f3aa4d7a3e60a49",\n  "file_count": 1,\n  "episode": {\n    "mode": "dry-run"\n  }\n}\n', stderr='') = _cli('evidence', PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_rejects_schema_o1/episode'), cwd=PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_rejects_schema_o1'))
+
+tests/test_embodied_harness.py:261: AssertionError
+______ test_evidence_requires_assignment_and_source_for_complete_prepare _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_requires_assignm0')
+
+    def test_evidence_requires_assignment_and_source_for_complete_prepare(tmp_path: Path) -> None:
+        from cloud_edge_robot_arm.research.sol_molmo_single_episode import run_single_episode
+    
+        result = run_single_episode(output=tmp_path / "reference-prepare")
+        output = _evidence(tmp_path, result)
+>       assert _cli("evidence", output, cwd=tmp_path).returncode == 2
+E       assert 0 == 2
+E        +  where 0 = CompletedProcess(args=['/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/.venv/bin/python', '-B', '-m', 'clo...dware_dispatch": false,\n    "formal_research": "NOT_ACCEPTED",\n    "qualified_groups_added": 0\n  }\n}\n', stderr='').returncode
+E        +    where CompletedProcess(args=['/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/.venv/bin/python', '-B', '-m', 'clo...dware_dispatch": false,\n    "formal_research": "NOT_ACCEPTED",\n    "qualified_groups_added": 0\n  }\n}\n', stderr='') = _cli('evidence', PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_requires_assignm0/episode'), cwd=PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_requires_assignm0'))
+
+tests/test_embodied_harness.py:269: AssertionError
+____ test_evidence_accepts_original_failed_and_interrupted_results[FAILED] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_accepts_original0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70d93e7caab0>
+failure = 'FAILED'
+
+    @pytest.mark.parametrize("failure", ["FAILED", "INTERRUPTED"])
+    def test_evidence_accepts_original_failed_and_interrupted_results(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        failure: str,
+    ) -> None:
+        from cloud_edge_robot_arm.research import sol_molmo_single_episode as original
+    
+        output = tmp_path / "episode"
+        monkeypatch.setattr(original, "SOURCE_PATHS", ("missing-source.py",))
+        if failure == "INTERRUPTED":
+            previous = original._sha
+    
+            def interrupted(path: Path) -> str:
+                if path.name == "missing-source.py":
+                    raise KeyboardInterrupt
+                return previous(path)
+    
+            monkeypatch.setattr(original, "_sha", interrupted)
+            with pytest.raises(KeyboardInterrupt):
+                original.run_single_episode(output=output)
+        else:
+            original.run_single_episode(output=output)
+    
+        reply = _cli("evidence", output, cwd=tmp_path)
+        assert reply.returncode == 0, reply.stderr or reply.stdout
+        report = json.loads(reply.stdout)
+        assert report["status"] == "VERIFIED"
+        assert report["episode"]["status"] == failure
+        assert report["episode"]["source_snapshot_status"] == "INCOMPLETE"
+        assert report["episode"]["physical_success"] is None
+>       assert report["episode"]["error_type"] in {"FileNotFoundError", "KeyboardInterrupt"}
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'error_type'
+
+tests/test_embodied_harness.py:303: KeyError
+__ test_evidence_accepts_original_failed_and_interrupted_results[INTERRUPTED] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-381/test_evidence_accepts_original1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70d93e7c9820>
+failure = 'INTERRUPTED'
+
+    @pytest.mark.parametrize("failure", ["FAILED", "INTERRUPTED"])
+    def test_evidence_accepts_original_failed_and_interrupted_results(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        failure: str,
+    ) -> None:
+        from cloud_edge_robot_arm.research import sol_molmo_single_episode as original
+    
+        output = tmp_path / "episode"
+        monkeypatch.setattr(original, "SOURCE_PATHS", ("missing-source.py",))
+        if failure == "INTERRUPTED":
+            previous = original._sha
+    
+            def interrupted(path: Path) -> str:
+                if path.name == "missing-source.py":
+                    raise KeyboardInterrupt
+                return previous(path)
+    
+            monkeypatch.setattr(original, "_sha", interrupted)
+            with pytest.raises(KeyboardInterrupt):
+                original.run_single_episode(output=output)
+        else:
+            original.run_single_episode(output=output)
+    
+        reply = _cli("evidence", output, cwd=tmp_path)
+        assert reply.returncode == 0, reply.stderr or reply.stdout
+        report = json.loads(reply.stdout)
+        assert report["status"] == "VERIFIED"
+        assert report["episode"]["status"] == failure
+        assert report["episode"]["source_snapshot_status"] == "INCOMPLETE"
+        assert report["episode"]["physical_success"] is None
+>       assert report["episode"]["error_type"] in {"FileNotFoundError", "KeyboardInterrupt"}
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'error_type'
+
+tests/test_embodied_harness.py:303: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_embodied_harness.py::test_configuration_rejects_unsupported_scope_and_values[change8]
+FAILED tests/test_embodied_harness.py::test_configuration_rejects_unsupported_scope_and_values[change9]
+FAILED tests/test_embodied_harness.py::test_prepare_distinguishes_planned_development_from_effective_fixed_scene
+FAILED tests/test_embodied_harness.py::test_spawned_child_with_only_stage_evidence_keeps_unknown_terminal_state[os._exit(7)-7-None-7]
+FAILED tests/test_embodied_harness.py::test_spawned_child_with_only_stage_evidence_keeps_unknown_terminal_state[os.kill(os.getpid(), signal.SIGTERM)--15-15-143]
+FAILED tests/test_embodied_harness.py::test_evidence_rejects_schema_only_and_missing_status[extra0]
+FAILED tests/test_embodied_harness.py::test_evidence_rejects_schema_only_and_missing_status[extra1]
+FAILED tests/test_embodied_harness.py::test_evidence_requires_assignment_and_source_for_complete_prepare
+FAILED tests/test_embodied_harness.py::test_evidence_accepts_original_failed_and_interrupted_results[FAILED]
+FAILED tests/test_embodied_harness.py::test_evidence_accepts_original_failed_and_interrupted_results[INTERRUPTED]
+10 failed, 19 passed in 5.14s

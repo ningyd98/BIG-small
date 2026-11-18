@@ -6,15 +6,11 @@ from __future__ import annotations
 
 import argparse
 import base64
-import fcntl
 import hashlib
 import json
 import os
-import shutil
-import subprocess
 import sys
-from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
@@ -35,6 +31,7 @@ from cloud_edge_robot_arm.vision.grounded_planner import (
     build_molmo_grounded_planner,
 )
 from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+from cloud_edge_robot_arm.vision.model_resources import admit_resources as _admit_resources
 from cloud_edge_robot_arm.vision.molmo_pointing import (
     BoundPointResult,
     MolmoPointProvider,
@@ -94,48 +91,6 @@ def _finalize(output: Path, report: dict[str, Any]) -> None:
         (output / "raw-manifest.local.json").read_bytes()
     ).hexdigest()
     _write(output / "report.json", report)
-
-
-@contextmanager
-def _admit_resources(model_directory: Path, lock_path: Path | None) -> Iterator[dict[str, Any]]:
-    lock_path = lock_path or (
-        model_directory.resolve().parents[2]
-        / "zdtaichu5-9b-fp8-round473/research/.r468-r469-gpu.lock"
-    )
-    if not lock_path.is_file():
-        raise ValueError("existing shared GPU lock is required")
-    with lock_path.open("a+") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        apps = subprocess.check_output(
-            ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader"], text=True
-        ).strip()
-        free = int(
-            subprocess.check_output(
-                ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
-                text=True,
-            ).strip()
-        )
-        ram = (
-            int(
-                next(
-                    row.split()[1]
-                    for row in Path("/proc/meminfo").read_text().splitlines()
-                    if row.startswith("MemAvailable:")
-                )
-            )
-            * 1024
-        )
-        disk = shutil.disk_usage(model_directory).free
-        if apps or free < 12000 or ram < 8 * 1024**3 or disk < 60 * 1024**3:
-            raise RuntimeError("local resource admission failed")
-        yield {
-            "gpu_free_MiB": free,
-            "ram_available_bytes": ram,
-            "disk_free_bytes": disk,
-            "foreign_compute_apps": False,
-            "lock_path": str(lock_path),
-        }
-
 
 class _ReplayPoints:
     def __init__(self, rows: list[dict[str, Any]]) -> None:

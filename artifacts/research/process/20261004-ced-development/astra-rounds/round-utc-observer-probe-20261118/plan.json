@@ -1,0 +1,59 @@
+{
+  "schema_version": "astra.implementation-plan.v1",
+  "round": "round-utc-observer-probe-20261118",
+  "planner_model": "gpt-6-astra",
+  "status": "PLANNED_NOT_FIXED",
+  "worktree": "/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall",
+  "inputs": [
+    {
+      "path": "experiments/results/phase9/real-harness-20261118/utc-codec-performance/observer-compare.py",
+      "sha256": "c5c5fc8edb0e2d7fa23a8c00fca1eef850f2efeeced53f246f279b5f80dc4dda"
+    },
+    {
+      "path": "experiments/results/phase9/real-harness-20261118/utc-codec-performance/observer-compare.log",
+      "sha256": "8d8123863a994ddb64eafc1bfe270639a1bada39a4f613ae14abe4a8b52804c3"
+    },
+    {
+      "path": "tests/test_visual_worker_factory.py",
+      "sha256": "5f99a6bf6e9850875423a5a9eca5f47bbe88e4ff12b97048f218de19b76c57f9"
+    },
+    {
+      "path": "tests/test_operational_runtime_closure.py",
+      "sha256": "853577d7806c5442b2d34b359fcb841231b999748c8c3de3eaaf0de7788e29d2"
+    },
+    {
+      "path": "experiments/results/phase9/real-harness-20261118/utc-codec-performance/green-codec-final.log",
+      "sha256": "41e4836c3466a1c9e3669b5e263894227533d36c1b362df35031beb72a659c86"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-utc-codec-performance-20261118/plan.json",
+      "sha256": "df8a58ed9404964351669068079cfabfdbe1ee9476934b97acbaa395955abdda"
+    }
+  ],
+  "root_cause": "New observer-compare diagnostic asserts exactly1 constructed worker, but software_factory constructs an unpolled control worker and actual polled worker. Real observed1poll/2clocks/1session/1broker/1heartbeat and zero cleanup errors are compatible with2worker records. The diagnostic count/unpacking conflates construction with execution.",
+  "scope": [
+    "Create observer-compare-v2.py diagnostic copy; retain failed original script/log unchanged.",
+    "Assert2 distinct initialized worker resources and identify actual polled worker by worker_lifecycles.worker_resource_id; assert control worker has no poll and no claimed session/broker/heartbeat.",
+    "Apply session/broker/heartbeat linkage, issuer, alive/closed/cleanup and return assertions to actual polled worker; do not simply weaken worker count to >=1.",
+    "Run original-full-profile versus new-boundary observer A/B on memory/sqlite; compare counts, role-linked lifecycle evidence, canonical digest and cleanup.",
+    "After diagnostic equivalence passes continue prior UTC plan only: original assertions and combined600s gate, no expanded cache or production worker edits."
+  ],
+  "verification": [
+    "One actual poll,2 worker construction roles,2 OC1 clocks,1 session/broker/heartbeat,zero cleanup errors; role association must be evidence-derived.",
+    "Preserve original profile restoration and focused path no profiler modification checks.",
+    "48codec/safety/boundary PASS reported separately; no formal600s gate success claimed."
+  ],
+  "budget": {
+    "gpu": 0,
+    "model_api": 0,
+    "diagnostic_combinations": 4,
+    "scope": "memory/sqlite x full/focused; normal diagnostic time limits inherited; original combined600s gate still pending"
+  },
+  "forbidden": [
+    "Change product or original test assertions to accommodate diagnostic bug.",
+    "Erase original failed probe/log or overwrite it with success.",
+    "Expand memo/cache/worker scope or change TTL/600s acceptance."
+  ],
+  "stop_and_replan": "Unexpected role/resource mismatch or new failure pauses diagnostic for next actualAstra plan.",
+  "acceptance": "Probe correctness and observer equivalence only; actual UTC gate remains pending until original2nodes pass together<=600s."
+}

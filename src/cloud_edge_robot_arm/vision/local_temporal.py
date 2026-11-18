@@ -47,34 +47,40 @@ LIMIT_FIELDS = frozenset("max_reobservations max_retries max_no_progress deadlin
 
 
 def _copy(value: object) -> JSONValue:
-    if value is None or type(value) in (bool, str):
-        if isinstance(value, (bool, str)) or value is None:
-            return value
-    if type(value) is int:
+    kind = type(value)
+    if value is None or kind is bool or kind is str:
+        return value
+    if kind is int:
         if not -(2**63) < value < 2**63:
             raise ValueError("bounded integral JSON required")
         return value
-    if type(value) is float:
+    if kind is float:
         if not isfinite(value):
             raise ValueError("finite JSON required")
         return value
-    if type(value) is dict or isinstance(value, Mapping):
+    if kind is dict or isinstance(value, Mapping):
         result: dict[str, JSONValue] = {}
         for key, item in value.items():
             if type(key) is not str or key in result:
                 raise ValueError("unique strict JSON keys required")
             result[key] = _copy(item)
         return result
-    if type(value) is list:
+    if kind is list:
         return [_copy(item) for item in value]
     raise ValueError("detached JSON data required; live objects are forbidden")
 
 
 def _object(value: object, fields: frozenset[str] | None = None) -> dict[str, JSONValue]:
-    copied = _copy(value)
-    if not isinstance(copied, dict) or (fields is not None and set(copied) != fields):
+    return _owned_object(_copy(value), fields)
+
+
+def _owned_object(
+    value: JSONValue, fields: frozenset[str] | None = None,
+) -> dict[str, JSONValue]:
+    # Use only on a codec-owned JSON tree. External values require _object.
+    if not isinstance(value, dict) or (fields is not None and set(value) != fields):
         raise ValueError("exact complete object fields required")
-    return copied
+    return value
 
 
 def _array(value: JSONValue) -> list[JSONValue]:
@@ -429,9 +435,23 @@ def semantic_projection(value: JSONValue) -> JSONValue:
         tag = value.get("schema_version")
         if isinstance(tag, str) and tag in FIELDS:
             envelope = LocalEnvelope.from_payload(value)
-            return {"schema_version": tag, "payload": semantic_projection(envelope.semantic),
-                    "original_time": envelope.local_time.to_payload()}
+            return _project_validated(envelope.to_payload())
         return {key: semantic_projection(item) for key, item in value.items()}
+    return value
+
+
+def _project_validated(value: JSONValue) -> JSONValue:
+    # Nested local envelopes in a decoded payload have already completed
+    # _validate_nested_local. Project the newly parsed tree without decoding
+    # those descendants as fresh roots or retaining a shared mutable view.
+    if isinstance(value, list):
+        return [_project_validated(item) for item in value]
+    if isinstance(value, dict):
+        tag = value.get("schema_version")
+        if isinstance(tag, str) and tag in FIELDS:
+            return {"schema_version": tag, "payload": _project_validated(value["payload"]),
+                    "original_time": value["original_time"]}
+        return {key: _project_validated(item) for key, item in value.items()}
     return value
 
 
@@ -1371,7 +1391,7 @@ def _history(
     archival = [{"request", "committed_at"}]
     if bootstrap:
         archival.append({"promotion", "state", "retry", "committed_at"})
-    shapes = [set(_object(event)) for event in events]
+    shapes = [set(_owned_object(event)) for event in events]
     if shapes and all(shape in archival for shape in shapes):
         if decision is not None and decision["disposition"] == "VALID":
             raise ValueError("legacy archival history cannot become current VALID local evidence")
@@ -1385,16 +1405,18 @@ def _history(
     phases: dict[str, dict[str, JSONValue]] = {}
     ids: set[str] = set()
     for raw_event in events:
-        event = _object(raw_event)
-        raw_request = _object(event["request"])
+        event = _owned_object(raw_event)
+        raw_request = _owned_object(event["request"])
         allowed = {"visual.bootstrap.transition.local.v1", "visual.bootstrap.promotion.local.v1"} if bootstrap else {"visual.supervision.transition.local.v1"}
         if raw_request.get("schema_version") not in allowed:
             raise ValueError("history request kind/tag differs from its record domain")
-        request = LocalEnvelope.from_payload(raw_request)
-        if request.local_time.to_payload() != original:
+        # This event belongs to the strict snapshot of the enclosing record.
+        # Validate the whole request before using its fields or projection.
+        LocalEnvelope.from_payload(raw_request)
+        if raw_request["original_time"] != original:
             raise ValueError("history request original reference differs")
-        request_body = request.semantic
-        event_id = request.string("event_key")
+        request_body = _owned_object(raw_request["payload"])
+        event_id = _text(request_body["event_key"])
         if event_id in ids:
             raise ValueError("history event identity cannot be replayed")
         ids.add(event_id)
@@ -1409,7 +1431,7 @@ def _history(
         current_transaction = _transaction(event["transaction"])
         _join_decision(original, current_decision)
         operation = _hash({"schema_version": "visual.local-history-operation.v1",
-                           "request": semantic_projection(raw_request)})
+                           "request": _project_validated(raw_request)})
         if any(evidence["operation_id"] != event_id or evidence["operation_sha256"] != operation
                for evidence in (current_decision, current_transaction)):
             raise ValueError("history operation digest/id must bind exact request")
@@ -1443,7 +1465,7 @@ def _history(
     if _canonical(expected) != _canonical(declared):
         raise ValueError("history final semantic state differs from definition-derived replay")
     if events:
-        final = _object(events[-1])
+        final = _owned_object(events[-1])
         if decision != final["decision"] or transaction != final["transaction"]:
             raise ValueError("enclosing history decision/transaction differs from final event")
     return len(events)
@@ -1761,7 +1783,7 @@ class _DetachedValue:
         return result
 
     def to_payload(self) -> dict[str, JSONValue]:
-        return _object(json.loads(self._json))
+        return _owned_object(json.loads(self._json))
 
     def digest(self) -> str:
         return hashlib.sha256(self._json.encode()).hexdigest()
@@ -1886,10 +1908,10 @@ class LocalEnvelope:
             tag = _text(raw["schema_version"])
             if tag not in FIELDS:
                 raise ValueError("exact local semantic tag required")
-            body = _object(raw["payload"], FIELDS[tag])
+            body = _owned_object(raw["payload"], FIELDS[tag])
             original = _original(raw["original_time"])
-            diagnostics = _object(raw["diagnostics"], frozenset(("utc", "monotonic")))
-            for name, value in _object(diagnostics["utc"]).items():
+            diagnostics = _owned_object(raw["diagnostics"], frozenset(("utc", "monotonic")))
+            for name, value in _owned_object(diagnostics["utc"]).items():
                 _text(name)
                 if value is not None:
                     stamp = datetime.fromisoformat(_text(value))
@@ -1927,28 +1949,28 @@ class LocalEnvelope:
                 _DECODE_MEMO.reset(memo.token)
 
     def to_payload(self) -> dict[str, JSONValue]:
-        return _object(json.loads(self._json))
+        return _owned_object(json.loads(self._json))
 
     def digest(self) -> str:
         return hashlib.sha256(self._json.encode()).hexdigest()
 
     @property
     def semantic(self) -> dict[str, JSONValue]:
-        return _object(self.to_payload()["payload"])
+        return _owned_object(self.to_payload()["payload"])
 
     @property
     def local_time(self) -> LocalOriginalTime:
-        return LocalOriginalTime.from_payload(_object(self.to_payload()["original_time"]))
+        return LocalOriginalTime.from_payload(_owned_object(self.to_payload()["original_time"]))
 
     @property
     def decision(self) -> LocalAuthorityDecision | None:
         value = self.to_payload()["decision"]
-        return None if value is None else LocalAuthorityDecision.from_payload(_object(value))
+        return None if value is None else LocalAuthorityDecision.from_payload(_owned_object(value))
 
     @property
     def transaction(self) -> LocalTransactionReceipt | None:
         value = self.to_payload()["transaction"]
-        return None if value is None else LocalTransactionReceipt.from_payload(_object(value))
+        return None if value is None else LocalTransactionReceipt.from_payload(_owned_object(value))
 
     def detached(self) -> Self:
         return type(self).from_payload(self.to_payload())
@@ -1960,7 +1982,7 @@ class LocalEnvelope:
         return _integer(self.semantic[name])
 
     def object(self, name: str) -> dict[str, JSONValue]:
-        return _object(self.semantic[name])
+        return _owned_object(self.semantic[name])
 
     def number(self, name: str, *, positive: bool = False) -> float:
         return _number(self.semantic[name], positive=positive)
@@ -1989,8 +2011,8 @@ class LocalEnvelope:
         return {key: _sha(value) for key, value in _hashes(self.semantic[name]).items()}
 
     @classmethod
-    def _from_local_payload(cls, payload: object, tag: str) -> Self:
-        envelope = decode_local_payload(_object(payload), tag)
+    def _from_local_payload(cls, payload: Mapping[str, JSONValue], tag: str) -> Self:
+        envelope = decode_local_payload(payload, tag)
         result = object.__new__(cls)
         object.__setattr__(result, "_json", envelope._json)
         return result
@@ -2043,7 +2065,7 @@ class LocalDomainEnvelope(LocalEnvelope):
                 values[key] = value
             return values
 
-        return cls.from_payload(_object(json.loads(raw, object_pairs_hook=pairs)))
+        return cls.from_payload(json.loads(raw, object_pairs_hook=pairs))
 
     def legacy_deadline(self) -> datetime:
         raise ValueError("local history has no UTC authority deadline")

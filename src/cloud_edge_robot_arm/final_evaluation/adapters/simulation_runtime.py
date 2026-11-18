@@ -42,6 +42,11 @@ from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
 class Phase11RuntimeAdapter:
     runner_kind = "PHASE11_SIMULATION_RUNTIME"
 
+    def __init__(self, *, lifecycle_only: bool = False) -> None:
+        if type(lifecycle_only) is not bool:
+            raise ValueError("lifecycle_only requires an explicit boolean")
+        self.lifecycle_only = lifecycle_only
+
     def capability(self) -> dict[str, Any]:
         return {
             "runner_kind": self.runner_kind,
@@ -60,13 +65,20 @@ class Phase11RuntimeAdapter:
         artifact_root = evidence_root / "artifacts"
         repo = SQLiteSimulationJobRepository(database_path, artifact_root=artifact_root)
 
-        main = _run_completed_job(repo, context, artifact_root)
-        recovery = _run_recovery_job(repo, context, artifact_root)
-        duplicate = _run_duplicate_competition_job(repo, context, artifact_root)
+        main = _run_completed_job(repo, context, artifact_root, lifecycle_only=self.lifecycle_only)
+        recovery = _run_recovery_job(
+            repo, context, artifact_root, lifecycle_only=self.lifecycle_only
+        )
+        duplicate = _run_duplicate_competition_job(
+            repo, context, artifact_root, lifecycle_only=self.lifecycle_only
+        )
         outcome = _runtime_outcome(main, recovery, duplicate)
         sqlite_summary = _sqlite_summary(database_path, output_root=context.output_root)
         runtime_receipt = {
             "runner": self.runner_kind,
+            "validation_scope": "SOFTWARE_LIFECYCLE_ONLY"
+            if self.lifecycle_only
+            else "DEFAULT_RGBD",
             "run_id": context.run_id,
             "main_job": main,
             "recovery_evidence": recovery,
@@ -144,7 +156,11 @@ class Phase11RuntimeAdapter:
 
 
 def _run_completed_job(
-    repo: SQLiteSimulationJobRepository, context: Phase12RunContext, artifact_root: Path
+    repo: SQLiteSimulationJobRepository,
+    context: Phase12RunContext,
+    artifact_root: Path,
+    *,
+    lifecycle_only: bool = False,
 ) -> dict[str, Any]:
     job = repo.create_job(
         run_id=f"{context.run_id}-runtime",
@@ -155,7 +171,7 @@ def _run_completed_job(
         seed=context.seed,
         manifest_id=f"manifest-{context.run_id}",
         reproducibility_hash=stable_hash({"run_id": context.run_id, "kind": "runtime"}),
-        draft=_draft(context),
+        draft=_draft(context, lifecycle_only=lifecycle_only),
         manifest={"manifest_id": f"manifest-{context.run_id}", "schema_version": "phase12.2"},
         timeout_seconds=30,
         max_attempts=2,
@@ -210,7 +226,11 @@ def _run_completed_job(
 
 
 def _run_recovery_job(
-    repo: SQLiteSimulationJobRepository, context: Phase12RunContext, artifact_root: Path
+    repo: SQLiteSimulationJobRepository,
+    context: Phase12RunContext,
+    artifact_root: Path,
+    *,
+    lifecycle_only: bool = False,
 ) -> dict[str, Any]:
     job = repo.create_job(
         run_id=f"{context.run_id}-recovery",
@@ -221,7 +241,7 @@ def _run_recovery_job(
         seed=context.seed,
         manifest_id=f"manifest-{context.run_id}-recovery",
         reproducibility_hash=stable_hash({"run_id": context.run_id, "kind": "recovery"}),
-        draft=_draft(context, runtime_delay_ms=10),
+        draft=_draft(context, runtime_delay_ms=10, lifecycle_only=lifecycle_only),
         manifest={"manifest_id": f"manifest-{context.run_id}-recovery"},
         timeout_seconds=30,
         max_attempts=2,
@@ -380,7 +400,11 @@ def _release_expired_simulated_crash_lease(
 
 
 def _run_duplicate_competition_job(
-    repo: SQLiteSimulationJobRepository, context: Phase12RunContext, artifact_root: Path
+    repo: SQLiteSimulationJobRepository,
+    context: Phase12RunContext,
+    artifact_root: Path,
+    *,
+    lifecycle_only: bool = False,
 ) -> dict[str, Any]:
     job = repo.create_job(
         run_id=f"{context.run_id}-duplicate",
@@ -391,7 +415,7 @@ def _run_duplicate_competition_job(
         seed=context.seed,
         manifest_id=f"manifest-{context.run_id}-duplicate",
         reproducibility_hash=stable_hash({"run_id": context.run_id, "kind": "duplicate"}),
-        draft=_draft(context),
+        draft=_draft(context, lifecycle_only=lifecycle_only),
         manifest={"manifest_id": f"manifest-{context.run_id}-duplicate"},
         timeout_seconds=30,
         max_attempts=2,
@@ -721,8 +745,14 @@ def _runtime_outcome(
     }
 
 
-def _draft(context: Phase12RunContext, *, runtime_delay_ms: int = 0) -> dict[str, Any]:
+def _draft(
+    context: Phase12RunContext,
+    *,
+    runtime_delay_ms: int = 0,
+    lifecycle_only: bool = False,
+) -> dict[str, Any]:
     return {
+        **({"input_mode": "LEGACY_PIPELINE"} if lifecycle_only else {}),
         "backend": "MOCK",
         "run_type": "SINGLE",
         "scenarios": [context.scenario_id],

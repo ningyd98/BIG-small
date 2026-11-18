@@ -3528,7 +3528,7 @@ def _b_t2_attempt(request):
 
 
 @contextmanager
-def _b_t2_observe(monkeypatch, value):
+def _b_t2_observe(monkeypatch, value, *, focused_lifecycle=False):
     """Observe real constructors, connections and issuer clocks; no permission mocks."""
     import sys
     import time
@@ -3850,6 +3850,26 @@ def _b_t2_observe(monkeypatch, value):
         if callback is not None:
             callback(frame, event, arg)
 
+    # UTC observes the same Python call/return boundaries. In CPython 3.12,
+    # most can be monitored on just those code objects. Exception unwinds
+    # still need a global event, filtered to the same code objects here.
+    monitoring = sys.monitoring
+    lifecycle_codes = frozenset((
+        poll_code, session_code, thread_start_code, heartbeat_install_code, session_close_code,
+    ))
+    events = monitoring.events
+    lifecycle_events = (
+        (events.PY_START, "call"), (events.PY_RETURN, "return"), (events.PY_UNWIND, "return"),
+    )
+    monitor_id = None
+
+    def boundary(profile_event):
+        def record_boundary(code, offset, *event_values):
+            if code in lifecycle_codes:
+                profile(sys._getframe(1), profile_event, None)
+
+        return record_boundary
+
     state = SimpleNamespace(value=value, fault=fault, clocks=clocks, objects=objects,
                             release_events=release_events, workers=worker_refs, sessions=session_refs,
                             wait_observer=None, add=add)
@@ -3869,8 +3889,21 @@ def _b_t2_observe(monkeypatch, value):
             patch(cls, "close", close_wrapper(cls.close, kind))
         patcher.setattr(lease_module, "open_operational_clock", lambda: clock_factory("D_lease"))
         patcher.setattr(operational_windows, "open_operational_clock", lambda: clock_factory("D_app"))
-        sys.setprofile(profile)
-        threading.setprofile(profile)
+        if focused_lifecycle:
+            for candidate in (3, 4):
+                if monitoring.get_tool(candidate) is None:
+                    monitoring.use_tool_id(candidate, "BIGsmall UTC resource lifecycle")
+                    monitor_id = candidate
+                    break
+        if monitor_id is None:
+            sys.setprofile(profile)
+            threading.setprofile(profile)
+        else:
+            for event, profile_event in lifecycle_events:
+                monitoring.register_callback(monitor_id, event, boundary(profile_event))
+            for code in lifecycle_codes:
+                monitoring.set_local_events(monitor_id, code, events.PY_START | events.PY_RETURN)
+            monitoring.set_events(monitor_id, events.PY_UNWIND)
         yield state
     finally:
         state.wait_observer = None
@@ -3953,8 +3986,16 @@ def _b_t2_observe(monkeypatch, value):
             except BaseException as error:
                 value["cleanup_errors"].append({"resource_id": record["resource_id"],
                     "type": type(error).__name__, "message": str(error)})
-        sys.setprofile(previous_profile)
-        threading.setprofile(previous_thread_profile)
+        if monitor_id is None:
+            sys.setprofile(previous_profile)
+            threading.setprofile(previous_thread_profile)
+        else:
+            monitoring.set_events(monitor_id, events.NO_EVENTS)
+            for code in lifecycle_codes:
+                monitoring.set_local_events(monitor_id, code, events.NO_EVENTS)
+            for event, _ in lifecycle_events:
+                monitoring.register_callback(monitor_id, event, None)
+            monitoring.free_tool_id(monitor_id)
         context.__exit__(None, None, None)
         restored = all(getattr(cls, name) is original for (cls, name), original in methods.items())
         value["observations"]["observers_restored"] = (
@@ -5717,7 +5758,7 @@ def test_local_new_schema_ignores_utc_jump_but_external_does_not(monkeypatch, tm
         _b_t3_api()
         attempt["entered_behavior"] = True
         observations = []
-        with _b_t2_observe(monkeypatch, attempt) as observed:
+        with _b_t2_observe(monkeypatch, attempt, focused_lifecycle=True) as observed:
             for days in (-1, 1):
                 basis = datetime.now(UTC)
                 with monkeypatch.context() as shifted:

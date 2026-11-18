@@ -96,3 +96,135 @@ def oblique_camera_for_features(
                 best = ((float(position[0]), float(position[1]), float(position[2])),
                         (float(aim[0]), float(aim[1]), float(aim[2])))
     return best
+
+
+def registered_camera_bearing(marker_rotation, attachment):
+    """Return the horizontal bearing of the registered rigid outboard offset."""
+    rotation = np.asarray(marker_rotation, dtype=float).reshape(3, 3)
+    attachment = np.asarray(attachment, dtype=float).reshape(4, 4)
+    attached_rotation = attachment[:3, :3]
+    for matrix in (rotation, attached_rotation):
+        if (
+            not np.isfinite(matrix).all()
+            or not np.allclose(matrix.T @ matrix, np.eye(3), atol=1e-8, rtol=0)
+            or not np.isclose(np.linalg.det(matrix), 1, atol=1e-8, rtol=0)
+        ):
+            raise ValueError("camera proposal requires finite proper rotations")
+    if not np.isfinite(attachment).all() or not np.array_equal(attachment[3], [0, 0, 0, 1]):
+        raise ValueError("camera proposal requires a finite registered attachment")
+    offset = attachment[:3, 3]
+    registered_horizontal = float(np.linalg.norm(offset[:2]))
+    if registered_horizontal <= 0:
+        raise ValueError("camera proposal requires a nonzero registered horizontal offset")
+    object_rotation = rotation @ attached_rotation.T
+    outward_world = object_rotation @ offset
+    horizontal = float(np.linalg.norm(outward_world[:2]))
+    if not np.isfinite(horizontal) or horizontal < registered_horizontal / 2:
+        raise ValueError("registered outboard camera bearing is degenerate in world XY")
+    return outward_world[:2] / horizontal, object_rotation, outward_world, horizontal
+
+
+def _clear_observation_rays(position, features, occluders):
+    """Predict occlusion using only measured object and registered robot boxes."""
+    clear = np.ones(len(features), dtype=bool)
+    for center, rotation, half_size in occluders:
+        origin = (position - center) @ rotation
+        rays = (features - position) @ rotation
+        parallel = np.abs(rays) < 1e-9
+        outside = np.any(parallel & (np.abs(origin) > half_size), axis=1)
+        divisor = np.where(parallel, 1, rays)
+        a, b = (-half_size - origin) / divisor, (half_size - origin) / divisor
+        near = np.where(parallel, -np.inf, np.minimum(a, b)).max(axis=1)
+        far = np.where(parallel, np.inf, np.maximum(a, b)).min(axis=1)
+        hits = ~outside & (np.maximum(near, 0) <= np.minimum(far, 1 - 1e-6))
+        clear &= ~hits
+    return clear
+
+
+def registered_current_view_proposals(
+    *, marker_center, marker_rotation, attachment, marker_size_m,
+    region_corners, intrinsics, image_size, occluders,
+):
+    """Rank a bounded family of views. A proposal supplies no current visibility evidence."""
+    center = np.asarray(marker_center, dtype=float)
+    rotation = np.asarray(marker_rotation, dtype=float).reshape(3, 3)
+    region = np.asarray(region_corners, dtype=float)
+    fx, fy, cx, cy = np.asarray(intrinsics, dtype=float)
+    if (
+        center.shape != (3,) or region.shape != (4, 3) or not np.isfinite(center).all()
+        or not np.isfinite(region).all() or not np.isfinite([fx, fy, cx, cy, marker_size_m]).all()
+        or min(fx, fy, marker_size_m) <= 0
+    ):
+        raise ValueError("camera proposal requires finite registered measured features")
+    bearing, object_rotation, outward_world, horizontal = registered_camera_bearing(
+        rotation, attachment,
+    )
+    local_marker = np.array([[-0.5, -0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 0], [-0.5, 0.5, 0]])
+    marker_corners = center + marker_size_m * local_marker @ rotation.T
+    features = np.vstack((center, marker_corners, region))
+    aim = (features.min(axis=0) + features.max(axis=0)) / 2
+    width, height = image_size
+    image_max = np.array([width - 1, height - 1])
+    margin_px = 16
+    for box_center, box_rotation, box_size in occluders:
+        if (not np.isfinite(box_center).all() or not np.isfinite(box_rotation).all()
+                or not np.isfinite(box_size).all() or np.any(box_size <= 0)):
+            raise ValueError("camera proposal requires finite positive occluder geometry")
+    ranked = []
+    x, y = bearing
+    directions = ((x, y), (-y, x), (-x, -y), (y, -x))
+    for index, direction in enumerate(directions):
+        for height_m in (0.80, 1.05):
+            if height_m <= aim[2]:
+                continue
+            distance = (height_m - aim[2]) * np.tan(np.deg2rad(35))
+            position = np.r_[aim[:2] + distance * np.asarray(direction), height_m]
+            if not (-0.1 <= position[0] <= 0.8 and -0.5 <= position[1] <= 0.5):
+                continue
+            backward = position - aim
+            backward /= np.linalg.norm(backward)
+            right = np.cross([0, 1, 0], backward)
+            right /= np.linalg.norm(right)
+            up = np.cross(backward, right)
+            optical = np.column_stack((right, -up, -backward))
+            camera = (features - position) @ optical
+            if np.any(camera[:, 2] <= 0):
+                continue
+            camera_ray = position - center
+            facing = float(camera_ray @ rotation[:, 2] / np.linalg.norm(camera_ray))
+            if facing <= 0:
+                continue
+            pixels = camera[:, :2] / camera[:, 2, None] * [fx, fy] + [cx, cy]
+            margin = float(np.minimum(pixels, image_max - pixels).min())
+            if margin < margin_px:
+                continue
+            corners = pixels[1:5]
+            side_px = float(np.linalg.norm(np.roll(corners, -1, axis=0) - corners, axis=1).min())
+            if side_px < 8:
+                continue
+            visible = _clear_observation_rays(position, features, occluders)
+            marker_clear = int(visible[:5].sum())
+            region_clear = int(visible[5:].sum())
+            score = (
+                int(marker_clear == 5 and region_clear >= 3), marker_clear,
+                min(region_clear, 3), side_px, facing, margin,
+            )
+            ranked.append((score, {
+                "camera_position_m": position.tolist(),
+                "camera_look_at_m": aim.tolist(),
+                "relative_azimuth_deg": index * 90,
+                "predicted_clear_marker_rays": marker_clear,
+                "predicted_clear_region_corners": region_clear,
+                "projected_marker_min_side_px": side_px,
+                "projected_image_margin_px": margin,
+                "marker_facing_cosine": facing,
+            }))
+    # Python's stable sort preserves the preregistered azimuth/height order on ties.
+    ranked.sort(key=lambda candidate: candidate[0], reverse=True)
+    return {
+        "bearing_xy": bearing.tolist(),
+        "world_horizontal_offset_m": horizontal,
+        "outward_world_m": outward_world.tolist(),
+        "object_rotation": object_rotation.tolist(),
+        "ranked": [candidate[1] for candidate in ranked],
+    }

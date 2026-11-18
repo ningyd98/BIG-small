@@ -327,3 +327,56 @@ def test_scoped_decode_memo_contract(tmp_path, monkeypatch):
         assert len(raw) <= 4 * 1024 * 1024, "finite micro evidence cap"
         with (tmp_path / "decode-memo-case.json").open("xb") as stream:
             stream.write(raw)
+
+
+def test_validated_envelope_exports_do_not_repeat_strict_copy(monkeypatch):
+    from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
+        LocalVisualBootstrapRecord,
+    )
+
+    seed = json.loads(SEED.read_bytes())["changed_payload"]
+    record = LocalVisualBootstrapRecord.from_payload(seed)
+    original_copy = local._copy
+    copies = 0
+
+    def count_copy(value):
+        nonlocal copies
+        copies += 1
+        return original_copy(value)
+
+    monkeypatch.setattr(local, "_copy", count_copy)
+    raw = record.to_payload()
+    semantic = record.semantic
+    assert canonical(raw) == canonical(seed)
+    assert record.digest() == LEAF_SHA
+    assert semantic == seed["payload"]
+    assert record.counter("revision") == seed["payload"]["revision"]
+    assert record.object("state") == seed["payload"]["state"]
+    raw["payload"]["state"]["remaining_reobservations"] = -1
+    semantic["history"].clear()
+    assert record.to_payload() == seed
+    assert copies == 0, "export must not revalidate JSON already owned by the codec"
+
+
+def test_projection_decodes_the_recognized_envelope_once(monkeypatch):
+    seed = json.loads(SEED.read_bytes())["changed_payload"]
+    expected = frozen_projection(seed)
+    original_decode = local.LocalEnvelope.from_payload.__func__
+    decode_depth = 0
+    root_validations = 0
+
+    def count_roots(cls, payload):
+        nonlocal decode_depth, root_validations
+        root_validations += decode_depth == 0
+        decode_depth += 1
+        try:
+            return original_decode(cls, payload)
+        finally:
+            decode_depth -= 1
+
+    monkeypatch.setattr(local.LocalEnvelope, "from_payload", classmethod(count_roots))
+    projected = local.semantic_projection(seed)
+    assert canonical(projected) == canonical(expected)
+    projected["payload"]["history"].clear()
+    assert seed["payload"]["history"]
+    assert root_validations == 1, "projection must reuse the root's validated descendant contents"

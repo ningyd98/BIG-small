@@ -155,3 +155,94 @@ def test_continuous_servo_cannot_bypass_exact_job_role_binding(damage):
         parameters["sol_molmo_visual_servo"] = 1
     with pytest.raises(ValueError):
         module.component_servo_settings(parameters, policy)
+
+
+@pytest.mark.parametrize("fault", [
+    None, "no_clearance", "other_task", "other_step", "other_start", "continuation",
+    "holding", "closed", "lateral",
+])
+def test_retreat_depth_reobservation_requires_bound_empty_vertical_clearance(fault):
+    from cloud_edge_robot_arm.contracts import Pose
+    from cloud_edge_robot_arm.edge.safety.clearance import VerticalClearancePath
+    from cloud_edge_robot_arm.research.sol_molmo_components import (
+        _retreat_clearance_allows_depth_reobserve,
+    )
+
+    path = VerticalClearancePath("task", "8a", "RETREAT", (0.20, 0.20, 0.05),
+                                (0.20, 0.20, 0.16), 0.08)
+    robot = SimpleNamespace(
+        gripper_open=fault != "closed",
+        holding_object_id="object" if fault == "holding" else None,
+        tcp_pose=Pose(x=0.21 if fault == "other_start" else 0.20, y=0.20, z=0.05),
+    )
+    step = SimpleNamespace(
+        step_id="8b" if fault == "other_step" else "8a", skill=SimpleNamespace(value="RETREAT"),
+        parameters={"target_pose": {"x": 0.21 if fault == "lateral" else 0.20,
+                                    "y": 0.20, "z": 0.16}},
+    )
+    allowed = _retreat_clearance_allows_depth_reobserve(
+        None if fault == "no_clearance" else path, step, robot,
+        task_id="other" if fault == "other_task" else "task",
+        minimum_height_m=0.08, continuation=fault == "continuation",
+    )
+    assert allowed is (fault is None)
+
+
+@pytest.mark.parametrize("eligible", [False, True])
+def test_retreat_refresh_requires_eligible_clearance_and_current_frame(monkeypatch, eligible):
+    from cloud_edge_robot_arm.research import sol_molmo_components as components
+
+    observation = SimpleNamespace(observation_id="accepted-clearance")
+    marker = SimpleNamespace(observation_id=observation.observation_id)
+    feedback = SimpleNamespace(last_observation=observation, last_accepted_marker=marker)
+
+    def propose(frame, estimate, *_rest):
+        assert frame.observation_id == estimate.observation_id == "accepted-clearance"
+        return {"observation_id": frame.observation_id}
+
+    monkeypatch.setattr(components, "_current_transport_view_proposals", propose)
+    result = components._refresh_transport_camera_proposal(
+        "RETREAT", feedback, None, "fixture", None, 0.07, None, retreat_clearance=eligible,
+    )
+    assert result == ({"observation_id": "accepted-clearance"} if eligible else None)
+
+
+@pytest.mark.parametrize("fault", [None, "counter", "time", "joint", "wrong_camera"])
+def test_component_sample_guards_backend_and_only_new_camera_command(fault):
+    from cloud_edge_robot_arm.research.sol_molmo_components import (
+        ComponentStopped,
+        _check_component_camera_sample,
+    )
+
+    class Backend:
+        total_physics_steps = 7
+        sim_time = 0.125
+        _command_records = [object()] * 128
+
+        def get_sim_time(self):
+            return self.sim_time
+
+    backend = Backend()
+    cursor = len(backend._command_records)
+    position, aim = (0.2, -0.1, 0.8), (0.2, 0.2, 0.1)
+    row = {"type": "camera_position", "accepted": True, "position_m": list(position),
+           "look_at_m": list(aim), "physics_step": 7, "sim_time_s": 0.125,
+           "command_seq": cursor + 1}
+    if fault == "counter":
+        backend.total_physics_steps += 1
+    elif fault == "time":
+        backend.sim_time += 0.01
+    elif fault == "joint":
+        row["type"] = "joint_target"
+    elif fault == "wrong_camera":
+        row["position_m"] = (0.2, -0.2, 0.8)
+    backend._command_records = [*backend._command_records, row]
+    if fault is None:
+        end = _check_component_camera_sample(
+            backend, 7, 0.125, cursor, camera_move=(position, aim),
+        )
+        assert end == cursor + 1
+        assert _check_component_camera_sample(backend, 7, 0.125, end) == end
+    else:
+        with pytest.raises(ComponentStopped, match="SERVO_CAMERA_SAMPLE_"):
+            _check_component_camera_sample(backend, 7, 0.125, cursor, camera_move=(position, aim))

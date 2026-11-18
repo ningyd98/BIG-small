@@ -17,9 +17,18 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from cloud_edge_robot_arm.edge.safety.clearance import VerticalClearancePath
 from cloud_edge_robot_arm.vision.marker_families import marker_family
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
-from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerRegistration, detect_pose_marker
+from cloud_edge_robot_arm.vision.pose_markers import (
+    PoseMarkerEstimate,
+    PoseMarkerRegistration,
+    detect_pose_marker,
+)
+from cloud_edge_robot_arm.vision.servo import (
+    MARKER_DEPTH_NONPLANAR_ERROR,
+    RECOVERABLE_CAMERA_VIEW_ERRORS,
+)
 
 SCOPE = "MUJOCO_COMPONENT_DIAGNOSTIC"
 _SETTLE_STEPS = dict(
@@ -368,6 +377,134 @@ def _transport_camera_position(
     }
 
 
+def _current_transport_view_proposals(
+    observation: RGBDObservation, estimate: PoseMarkerEstimate, tracker: Any,
+    family_id: str, backend: Any, object_height_m: float,
+) -> dict[str, Any]:
+    from cloud_edge_robot_arm.vision.camera_positioning import (
+        registered_camera_bearing,
+        registered_current_view_proposals,
+    )
+
+    family = marker_family(family_id)
+    registration = PoseMarkerRegistration(
+        marker_id=family.marker_id, marker_size_m=family.marker_size_m,
+        dictionary=cast(Literal["DICT_4X4_50"], family.dictionary),
+        marked_asset_sha256=family.asset_sha256,
+    )
+    if (estimate.status != "OBSERVED" or estimate.observation_id != observation.observation_id
+            or estimate.observation_checksum_sha256 != observation.checksum_sha256
+            or estimate.registration_hash != registration.digest()):
+        raise ValueError("camera proposal marker does not match the accepted observation")
+    rotation = np.asarray(estimate.rotation_marker_to_world).reshape(3, 3)
+    center = np.asarray(estimate.marker_center_world_m)
+    _, object_rotation, outward, _ = registered_camera_bearing(rotation, family.marker_to_object)
+    extent = (np.asarray(tracker.initial["max"]) - np.asarray(tracker.initial["min"]))[:2] / 2
+    occluders = [(center - outward, object_rotation, np.r_[extent, object_height_m / 2])]
+    assert backend._model is not None and backend._data is not None
+    # Only actuator geometry participates. Its world transform is forward kinematics;
+    # object pose, region pose, instance labels and success are never read here.
+    for name in ("hand", "left_finger_geom", "right_finger_geom"):
+        index = backend._model.geom(name).id
+        occluders.append((backend._data.geom_xpos[index].copy(),
+                          backend._data.geom_xmat[index].reshape(3, 3).copy(),
+                          backend._model.geom_size[index].copy()))
+    region = tracker.destination
+    corners = np.array([[x, y, region["center"][2]]
+                        for x in (region["min"][0], region["max"][0])
+                        for y in (region["min"][1], region["max"][1])])
+    proposals = registered_current_view_proposals(
+        marker_center=center, marker_rotation=rotation, attachment=family.marker_to_object,
+        marker_size_m=family.marker_size_m, region_corners=corners,
+        intrinsics=observation.intrinsics, image_size=(observation.width, observation.height),
+        occluders=occluders,
+    )
+    return proposals | {
+        "source": "LAST_ACCEPTED_RGBD_AND_REGISTERED_ROBOT_KINEMATICS_PROPOSAL_ONLY",
+        "observation_id": observation.observation_id,
+        "checksum_sha256": observation.checksum_sha256,
+        "rgb_sha256": observation.evidence()["rgb_sha256"],
+        "calibration_version": observation.calibration_version,
+        "registration_sha256": estimate.registration_hash,
+        "marker_asset_sha256": family.asset_sha256,
+        "marker_to_object": list(family.marker_to_object),
+        "measured_marker_to_world_rotation": rotation.tolist(),
+        "bearing_degrees": math.degrees(math.atan2(
+            proposals["bearing_xy"][1], proposals["bearing_xy"][0],
+        )),
+    }
+
+
+def _refresh_transport_camera_proposal(
+    skill: str, feedback: Any, tracker: Any, family_id: str, backend: Any,
+    object_height_m: float, previous: dict[str, Any] | None,
+    *, retreat_clearance: bool = False,
+) -> dict[str, Any] | None:
+    estimate = feedback.last_accepted_marker
+    if estimate is not None and (
+        skill in {"MOVE_TO_REGION", "PLACE"} or (skill == "RETREAT" and retreat_clearance)
+    ):
+        return _current_transport_view_proposals(
+            feedback.last_observation, estimate, tracker, family_id, backend, object_height_m,
+        )
+    return previous
+
+
+def _retreat_clearance_allows_depth_reobserve(
+    path: VerticalClearancePath | None, step: Any, state: Any, *,
+    task_id: str, minimum_height_m: float, continuation: bool,
+) -> bool:
+    if (not isinstance(path, VerticalClearancePath) or step.skill.value != "RETREAT"
+            or continuation or state.gripper_open is not True or state.holding_object_id is not None
+            or (state.tcp_pose.x, state.tcp_pose.y, state.tcp_pose.z) != path.start_m):
+        return False
+    try:
+        path.check_binding(
+            task_id=task_id, step_id=step.step_id, skill="RETREAT",
+            target=step.parameters.get("target_pose"), minimum_height_m=minimum_height_m,
+        )
+    except ValueError:
+        return False
+    return True
+
+
+def _prioritize_transport_camera_views(
+    reason: str, declared: list[Any], proposal: dict[str, Any] | None,
+) -> list[Any]:
+    if reason == MARKER_DEPTH_NONPLANAR_ERROR and proposal is None:
+        return []
+    if proposal is None or (
+        reason != MARKER_DEPTH_NONPLANAR_ERROR and reason not in RECOVERABLE_CAMERA_VIEW_ERRORS
+    ):
+        return declared
+    alternate = [
+        (tuple(candidate["camera_position_m"]), tuple(candidate["camera_look_at_m"]))
+        for candidate in proposal["ranked"]
+    ]
+    return [*declared[:1], *alternate, *declared[1:]]
+
+
+def _check_component_camera_sample(
+    backend: Any, physics_step: int, sim_time_s: float, cursor: int,
+    *, camera_move: tuple[Any, Any] | None = None,
+) -> int:
+    if backend.total_physics_steps != physics_step or backend.get_sim_time() != sim_time_s:
+        raise ComponentStopped("SERVO_CAMERA_SAMPLE_PHYSICS_CHANGED")
+    commands = backend._command_records
+    end = cursor + int(camera_move is not None)
+    if len(commands) != end:
+        raise ComponentStopped("SERVO_CAMERA_SAMPLE_UNEXPECTED_COMMAND")
+    if camera_move is not None:
+        position, aim = camera_move
+        row = commands[cursor]
+        if (row.get("type") != "camera_position" or row.get("accepted") is not True
+                or row.get("physics_step") != physics_step or row.get("sim_time_s") != sim_time_s
+                or row.get("command_seq") != end or row.get("position_m") != list(position)
+                or row.get("look_at_m") != list(aim)):
+            raise ComponentStopped("SERVO_CAMERA_SAMPLE_UNEXPECTED_COMMAND")
+    return end
+
+
 def run_component_episode(
     worker: Any, job: Any, draft: Any, *, start_monotonic: float
 ) -> tuple[dict[str, Any], list, list]:
@@ -375,7 +512,6 @@ def run_component_episode(
     from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest
     from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor
     from cloud_edge_robot_arm.edge.runtime.skill_registry import SkillRegistry
-    from cloud_edge_robot_arm.edge.safety.clearance import VerticalClearancePath
     from cloud_edge_robot_arm.simulation.config import SimulatorConfig
     from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
     from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
@@ -887,21 +1023,48 @@ def run_component_episode(
                                     servo_reference, tracker, evidence, skill=step.skill.value,
                                     initial_target=Pose.model_validate(step.parameters["target_pose"]),
                                     marker_family_id=family_id,
+                                    verify_mujoco_calibration=True,
+                                )
+                                ranked_proposal = None
+                                bound_retreat_reobserve = (
+                                    step.skill.value == "RETREAT" and vertical_clearance is not None
+                                    and _retreat_clearance_allows_depth_reobserve(
+                                        vertical_clearance, step, robot.get_state(),
+                                        task_id=contract.task_id,
+                                        minimum_height_m=(
+                                            contract.safety_constraints.minimum_safe_height
+                                        ),
+                                        continuation=inherited_start is not None,
+                                    )
                                 )
 
                                 def servo_sample(
                                     previous: Any, *, feedback: Any = servo_feedback,
                                     step: Any = step, safety: Any = safety,
+                                    bound_retreat_reobserve: bool = bound_retreat_reobserve,
                                     views: Any = (
-                                        camera_views if step.skill.value in {"LIFT", "PLACE"}
+                                        camera_views if step.skill.value in {
+                                            "LIFT", "MOVE_TO_REGION", "PLACE",
+                                        }
                                         else camera_views[1:]
                                     ),
                                 ) -> Any:
+                                    nonlocal ranked_proposal
                                     sample_started = time.perf_counter()
+                                    sample_step = backend.total_physics_steps
+                                    sample_time = backend.get_sim_time()
+                                    command_cursor = len(backend._command_records)
                                     # Source files are already fully attested at
                                     # the skill boundary, as in the legacy owner.
                                     # The hot loop rechecks live lease/cancellation.
                                     active(verify_sources=False)
+                                    retreat_reobserve = False
+                                    if bound_retreat_reobserve:
+                                        robot_state = robot.get_state()
+                                        retreat_reobserve = (
+                                            robot_state.gripper_open is True
+                                            and robot_state.holding_object_id is None
+                                        )
                                     checked_at = time.perf_counter()
                                     capture_s = 0.0
                                     reposition_s = 0.0
@@ -909,6 +1072,9 @@ def run_component_episode(
                                     def paired_capture(attempt: int) -> RGBDObservation:
                                         nonlocal capture_s
                                         begin = time.perf_counter()
+                                        _check_component_camera_sample(
+                                            backend, sample_step, sample_time, command_cursor,
+                                        )
                                         paired = backend.capture_sensor_frame()
                                         observation = observation_from_sensor_frame(
                                             paired, source="mujoco_camera", png_compress_level=0,
@@ -918,27 +1084,68 @@ def run_component_episode(
                                             observation, folder / "servo-frames" / step.step_id
                                             / f"sample-{len(feedback.records):04d}{suffix}",
                                         )
+                                        _check_component_camera_sample(
+                                            backend, sample_step, sample_time, command_cursor,
+                                        )
+                                        if observation.sim_time_s != sample_time:
+                                            raise ComponentStopped("SERVO_CAMERA_SAMPLE_FRAME_TIME")
                                         capture_s += time.perf_counter() - begin
                                         return observation
 
                                     def set_view(
                                         camera_position: Any, aim: Any, reason: str,
                                     ) -> None:
-                                        nonlocal reposition_s
+                                        nonlocal reposition_s, command_cursor
                                         begin = time.perf_counter()
                                         active(verify_sources=False)
+                                        _check_component_camera_sample(
+                                            backend, sample_step, sample_time, command_cursor,
+                                        )
                                         backend.set_camera_position(camera_position, look_at_m=aim)
+                                        command_cursor = _check_component_camera_sample(
+                                            backend, sample_step, sample_time, command_cursor,
+                                            camera_move=(camera_position, aim),
+                                        )
+                                        proposal = None
+                                        if ranked_proposal is not None and any(
+                                            tuple(candidate["camera_position_m"]) == camera_position
+                                            for candidate in ranked_proposal["ranked"]
+                                        ):
+                                            proposal = ranked_proposal
                                         row.setdefault("camera_adjustments", []).append({
                                             "source": "CURRENT_RGBD_VISIBILITY_RECOVERY",
                                             "physics_step": backend.total_physics_steps,
                                             "step_id": step.step_id, "reason": reason,
                                             "position_m": camera_position, "look_at_m": aim,
                                             "hardware_dispatch": False,
+                                            **({"visibility_proposal": proposal}
+                                               if proposal is not None else {}),
                                         })
                                         reposition_s += time.perf_counter() - begin
 
+                                    def prioritize(reason: str, declared: list[Any]) -> list[Any]:
+                                        if reason == MARKER_DEPTH_NONPLANAR_ERROR:
+                                            binding = feedback.last_observation
+                                            estimate = feedback.last_accepted_marker
+                                            if (ranked_proposal is None or estimate is None
+                                                    or ranked_proposal["observation_id"]
+                                                    != binding.observation_id
+                                                    or ranked_proposal["checksum_sha256"]
+                                                    != binding.checksum_sha256
+                                                    or ranked_proposal["calibration_version"]
+                                                    != binding.calibration_version
+                                                    or ranked_proposal["registration_sha256"]
+                                                    != estimate.registration_hash):
+                                                return []
+                                        return _prioritize_transport_camera_views(
+                                            reason, declared, ranked_proposal,
+                                        )
+
                                     target = feedback.update_with_camera_views(
-                                        paired_capture, set_view, views,
+                                        paired_capture, set_view, views, prioritize=prioritize,
+                                        allow_marker_depth_reobserve=(
+                                            step.skill.value == "PLACE" or retreat_reobserve
+                                        ),
                                     )
                                     observation = feedback.last_observation
                                     measured_at = time.perf_counter()
@@ -948,7 +1155,17 @@ def run_component_episode(
                                     check_component_hard_state(backend, robot)
                                     safety(observation, "SERVO", dynamic_step=updated_step)
                                     safety_at = time.perf_counter()
+                                    proposal_started = time.perf_counter()
+                                    ranked_proposal = _refresh_transport_camera_proposal(
+                                        step.skill.value, feedback, tracker, family_id, backend,
+                                        evidence["estimated_object_height_m"], ranked_proposal,
+                                        retreat_clearance=retreat_reobserve,
+                                    )
+                                    proposal_done = time.perf_counter()
                                     active(verify_sources=False)
+                                    _check_component_camera_sample(
+                                        backend, sample_step, sample_time, command_cursor,
+                                    )
                                     feedback.records[-1]["stage_wall_ms"] = {
                                         "initial_active": (checked_at - sample_started) * 1000,
                                         "capture_and_archive": capture_s * 1000,
@@ -957,7 +1174,12 @@ def run_component_episode(
                                             measured_at - checked_at - capture_s - reposition_s
                                         ) * 1000,
                                         "safety": (safety_at - measured_at) * 1000,
-                                        "final_active": (time.perf_counter() - safety_at) * 1000,
+                                        "camera_proposal": (
+                                            proposal_done - proposal_started
+                                        ) * 1000,
+                                        "final_active": (
+                                            time.perf_counter() - proposal_done
+                                        ) * 1000,
                                     }
                                     return motion_controller.MotionTarget(
                                         target, previous.orientation_wxyz
@@ -998,6 +1220,9 @@ def run_component_episode(
                                     "control_samples": servo_session.records,
                                     "visual_samples": servo_feedback.records,
                                     "terminal_reason": servo_session.terminal_reason,
+                                    **({"camera_reobservation_rejections":
+                                        servo_feedback.camera_reobservation_rejections}
+                                       if servo_feedback.camera_reobservation_rejections else {}),
                                 }
                             action["end_step"] = backend.total_physics_steps
                             row["executed_actions"] += int(backend.total_physics_steps > beginning)

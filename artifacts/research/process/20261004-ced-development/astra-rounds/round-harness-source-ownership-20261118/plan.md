@@ -1,0 +1,11 @@
+# Astra：输出归属与来源行严格校验
+
+实际`gpt-6-astra`，2026-11-18，PLANNED_NOT_FIXED。输入SHA见JSON。独立review实测四个不同seed同output仅1个真实prepare成功，其余exit2却引用胜者PREPARED；P12接受未登记场景、NOT_RGBD_CAMERA_REQUIRED和冲突重复JSON键。审查代理确认原并发临时目录已回收、P12变更仅在内存，原stdout保留在工具回执；本计划仅绑定持久review与原始未改raw的SHA，**不伪造原失败raw哈希**。新RED须完整归档。
+
+**H1代理独占范围：** CLI/必要私有ownership helper、并发测试及H1派生文档/wheel。先4个真实CPU prepare、不同seed同新output RED并保存每条结果；加持锁竞争控制。修复用规范化per-output sidecar、regular/no-follow文件、非阻塞fcntl独占，锁后重查存在性，全child及收尾读取持锁；不unlink锁文件，避免换inode脱锁，获取前不截断。父包装被杀也不能使尚活child失去锁保护，可受控pass_fds继承同锁描述符。冲突/已有output在delegate前NOT_STARTED，不读他人manifest；已spawn但未知仍保留exit/signal/成本null。不能把所有FileExistsError都当未启动，也不能因为output存在忽略child拒绝回执。认领manifest前核对本次实际seed/marker/mode/source与effective assignment；planned而未应用的camera/scene不作错误一致性要求。任何归属不明不借用他人阶段/计数。原FAILED/INTERRUPTED及信号语义保持。
+
+H1 GREEN要求4调用恰1 PREPARED且seed匹配、3非拥有者无他人episode/manifest/count；只有1个期次目录、不覆盖删raw，锁inode稳定、child退出后正常释放。原不完整/信号/预检反例保留。重建一次wheel，在源码树外清除路径/凭据变量后重复同CPU并发组。
+
+**root P12独占范围：** supplementary脚本、source测试与派生复核。先以原始字节RED三漏检及nested重复键/NaN等，adapter构造置失败哨兵且output不得创建。所有非空JSON行严格object_pairs_hook拒duplicate、parse_constant拒非有限值，再筛选；保留整群唯一ID/blocked/false-runtime检查。linked行profile须validation，scenario/control/backend从现有F20 registry读取（当前S15_SQLITE_RESTART_DURING_RUN），不另造清单。RGBD_CAMERA_REQUIRED必须是已发出main/recovery/duplicate原因子句中的精确错误码token，兼容RuntimeError前缀和分隔符，拒NOT_、suffix及否定文本，不能子串匹配。standalone无来源S01仍独立语义。synthetic linked正例补profile/合法S15字段；真实18行只读重验及与旧summary逐项映射，ROOTcommit/实际script+adapterSHA修复保持。
+
+0GPU/renderer/model/API，0新增实际lifecycle。H1仅一次RED四调用、源码GREEN四调用、wheelGREEN四调用及必要归属控制；P12仅纯预检测试和18原行只读。原控制/单episode/native组件/主Phase12runner-validator-registry/UTC不改，UTC已验381.627s门不重跑。本轮软件验收不授予物理或研究资格。新计划外失败、需扩大产品范围或无法保障child锁寿命即下一实际Astra；原失败和原件全留。

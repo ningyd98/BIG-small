@@ -80,3 +80,37 @@ def test_side_view_can_frame_registered_marker_and_region_without_hidden_body_ex
     )
     assert view is not None and view[0][2] == pytest.approx(0.6)
     assert view[1] == (0.303, 0.196, 0.09)
+
+
+def test_outboard_recovery_proposals_follow_registered_geometry_and_workspace():
+    from cloud_edge_robot_arm.vision.camera_positioning import registered_current_view_proposals
+
+    attachment = np.eye(4)
+    attachment[:3, 3] = [0, 0.14, 0.03505]
+    marker = (0.213, 0.379, 0.165)
+    region = np.array([[x, y, 0.004] for x in (0.12, 0.28) for y in (0.17, 0.328)])
+    kwargs = {
+        "marker_rotation": np.eye(3),
+        "attachment": attachment,
+        "marker_size_m": 0.075,
+        "region_corners": region,
+        "intrinsics": (257, 257, 159.5, 119.5),
+        "image_size": (320, 240),
+        "occluders": (),
+    }
+    result = registered_current_view_proposals(marker_center=marker, **kwargs)
+    slots = {row["relative_azimuth_deg"] for row in result["ranked"]}
+    assert slots == {180, 270}
+    assert all(row["camera_position_m"][2] in (0.80, 1.05) for row in result["ranked"])
+    assert result["bearing_xy"] == [0.0, 1.0]
+    assert result["outward_world_m"] == [0.0, 0.14, 0.03505]
+
+
+def test_outboard_recovery_does_not_guess_for_degenerate_registered_offset():
+    from cloud_edge_robot_arm.vision.camera_positioning import registered_camera_bearing
+
+    attachment = np.eye(4)
+    attachment[:3, 3] = [0, 0.14, 0.03505]
+    roll90 = [[1, 0, 0], [0, 0, -1], [0, 1, 0]]
+    with pytest.raises(ValueError, match="degenerate"):
+        registered_camera_bearing(roll90, attachment)

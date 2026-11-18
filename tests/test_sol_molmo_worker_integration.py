@@ -139,7 +139,8 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
         manifest.write_text('{"scope":"SOFTWARE_ONLY"}')
         monkeypatch.setattr(module, "selected_sol_service", lambda *a, **k: service)
         monkeypatch.setattr(
-            "scripts.probe_molmo_grounded_planner._admit_resources", lambda *a, **k: nullcontext()
+            "cloud_edge_robot_arm.vision.model_resources.admit_resources",
+            lambda *a, **k: nullcontext(),
         )
         monkeypatch.setattr(
             "cloud_edge_robot_arm.vision.molmo_pointing.MolmoPointProvider", lambda **k: points

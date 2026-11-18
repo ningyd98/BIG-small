@@ -540,7 +540,7 @@ def _run_observed_scene(
     service = points = None
     resources: AbstractContextManager[Any]
     if mode in {"plan-only", "execute"}:
-        from scripts.probe_molmo_grounded_planner import _admit_resources
+        from cloud_edge_robot_arm.vision.model_resources import admit_resources as _admit_resources
 
         service = selected_sol_service(cast(Path, model_control_db), cast(str, profile_id))
         resources = _admit_resources(cast(Path, model_directory), gpu_lock)
