@@ -1,0 +1,137 @@
+FFF............                                                          [100%]
+=================================== FAILURES ===================================
+___ test_model_point_accepts_exact_registered_chat_prompt[1-expected_pixel0] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-409/test_model_point_accepts_exact0')
+index = 1, expected_pixel = (41, 52)
+
+    @pytest.mark.parametrize(("index", "expected_pixel"), [(1, (41, 52)), (2, (32, 19))])
+    def test_model_point_accepts_exact_registered_chat_prompt(
+        tmp_path, index, expected_pixel,
+    ):
+        observation = paired_frame()
+        case, binding = model_point_case(tmp_path, observation, index)
+>       pixel, details = audit._model_point(case, index, observation, binding)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_native_harness_stop_diagnostics.py:212: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+case = FrozenCase(root=PosixPath('/tmp/pytest-of-ningyd/pytest-409/test_model_point_accepts_exact0'), files={'raw/molmo/reque...01/result.json': {'bytes': 362, 'sha256': 'bb07ed853edbc5f6e89f1df316bb41a8378186b63bf22a2dc946dd31b032e83b'}}, row={})
+index = 1
+observation = RGBDObservation(frame_id='frame', observation_id='frame', captured_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datet...bration_version='0fb2bcdbae0cc3d3', checksum_sha256='9a5fd7962c93c70dffa7f43ff95db4787336fcd2076706b81f790bb30f8e0023')
+binding = {'normalized_1000': [515, 817], 'query_sha256': '49efd59d6a7bf5cb58fff2b16eaada125e2e72e7ccf381e93884d65daa2c62e0', 'raw_sha256': 'a9b658b113855d23960b46e888cbb5bc424d0c101b31f59f7fe857fdef9361fc', 'status': 'POINT'}
+
+    def _model_point(
+        case: FrozenCase, index: int, observation: RGBDObservation, binding: dict[str, Any],
+    ) -> tuple[tuple[int, int], dict[str, Any]]:
+        directory = f"raw/molmo/request-{index:04d}/"
+        started = case.json(directory + "started.json")
+        result = case.json(directory + "result.json")
+        raw = case.read(directory + "raw-response.txt")
+        prompt = case.read(directory + "prompt.txt")
+        phrase = started["phrase"]
+        raw_sha = sha256(raw)
+        query_sha = sha256(phrase.encode())
+        rgb_sha = observation.evidence()["rgb_sha256"]
+        point = parse_native_point(raw.decode())
+        if (
+            started["observation_checksum"] != observation.checksum_sha256
+            or result["observation_checksum"] != observation.checksum_sha256
+            or started["rgb_sha256"] != rgb_sha
+            or result["rgb_sha256"] != rgb_sha
+            or started["query_sha256"] != query_sha
+            or result["query_sha256"] != query_sha
+            or binding["query_sha256"] != query_sha
+            or result["raw_sha256"] != raw_sha
+            or binding["raw_sha256"] != raw_sha
+            or prompt != native_prompt(phrase).encode()
+            or point.status != "POINT"
+            or binding["status"] != point.status
+            or point.normalized_1000 is None
+            or list(point.normalized_1000) != binding["normalized_1000"]
+            or result["reached_cap"] is not False
+        ):
+>           raise ValueError("archive model point/raw prompt is not bound to the paired observation")
+E           ValueError: archive model point/raw prompt is not bound to the paired observation
+
+scripts/diagnose_native_harness_stops.py:363: ValueError
+___ test_model_point_accepts_exact_registered_chat_prompt[2-expected_pixel1] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-409/test_model_point_accepts_exact1')
+index = 2, expected_pixel = (32, 19)
+
+    @pytest.mark.parametrize(("index", "expected_pixel"), [(1, (41, 52)), (2, (32, 19))])
+    def test_model_point_accepts_exact_registered_chat_prompt(
+        tmp_path, index, expected_pixel,
+    ):
+        observation = paired_frame()
+        case, binding = model_point_case(tmp_path, observation, index)
+>       pixel, details = audit._model_point(case, index, observation, binding)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_native_harness_stop_diagnostics.py:212: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+case = FrozenCase(root=PosixPath('/tmp/pytest-of-ningyd/pytest-409/test_model_point_accepts_exact1'), files={'raw/molmo/reque...02/result.json': {'bytes': 362, 'sha256': '003001f13626235706c3246719e5ecc897328b8bc3d80d118693739071eaa7aa'}}, row={})
+index = 2
+observation = RGBDObservation(frame_id='frame', observation_id='frame', captured_at=datetime.datetime(2026, 1, 1, 0, 0, tzinfo=datet...bration_version='0fb2bcdbae0cc3d3', checksum_sha256='9a5fd7962c93c70dffa7f43ff95db4787336fcd2076706b81f790bb30f8e0023')
+binding = {'normalized_1000': [405, 298], 'query_sha256': 'b19a96f0312590cb5b225daaf7da83f81dd505ed3dd245c8a96d8b9b30ef9198', 'raw_sha256': '7a40f7288fa724926dd5954c6fcd4056486a9341a88370af0eee62f93785a139', 'status': 'POINT'}
+
+    def _model_point(
+        case: FrozenCase, index: int, observation: RGBDObservation, binding: dict[str, Any],
+    ) -> tuple[tuple[int, int], dict[str, Any]]:
+        directory = f"raw/molmo/request-{index:04d}/"
+        started = case.json(directory + "started.json")
+        result = case.json(directory + "result.json")
+        raw = case.read(directory + "raw-response.txt")
+        prompt = case.read(directory + "prompt.txt")
+        phrase = started["phrase"]
+        raw_sha = sha256(raw)
+        query_sha = sha256(phrase.encode())
+        rgb_sha = observation.evidence()["rgb_sha256"]
+        point = parse_native_point(raw.decode())
+        if (
+            started["observation_checksum"] != observation.checksum_sha256
+            or result["observation_checksum"] != observation.checksum_sha256
+            or started["rgb_sha256"] != rgb_sha
+            or result["rgb_sha256"] != rgb_sha
+            or started["query_sha256"] != query_sha
+            or result["query_sha256"] != query_sha
+            or binding["query_sha256"] != query_sha
+            or result["raw_sha256"] != raw_sha
+            or binding["raw_sha256"] != raw_sha
+            or prompt != native_prompt(phrase).encode()
+            or point.status != "POINT"
+            or binding["status"] != point.status
+            or point.normalized_1000 is None
+            or list(point.normalized_1000) != binding["normalized_1000"]
+            or result["reached_cap"] is not False
+        ):
+>           raise ValueError("archive model point/raw prompt is not bound to the paired observation")
+E           ValueError: archive model point/raw prompt is not bound to the paired observation
+
+scripts/diagnose_native_harness_stops.py:363: ValueError
+_ test_model_point_rejects_semantic_mismatch_even_when_files_are_indexed[bare_text] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-409/test_model_point_rejects_seman0')
+fault = 'bare_text'
+
+    @pytest.mark.parametrize("fault", [
+        "bare_text", "extra_image", "extra_role", "wrong_role", "missing_newline",
+        "wrong_query_prompt", "wrong_phrase", "wrong_response", "wrong_rgb",
+        "wrong_observation", "wrong_coordinates", "generation_capped",
+    ])
+    def test_model_point_rejects_semantic_mismatch_even_when_files_are_indexed(tmp_path, fault):
+        observation = paired_frame()
+        case, binding = model_point_case(tmp_path, observation, 1, fault)
+>       with pytest.raises(ValueError, match="not bound"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_native_harness_stop_diagnostics.py:227: Failed
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/cache/worktrees/harness-candidate-20261118/artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-archived-point-binding-20261118/prompt-red.xml -
+=========================== short test summary info ============================
+FAILED tests/test_native_harness_stop_diagnostics.py::test_model_point_accepts_exact_registered_chat_prompt[1-expected_pixel0]
+FAILED tests/test_native_harness_stop_diagnostics.py::test_model_point_accepts_exact_registered_chat_prompt[2-expected_pixel1]
+FAILED tests/test_native_harness_stop_diagnostics.py::test_model_point_rejects_semantic_mismatch_even_when_files_are_indexed[bare_text]
+3 failed, 12 passed, 13 deselected in 0.35s

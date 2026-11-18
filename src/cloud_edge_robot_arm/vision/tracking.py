@@ -60,41 +60,11 @@ class OpenCVTargetTracker:
     """
 
     def __init__(self, observation: RGBDObservation, grounding: dict[str, Any]) -> None:
-        self.target_pixel = tuple(grounding["original_pixel_target"])
-        self.destination_pixel = tuple(grounding["original_pixel_destination"])
-        self.support_z = float(grounding["top_grasp_support_height_m"])
-        if not math.isfinite(self.support_z):
-            raise ValueError("support height must be finite")
-        bound = grounding.get("depth_error_bound_m")
-        self.depth_error_bound_m = (
-            float(bound)
-            if isinstance(bound, (int, float))
-            and not isinstance(bound, bool)
-            and math.isfinite(bound)
-            and bound > 0
-            else None
-        )
-        self._reference = observation
+        self._configure_initial_geometry(observation, grounding)
         reason = self._binding_reason(observation)
         if reason:
             raise ValueError(f"initial acquisition unavailable: {reason}")
-        rgb = _rgb(observation)
-        self.target_color = self._color(rgb, self.target_pixel)
-        self.destination_color = self._color(rgb, self.destination_pixel)
-        self.initial, reason = self._geometry(observation, self.target_color, target=True)
-        self.destination, region_reason = self._geometry(
-            observation, self.destination_color, target=False
-        )
-        if self.initial is None or self.destination is None:
-            raise ValueError(
-                f"initial RGB-D identity/extent unavailable: {reason or region_reason}"
-            )
-        for pixel, geometry in (
-            (self.target_pixel, self.initial),
-            (self.destination_pixel, self.destination),
-        ):
-            if not geometry["mask"][pixel[1], pixel[0]]:
-                raise ValueError("grounded pixel does not belong to unique support")
+        self._acquire_initial_geometry(observation)
         self._last_geometry = self.initial
         self._last_observation = observation
         self._seen = {observation.observation_id}
@@ -112,6 +82,74 @@ class OpenCVTargetTracker:
                 )
             ).encode()
         ).hexdigest()
+
+    def _configure_initial_geometry(
+        self, observation: RGBDObservation, grounding: dict[str, Any]
+    ) -> None:
+        self.target_pixel = tuple(grounding["original_pixel_target"])
+        self.destination_pixel = tuple(grounding["original_pixel_destination"])
+        self.support_z = float(grounding["top_grasp_support_height_m"])
+        if not math.isfinite(self.support_z):
+            raise ValueError("support height must be finite")
+        bound = grounding.get("depth_error_bound_m")
+        self.depth_error_bound_m = (
+            float(bound)
+            if isinstance(bound, (int, float))
+            and not isinstance(bound, bool)
+            and math.isfinite(bound)
+            and bound > 0
+            else None
+        )
+        self._reference = observation
+
+    def _acquire_initial_geometry(
+        self, observation: RGBDObservation, *, diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        rgb = _rgb(observation)
+        self.target_color = self._color(rgb, self.target_pixel)
+        self.destination_color = self._color(rgb, self.destination_pixel)
+        target_details: dict[str, Any] = {}
+        destination_details: dict[str, Any] = {}
+        self.initial, reason = self._geometry(
+            observation, self.target_color, target=True,
+            **({"diagnostics": target_details} if diagnostics is not None else {}),
+        )
+        self.destination, region_reason = self._geometry(
+            observation, self.destination_color, target=False,
+            **({"diagnostics": destination_details} if diagnostics is not None else {}),
+        )
+        if diagnostics is not None:
+            diagnostics["target"] = target_details | {
+                "status": "ACCEPTED" if self.initial is not None else "REJECTED",
+                "reason": reason,
+            }
+            diagnostics["destination"] = destination_details | {
+                "status": "ACCEPTED" if self.destination is not None else "REJECTED",
+                "reason": region_reason,
+            }
+        if self.initial is None or self.destination is None:
+            raise ValueError(
+                f"initial RGB-D identity/extent unavailable: {reason or region_reason}"
+            )
+        for pixel, geometry in (
+            (self.target_pixel, self.initial),
+            (self.destination_pixel, self.destination),
+        ):
+            if not geometry["mask"][pixel[1], pixel[0]]:
+                raise ValueError("grounded pixel does not belong to unique support")
+
+    @classmethod
+    def _inspect_frozen_geometry(
+        cls, observation: RGBDObservation, grounding: dict[str, Any], diagnostics: dict[str, Any],
+    ) -> OpenCVTargetTracker:
+        """Apply initial geometry predicates to a frozen frame without a live tracker."""
+        geometry = cls.__new__(cls)
+        geometry._configure_initial_geometry(observation, grounding)
+        reason = geometry._binding_reason_at(observation, observation.captured_at)
+        if reason:
+            raise ValueError(f"initial acquisition unavailable: {reason}")
+        geometry._acquire_initial_geometry(observation, diagnostics=diagnostics)
+        return geometry
 
     @staticmethod
     def _color(rgb: np.ndarray, pixel: tuple[int, ...]) -> np.ndarray:
@@ -178,6 +216,7 @@ class OpenCVTargetTracker:
         *,
         target: bool,
         occlusion_geometry: dict[str, Any] | None = None,
+        diagnostics: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any] | None, str | None]:
         rgb = _rgb(observation).astype(float)
         chroma = rgb / np.maximum(rgb.sum(axis=2, keepdims=True), 1.0)
@@ -257,6 +296,17 @@ class OpenCVTargetTracker:
                 return None, "target_interior_occluded"
         depth = np.asarray(observation.depth_values()).reshape(mask.shape)
         valid = np.frombuffer(observation.valid_mask_bytes(), dtype=np.uint8).reshape(mask.shape)
+        if diagnostics is not None:
+            positive = depth[ys, xs] > 0
+            finite = np.isfinite(depth[ys, xs])
+            valid_mask = valid[ys, xs] > 0
+            diagnostics["depth"] = {
+                "selected_pixels": len(ys),
+                "nonpositive_pixels": int(np.count_nonzero(depth[ys, xs] <= 0)),
+                "nonfinite_pixels": int(np.count_nonzero(~finite)),
+                "invalid_mask_pixels": int(np.count_nonzero(~valid_mask)),
+                "rejected_pixels": int(np.count_nonzero(~(positive & finite & valid_mask))),
+            }
         if not np.all((depth[ys, xs] > 0) & np.isfinite(depth[ys, xs]) & (valid[ys, xs] > 0)):
             return None, "target_depth_incomplete"
         points = self._points(observation, xs, ys, depth[ys, xs])

@@ -22,6 +22,7 @@ from cloud_edge_robot_arm.vision.observations import RGBDObservation
 
 BASE_ASSET_SHA256 = "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2"
 MARKER_SIZE_M = 0.0525  # six cells plus one quiet cell on either side fit the 70mm face
+_MAX_MARKER_PLANE_RESIDUAL_M = 0.002
 
 
 @dataclass(frozen=True)
@@ -143,6 +144,7 @@ def detect_pose_marker(
     registration: PoseMarkerRegistration,
     *,
     corner_refinement: Literal["NONE", "SUBPIX"] = "NONE",
+    diagnostics: dict[str, Any] | None = None,
 ) -> PoseMarkerEstimate:
     """Decode exactly one known marker and estimate its ordered pose from depth.
 
@@ -155,6 +157,8 @@ def detect_pose_marker(
         raise ValueError("unsupported marker corner refinement")
 
     def unknown(reason: str, ids: tuple[int, ...] = ()) -> PoseMarkerEstimate:
+        if diagnostics is not None:
+            diagnostics.update(status="UNKNOWN", reason=reason, observed_ids=ids)
         return PoseMarkerEstimate(
             "UNKNOWN",
             reason,
@@ -212,6 +216,8 @@ def detect_pose_marker(
     transform = np.asarray(current.camera_to_world).reshape(4, 4)
     fx, fy, cx, cy = current.intrinsics
     world = []
+    if diagnostics is not None:
+        diagnostics["depth_samples"] = []
     for x, y in (*points, points.mean(axis=0)):
         u, v = int(round(float(x))), int(round(float(y)))
         patch = depths[v - 1 : v + 2, u - 1 : u + 2]
@@ -219,6 +225,11 @@ def detect_pose_marker(
             return unknown("marker_metric_depth_unavailable", observed)
         z = float(np.median(patch))
         camera = np.array([(x - cx) * z / fx, (y - cy) * z / fy, z, 1.0])
+        if diagnostics is not None:
+            diagnostics["depth_samples"].append({
+                "pixel": [float(x), float(y)],
+                "median_optical_depth_m": z,
+            })
         world.append((transform @ camera)[:3])
     metric = np.array(world[:4])
     lengths = np.linalg.norm(np.roll(metric, -1, axis=0) - metric, axis=1)
@@ -226,9 +237,19 @@ def detect_pose_marker(
         return unknown("registered_marker_size_inconsistent", observed)
     center = metric.mean(axis=0)
     _, _, basis = np.linalg.svd(metric - center)
+    center_residual = abs(float((world[4] - center) @ basis[-1]))
+    if diagnostics is not None:
+        diagnostics["plane"] = {
+            "threshold_m": _MAX_MARKER_PLANE_RESIDUAL_M,
+            "center_residual_m": center_residual,
+            "max_corner_residual_m": max(
+                abs(float(point @ basis[-1])) for point in metric - center
+            ),
+        }
     if (
-        abs(float((world[4] - center) @ basis[-1])) > 0.002
-        or max(abs(float(point @ basis[-1])) for point in metric - center) > 0.002
+        center_residual > _MAX_MARKER_PLANE_RESIDUAL_M
+        or max(abs(float(point @ basis[-1])) for point in metric - center)
+        > _MAX_MARKER_PLANE_RESIDUAL_M
     ):
         return unknown("marker_depth_not_planar", observed)
     x_axis = metric[1] - metric[0]
@@ -241,6 +262,12 @@ def detect_pose_marker(
     y_axis = np.cross(z_axis, x_axis)
     rotation = np.column_stack((x_axis, y_axis, z_axis))
     yaw = math.atan2(float(x_axis[1]), float(x_axis[0]))
+    if diagnostics is not None:
+        diagnostics.update(
+            status="OBSERVED",
+            reason="uncalibrated_single_frame_pose_estimate",
+            observed_ids=observed,
+        )
     return PoseMarkerEstimate(
         "OBSERVED",
         "uncalibrated_single_frame_pose_estimate",

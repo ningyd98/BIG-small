@@ -1,0 +1,111 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> scripts/diagnose_native_harness_stops.py:3:1
+   |
+ 1 |   """Recompute scoped vision predicates from the frozen November 18 MuJoCo archive."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import argparse
+ 6 | | import hashlib
+ 7 | | import json
+ 8 | | import struct
+ 9 | | from pathlib import Path
+10 | | from typing import Any
+11 | |
+12 | | import numpy as np
+13 | |
+14 | | from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest
+15 | | from cloud_edge_robot_arm.research.sol_molmo_offline_regression import FrozenCase, load_observation
+16 | | from cloud_edge_robot_arm.vision.marker_families import marker_family
+17 | | from cloud_edge_robot_arm.vision.messages import model_to_observation_pixel
+18 | | from cloud_edge_robot_arm.vision.molmo_pointing import native_prompt, parse_native_point
+19 | | from cloud_edge_robot_arm.vision.observations import RGBDObservation
+20 | | from cloud_edge_robot_arm.vision.planner import ground_observation
+21 | | from cloud_edge_robot_arm.vision.point_association import associate_target_point
+22 | | from cloud_edge_robot_arm.vision.servo import _requested_optical_transform, measure_registered_marker_grasp
+23 | | from cloud_edge_robot_arm.vision.servo_region import measure_servo_region
+24 | | from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker
+   | |____________________________________________________________________^
+25 |
+26 |   ROOT = Path(__file__).resolve().parents[1]
+   |
+help: Organize imports
+
+E501 Line too long (107 > 100)
+  --> scripts/diagnose_native_harness_stops.py:22:101
+   |
+20 | from cloud_edge_robot_arm.vision.planner import ground_observation
+21 | from cloud_edge_robot_arm.vision.point_association import associate_target_point
+22 | from cloud_edge_robot_arm.vision.servo import _requested_optical_transform, measure_registered_marker_grasp
+   |                                                                                                     ^^^^^^^
+23 | from cloud_edge_robot_arm.vision.servo_region import measure_servo_region
+24 | from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker
+   |
+
+E501 Line too long (107 > 100)
+   --> scripts/diagnose_native_harness_stops.py:441:101
+    |
+439 |             "seed": seed,
+440 |             "source_group": historical["source_group"],
+441 |             "episode_index_sha256": sha256(inventory.read(f"native/varied-{seed}/evidence-manifest.json")),
+    |                                                                                                     ^^^^^^^
+442 |             "original_outcome": {
+443 |                 key: result[key] for key in (
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/vision/pose_markers.py:267:101
+    |
+265 |     if diagnostics is not None:
+266 |         diagnostics.update(
+267 |             status="OBSERVED", reason="uncalibrated_single_frame_pose_estimate", observed_ids=observed,
+    |                                                                                                     ^^^
+268 |         )
+269 |     return PoseMarkerEstimate(
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/vision/servo.py:108:101
+    |
+106 |     if estimate.status != "OBSERVED":
+107 |         if estimate.reason not in {
+108 |             "known_marker_not_observed", "marker_boundary_clipped", "marker_resolution_insufficient",
+    |                                                                                                     ^
+109 |         }:
+110 |             raise ValueError("servo registered marker rejected: " + estimate.reason)
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/test_native_harness_stop_diagnostics.py:3:1
+   |
+ 1 |   """The native harness stop audit binds observations before measuring them."""
+ 2 |
+ 3 | / import hashlib
+ 4 | | import json
+ 5 | | import struct
+ 6 | | from datetime import UTC, datetime
+ 7 | |
+ 8 | | import pytest
+ 9 | |
+10 | | from cloud_edge_robot_arm.research.sol_molmo_offline_regression import FrozenCase
+11 | | from cloud_edge_robot_arm.vision.servo import save_servo_frame
+12 | | from scripts import diagnose_native_harness_stops as audit
+13 | | from tests.test_opencv_target_evidence import scene
+14 | | from tests.test_visual_servo import revised
+   | |___________________________________________^
+   |
+help: Organize imports
+
+E501 Line too long (104 > 100)
+   --> tests/test_native_harness_stop_diagnostics.py:123:101
+    |
+121 |     assert outcome["entities"]["destination"]["status"] == "ACCEPTED"
+122 |     if damage:
+123 |         assert outcome["reason"] == "initial RGB-D identity/extent unavailable: target_depth_incomplete"
+    |                                                                                                     ^^^^
+124 |         assert outcome["entities"]["target"]["depth"]["invalid_mask_pixels"] == 1
+125 |         assert outcome["entities"]["target"]["depth"]["nonpositive_pixels"] == 1
+    |
+
+Found 7 errors.
+[*] 2 fixable with the `--fix` option.

@@ -17,9 +17,12 @@ from cloud_edge_robot_arm.vision.observations import RGBDObservation
 from cloud_edge_robot_arm.vision.top_grasp import _MAX_TOP_PATCH_Z_SPAN_M
 from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker, _rgb
 
+_MIN_CURRENT_CORNER_ANCHORS = 3
+
 
 def measure_servo_region(
     observation: RGBDObservation, tracker: OpenCVTargetTracker,
+    *, diagnostics: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     reference = tracker._reference
     region = tracker.destination
@@ -125,7 +128,10 @@ def measure_servo_region(
     ):
         return None, "region_current_color_outside_world_reference"
     anchors = sum(bool(visible_plane[y - 1:y + 2, x - 1:x + 2].any()) for x, y in corners)
-    if anchors < 3:
+    if diagnostics is not None:
+        diagnostics["observed_corner_anchors"] = anchors
+        diagnostics["minimum_corner_anchors"] = _MIN_CURRENT_CORNER_ANCHORS
+    if anchors < _MIN_CURRENT_CORNER_ANCHORS:
         return None, "region_current_corner_anchors_insufficient"
     missing = (expected > 0) & ~visible_plane
     if not valid[missing].all():

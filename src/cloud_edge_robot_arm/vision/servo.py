@@ -76,6 +76,50 @@ def save_servo_frame(observation: RGBDObservation, directory: Path) -> None:
         stream.write("\n")
 
 
+def measure_registered_marker_grasp(
+    observation: RGBDObservation, family_id: str, *, diagnostics: dict[str, Any] | None = None,
+) -> tuple[np.ndarray | None, PoseMarkerEstimate]:
+    """Measure the registered marker and validate the attached object's orientation."""
+    family = marker_family(family_id)
+    registration = PoseMarkerRegistration(
+        marker_id=family.marker_id,
+        dictionary=cast(Literal["DICT_4X4_50"], family.dictionary),
+        marker_size_m=family.marker_size_m,
+        marked_asset_sha256=family.asset_sha256,
+    )
+    if diagnostics is not None:
+        diagnostics["registration"] = {
+            "family_id": family.family_id,
+            "registration_id": family.registration_id,
+            "registration_sha256": registration.digest(),
+            "asset_sha256": family.asset_sha256,
+            "marker_id": registration.marker_id,
+            "marker_size_m": registration.marker_size_m,
+            "dictionary": registration.dictionary,
+            "marker_to_object": family.marker_to_object,
+            "corner_refinement": "SUBPIX",
+        }
+    estimate = detect_pose_marker(
+        observation, registration, corner_refinement="SUBPIX",
+        **({"diagnostics": diagnostics} if diagnostics is not None else {}),
+    )
+    if estimate.status != "OBSERVED":
+        if estimate.reason not in {
+            "known_marker_not_observed",
+            "marker_boundary_clipped",
+            "marker_resolution_insufficient",
+        }:
+            raise ValueError("servo registered marker rejected: " + estimate.reason)
+        return None, estimate
+    attachment = np.asarray(family.marker_to_object).reshape(4, 4)
+    rotation = np.asarray(estimate.rotation_marker_to_world).reshape(3, 3)
+    rotation = rotation @ attachment[:3, :3].T
+    if rotation[2, 2] < 0.98:
+        raise ValueError("servo registered object is not upright")
+    center = np.asarray(estimate.marker_center_world_m) - rotation @ attachment[:3, 3]
+    return cast(np.ndarray, center + rotation @ np.array([0, 0, 0.01])), estimate
+
+
 class OpenCVServoFeedback:
     """Measure a bounded target without extrapolating hidden geometry.
 
@@ -192,32 +236,12 @@ class OpenCVServoFeedback:
     def _marker_grasp(self, observation: RGBDObservation) -> np.ndarray | None:
         if self.marker_family_id is None:
             return None
-        family = marker_family(self.marker_family_id)
-        estimate = detect_pose_marker(
-            observation,
-            PoseMarkerRegistration(
-                marker_id=family.marker_id,
-                dictionary=cast(Literal["DICT_4X4_50"], family.dictionary),
-                marker_size_m=family.marker_size_m,
-                marked_asset_sha256=family.asset_sha256,
-            ),
-            corner_refinement="SUBPIX",
+        grasp, estimate = measure_registered_marker_grasp(
+            observation, self.marker_family_id,
         )
-        if estimate.status != "OBSERVED":
-            if estimate.reason not in {
-                "known_marker_not_observed", "marker_boundary_clipped",
-                "marker_resolution_insufficient",
-            }:
-                raise ValueError("servo registered marker rejected: " + estimate.reason)
-            return None
-        attachment = np.asarray(family.marker_to_object).reshape(4, 4)
-        rotation = np.asarray(estimate.rotation_marker_to_world).reshape(3, 3)
-        rotation = rotation @ attachment[:3, :3].T
-        if rotation[2, 2] < 0.98:
-            raise ValueError("servo registered object is not upright")
-        self._observed_marker = estimate
-        center = np.asarray(estimate.marker_center_world_m) - rotation @ attachment[:3, 3]
-        return cast(np.ndarray, center + rotation @ np.array([0, 0, 0.01]))
+        if grasp is not None:
+            self._observed_marker = estimate
+        return grasp
 
     def _measure_target(self, observation: RGBDObservation) -> tuple[np.ndarray, str]:
         if self._marker_bound:

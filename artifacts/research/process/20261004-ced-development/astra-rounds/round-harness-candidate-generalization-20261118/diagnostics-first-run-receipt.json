@@ -1,0 +1,48 @@
+{
+  "scope": "candidate_diagnostics_first_execution",
+  "checkout": "/home/ningyd/文档/ChatGPT/BIGsmall/cache/worktrees/harness-candidate-20261118",
+  "base_commit": "3ca2f6415b330d38ddc2d834c5f788a56c0d9517",
+  "input_manifest_sha256": "6c0305c48fd50ed945662935b0f0e6744f3a219bad3754a66d2a28a5cfdba96e",
+  "source_sha256_before_followup": {
+    "scripts/diagnose_native_harness_stops.py": "54ac7ce31a8283543d9a6714cb37e5dae744a4040f9b0d5962c082ec6ae2c991",
+    "tests/test_native_harness_stop_diagnostics.py": "1ddd656914010b1924e75b5293c9fe833e5c0cc779e8fe64da7f47d9f8f31394",
+    "src/cloud_edge_robot_arm/vision/servo.py": "2f8a15fe022a4bdc00f9f43b66fa5056c68e32b9ca2d6f43afb1d4797dd5c3c2",
+    "src/cloud_edge_robot_arm/vision/servo_region.py": "17be952ca97ce313e2f32b37d8a951150563509857878fa7284b51fc73915f77",
+    "src/cloud_edge_robot_arm/vision/pose_markers.py": "6168cb73c98b04ab4a5b7d08202a6e4a565484482da63d2ca5996ccb70722d90",
+    "src/cloud_edge_robot_arm/vision/tracking.py": "9c8cf00659dd3542d21f108df21a1880b3b540d07e9fd2fcd7ce020a1d6d876b"
+  },
+  "runs": [
+    {
+      "label": "expected_red",
+      "command": "env PYTHONPATH=src /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -B -m pytest -q -p no:cacheprovider tests/test_native_harness_stop_diagnostics.py",
+      "exit": 2,
+      "transcript": "diagnostics-red.log",
+      "transcript_sha256": "6530ef571d253d7e684e765f9742e3593cf928243bf309d49980993f31a0f3f3",
+      "result": "ImportError for the planned diagnostics module"
+    },
+    {
+      "label": "first_focused_green",
+      "command": "env PYTHONPATH=src /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -B -m pytest -q -p no:cacheprovider tests/test_native_harness_stop_diagnostics.py tests/test_servo_region_support.py tests/test_servo_camera_framing.py tests/test_pose_marker_evidence.py tests/test_embodied_harness.py",
+      "exit": 0,
+      "transcript": "diagnostics-first-green.log",
+      "transcript_sha256": "9c6a052a1b1b655187e031b50a1faa3f29d29856c41889c8e6213c47388c710e",
+      "result": "129 passed in 8.05s"
+    },
+    {
+      "label": "first_four_archive_cases",
+      "command": "env PYTHONPATH=src /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -B -m scripts.diagnose_native_harness_stops --archive-root /home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall/experiments/results/phase9/real-harness-20261118 --input-manifest artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/input-manifest.json --output artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/native-stop-remeasurement.json",
+      "exit": 1,
+      "transcript": "diagnostics-archive-first.log",
+      "transcript_sha256": "16d39624b0b65c613b9518327535811e60bf55acb5feeb2a1b8bc64d5f6d5a06",
+      "result": "The audit stopped at the first 44102 Molmo raw prompt comparison before report creation. A read-only audit of both requests from 44102 and 44104 found the original prompt.txt contains the processor's full chat template output. Observation checksum, RGB SHA, query SHA, raw response SHA, parsed POINT, normalized coordinates and cap checks passed for all four requests."
+    },
+    {
+      "label": "first_style_check",
+      "command": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/ruff check scripts/diagnose_native_harness_stops.py tests/test_native_harness_stop_diagnostics.py src/cloud_edge_robot_arm/vision/{servo,servo_region,pose_markers,tracking}.py",
+      "exit": 1,
+      "transcript": "diagnostics-ruff-first.log",
+      "transcript_sha256": "3d2bf8f7de3bed297c022c0a8a055ed5f7a24492e830489938760382ccf772e9",
+      "result": "Two I001 import-layout findings and five E501 line-length findings"
+    }
+  ]
+}
