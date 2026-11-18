@@ -8,12 +8,17 @@ import importlib.util
 import json
 import math
 import re
+import sqlite3
 import struct
 import subprocess
+from contextlib import closing
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
+from cloud_edge_robot_arm.contracts import Pose
 from cloud_edge_robot_arm.harness.checkout import sha256_file, verify_checkout
 from cloud_edge_robot_arm.harness.config import HarnessConfig, load_config, strict_json
 from cloud_edge_robot_arm.harness.evidence import EpisodeExpectation, verify_evidence
@@ -26,20 +31,42 @@ from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
 )
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
 from cloud_edge_robot_arm.vision.role_models import configuration_hash
+from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker
 
 ROUND = Path(__file__).resolve().parent
 ROOT = ROUND.parents[5]
 PREALLOCATION_SHA256 = "b68f756ff5570fc6886c5f8e50771a549eb73464bb539e3716a957ed1e116ec8"
 SEEDS = tuple(range(2026111801, 2026111805))
 COUNTER_LIMITS = {
-    "cloud_requests": 1, "cloud_request_reservations": 1, "local_generations": 4,
-    "local_generations_completed": 4, "model_loads": 1,
+    "cloud_requests": 1,
+    "cloud_request_reservations": 1,
+    "local_generations": 4,
+    "local_generations_completed": 4,
+    "model_loads": 1,
 }
 FREEZE_SCHEMA = "bigsmall.development.four-fresh-freeze.v1"
 SUCCESSOR_STAGE = "verification/v5-5103e7f4"
+INITIALIZATION_STOP_PREDECESSOR = "fresh-2026111803"
+INITIALIZATION_STOP_SUCCESSOR = "fresh-2026111804"
+INITIALIZATION_STOP_MANIFEST_SHA256 = (
+    "064e06971764095c5d8d431ef90bbbe7645c7e8694105248bf1d43fb5d537300"
+)
+INITIALIZATION_STOP_FREEZE_SHA256 = (
+    "daf46bd16aa98ff60b1e27afe3f1623f596e42553adb4d87996efdf5e0e6cc21"
+)
+INITIALIZATION_STOP_PROOF_SHA256 = (
+    "28b37a3c42b6adfd30e3691be955ce65ac92867d36d6f08a6a7dff10d0152440"
+)
 SUCCESS_SKILLS = (
-    "MOVE_ABOVE", "APPROACH", "GRASP", "LIFT", "MOVE_TO_REGION", "PLACE", "RELEASE",
-    "RETREAT", "RETREAT",
+    "MOVE_ABOVE",
+    "APPROACH",
+    "GRASP",
+    "LIFT",
+    "MOVE_TO_REGION",
+    "PLACE",
+    "RELEASE",
+    "RETREAT",
+    "RETREAT",
 )
 
 
@@ -94,7 +121,9 @@ def verify_frozen_sources(checkout: Path, freeze: dict[str, Any]) -> None:
     commit = freeze["commit"]
     require(bool(re.fullmatch(r"[0-9a-f]{40}", commit)), "freeze commit is malformed")
     tree = subprocess.check_output(
-        ["git", "rev-parse", commit + "^{tree}"], cwd=checkout, text=True,
+        ["git", "rev-parse", commit + "^{tree}"],
+        cwd=checkout,
+        text=True,
     )
     require(tree.strip() == freeze["tree"], "freeze commit/tree mismatch")
     for relative, digest in freeze["product_sources"].items():
@@ -122,8 +151,10 @@ def slot_config_path(root: Path, freeze: dict[str, Any], identity: str) -> Path:
 
 
 def check_pose(
-    slot: dict[str, Any], config: HarnessConfig,
-    assignment: dict[str, Any], applied: dict[str, Any],
+    slot: dict[str, Any],
+    config: HarnessConfig,
+    assignment: dict[str, Any],
+    applied: dict[str, Any],
 ) -> dict[str, Any]:
     request = {key: value for key, value in slot.items() if key != "id"}
     seed = slot["seed"]
@@ -143,25 +174,33 @@ def check_pose(
     position = applied["object_position_m"]
     quaternion = applied["object_quaternion_wxyz"]
     require(
-        isinstance(position, list) and len(position) == 3
-        and isinstance(quaternion, list) and len(quaternion) == 4
+        isinstance(position, list)
+        and len(position) == 3
+        and isinstance(quaternion, list)
+        and len(quaternion) == 4
         and all(
             type(value) in {float, int} and math.isfinite(value) for value in position + quaternion
         ),
         "applied pose is not a finite 3D position and quaternion",
     )
     wanted = slot["object_position_m"]
-    require(all(
-        math.isclose(actual, expected, rel_tol=1e-6, abs_tol=1e-12)
-        for actual, expected in zip(position, wanted, strict=True)
-    ), "applied position differs from preregistered pose")
+    require(
+        all(
+            math.isclose(actual, expected, rel_tol=1e-6, abs_tol=1e-12)
+            for actual, expected in zip(position, wanted, strict=True)
+        ),
+        "applied position differs from preregistered pose",
+    )
     yaw = slot["object_yaw_rad"]
     expected_q = (math.cos(yaw / 2), 0, 0, math.sin(yaw / 2))
     sign = 1 if quaternion[0] >= 0 else -1
-    require(all(
-        math.isclose(sign * actual, expected, rel_tol=1e-6, abs_tol=1e-12)
-        for actual, expected in zip(quaternion, expected_q, strict=True)
-    ), "applied yaw or upright orientation differs from preregistered pose")
+    require(
+        all(
+            math.isclose(sign * actual, expected, rel_tol=1e-6, abs_tol=1e-12)
+            for actual, expected in zip(quaternion, expected_q, strict=True)
+        ),
+        "applied yaw or upright orientation differs from preregistered pose",
+    )
     applied_yaw = 2 * math.atan2(sign * quaternion[3], sign * quaternion[0])
     return {
         "condition": slot["condition"],
@@ -180,7 +219,9 @@ def check_pose(
 
 
 def check_sources(
-    role: dict[str, Any], source_index: dict[str, Any], frozen: dict[str, str],
+    role: dict[str, Any],
+    source_index: dict[str, Any],
+    frozen: dict[str, str],
     slot_freeze: dict[str, Any],
 ) -> int:
     require(
@@ -220,7 +261,9 @@ def check_budget(result: dict[str, Any], indexed_counts: dict[str, int]) -> dict
 
 
 def read_index(
-    entry: Path, *, expected: EpisodeExpectation | None = None,
+    entry: Path,
+    *,
+    expected: EpisodeExpectation | None = None,
 ) -> tuple[dict[str, Any], FrozenCase]:
     summary = verify_evidence(entry, expected=expected)
     data = (entry / "evidence-manifest.json").read_bytes()
@@ -234,7 +277,10 @@ def read_index(
 
 
 def read_frame(
-    entry: Path, indexed: dict[str, Any], folder: str, episode_id: str,
+    entry: Path,
+    indexed: dict[str, Any],
+    folder: str,
+    episode_id: str,
 ) -> RGBDObservation:
     case = FrozenCase(entry, indexed, {})
     metadata = case.json(folder + "/observation.json")
@@ -268,15 +314,19 @@ def _legacy_verifier() -> Any:
 
 
 def check_model_evidence(
-    case: FrozenCase, result: dict[str, Any], freeze: dict[str, Any],
+    case: FrozenCase,
+    result: dict[str, Any],
+    freeze: dict[str, Any],
 ) -> dict[str, Any]:
     names = case.files
     started = [
-        name for name in names
+        name
+        for name in names
         if re.fullmatch(r"raw/molmo/request-\d{4}/generation-started.json", name)
     ]
     completed = [
-        name for name in names
+        name
+        for name in names
         if re.fullmatch(r"raw/molmo/request-\d{4}/generation-completed.json", name)
     ]
     for sequence, paths, label in (
@@ -285,7 +335,8 @@ def check_model_evidence(
     ):
         values = [case.json(path)[label] for path in sorted(paths)]
         require(
-            values == list(range(1, len(values) + 1)), f"invalid generation {sequence} evidence",
+            values == list(range(1, len(values) + 1)),
+            f"invalid generation {sequence} evidence",
         )
     require(
         {name.rsplit("/", 1)[0] for name in completed}.issubset(
@@ -295,7 +346,8 @@ def check_model_evidence(
     )
     initial = case.json("raw/molmo/initial.json")
     require(
-        initial["model"] == "allenai/Molmo2-ER" and initial["precision"] == "BF16"
+        initial["model"] == "allenai/Molmo2-ER"
+        and initial["precision"] == "BF16"
         and initial["generation_limit"] == 4
         and initial["asset_manifest_sha256"] == freeze["asset_manifest_sha256"],
         "Molmo model/precision/asset/budget differs from freeze",
@@ -319,23 +371,201 @@ def check_model_evidence(
             "cloud response model differs",
         )
     observed = {
-        "cloud_requests": len(cloud), "cloud_request_reservations": int(request_exists),
-        "local_generations": len(started), "local_generations_completed": len(completed),
+        "cloud_requests": len(cloud),
+        "cloud_request_reservations": int(request_exists),
+        "local_generations": len(started),
+        "local_generations_completed": len(completed),
         "model_loads": loads,
     }
     budget = check_budget(result, observed)
     return budget | {
         "usage": None if response is None else response.get("usage"),
-        "ledger": [{key: row[key] for key in (
-            "provider_version", "status", "serialized_sent_bytes", "serialized_received_bytes",
-            "monetary_cost",
-        )} for row in cloud],
+        "ledger": [
+            {
+                key: row[key]
+                for key in (
+                    "provider_version",
+                    "status",
+                    "serialized_sent_bytes",
+                    "serialized_received_bytes",
+                    "monetary_cost",
+                )
+            }
+            for row in cloud
+        ],
         "billed_cost": None,
     }
 
 
+def check_initialization_prefix(
+    result: dict[str, Any],
+    episode: dict[str, Any],
+    commands: list[dict[str, Any]],
+) -> dict[str, Any]:
+    actions = episode["actions"]
+    require(len(actions) == 1, "initialization prefix must contain only one unreturned action")
+    action = actions[0]
+    step = action["start_step"]
+    checks = episode["safety_checks"]
+    require(
+        type(step) is int
+        and step == action["end_step"] == result["physics_steps"] == episode["physics_steps"]
+        and "controller_return_step" not in action
+        and "controller_result" not in action
+        and action["visual_servo"] == {"terminal_reason": "INITIALIZING"}
+        and action["skill"] == "MOVE_ABOVE"
+        and action["step_id"] == "step-01"
+        and result["executed_actions"] == episode["executed_actions"] == 0
+        and result["worker_status"] == episode["status"] == "FAILED"
+        and result["terminal_reason"] == episode["terminal_reason"] == "ValueError"
+        and result["component_success"] is False
+        and result["physical_success"] is False
+        and len(checks) == 1
+        and checks[0]["step_id"] == action["step_id"]
+        and checks[0]["phase"] == "PRE"
+        and checks[0]["verdict"]["allowed"] is True
+        and [row["type"] for row in commands] == ["hold_current_joints", "emergency_stop"]
+        and all(row["physics_step"] == step and row["accepted"] is True for row in commands),
+        "unreturned initialization prefix lacks pre-motion and bounded-stop evidence",
+    )
+    return action
+
+
+def _read_terminal_sqlite(case: FrozenCase, job: dict[str, Any]) -> dict[str, Any]:
+    raw = case.read("runtime.db")
+    path = case.root / "runtime.db"
+    with closing(sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True)) as db:
+        jobs = db.execute(
+            "SELECT job_id,seed,status,attempt,max_attempts,completed_at,source_tree_hash "
+            "FROM simulation_jobs"
+        ).fetchall()
+        attempts = db.execute(
+            "SELECT job_id,attempt,result,ended_at FROM simulation_job_attempts"
+        ).fetchall()
+        leases = db.execute("SELECT job_id,released_at FROM simulation_job_leases").fetchall()
+    require(
+        len(jobs) == len(attempts) == len(leases) == 1 and path.read_bytes() == raw,
+        "pre-return worker SQLite cardinality or bytes differ",
+    )
+    jid, seed, status, attempt, limit, completed, source = jobs[0]
+    require(
+        (jid, seed, status, attempt, limit, source)
+        == (
+            job["job_id"],
+            job["seed"],
+            "FAILED",
+            1,
+            1,
+            job["source_tree_hash"],
+        )
+        and bool(completed)
+        and attempts[0][:3] == (jid, 1, "FAILED")
+        and bool(attempts[0][3])
+        and leases[0][0] == jid
+        and bool(leases[0][1]),
+        "pre-return worker or lease did not terminate under the one-attempt bound",
+    )
+    return {"status": status, "attempt": attempt, "lease_released": True}
+
+
+def _replay_1803_identity_guard(
+    case: FrozenCase,
+    result: dict[str, Any],
+    action: dict[str, Any],
+    job: dict[str, Any],
+    assignment: dict[str, Any],
+) -> dict[str, Any]:
+    from cloud_edge_robot_arm.vision import servo
+
+    proof_path = (
+        ROUND.parent
+        / "round-harness-fresh-1803-initialization-prefix-20261118"
+        / "prior-and-readback.json"
+    )
+    require(
+        sha256_file(proof_path) == INITIALIZATION_STOP_PROOF_SHA256,
+        "original independent 1803 proof differs",
+    )
+    prior = read(proof_path)
+    require(
+        result["episode_id"] == prior["episode_id"] and job["job_id"] == prior["job_id"],
+        "original independent 1803 proof identity differs",
+    )
+    stage = case.json("planning/planning-stage-02.json")["attempts"][0]["draft"][
+        "observation_evidence"
+    ]
+    folders = ("component/frames/post-cloud", "component/servo-frames/step-01/reference", "after")
+    post_cloud, reference, after = [
+        read_frame(case.root, case.files, path, result["episode_id"]) for path in folders
+    ]
+    for frame in (post_cloud, reference, after):
+        _frame_calibration(frame)
+    for key in ("observation_id", "checksum_sha256", "calibration_version", "sim_time_s"):
+        require(stage[key] == getattr(post_cloud, key), "planned post-cloud RGB-D binding differs")
+    age_ms = (after.captured_at - reference.captured_at).total_seconds() * 1000
+    require(
+        len({frame.observation_id for frame in (post_cloud, reference, after)}) == 3
+        and post_cloud.captured_at <= reference.captured_at <= after.captured_at
+        and post_cloud.sim_time_s == reference.sim_time_s == after.sim_time_s
+        and math.isclose(age_ms, prior["age_range_ms"][1], rel_tol=0, abs_tol=1e-6),
+        "1803 frozen initialization time bounds differ",
+    )
+    tracker = OpenCVTargetTracker._inspect_frozen_geometry(post_cloud, stage, {})
+    family = assignment["marker_family_id"]
+    expected = [stage["resolved_top_grasp_tcp"][axis] for axis in "xyz"]
+    distances = {}
+    for name, frame in (("stage02", post_cloud), ("step01_reference", reference)):
+        grasp, estimate = servo.measure_registered_marker_grasp(frame, family)
+        require(grasp is not None and estimate.status == "OBSERVED", "1803 marker was not observed")
+        distance = math.dist(expected, grasp)
+        require(
+            distance > prior["production_identity_limit_m"]
+            and math.isclose(distance, prior["grasp_difference_m"][name], rel_tol=0, abs_tol=1e-12),
+            "1803 registered grasp identity measurement differs",
+        )
+        distances[name] = distance
+    error_message = prior["both_replay_exceptions"]["message"]
+    initial = Pose.model_validate(action["resolved_step"]["parameters"]["target_pose"])
+    for instant in (reference.captured_at, after.captured_at):
+
+        class HistoricalClock(datetime):
+            recorded_instant = instant
+
+            @classmethod
+            def now(cls, _timezone=None):
+                return cls.recorded_instant
+
+        with patch.object(servo, "datetime", HistoricalClock):
+            try:
+                servo.OpenCVServoFeedback(
+                    reference,
+                    tracker,
+                    stage,
+                    skill=action["skill"],
+                    initial_target=initial,
+                    marker_family_id=family,
+                    verify_mujoco_calibration=True,
+                )
+            except ValueError as exc:
+                require(str(exc) == error_message, "1803 production identity refusal differs")
+            else:
+                raise ValueError("1803 production initialization unexpectedly passed")
+    return {
+        "scope": "FROZEN_RGBD_CONSTRUCTOR_REMEASUREMENT",
+        "proof_sha256": INITIALIZATION_STOP_PROOF_SHA256,
+        "original_worker_exception_detail": None,
+        "replayed_exception": error_message,
+        "replayed_age_range_ms": [0.0, age_ms],
+        "grasp_difference_m": distances,
+        "frame_checksums": [frame.checksum_sha256 for frame in (post_cloud, reference, after)],
+        "terminal_worker_sqlite": _read_terminal_sqlite(case, job),
+    }
+
+
 def check_component(
-    case: FrozenCase, result: dict[str, Any], episode: dict[str, Any],
+    case: FrozenCase,
+    result: dict[str, Any],
+    episode: dict[str, Any],
 ) -> dict[str, Any]:
     legacy = _legacy_verifier()
     actions = episode["actions"]
@@ -349,15 +579,24 @@ def check_component(
         "physical rescoring differs from archived result",
     )
     for key in ("measured_lift_m", "hold_s", "placed_stable_s"):
-        require(math.isclose(
-            getattr(score, key), episode["independent_physical_outcome"][key],
-        ), f"physical rescoring differs at {key}")
+        require(
+            math.isclose(
+                getattr(score, key),
+                episode["independent_physical_outcome"][key],
+            ),
+            f"physical rescoring differs at {key}",
+        )
     commands = case.json("component/commands.json")
     accepted = sum(
         row["type"] == "joint_target" and row.get("accepted") is True for row in commands
     )
     complete = result["component_success"] is True
-    if actions:
+    incomplete_prefix = any("controller_return_step" not in action for action in actions)
+    if incomplete_prefix:
+        check_initialization_prefix(result, episode, commands)
+        require(not score.safety_violation, "initialization prefix physical safety differs")
+        continuous = {"status": "NO_ORDINARY_JOINT_TARGETS", "accepted_joint_targets": 0}
+    elif actions:
         try:
             continuous = legacy.PREVIOUS.check_joint_commands(commands, actions)
         except ValueError as exc:
@@ -383,35 +622,43 @@ def check_component(
         "servo frame index coverage differs from raw folder",
     )
     safety = [row for row in episode["safety_checks"] if row["phase"] == "SERVO"]
-    require(all(
-        row["verdict"]["allowed"] is True and row["observation_id"] in frames for row in safety
-    ), "recorded servo safety evidence is unbound or rejected")
+    require(
+        all(
+            row["verdict"]["allowed"] is True and row["observation_id"] in frames for row in safety
+        ),
+        "recorded servo safety evidence is unbound or rejected",
+    )
     details = []
     for action in actions:
         servo = action.get("visual_servo", {})
         for record in servo.get("visual_samples", []):
             frame = frames.get(record["observation_id"])
             require(
-                frame is not None and frame.checksum_sha256 == record["checksum_sha256"]
+                frame is not None
+                and frame.checksum_sha256 == record["checksum_sha256"]
                 and frame.calibration_version == record["calibration_version"]
                 and frame.sim_time_s == record["sim_time_s"],
                 "accepted servo sample does not bind its archived paired frame",
             )
         latencies = [row["sample_and_ik_s"] for row in servo.get("control_samples", [])]
         require(
-            all(0 <= value <= 0.1 for value in latencies), "accepted servo sample exceeded 100ms",
+            all(0 <= value <= 0.1 for value in latencies),
+            "accepted servo sample exceeded 100ms",
         )
-        details.append({
-            "skill": action["skill"],
-            "step_id": action["step_id"],
-            "start_step": action["start_step"],
-            "controller_return_step": action["controller_return_step"],
-            "continuation": action["continuation"],
-            "vertical_clearance": "vertical_clearance" in action,
-            "control_samples": len(latencies),
-            "max_sample_and_ik_ms": max(latencies, default=0) * 1000,
-            "servo_terminal_reason": servo.get("terminal_reason"),
-        })
+        details.append(
+            {
+                "skill": action["skill"],
+                "step_id": action["step_id"],
+                "start_step": action["start_step"],
+                "controller_return_step": action.get("controller_return_step"),
+                **({"controller_result": None} if incomplete_prefix else {}),
+                "continuation": action["continuation"],
+                "vertical_clearance": "vertical_clearance" in action,
+                "control_samples": len(latencies),
+                "max_sample_and_ik_ms": max(latencies, default=0) * 1000,
+                "servo_terminal_reason": servo.get("terminal_reason"),
+            }
+        )
     marker = None
     if "after/marker-validation.json" in case.files:
         final = read_frame(case.root, case.files, "after", result["episode_id"])
@@ -425,12 +672,16 @@ def check_component(
         )
     if complete:
         require(
-            episode["diagnostic_complete"] is True and score.success
+            episode["diagnostic_complete"] is True
+            and score.success
             and result["worker_status"] == "SUCCEEDED"
             and tuple(action["skill"] for action in actions) == SUCCESS_SKILLS
-            and details[-2]["vertical_clearance"] and not details[-1]["vertical_clearance"]
-            and not details[-2]["continuation"] and details[-1]["continuation"]
-            and marker is not None and marker["status"] == "OBSERVED"
+            and details[-2]["vertical_clearance"]
+            and not details[-1]["vertical_clearance"]
+            and not details[-2]["continuation"]
+            and details[-1]["continuation"]
+            and marker is not None
+            and marker["status"] == "OBSERVED"
             and marker["physics_step"] > details[-1]["controller_return_step"],
             "completed task lacks normal chain, two retreat phases or final marker",
         )
@@ -438,6 +689,8 @@ def check_component(
         "physical": asdict(score),
         "command_continuity": continuous,
         "actions": details,
+        "attempted_actions": len(actions),
+        "executed_actions": result["executed_actions"],
         "servo_frame_count": len(frames),
         "servo_safety_checks": len(safety),
         "terminal_marker_status": None if marker is None else marker["status"],
@@ -445,7 +698,11 @@ def check_component(
 
 
 def audit_slot(
-    root: Path, checkout: Path, freeze: dict[str, Any], freeze_sha: str, slot: dict[str, Any],
+    root: Path,
+    checkout: Path,
+    freeze: dict[str, Any],
+    freeze_sha: str,
+    slot: dict[str, Any],
 ) -> dict[str, Any]:
     identity = slot["id"]
     expected = freeze["slots"][identity]
@@ -472,8 +729,10 @@ def audit_slot(
     )
     if not end_path.exists():
         return prefix | {
-            "audit_status": "LAUNCHED_UNKNOWN", "occupancy": {"cloud": 1, "local": 4},
-            "observed_counters": None, "reason": "no final launch receipt",
+            "audit_status": "LAUNCHED_UNKNOWN",
+            "occupancy": {"cloud": 1, "local": 4},
+            "observed_counters": None,
+            "reason": "no final launch receipt",
         }
     end = read(end_path)
     require(
@@ -500,16 +759,26 @@ def audit_slot(
         },
     }
     if launcher.get("status") == "NOT_STARTED" and not entry.exists():
-        return prefix | {
-            "audit_status": "PRE_DELEGATION_BLOCKED", "occupancy": {"cloud": 0, "local": 0},
-            "launcher_status": launcher["status"],
-        } | exit_fields
+        return (
+            prefix
+            | {
+                "audit_status": "PRE_DELEGATION_BLOCKED",
+                "occupancy": {"cloud": 0, "local": 0},
+                "launcher_status": launcher["status"],
+            }
+            | exit_fields
+        )
     if launcher.get("status") == "INCOMPLETE_UNKNOWN" or not entry.exists():
-        return prefix | {
-            "audit_status": "LAUNCHED_UNKNOWN", "occupancy": {"cloud": 1, "local": 4},
-            "observed_counters": None,
-            "launcher_status": launcher.get("status"),
-        } | exit_fields
+        return (
+            prefix
+            | {
+                "audit_status": "LAUNCHED_UNKNOWN",
+                "occupancy": {"cloud": 1, "local": 4},
+                "observed_counters": None,
+                "launcher_status": launcher.get("status"),
+            }
+            | exit_fields
+        )
     cfg_path = slot_config_path(root, freeze, identity)
     require(sha256_file(cfg_path) == expected["config_sha256"], "slot config diverges from freeze")
     config = load_config(cfg_path)
@@ -539,43 +808,73 @@ def audit_slot(
     job = case.json("worker/job.json")
     runtime_job = case.json("worker/runtime_job.json")
     require(
-        result["source_snapshot_status"] == "COMPLETE" and result["changed_source_paths"] == []
-        and result["episode_id"] == episode["episode_id"] and isinstance(result["episode_id"], str)
-        and result["job_id"] == job["job_id"] and job == runtime_job
-        and job["source_tree_hash"] == role["bundle_hash"] and job["seed"] == slot["seed"]
-        and job["attempt"] == 1 and job["timeout_seconds"] == 120
+        result["source_snapshot_status"] == "COMPLETE"
+        and result["changed_source_paths"] == []
+        and result["episode_id"] == episode["episode_id"]
+        and isinstance(result["episode_id"], str)
+        and result["job_id"] == job["job_id"]
+        and job == runtime_job
+        and job["source_tree_hash"] == role["bundle_hash"]
+        and job["seed"] == slot["seed"]
+        and job["attempt"] == 1
+        and job["timeout_seconds"] == 120
         and job["status"] == result["worker_status"] == runtime_job["status"]
         and job["hardware_write_operations"] == []
-        and job["real_controller_contacted"] is False and job["hardware_motion_observed"] is False
+        and job["real_controller_contacted"] is False
+        and job["hardware_motion_observed"] is False
         and applied == episode["scene_application"]
-        and launcher["status"] == result["status"] and launcher["episode"] == summary["episode"],
+        and launcher["status"] == result["status"]
+        and launcher["episode"] == summary["episode"],
         "worker, raw evidence, and launcher do not bind one frozen slot",
     )
     pose = check_pose(slot, config, case.json("scene-assignment.json"), applied)
     sources = check_sources(
-        role, case.json("source-hashes.json"), freeze["product_sources"], expected,
+        role,
+        case.json("source-hashes.json"),
+        freeze["product_sources"],
+        expected,
     )
     models = check_model_evidence(case, result, freeze)
-    return prefix | {
-        "audit_status": "VERIFIED",
-        "occupancy": {
-            "cloud": models["cloud_request_reservations"], "local": models["local_generations"],
-        },
-        "observed_counters": models,
-        "manifest_sha256": summary["manifest_sha256"],
-        "manifest_file_count": summary["file_count"],
-        "source_files_checked": sources,
-        "role_bundle_sha256": role["bundle_hash"],
-        "pose": pose,
-        "job_id": job["job_id"],
-        "episode_id": result["episode_id"],
-        "worker_status": result["worker_status"],
-        "component_success": result["component_success"],
-        "physical_success": result["physical_success"],
-        "terminal_reason": result["terminal_reason"],
-        "elapsed_s": result["elapsed_s"],
-        "launch_wall_s": end["wall_s"],
-    } | exit_fields | check_component(case, result, episode)
+    component = check_component(case, result, episode)
+    if (
+        identity == INITIALIZATION_STOP_PREDECESSOR
+        and freeze_sha == INITIALIZATION_STOP_FREEZE_SHA256
+        and summary["manifest_sha256"] == INITIALIZATION_STOP_MANIFEST_SHA256
+    ):
+        action = check_initialization_prefix(result, episode, case.json("component/commands.json"))
+        component["initialization_stop_proof"] = _replay_1803_identity_guard(
+            case,
+            result,
+            action,
+            job,
+            case.json("scene-assignment.json"),
+        )
+    return (
+        prefix
+        | {
+            "audit_status": "VERIFIED",
+            "occupancy": {
+                "cloud": models["cloud_request_reservations"],
+                "local": models["local_generations"],
+            },
+            "observed_counters": models,
+            "manifest_sha256": summary["manifest_sha256"],
+            "manifest_file_count": summary["file_count"],
+            "source_files_checked": sources,
+            "role_bundle_sha256": role["bundle_hash"],
+            "pose": pose,
+            "job_id": job["job_id"],
+            "episode_id": result["episode_id"],
+            "worker_status": result["worker_status"],
+            "component_success": result["component_success"],
+            "physical_success": result["physical_success"],
+            "terminal_reason": result["terminal_reason"],
+            "elapsed_s": result["elapsed_s"],
+            "launch_wall_s": end["wall_s"],
+        }
+        | exit_fields
+        | component
+    )
 
 
 def batch_report(rows: list[dict[str, Any]], freeze_sha: str) -> dict[str, Any]:
@@ -622,8 +921,13 @@ def main() -> int:
         try:
             row = audit_slot(root, checkout, freeze, args.freeze_sha256, slot)
         except (OSError, ValueError, KeyError, AssertionError, TypeError) as exc:
-            row = {"id": slot["id"], "seed": slot["seed"], "audit_status": "AUDIT_REJECTED",
-                   "occupancy": {"cloud": 1, "local": 4}, "reason": str(exc)}
+            row = {
+                "id": slot["id"],
+                "seed": slot["seed"],
+                "audit_status": "AUDIT_REJECTED",
+                "occupancy": {"cloud": 1, "local": 4},
+                "reason": str(exc),
+            }
         rows.append(row)
     write_new(output, batch_report(rows, args.freeze_sha256))
     return 2 if any(row["audit_status"] == "AUDIT_REJECTED" for row in rows) else 0

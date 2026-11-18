@@ -67,7 +67,12 @@
 - **受控正常链与开发泛化。** 真实模型参与的 MuJoCo 固定场景修后 2/2 完成，计入原失败为 2/3。四个 development seed 中 1/4 完整完成、2/4 独立物理成功；44103 稳定落位后在横向退避被保护门停止。合并候选只读复算了原七例，3/7 组件完整、4/7 独立物理成功，结果逐字节一致。原试次来自三组源码，历史 6 次云请求、26 次本地生成，账单未知。[真实模型报告](../artifacts/research/process/20261118-real-model-harness/report.md) · [七例复算回执](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/native-seven-verification.md)
 - **动作资格与研究门禁。** R595 独立读回 3,389 帧，完整动作和来源资格仍不足，合格组为 0/9，九组分数与联合界均未取得。其后登记的教师协议仍零释放。B0 selection 待首个完整标定组、原生三处消费、Memory/SQLite 正链及后续前置齐备，合格后才进入独立基础先导和 INITIAL。正式研究为 `NOT_ACCEPTED`，实机为 `NOT_STARTED`。[动作资格及 B0 审计](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/qualification.md)
 
-合并候选本轮仅使用原件离线诊断和软件验证。用户后续有条件授权的四例真实开发位姿属下一轮，须经独立方案、预算和运行资源准入后执行。公开交付须先核对已有交付边界，完整批量 raw、运行数据库、模型权重、SDK 和凭据按原边界管理。后续阶段条件与原实验分组继续适用。
+- **同版四例开发验证。** 在冻结提交 `5103e7f4` 上，预登记的 2026111801–04 均以真实模型在 MuJoCo 中运行一次。1802 完成抓放并稳定 9.475 秒。1801 在放置时触发 100 ms 时限，1803 在初始位置身份核验阶段停止，1804 在初始规划时请求更多观测。组件完成与独立物理成功均为 1/4，使用 3 次付费云请求、14 次本地生成、4 次加载，零重试，账单金额未知。[分例结果与核对](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/phase-summary.md)
+- **冻结软件验证。** `5103e7f4` 整库 7,259 项，7,225 通过、33 跳过、1 项线程清理报错。该节点随后同版独占通过，原错误保留。仓外安装和历史固定场景回放通过，回放独立物理成功。[整库与安装报告](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/regression-and-install.md)
+
+开发分支公开交付包括范围内的实现历史、测试、计划和小型证据。完整批量 raw、运行数据库、模型权重、SDK 和凭据在本机保留。后续阶段沿用独立实验分组和动作资格条件。[交付范围](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/public-delivery.md)
+
+下一步以同版本成功例 1802 为对照，依次追踪 1803 的抓取点坐标差异、1804 的顶面边界极值及 1801 的多视图耗时。三个问题均有已冻结原件，可先用零新增模型调用完成定位。[下一阶段诊断计划](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/next-steps.md)
 
 | 研究项 | 保持的目标与比较规则 |
 | --- | --- |

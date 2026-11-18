@@ -173,6 +173,58 @@ def test_manifest_is_mandatory(tmp_path):
         audit.read_index(tmp_path)
 
 
+def _initialization_prefix():
+    result = {
+        "executed_actions": 0,
+        "physics_steps": 120,
+        "worker_status": "FAILED",
+        "component_success": False,
+        "physical_success": False,
+        "terminal_reason": "ValueError",
+    }
+    action = {
+        "step_id": "step-01",
+        "skill": "MOVE_ABOVE",
+        "start_step": 120,
+        "end_step": 120,
+        "visual_servo": {"terminal_reason": "INITIALIZING"},
+    }
+    episode = {
+        "actions": [action],
+        "physics_steps": 120,
+        "executed_actions": 0,
+        "status": "FAILED",
+        "terminal_reason": "ValueError",
+        "safety_checks": [{"step_id": "step-01", "phase": "PRE", "verdict": {"allowed": True}}],
+    }
+    commands = [
+        {"type": kind, "physics_step": 120, "accepted": True}
+        for kind in ("hold_current_joints", "emergency_stop")
+    ]
+    return result, episode, commands
+
+
+def test_precontroller_failure_preserves_zero_motion_and_no_return():
+    result, episode, commands = _initialization_prefix()
+    assert audit.check_initialization_prefix(result, episode, commands) is episode["actions"][0]
+
+
+@pytest.mark.parametrize("alteration", ["ordinary_command", "advance", "fake_return", "bad_pre"])
+def test_incomplete_action_does_not_suppress_an_unseen_control_span(alteration):
+    result, episode, commands = _initialization_prefix()
+    action = episode["actions"][0]
+    if alteration == "ordinary_command":
+        commands.append({"type": "joint_target", "physics_step": 120, "accepted": True})
+    elif alteration == "advance":
+        action["end_step"] += 1
+    elif alteration == "fake_return":
+        action["controller_result"] = {"success": True}
+    else:
+        episode["safety_checks"][0]["verdict"]["allowed"] = False
+    with pytest.raises(ValueError, match="initialization prefix"):
+        audit.check_initialization_prefix(result, episode, commands)
+
+
 @pytest.mark.parametrize(
     ("success", "reason", "codes", "signal", "stop_reason", "allowed"),
     [

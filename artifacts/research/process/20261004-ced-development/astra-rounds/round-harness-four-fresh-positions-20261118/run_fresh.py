@@ -18,6 +18,11 @@ from typing import Any
 
 from verify_fresh import (
     FREEZE_SCHEMA,
+    INITIALIZATION_STOP_FREEZE_SHA256,
+    INITIALIZATION_STOP_MANIFEST_SHA256,
+    INITIALIZATION_STOP_PREDECESSOR,
+    INITIALIZATION_STOP_PROOF_SHA256,
+    INITIALIZATION_STOP_SUCCESSOR,
     PREALLOCATION_SHA256,
     ROOT,
     ROUND,
@@ -623,6 +628,65 @@ def _contained_stops(row: dict[str, Any]) -> bool:
     return all(type(code) is int and code == expected for code in codes)
 
 
+def _initialization_successor_allowed(row: dict[str, Any], successor: str, freeze_sha: str) -> bool:
+    proof = row.get("initialization_stop_proof", {})
+    counters = row.get("observed_counters", {})
+    return (
+        row.get("id") == INITIALIZATION_STOP_PREDECESSOR
+        and row.get("seed") == 2026111803
+        and successor == INITIALIZATION_STOP_SUCCESSOR
+        and freeze_sha == INITIALIZATION_STOP_FREEZE_SHA256
+        and row.get("manifest_sha256") == INITIALIZATION_STOP_MANIFEST_SHA256
+        and row.get("audit_status") == "VERIFIED"
+        and row.get("worker_status") == "FAILED"
+        and row.get("job_id") == "job-8d993c966b2942bc"
+        and row.get("episode_id") == "9f89e8c7f1ad4f72b5c0890f3df3a41b"
+        and row.get("terminal_reason") == "ValueError"
+        and row.get("component_success") is False
+        and row.get("physical_success") is False
+        and row.get("physical", {}).get("safety_violation") is False
+        and row.get("attempted_actions") == 1
+        and row.get("executed_actions") == 0
+        and row.get("command_continuity", {}).get("accepted_joint_targets") == 0
+        and all(
+            type(row.get(key)) is int and row[key] == 2
+            for key in ("returncode", "wrapper_exit_code", "episode_exit_code")
+        )
+        and "signal" in row
+        and row["signal"] is None
+        and "wrapper_stop_reason" in row
+        and row["wrapper_stop_reason"] is None
+        and isinstance(counters, dict)
+        and counters.get("cloud_request_reservations") == 1
+        and counters.get("cloud_requests") == 1
+        and counters.get("local_generations") == 4
+        and counters.get("local_generations_completed") == 4
+        and counters.get("model_loads") == 1
+        and counters.get("usage", {}).get("total_tokens") == 709
+        and "billed_cost" in counters
+        and counters["billed_cost"] is None
+        and proof.get("proof_sha256") == INITIALIZATION_STOP_PROOF_SHA256
+        and proof.get("replayed_exception")
+        == "servo initial target/registered marker identity unavailable"
+        and proof.get("terminal_worker_sqlite")
+        == {
+            "status": "FAILED",
+            "attempt": 1,
+            "lease_released": True,
+        }
+    )
+
+
+def _verify_gpu_release(lock_path: Path) -> None:
+    with lock_path.open("r+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        running = subprocess.check_output(
+            ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader"],
+            text=True,
+        )
+        require(not running.strip(), "GPU compute occupancy persists after 1803")
+
+
 def _require_registered_locations(checkout: Path, raw_root: Path) -> None:
     require(
         checkout == REGISTERED_CHECKOUT and raw_root == REGISTERED_RAW_ROOT,
@@ -648,11 +712,21 @@ def _launch_locked(args: argparse.Namespace, raw_root: Path, checkout: Path) -> 
     )
     slots = allocation["episodes"]
     check_slot_directories(raw_root / "native", slots)
+    exact_predecessor = False
+    used_cloud = used_local = 0
     for slot in slots:
         if slot["seed"] == args.seed:
             break
         previous = audit_slot(raw_root, checkout, freeze, args.freeze_sha256, slot)
-        require(_contained_stops(previous), "preceding slot is unresolved or out of policy")
+        gate = _initialization_successor_allowed(
+            previous,
+            f"fresh-{args.seed}",
+            args.freeze_sha256,
+        )
+        require(gate or _contained_stops(previous), "preceding slot is unresolved or out of policy")
+        exact_predecessor |= gate
+        used_cloud += previous["occupancy"]["cloud"]
+        used_local += previous["occupancy"]["local"]
     else:
         raise ValueError("unknown slot seed")
     identity = slot["id"]
@@ -675,6 +749,9 @@ def _launch_locked(args: argparse.Namespace, raw_root: Path, checkout: Path) -> 
         not any(os.path.lexists(path) for path in (output, start_path, end_path, stdout, stderr)),
         "slot already claimed or contains raw evidence",
     )
+    require(used_cloud + 1 <= 4 and used_local + 4 <= 16, "batch model budget would be exceeded")
+    if exact_predecessor:
+        _verify_gpu_release(Path(resources["--gpu-lock"]))
     history_receipt = None
     if slot == slots[0]:
         history = check_history(
@@ -712,6 +789,11 @@ def _launch_locked(args: argparse.Namespace, raw_root: Path, checkout: Path) -> 
             "started_at": started,
             "attempt": 1,
             "launcher": str(args.cli),
+            **(
+                {"verified_predecessor_gate": INITIALIZATION_STOP_PROOF_SHA256}
+                if exact_predecessor
+                else {}
+            ),
             "immediate_prelaunch_history_sha256": (
                 None if history_receipt is None else sha256_file(history_receipt)
             ),

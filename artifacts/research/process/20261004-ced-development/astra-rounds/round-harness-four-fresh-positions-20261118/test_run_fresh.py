@@ -55,6 +55,89 @@ def test_history_rejects_an_existing_new_slot_seed(tmp_path):
         runner.check_history((tmp_path,), preregistration["episodes"])
 
 
+def _verified_initialization_stop():
+    return {
+        "id": runner.INITIALIZATION_STOP_PREDECESSOR,
+        "seed": 2026111803,
+        "manifest_sha256": runner.INITIALIZATION_STOP_MANIFEST_SHA256,
+        "audit_status": "VERIFIED",
+        "worker_status": "FAILED",
+        "job_id": "job-8d993c966b2942bc",
+        "episode_id": "9f89e8c7f1ad4f72b5c0890f3df3a41b",
+        "terminal_reason": "ValueError",
+        "component_success": False,
+        "physical_success": False,
+        "physical": {"safety_violation": False},
+        "attempted_actions": 1,
+        "executed_actions": 0,
+        "command_continuity": {"accepted_joint_targets": 0},
+        "returncode": 2,
+        "wrapper_exit_code": 2,
+        "episode_exit_code": 2,
+        "signal": None,
+        "wrapper_stop_reason": None,
+        "observed_counters": {
+            "cloud_request_reservations": 1,
+            "cloud_requests": 1,
+            "local_generations": 4,
+            "local_generations_completed": 4,
+            "model_loads": 1,
+            "usage": {"total_tokens": 709},
+            "billed_cost": None,
+        },
+        "initialization_stop_proof": {
+            "proof_sha256": runner.INITIALIZATION_STOP_PROOF_SHA256,
+            "replayed_exception": "servo initial target/registered marker identity unavailable",
+            "terminal_worker_sqlite": {"status": "FAILED", "attempt": 1, "lease_released": True},
+        },
+    }
+
+
+def test_exact_initialization_evidence_can_only_release_registered_successor():
+    row = _verified_initialization_stop()
+    assert not runner._contained_stops(row)
+    assert runner._initialization_successor_allowed(
+        row,
+        runner.INITIALIZATION_STOP_SUCCESSOR,
+        runner.INITIALIZATION_STOP_FREEZE_SHA256,
+    )
+    assert not runner._initialization_successor_allowed(
+        row,
+        runner.INITIALIZATION_STOP_PREDECESSOR,
+        runner.INITIALIZATION_STOP_FREEZE_SHA256,
+    )
+    assert not runner._initialization_successor_allowed(
+        row,
+        runner.INITIALIZATION_STOP_SUCCESSOR,
+        "0" * 64,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("seed", 2026111802),
+        ("manifest_sha256", "a" * 64),
+        ("job_id", "another-job"),
+        ("episode_id", "other-episode"),
+        ("episode_exit_code", 1),
+        ("signal", 15),
+        ("window", "TIMEOUT"),
+        ("executed_actions", 1),
+        ("observed_counters", {}),
+        ("initialization_stop_proof", {"replayed_exception": "other ValueError"}),
+    ],
+)
+def test_altered_1803_evidence_does_not_release_following_slot(field, value):
+    row = _verified_initialization_stop()
+    row["wrapper_stop_reason" if field == "window" else field] = value
+    assert not runner._initialization_successor_allowed(
+        row,
+        runner.INITIALIZATION_STOP_SUCCESSOR,
+        runner.INITIALIZATION_STOP_FREEZE_SHA256,
+    )
+
+
 @pytest.fixture
 def own_dry_prepare(tmp_path, monkeypatch):
     root = tmp_path / "results" / "batch"
