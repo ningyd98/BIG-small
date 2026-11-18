@@ -26,8 +26,8 @@ from cloud_edge_robot_arm.vision.observations import RGBDObservation
 from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerRegistration, detect_pose_marker
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs/research/ced_marker_registration_v4.yaml"
-CONFIG_SHA256 = "258725fd7baa73a416b69addc3c9b3dcb2eca9a4158ee05153cad64047123045"
+CONFIG = ROOT / "configs/research/ced_marker_registration_v5.yaml"
+CONFIG_SHA256 = "64d111c52a08636ee9b3cdae9f874d4a932ed98d357be7cde501279d088216e9"
 PROCESS = ROOT / "artifacts/research/process/20261004-ced-development"
 STATIC = PROCESS / "t7b-pose-marker-color/actual-capture-640/frame/observation-full.json"
 INITIAL = (

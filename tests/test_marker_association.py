@@ -22,8 +22,10 @@ from cloud_edge_robot_arm.contracts.models import TaskTarget
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs/research/ced_marker_registration_v4.yaml"
-CONFIG_SHA256 = "258725fd7baa73a416b69addc3c9b3dcb2eca9a4158ee05153cad64047123045"
+CONFIG = ROOT / "configs/research/ced_marker_registration_v5.yaml"
+CONFIG_SHA256 = "64d111c52a08636ee9b3cdae9f874d4a932ed98d357be7cde501279d088216e9"
+FROZEN_V4 = ROOT / "configs/research/ced_marker_registration_v4.yaml"
+FROZEN_V4_SHA256 = "258725fd7baa73a416b69addc3c9b3dcb2eca9a4158ee05153cad64047123045"
 FROZEN_V3 = ROOT / "configs/research/ced_marker_registration_v3.yaml"
 FROZEN_V3_SHA256 = "4c94107e2c9750d576f220a660e5a7abb6b896a64833c6844b98db464511920e"
 FROZEN_V2 = ROOT / "configs/research/ced_marker_registration_v2.yaml"
@@ -112,7 +114,7 @@ def test_v3_registration_changes_only_identity_and_reviewed_source_bindings():
 def test_v4_registration_refreshes_only_identity_and_current_source_pins():
     module = api()
     previous = yaml.safe_load(FROZEN_V3.read_text())
-    current = yaml.safe_load(CONFIG.read_text())
+    historical = yaml.safe_load(FROZEN_V4.read_text())
     expected = {
         **previous,
         "registration_id": "ced-marker-color-v2-object-development-v4",
@@ -126,21 +128,57 @@ def test_v4_registration_refreshes_only_identity_and_current_source_pins():
             ),
         },
     }
-    assert current == expected
-    assert len(current["registration_source_hashes"]) == 6
-    assert current["admission_scope"] == "DEVELOPMENT_ONLY"
-    assert hashlib.sha256(CONFIG.read_bytes()).hexdigest() == CONFIG_SHA256
-    successor = module.load_marker_registration(
-        CONFIG, expected_registry_sha256=CONFIG_SHA256, root=ROOT,
-    )
-    frozen = module.MarkerObjectRegistration.from_payload(previous, root=ROOT)
-    assert successor.sources_valid() and not frozen.sources_valid()
-    assert successor.digest() != frozen.digest()
-    for path, mismatched_sha in [(CONFIG, FROZEN_V3_SHA256), (FROZEN_V3, CONFIG_SHA256)]:
+    assert historical == expected
+    assert len(historical["registration_source_hashes"]) == 6
+    assert historical["admission_scope"] == "DEVELOPMENT_ONLY"
+    assert hashlib.sha256(FROZEN_V4.read_bytes()).hexdigest() == FROZEN_V4_SHA256
+    v4 = module.MarkerObjectRegistration.from_payload(historical, root=ROOT)
+    v3 = module.MarkerObjectRegistration.from_payload(previous, root=ROOT)
+    assert not v4.sources_valid() and not v3.sources_valid()
+    assert v4.digest() != v3.digest()
+    for path, mismatched_sha in [(FROZEN_V4, FROZEN_V3_SHA256), (FROZEN_V3, FROZEN_V4_SHA256)]:
         with pytest.raises(ValueError, match="registry"):
             module.load_marker_registration(
                 path, expected_registry_sha256=mismatched_sha, root=ROOT,
             )
+
+
+def test_v5_registration_matches_current_detector_and_preserves_v4_scope():
+    module = api()
+    previous = yaml.safe_load(FROZEN_V4.read_text())
+    current = yaml.safe_load(CONFIG.read_text())
+    source = "src/cloud_edge_robot_arm/vision/pose_markers.py"
+    expected = {
+        **previous,
+        "registration_id": "ced-marker-color-v2-object-development-v5",
+        "registration_source_hashes": {
+            **previous["registration_source_hashes"],
+            source: "acd89f0044fa7df44c1384692eef55c61d6280377a36e20e2649336669dff139",
+        },
+    }
+    assert current == expected
+    assert len(current["registration_source_hashes"]) == 6
+    assert current["admission_scope"] == "DEVELOPMENT_ONLY"
+    assert hashlib.sha256(CONFIG.read_bytes()).hexdigest() == CONFIG_SHA256
+    registration = module.load_marker_registration(
+        CONFIG, expected_registry_sha256=CONFIG_SHA256, root=ROOT,
+    )
+    assert registration.sources_valid()
+    with pytest.raises(ValueError, match="source/asset binding"):
+        module.load_marker_registration(
+            FROZEN_V4, expected_registry_sha256=FROZEN_V4_SHA256, root=ROOT,
+        )
+
+
+@pytest.mark.parametrize("direction", ["v4_file", "v5_file"])
+def test_v4_v5_registry_sha_cannot_be_reused(direction):
+    paths = {
+        "v4_file": (FROZEN_V4, CONFIG_SHA256),
+        "v5_file": (CONFIG, FROZEN_V4_SHA256),
+    }
+    path, mismatched_sha = paths[direction]
+    with pytest.raises(ValueError, match="registry"):
+        api().load_marker_registration(path, expected_registry_sha256=mismatched_sha, root=ROOT)
 
 
 def inputs(path=STATIC):
