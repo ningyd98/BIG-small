@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import importlib
+import inspect
 import io
 import json
 import threading
@@ -58,16 +59,63 @@ class RGBPointFixture:
 
 
 @pytest.mark.parametrize(
-    "through_entry,after_capture_fails,scene_split,servo",
-    [(False, False, None, False), (True, False, None, False),
-     (False, True, None, False), (True, False, "held-out", False),
-     (True, False, None, True)],
+    "through_entry,after_capture_fails,scene_split,servo,fault",
+    [
+        (False, False, None, False, None),
+        (True, False, None, False, None),
+        (False, True, None, False, None),
+        (True, False, "held-out", False, None),
+        (True, False, None, True, None),
+        pytest.param(True, True, None, False, "before", id="before-and-after-fail"),
+        pytest.param(True, False, None, False, "initialize", id="outer-initialize-fails"),
+        pytest.param(True, False, None, True, "servo", id="servo-initialize-fails"),
+    ],
 )
 def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical_evidence(
-    tmp_path, monkeypatch, through_entry, after_capture_fails, scene_split, servo
+    tmp_path, monkeypatch, through_entry, after_capture_fails, scene_split, servo, fault
 ):
     from cloud_edge_robot_arm.model_control.service import ModelControlService
     from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
+    from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+    from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+
+    calls = []
+    original_stop = MuJoCoSkillRobot.safe_stop
+    original_shutdown = MuJoCoPhysicsBackend.shutdown
+
+    def safe_stop(robot, **kwargs):
+        calls.append("safe_stop")
+        return original_stop(robot, **kwargs)
+
+    def shutdown(backend):
+        calls.append("shutdown")
+        return original_shutdown(backend)
+
+    class UnprintableValueError(ValueError):
+        def __str__(self):
+            raise AssertionError("unexpected formatting of an exception")
+
+        def __getattribute__(self, name):
+            if name in {"args", "__traceback__"}:
+                raise AssertionError("unexpected overridden exception attribute access")
+            return super().__getattribute__(name)
+
+    sensitive = "Bearer EXCEPTION_SECRET_SENTINEL at /private/EXCEPTION_PATH_SENTINEL"
+
+    def fail_initialization(*args, **kwargs):
+        raise ValueError("model_xml and model_parameters are mutually exclusive")
+
+    def fail_servo_feedback(*args, **kwargs):
+        raise ValueError("servo MuJoCo calibration does not match frame intrinsics and pose")
+
+    monkeypatch.setattr(MuJoCoSkillRobot, "safe_stop", safe_stop)
+    monkeypatch.setattr(MuJoCoPhysicsBackend, "shutdown", shutdown)
+    if fault == "initialize":
+        monkeypatch.setattr(MuJoCoPhysicsBackend, "initialize", fail_initialization)
+    if fault == "servo":
+        monkeypatch.setattr(
+            "cloud_edge_robot_arm.vision.servo.OpenCVServoFeedback", fail_servo_feedback,
+        )
 
     monkeypatch.setenv("MUJOCO_GL", "egl")
     module = importlib.import_module("cloud_edge_robot_arm.research.sol_molmo_single_episode")
@@ -77,6 +125,8 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
         original_save = capture.save_captured_frame
 
         def save_frame(captured, destination):
+            if destination.name == "before" and fault == "before":
+                raise UnprintableValueError(sensitive)
             if destination.name == "after":
                 raise RuntimeError("injected after-capture archive failure")
             return original_save(captured, destination)
@@ -171,10 +221,75 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
         )
         result = {"executed_actions": 0, "model_calls": 0}
         module.run_worker_episode(assignment, output, result, planner=planner, binding=binding)
+    episode_path = output / "component/episode.json"
+    episode = json.loads(episode_path.read_text())
+    assert episode == result["outcome"]
+    assert calls == (
+        ["safe_stop", "shutdown"] if fault in {"before", "servo"} or scene_split
+        else ["shutdown"]
+    )
+    if fault:
+        assert episode["status"] == "FAILED"
+        assert episode["executed_actions"] == 0
+        assert episode["cloud_requests"] == len(requests)
+        assert episode["local_generations"] == points.calls
+        assert episode["model_calls"] == len(requests) + points.calls
+        if fault == "before":
+            assert episode["terminal_reason"] == "UnprintableValueError"
+            assert episode["physical_success"] is False
+            assert result["worker_status"] == "FAILED"
+            assert len(requests) == points.calls == 0
+        elif fault == "initialize":
+            assert episode["terminal_reason"] == "ValueError"
+            assert episode["physical_success"] is None
+            assert result["worker_status"] == "FAILED"
+            assert len(requests) == points.calls == 0
+        else:
+            assert episode["terminal_reason"] == "ValueError"
+            assert episode["physical_success"] is False
+            assert result["worker_status"] == "FAILED"
+            assert len(requests) == 1 and points.calls == 4
+        diagnostic = episode["exception"]
+        if fault == "before":
+            assert diagnostic["type"] == "UnprintableValueError"
+            assert diagnostic["phase"] == "INITIALIZATION"
+            assert diagnostic["message"] == "[redacted]"
+            assert diagnostic["traceback"][-1]["function"] == "save_frame"
+            assert episode["after_capture_error_type"] == "RuntimeError"
+            after, = episode["secondary_exceptions"]
+            assert after["type"] == "RuntimeError" and after["phase"] == "AFTER_CAPTURE"
+            assert "EXCEPTION_SECRET_SENTINEL" not in episode_path.read_text()
+            assert "EXCEPTION_PATH_SENTINEL" not in episode_path.read_text()
+        elif fault == "initialize":
+            assert diagnostic["type"] == "ValueError"
+            assert diagnostic["phase"] == "INITIALIZATION"
+            assert diagnostic["message"] == "model_xml and model_parameters are mutually exclusive"
+            assert diagnostic["traceback"][-1]["line"] == (
+                inspect.getsourcelines(fail_initialization)[1] + 1
+            )
+            assert diagnostic["traceback"][-1]["function"] == "fail_initialization"
+        else:
+            assert diagnostic["type"] == "ValueError"
+            assert diagnostic["phase"] == "SERVO_INITIALIZATION"
+            assert diagnostic["message"] == (
+                "servo MuJoCo calibration does not match frame intrinsics and pose"
+            )
+            assert diagnostic["step_id"] == "step-01" and diagnostic["skill"] == "MOVE_ABOVE"
+            assert diagnostic["traceback"][-1]["line"] == (
+                inspect.getsourcelines(fail_servo_feedback)[1] + 1
+            )
+            assert diagnostic["traceback"][-1]["function"] == "fail_servo_feedback"
+        assert diagnostic["traceback"][-1]["file"] == "tests/test_sol_molmo_worker_integration.py"
+        assert diagnostic["traceback"][0]["function"] == "run_component_episode"
+        assert "locals" not in diagnostic["traceback"][-1]
+        return
     if scene_split:
         assert requests == [] and points.calls == 1
         assert result["executed_actions"] == 0
         assert result["terminal_reason"] == "COMPONENT_INITIAL_PLANNING_REJECTED"
+        assert episode["exception"]["type"] == "ComponentStopped"
+        assert episode["exception"]["message"] == "COMPONENT_INITIAL_PLANNING_REJECTED"
+        assert episode["exception"]["phase"] == "PLANNING"
         assert result["outcome"]["native_action_qualification"] == "UNKNOWN_NOT_GRANTED"
         applied = json.loads((output / "component/scene-application.json").read_text())
         desired = assignment["component_scene"]
@@ -216,6 +331,7 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
         assert outcome["independent_physical_outcome"]["placed_stable_s"] >= 1.0
         assert outcome["diagnostic_complete"] is True, outcome.get("terminal_reason")
         assert outcome["terminal_reason"] is None
+        assert "exception" not in episode
         assert outcome["actions"][-1]["skill"] == "RETREAT"
         assert outcome["marker_frames"][-1]["status"] == "OBSERVED"
         return
@@ -235,9 +351,13 @@ def test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical
         assert result["terminal_reason"] == "AFTER_CAPTURE_FAILED:RuntimeError"
         assert not result["outcome"]["diagnostic_complete"]
         assert result["outcome"]["after_capture_error_type"] == "RuntimeError"
+        assert episode["exception"]["phase"] == "AFTER_CAPTURE"
+        assert episode["exception"]["type"] == "RuntimeError"
+        assert "secondary_exceptions" not in episode
     else:
         assert result["worker_status"] == "SUCCEEDED"
         assert result["status"] == "COMPONENTS_COMPLETED"
+        assert "exception" not in episode
         assert (output / "after/marker-validation.json").is_file()
         endpoint = json.loads((output / "after/marker-validation.json").read_text())
         assert endpoint["status"] == "OBSERVED", endpoint

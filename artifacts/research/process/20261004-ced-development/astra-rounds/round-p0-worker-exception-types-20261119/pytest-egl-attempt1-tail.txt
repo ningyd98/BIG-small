@@ -1,0 +1,20 @@
+            )
+            result = {"executed_actions": 0, "model_calls": 0}
+            module.run_worker_episode(assignment, output, result, planner=planner, binding=binding)
+        episode_path = output / "component/episode.json"
+        episode = json.loads(episode_path.read_text())
+        assert episode == result["outcome"]
+>       assert calls == (
+            ["safe_stop", "shutdown"] if fault in {"before", "servo"} or scene_split
+            else ["shutdown"]
+        )
+E       AssertionError: assert ['safe_stop', 'shutdown'] == ['shutdown']
+E         
+E         At index 0 diff: 'safe_stop' != 'shutdown'
+E         Left contains one more item: 'shutdown'
+E         Use -v to get more diff
+
+tests/test_sol_molmo_worker_integration.py:227: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_sol_molmo_worker_integration.py::test_real_worker_runs_explicit_component_diagnostic_with_safety_and_physical_evidence[True-False-None-True-None]
+1 failed, 34 passed in 69.91s (0:01:09)

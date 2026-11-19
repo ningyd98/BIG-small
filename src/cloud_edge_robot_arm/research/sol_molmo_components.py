@@ -7,10 +7,11 @@ import io
 import json
 import math
 import time
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from types import TracebackType
 from typing import Any, Literal, cast
 
 import cv2
@@ -41,10 +42,95 @@ _SETTLE_STEPS = dict(
     RELEASE=288,
     RETREAT=24,
 )
+_SOURCE_ROOT = Path(__file__).resolve().parents[3]
+_PUBLIC_STOP_REASONS = frozenset({
+    "CAMERA_POSITIONING_REQUIRES_CURRENT_MARKER",
+    "CLOUD_VISION_FALLBACK_POLICY_CHANGED",
+    "COMPONENT_FRESH_PLANNING_REJECTED",
+    "COMPONENT_GRASP_FEEDBACK_LOST",
+    "COMPONENT_INITIAL_PLANNING_REJECTED",
+    "COMPONENT_LEASE_SOURCE_INVALID",
+    "COMPONENT_PHYSICS_BUDGET_EXHAUSTED",
+    "COMPONENT_TASK_DEADLINE_OR_LEASE_FAILURE",
+    "CURRENT_COMPONENT_FRAME_EXPIRED",
+    "CURRENT_GRASP_GEOMETRY_UNAVAILABLE",
+    "CURRENT_MARKER_OBJECT_NOT_UPRIGHT",
+    "CURRENT_RGBD_IDENTITY_NOT_UNIQUE_OR_VISIBLE",
+    "CURRENT_RGBD_SUPPORT_DEPTH_UNAVAILABLE",
+    "CURRENT_SERVO_DESTINATION_GEOMETRY_UNAVAILABLE",
+    "HARD_FINGER_LIMIT",
+    "HARD_JOINT_LIMIT",
+    "HARD_JOINT_VELOCITY",
+    "HARD_TCP_WORKSPACE",
+    "ROBOT_HARD_SAFETY_STOP",
+    "SAFETY_SHIELD_POST_REJECTED_OR_LIMITED",
+    "SAFETY_SHIELD_PRE_REJECTED_OR_LIMITED",
+    "SAFETY_SHIELD_SERVO_REJECTED_OR_LIMITED",
+    "SERVO_CAMERA_SAMPLE_FRAME_TIME",
+    "SERVO_CAMERA_SAMPLE_PHYSICS_CHANGED",
+    "SERVO_CAMERA_SAMPLE_UNEXPECTED_COMMAND",
+})
+_PUBLIC_VALUE_ERRORS = frozenset({
+    "model_xml and model_parameters are mutually exclusive",
+    "servo MuJoCo calibration does not match frame intrinsics and pose",
+    "servo initial target/registered marker identity unavailable",
+    "servo MuJoCo calibration verification must be explicitly boolean",
+    "servo bounds must be finite and positive",
+    "servo registered object is not upright",
+    "unsupported visual servo skill",
+    "visual servo currently requires the MuJoCo development source",
+})
 
 
 class ComponentStopped(RuntimeError):
     """明确停止原因，不复用或升级旧帧和未知证书。"""
+
+
+def _record_component_exception(
+    row: dict[str, Any], error: Exception, phase: str, step: tuple[str, str] | None = None
+) -> None:
+    """Archive the first failure before cleanup, using code locations and approved text only."""
+    # A best-effort diagnostic must never interrupt stopping, evaluation or shutdown.
+    with suppress(Exception):
+        error_type = type(error)
+        allowed = {
+            ComponentStopped: _PUBLIC_STOP_REASONS,
+            RuntimeError: frozenset({"MuJoCo backend is not initialized"}),
+            ValueError: _PUBLIC_VALUE_ERRORS,
+        }.get(error_type, frozenset())
+        # Read the base exception's fields directly, even for exceptions with custom formatting.
+        args: tuple[object, ...] = vars(BaseException)["args"].__get__(error, BaseException)
+        message = (
+            args[0] if len(args) == 1 and type(args[0]) is str and args[0] in allowed
+            else "[redacted]"
+        )
+        frames = []
+        trace: TracebackType | None = vars(BaseException)["__traceback__"].__get__(
+            error, BaseException,
+        )
+        while trace is not None:
+            frame = trace.tb_frame
+            code = frame.f_code
+            path = Path(code.co_filename)
+            if path.is_relative_to(_SOURCE_ROOT / "src") or path.is_relative_to(
+                _SOURCE_ROOT / "tests"
+            ):
+                source = path.relative_to(_SOURCE_ROOT).as_posix()
+            else:
+                module = frame.f_globals.get("__name__")
+                source = module if isinstance(module, str) and all(
+                    part.isidentifier() for part in module.split(".")
+                ) else "<external>"
+            frames.append({"file": source, "function": code.co_name, "line": trace.tb_lineno})
+            trace = trace.tb_next
+        diagnostic = {
+            "type": error_type.__name__, "message": message, "phase": phase, "traceback": frames,
+            **({"step_id": step[0], "skill": step[1]} if step is not None else {}),
+        }
+        if "exception" in row:
+            row.setdefault("secondary_exceptions", []).append(diagnostic)
+        else:
+            row["exception"] = diagnostic
 
 
 def component_servo_settings(
@@ -635,6 +721,8 @@ def run_component_episode(
         if planner.grounded.cloud_vision_fallback is not cloud_vision_fallback:
             raise ComponentStopped("CLOUD_VISION_FALLBACK_POLICY_CHANGED")
 
+    phase = "INITIALIZATION"
+    current_step: tuple[str, str] | None = None
     try:
         active()
         backend.initialize(config)
@@ -716,6 +804,7 @@ def run_component_episode(
 
             try:
                 before = frame("before")
+                phase = "PLANNING"
 
                 def plan(observation: RGBDObservation, name: str) -> Any:
                     return bounded_owner_model_call(
@@ -776,6 +865,8 @@ def run_component_episode(
                         (original, None, None) for original in contract.steps
                     ]
                     for index, (original, frozen_step, inherited_start) in enumerate(pending):
+                        phase = "PRE"
+                        current_step = original.step_id, original.skill.value
                         active()
                         if servo_enabled and original.skill.value == "PLACE" and camera_views:
                             # Reacquire the measured overview before descending,
@@ -876,6 +967,7 @@ def run_component_episode(
                             if len(phases) == 2:
                                 pending.insert(index + 1, (original, phases[1], step_started))
                                 step = phases[0]
+                        current_step = step.step_id, step.skill.value
                         vertical_clearance = None
                         if servo_enabled and step.skill.value in {"LIFT", "RETREAT"}:
                             start_pose = robot.get_state().tcp_pose
@@ -998,6 +1090,7 @@ def run_component_episode(
                         servo_feedback = None
                         try:
                             if servo_enabled and "target_pose" in step.parameters:
+                                phase = "SERVO_INITIALIZATION"
                                 from cloud_edge_robot_arm.contracts import Pose
                                 from cloud_edge_robot_arm.simulation.mujoco import motion_controller
                                 from cloud_edge_robot_arm.simulation.mujoco.visual_servo import (
@@ -1188,6 +1281,7 @@ def run_component_episode(
                                 servo_session = VisualServoSession(
                                     servo_sample, vertical_clearance=vertical_clearance,
                                 )
+                            phase = "CONTROLLER"
                             execution_session = (
                                 robot.visual_servo(servo_session)
                                 if servo_session else nullcontext()
@@ -1202,6 +1296,7 @@ def run_component_episode(
                                 raise ComponentStopped(
                                     "CONTROLLER_FAILURE:" + (outcome.error_code or "UNKNOWN")
                                 )
+                            phase = "POST"
                             if servo_session is not None and servo_feedback is not None:
                                 final_step = step.model_copy(update={"parameters": {
                                     **step.parameters,
@@ -1227,22 +1322,31 @@ def run_component_episode(
                             action["end_step"] = backend.total_physics_steps
                             row["executed_actions"] += int(backend.total_physics_steps > beginning)
                         frame(f"post-{index:02d}-{step.skill.value.lower()}")
+                        current_step = None
+                    phase = "TERMINAL_STABILITY"
                     backend.step(288)
                     frame("terminal-stability")
                     row["diagnostic_complete"] = True
             except Exception as error:
+                _record_component_exception(row, error, phase, current_step)
                 row["terminal_reason"] = (
                     str(error) if isinstance(error, ComponentStopped) else type(error).__name__
                 )
+                phase = "SAFE_STOP"
                 robot.safe_stop()
+                phase = "CAPTURE_CLOSE"
             finally:
                 try:
                     frame("after")
                 except Exception as error:
+                    _record_component_exception(row, error, "AFTER_CAPTURE")
                     row["after_capture_error_type"] = type(error).__name__
                     row["diagnostic_complete"] = False
                     if row["terminal_reason"] is None:
                         row["terminal_reason"] = "AFTER_CAPTURE_FAILED:" + type(error).__name__
+                # Preserve SAFE_STOP while its failure unwinds through successful evaluation.
+                exit_phase = "SAFE_STOP" if phase == "SAFE_STOP" else "CAPTURE_CLOSE"
+                phase = "PHYSICAL_EVALUATION"
                 physical = evaluate_episode(
                     backend, criteria, evidence=samples, evaluation_start_step=start_step
                 )
@@ -1251,7 +1355,11 @@ def run_component_episode(
                 if row["terminal_reason"] is None and not physical.success:
                     row["terminal_reason"] = physical.failure_reason
                 row["status"] = "COMPONENTS_COMPLETED" if row["diagnostic_complete"] else "FAILED"
+                phase = exit_phase
     except Exception as error:
+        _record_component_exception(
+            row, error, phase, current_step if phase == "SAFE_STOP" else None,
+        )
         if row["terminal_reason"] is None:
             row["terminal_reason"] = type(error).__name__
         raise
