@@ -1,0 +1,31 @@
+{
+  "planner": "GPT-6.2 Astra",
+  "round": "round-p0-checkpoint-partial-typed-readback-20261120",
+  "issue": "实测版本 902c270251a9b5c4076a7cf8022621bf4d4d5ebb 的正常 cutoff 读回中，line 202 从 load_json 的 Any 直接返回、嵌套 .get 对非对象也无检查。实际定向 mypy 32 项/3文件；同相对路径基点 290ba377 为31项/2文件，唯一新项 no-any-return。旧实测已提交保全。",
+  "scope": "仅修改 native_checkpoint_diagnostic.py 的 RuntimeError 后读取已发布 collection-result.json 的出口，和 tests/test_native_checkpoint_diagnostic.py 的针对此出口回归。用运行时类型收窄而非 ignore、Any cast。首先验证顶层/嵌套 JSON 对象，顶层 COLLECTION_PARTIAL、唯一诊断 assignment、scope 与嵌套 scope；嵌套 CUTOFF、registration_sha256 等于本次登记的 digest(registration)，两层严格整数零资格，已完成的 final_lifecycle_receipt、执行与教师准入均 false、native_qualification UNKNOWN，并核原第一动作截止的 primary 原因。以原发布者真实语义判别，不把参考运行的绝对时钟/步数、随机job id、原件字节 SHA 或其他次要事件写死到产品。保留真实失败/清理信息；其它 RuntimeError、缺失/非字典/解析失败与伪造 cutoff 一律不能成为正常结果，保留初始异常可追踪。保持 finally 来源核查、部分回执 CLI exit1 及既有独立完整 reader。",
+  "preconditions": "先核实已提交实测源、冻结源码及近邻 helper 消费方。原结果 SHA 96b08db685360f31d2d059f642523a38b598ce810b6ced9a7efec732c6ed793c；registration 文件字节 SHA 与 canonical digest 是不同域，原内层实际为 ceb7a99e192e577c4d02284e57f5a8887923f17341f3932fd1e49bc7a32fef0e。原实测 SQLite job 的真实终态为 BLOCKED_BY_ENV。只用本地原冻结回执只读测试，不启动 worker/注册新 claim/EGL/模型。",
+  "validation": [
+    "通过新实现的同一只读解析分支输入已冻结原件与原登记证明，对象完整相等，并保留公开 status/CLI 失败语义；可用小夹具验证外层 RuntimeError 路由。新反控包括标量/list、空或坏结构、wrong assignment/digest/scope、其他终态、无 primary cutoff、布尔 false 冒充资格0或资格大于零，及相关 RuntimeError 别因。不得只靠孤立的 CUTOFF 字符串。",
+    "按原相对源码路径、四模块、--follow-imports=silent --no-incremental 作源码 mypy 对照。未修的31条按目标名和内容与原基线逐项归并并明确记录，修后新增目标为零，不宣称旧库 mypy 全绿。运行旧诊断专项及 scoped Ruff，原独立 reader 双读、正式拒绝证据、源码/数据库/claim/回执 SHA 保留。新增软件验证不重复物理、云、模型或正式试次。"
+  ],
+  "inputs_sha256": {
+    "src/cloud_edge_robot_arm/research/native_checkpoint_diagnostic.py": "a1c22853004ddddcbc12bdd3c4726d2dc54f7925fe6537d37c6887b5e965073d",
+    "src/cloud_edge_robot_arm/research/native_collection_application.py": "cfdd20608cb63526d6154bc91230103fb9e88621375f3b087be3dc7fe2f084a6",
+    "src/cloud_edge_robot_arm/research/native_calibration_collection.py": "8ceecd9239accabf1301b1dc035175f7fb1dce46456339cc2aac558d05dced13",
+    "scripts/collect_native_calibration.py": "01a7e4ea6838791acf9695dcb66da48df23af946e3c160de33e85fac56afb9af",
+    "tests/test_native_checkpoint_diagnostic.py": "4d8229eb782ea648a14d32c51939c0ca589d0f1d9829675e89157ea2c8a3810b",
+    "pyproject.toml": "034a85388f25f1aedfb856f1783e6d3c6a3413f00d4a1825b907fe3749399565",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/typed-readback.log": "f41c8929b9995a4553a3944f366b7b44694526f8d9f09bfae93672135689446e",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/typed-readback-base-tree.log": "39d030888cd2ab95121359257deff5a43ba51c698db3e36f1acf313fac71c840",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/source-freeze.json": "41d28dde96b867c314767185e0d4f620fbbc1421313f7dfb05ff308fce47165b",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/process-end.json": "ad10ad6bae530b5859a0ee096458a35c533635221ac2d1989a6be05f2d2e110b",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/release/protocol.json": "4c4ffc66e411d8277c1a06a547dc40408af7ed84d0a5e1a78ad6b1e6a84105be",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/release/diagnostic-claim.json": "c8f33e317696521e09d3e7b36d4230f324e2e7aa8349cf61af6d727e62b1821e",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/release/run/collection-result.json": "96b08db685360f31d2d059f642523a38b598ce810b6ced9a7efec732c6ed793c",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/collect.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/source/src/cloud_edge_robot_arm/research/native_checkpoint_diagnostic.py": "a1c22853004ddddcbc12bdd3c4726d2dc54f7925fe6537d37c6887b5e965073d",
+    "experiments/results/phase9/p0-teacher-checkpoint-independent-reader-20261120/actual-first.json": "20d33461e7adf6d6770fd3f34a1297d62fb722142c1df3d814441dae96f3dcc8",
+    "experiments/results/phase9/p0-teacher-checkpoint-independent-reader-20261120/actual-repeat.json": "20d33461e7adf6d6770fd3f34a1297d62fb722142c1df3d814441dae96f3dcc8",
+    "experiments/results/phase9/p0-teacher-checkpoint-independent-reader-20261120/formal-verify-negative.stderr": "b3742ddf90b6f98cf23f1764d0d488975774f79f3d9d64dae1c9c74f5b696a65"
+  }
+}
