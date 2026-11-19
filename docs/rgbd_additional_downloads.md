@@ -1,6 +1,6 @@
 # 新增 RGB-D 完整文件
 
-本轮承接“精选集先用”：完整下载选定的小包及可用真实配对，而不是各来源的 TB 级全库。下载与离线检查记录在 [本轮验收目录](../artifacts/research/process/20261003-full-rgbd-download/)。所有本机下载绑定物理网卡 `enp7s0`，保持 TLS 校验、重定向域名门禁及全局响应体预算；不走代理或隧道。原始文件保存在仓库外 `/home/ningyd/datasets/BIGsmall/downloads/`。
+本轮承接“精选集先用”：完整下载选定的小包及可用真实配对，而不是各来源的 TB 级全库。下载与离线检查记录在 [本轮验收目录](../artifacts/research/process/20261003-full-rgbd-download/)。所有本机下载绑定物理网卡 `enp7s0`，保持 TLS 校验、重定向域名门禁及全局响应体预算；不走代理或隧道。原始文件保存在仓库外 `$HOME/datasets/BIGsmall/downloads/`。
 
 ## 下载范围
 
@@ -10,7 +10,7 @@
 | 魔搭 MicroAGI01 | `uncut_mcaps/open-source-12.mcap`，69,082,845 字节；另有 README、LICENSE、task_mapping.csv | `microagi01_small/modelscope/master/` | 分支可变，但每件文件固定上游 SHA256；完整 MCAP 结构、压缩块与摘要 CRC；108 RGB、108 数值深度；约 3.80 秒 |
 | 上海科技大学 VINS-RGBD | `Handheld/Normal.bag`，505,031,296 字节 | `vins_rgbd_small/public_https/Normal-bag-505031296-20261003/` | 完整文件大小与 bag 结构/索引；仅记录本地 SHA256，作者没有发布可用的上游 SHA |
 
-Industry 的完整 `samples.json` 为 137,313,312 字节。筛选目录位于 `/home/ningyd/datasets/BIGsmall/manifests/industryshapes_real/selection/`，包含选中标注、明确文件清单及 `quarantine.json`。370 对覆盖 6 个场景和 771 个物体实例；缺失计数为缺深度 475、缺 RGB 157，其中 79 帧两者皆缺。
+Industry 的完整 `samples.json` 为 137,313,312 字节。筛选目录位于 `$HOME/datasets/BIGsmall/manifests/industryshapes_real/selection/`，包含选中标注、明确文件清单及 `quarantine.json`。370 对覆盖 6 个场景和 771 个物体实例；缺失计数为缺深度 475、缺 RGB 157，其中 79 帧两者皆缺。
 
 后续开发已将三套来源接入应用统一 reader、索引、CPU 0/2 worker、预览和离线回放，共 1,451 对 RGBD。统一入口见[新增读取器说明](rgbd_additional_readers.md)，本页保留原件下载与独立格式校验的复现方法。
 
@@ -27,20 +27,20 @@ Industry 使用 PNG 数值深度和独立的 K、物体 R+t、cropped mask 标�
 ```bash
 taskset -c 0,2 .venv-data/bin/python \
   artifacts/research/process/20261003-full-rgbd-download/verify_microagi.py \
-  /home/ningyd/datasets/BIGsmall/downloads/microagi01_small/modelscope/master/uncut_mcaps/open-source-12.mcap \
-  --output /home/ningyd/datasets/BIGsmall/reports/microagi01_small
+  "$HOME/datasets/BIGsmall/downloads/microagi01_small/modelscope/master/uncut_mcaps/open-source-12.mcap" \
+  --output "$HOME/datasets/BIGsmall/reports/microagi01_small"
 
 taskset -c 0,2 .venv-data/bin/python \
   artifacts/research/process/20261003-full-rgbd-download/verify_vins.py \
-  /home/ningyd/datasets/BIGsmall/downloads/vins_rgbd_small/public_https/Normal-bag-505031296-20261003/Handheld/Normal.bag \
-  --output /home/ningyd/datasets/BIGsmall/reports/vins_rgbd_small \
+  "$HOME/datasets/BIGsmall/downloads/vins_rgbd_small/public_https/Normal-bag-505031296-20261003/Handheld/Normal.bag" \
+  --output "$HOME/datasets/BIGsmall/reports/vins_rgbd_small" \
   --report artifacts/research/process/20261003-full-rgbd-download/vins-validation.json
 
 taskset -c 0,2 .venv-data/bin/python \
   artifacts/research/process/20261003-full-rgbd-download/select_industry.py validate \
-  --selection-dir /home/ningyd/datasets/BIGsmall/manifests/industryshapes_real/selection \
-  --raw-root /home/ningyd/datasets/BIGsmall/downloads/industryshapes_real/modelscope/560b0dd042bc34945de6798d67d3cb2da7e9de28 \
-  --output-dir /home/ningyd/datasets/BIGsmall/reports/industryshapes_real
+  --selection-dir "$HOME/datasets/BIGsmall/manifests/industryshapes_real/selection" \
+  --raw-root "$HOME/datasets/BIGsmall/downloads/industryshapes_real/modelscope/560b0dd042bc34945de6798d67d3cb2da7e9de28" \
+  --output-dir "$HOME/datasets/BIGsmall/reports/industryshapes_real"
 ```
 
 上述命令读取本地原件并更新校验报告，不联网下载；本轮实际执行的结果见[验收记录](../artifacts/research/process/20261003-full-rgbd-download/acceptance.md)。

@@ -5,8 +5,8 @@
 当前主机结果是 `PHASE9_2_ACCEPTED`。
 
 - 可以通过用户 conda 环境使用 Vulkan 工具。
-- 系统自动检测到本地 Isaac 虚拟环境：`$HOME/.venvs/bigsmall-isaacsim-6.0.0.1`。
-- Phase 9.2 检查器使用的是 `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1/bin/python`。
+- 系统自动检测到本地 Isaac 虚拟环境，Isaac Sim 软件版本 `6.0.0.1`。环境位于 `$HOME/.venvs/` 下，目录名由 `bigsmall-isaacsim-` 和发行版号组成。
+- Phase 9.2 检查器使用该虚拟环境下的 `bin/python`。
 - Isaac Sim 6.0 `SimulationApp` 能以 headless 方式启动，并加载本地 MJCF Panda/Franka stage。
 - smoke 运行会推进物理、采样机器人状态、RGB、depth 和 contact sensor 数据，执行 reset 和 emergency stop，然后干净退出。
 - Isaac benchmark 会运行 6 个代表性 Phase 9.2 场景。

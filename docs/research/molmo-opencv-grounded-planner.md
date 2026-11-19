@@ -55,10 +55,11 @@ pipeline = PlanningPipeline(planner=planner)
 
 先准备一个任务描述 JSON，字段对应上例；请求 JSON 使用 `InitialPlanningRequest`，例如相同指令与唯一 request_id。普通回放必须提供原始 observation，禁止刷新归档采集时间。只有 `--mode native --capture-fresh` 可使用 `observation: null` 的请求模板；它从当前默认 S01 相机重新采集，模型先加载，随后取得新帧，并分别保存模板与新采集的请求/RGB/原始深度。普通空运行与回放仍须携带 observation，不修改旧帧时间。
 
-默认空运行只验证配置并报告 NOT_STARTED：
+在要验证的工作树根目录执行。应用虚拟环境或模型缓存位于另一份本机检出时，将 `BIGSMALL_LOCAL_ROOT` 指向其目录。默认空运行只验证配置并报告 NOT_STARTED。
 
 ```bash
-/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python \
+APP_ROOT="${BIGSMALL_LOCAL_ROOT:-$PWD}"
+"$APP_ROOT/.venv/bin/python" \
   scripts/probe_molmo_grounded_planner.py \
   --request request.json --task-descriptor task.json \
   --output datasets/model-cache/molmo-grounded/dry-run-01
@@ -67,14 +68,15 @@ pipeline = PlanningPipeline(planner=planner)
 原 Molmo 环境不含 OpenCV，使用 R545 的独立启动器在搜索路径末尾追加已安装的应用依赖。它核对 Torch/Transformers 等原版本、原路径和入口文件 SHA，执行 CPU ABI 检查，再原样转交参数；不安装包或修改既有运行时。
 
 ```bash
-MOLMO_PYTHON="/home/ningyd/文档/ChatGPT/BIGsmall/datasets/model-cache/ordered-small-vlm-20261109/runtimes/molmoer-r505/bin/python"
+MOLMO_CACHE="$APP_ROOT/datasets/model-cache"
+MOLMO_PYTHON="${MOLMO_CACHE}/ordered-small-vlm-20261109/runtimes/molmoer-r505/bin/python"
 MOLMO_LAUNCHER="artifacts/research/process/20261004-ced-development/astra-rounds/round545-molmo-opencv-runtime-overlay-20261110/implementation/launch_molmo_grounded.py"
 "$MOLMO_PYTHON" -B "$MOLMO_LAUNCHER" --preflight
 MUJOCO_GL=egl "$MOLMO_PYTHON" -B "$MOLMO_LAUNCHER" \
   --mode native --capture-fresh \
   --request request.json --task-descriptor task.json \
-  --model-directory /home/ningyd/文档/ChatGPT/BIGsmall/datasets/model-cache/ordered-small-vlm-20261109/models/Molmo2-ER \
-  --asset-manifest /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round505-ordered-small-vlm-screen-20261109/candidates/04-molmoer/asset-manifest.json \
+  --model-directory "${MOLMO_CACHE}/ordered-small-vlm-20261109/models/Molmo2-ER" \
+  --asset-manifest artifacts/research/process/20261004-ced-development/astra-rounds/round505-ordered-small-vlm-screen-20261109/candidates/04-molmoer/asset-manifest.json \
   --output datasets/model-cache/molmo-grounded/native-01
 ```
 

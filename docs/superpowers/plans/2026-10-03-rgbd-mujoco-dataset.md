@@ -63,7 +63,7 @@
 | API/UI | 现有 `cloud/api`、`simulation_runtime`、`simulation_workbench`、`dashboard/src/simulation` | 配置、排队、预览、取消、进度和报告 |
 | CLI/配置 | `scripts/*rgbd*.py`, `configs/rgbd/*.yaml` | 注册的可复现实验入口 |
 
-上表除 scripts/configs/dashboard 外，均位于 `src/cloud_edge_robot_arm/` 下。目录名 `datasets` 是项目内部代码模块；生成的大文件位于仓库根 `datasets/`，二者不可混用。
+上表除 `scripts/`、`configs/` 和 `dashboard/` 外，均位于 `src/cloud_edge_robot_arm/` 下。目录名 `datasets` 是项目内部代码模块；生成的大文件位于仓库根 `datasets/`，二者不可混用。
 
 ## Task 1：收敛当前原型与历史回归
 

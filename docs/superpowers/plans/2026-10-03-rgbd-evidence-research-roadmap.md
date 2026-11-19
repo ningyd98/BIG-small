@@ -408,7 +408,7 @@ T7 先交付不依赖 T9/T12/T13 的基础事件与规则验证路由；缺恢�
 
 ### Task 14：训练补足、三种采样与 G5 扩展（可选分支）
 
-**Files:** 新增 `src/cloud_edge_robot_arm/datasets/rgbd/{targeted_sampler,learning_curves}.py`、`scripts/train_rgbd_decision_module.py`、`configs/research/data_sampling.yaml`、`tests/test_targeted_rgbd_sampling.py`；扩展T6的generator/writer及T9的fit。
+**Files:** 新增 `src/cloud_edge_robot_arm/datasets/rgbd/{targeted_sampler,learning_curves}.py`、`scripts` 目录中拟新增的 `train_rgbd_decision_module.py`、`configs/research/data_sampling.yaml`、`tests/test_targeted_rgbd_sampling.py`；扩展T6的generator/writer及T9的fit。
 
 **Interfaces:** targeted_sampler.py 定义 `SamplingFeedback(group_id, risk_error, recovery_failure, training_split)`；`select_training_groups(pool: Sequence[SampleRecord], feedback: Sequence[SamplingFeedback], strategy: Literal['UNIFORM','FAILURE','TARGETED'], budget: int, seed: int) -> list[str]`。learning_curves.py 定义 `TrainingBudget(group_count, optimizer_steps, seed, base_vlm_hash)`、`TrainingRun(model_hash, group_ids, optimizer_steps, seed)`；`train_decision_module(records: Sequence[SampleRecord], budget: TrainingBudget) -> TrainingRun`，复用轻量风险/恢复模型，基础VLM不更新。
 
@@ -417,7 +417,7 @@ T7 先交付不依赖 T9/T12/T13 的基础事件与规则验证路由；缺恢�
 - [ ] 写 `test_sampler_rejects_test_and_pilot_feedback`、`test_three_strategies_receive_equal_unique_group_budget`（budget=500/1000/2000恰等组数）、`test_same_group_frames_do_not_inflate_budget`、`test_base_vlm_digest_is_unchanged`、`test_ood_requires_unseen_asset_or_parameter_combination`（仅新seed拒绝OOD标签）。
 - [ ] 运行 `.venv/bin/python -m pytest -q tests/test_targeted_rgbd_sampling.py`；使用可观察风险/恢复反馈给训练组排序，失败采样按失败标签，均匀采样不看反馈，三者均保留来源hash。
 - [ ] 实现/冻结3个训练种子 `[11,29,47]`；各规模/策略使用相同优化步数，步数值在 selection 验证后写配置并于该扩展首次域外评测前固定；扩展单独保存协议与模型 hash，不修改主研究已冻结快照，不能看域外结果改配置。生成500/1000/2000组学习曲线；未达到有效2000组不能声称G5比较成立。
-- [ ] 重跑测试；资源允许时运行待提供命令 `.venv/bin/python scripts/train_rgbd_decision_module.py --config configs/research/data_sampling.yaml --output artifacts/research/learning-curves`，在冻结300域外组上评估，seed作为层次重复。报告训练时间/有效组数/优化步数/域外成功区间；不足预算时标NOT_RUN并保留核心实验资源。
+- [ ] 重跑测试。待实现 `train_rgbd_decision_module.py` 且资源允许时，按原计划参数 `--config configs/research/data_sampling.yaml --output artifacts/research/learning-curves` 在冻结300域外组上评估，seed作为层次重复。报告训练时间/有效组数/优化步数/域外成功区间；不足预算时标NOT_RUN并保留核心实验资源。
 
 ### Task 15：方法冻结、功效先导、盲测与消融运行器
 

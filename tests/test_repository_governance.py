@@ -35,6 +35,43 @@ def test_check_docs_reports_sensitive_absolute_path(tmp_path: Path) -> None:
     assert any(item.check_id == "sensitive_content" for item in result.failures)
 
 
+def test_check_docs_resolves_commonmark_link_destinations(tmp_path: Path) -> None:
+    from scripts.check_docs import check_repository_docs
+
+    (tmp_path / "证据 100% #号.txt").touch()
+    (tmp_path / "README.md").write_text(
+        '[angle](<证据 100% %23号.txt> "Evidence")\n'
+        "[encoded](证据%20100%25%20%23号.txt#chapter)\n"
+        "[missing](<缺失 文档.txt>)\n",
+        encoding="utf-8",
+    )
+
+    failure, = check_repository_docs(tmp_path).failures
+    assert failure.check_id == "markdown_link_exists"
+    assert failure.detail == "missing target 缺失 文档.txt"
+
+
+def test_check_docs_distinguishes_labeled_versions_from_sensitive_ipv4(tmp_path: Path) -> None:
+    from scripts.check_docs import check_repository_docs
+
+    (tmp_path / "README.md").write_text(
+        "Isaac Sim 软件版本 `6.0.0.1`\n"
+        "Device firmware version 4.0.1.2\n"
+        "Listen locally on 127.0.0.1\n"
+        "Controller at https://192.0.2.22:443\n"
+        "Agent proxy-198.51.100.42\n"
+        "Even a labeled version 203.0.113.9/24 is an address with a network suffix\n",
+        encoding="utf-8",
+    )
+
+    failures = check_repository_docs(tmp_path).failures
+    assert [(failure.check_id, failure.path, failure.detail) for failure in failures] == [
+        ("sensitive_content", "README.md", "literal IPv4 address at line 4"),
+        ("sensitive_content", "README.md", "literal IPv4 address at line 5"),
+        ("sensitive_content", "README.md", "literal IPv4 address at line 6"),
+    ]
+
+
 def test_verify_project_ci_profile_is_ci_safe() -> None:
     from scripts.verify_project import profile_commands
 

@@ -7,7 +7,9 @@ import argparse
 import json
 import re
 from dataclasses import dataclass
+from ipaddress import AddressValueError, IPv4Address
 from pathlib import Path
+from urllib.parse import unquote
 
 IGNORED_DIRS = {
     ".git",
@@ -22,9 +24,14 @@ IGNORED_DIRS = {
 }
 MARKDOWN_ROOTS = ("README.md", "CHANGELOG.md", "CONTRIBUTING.md", "docs", "scripts")
 SCRIPT_REF_RE = re.compile(r"(?<![\w/])(scripts/[A-Za-z0-9_./-]+)")
-MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+MARKDOWN_LINK_RE = re.compile(
+    r"\[[^\]\n]+\]\([ \t]*"
+    r"(?:<(?P<angle>[^<>\n]*)>|(?P<bare>(?:[^\s()<>]|\([^\s()<>]*\))*))"
+    r"""(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?[ \t]*\)"""
+)
 ABSOLUTE_HOME_RE = re.compile(r"/home/[A-Za-z0-9._-]+/")
 IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+VERSION_PREFIX_RE = re.compile(r"(?:\bversion[ \t]+|版本[ \t]*)`?\Z", re.IGNORECASE)
 SENSITIVE_TOKEN_RE = re.compile(
     r"(?i)(bearer\s+[A-Za-z0-9._-]+|api[_-]?key\s*[:=]\s*[^`\s]+|password\s*[:=]\s*[^`\s]+)"
 )
@@ -58,7 +65,7 @@ def check_repository_docs(root: Path) -> DocCheckResult:
         failures.extend(_check_markdown_links(root, path, text))
         failures.extend(_check_script_refs(root, path, text))
         failures.extend(_check_mermaid_fences(path, text))
-        failures.extend(_check_sensitive_content(path, text))
+        failures.extend(_check_sensitive_content(root, path, text))
     return DocCheckResult(ok=not failures, failures=failures)
 
 
@@ -93,9 +100,11 @@ def _iter_markdown_files(root: Path) -> list[Path]:
 def _check_markdown_links(root: Path, path: Path, text: str) -> list[DocCheckFailure]:
     failures: list[DocCheckFailure] = []
     for match in MARKDOWN_LINK_RE.finditer(text):
-        target = match.group(1).split("#", 1)[0].strip()
+        destination = match.group("angle") or match.group("bare") or ""
+        target = re.split(r"[?#]", destination, maxsplit=1)[0]
         if not target or _is_external_link(target):
             continue
+        target = unquote(target)
         resolved = (root / target[1:]) if target.startswith("/") else (path.parent / target)
         if not resolved.exists():
             failures.append(
@@ -141,26 +150,36 @@ def _check_mermaid_fences(path: Path, text: str) -> list[DocCheckFailure]:
     return failures
 
 
-def _check_sensitive_content(path: Path, text: str) -> list[DocCheckFailure]:
+def _check_sensitive_content(root: Path, path: Path, text: str) -> list[DocCheckFailure]:
     failures: list[DocCheckFailure] = []
+    relative = _relative(path, root)
     for regex, check_id in (
         (ABSOLUTE_HOME_RE, "sensitive_content"),
         (SENSITIVE_TOKEN_RE, "sensitive_content"),
     ):
         if regex.search(text):
-            failures.append(DocCheckFailure(check_id, str(path), "sensitive value pattern"))
+            failures.append(DocCheckFailure(check_id, relative, "sensitive value pattern"))
     for match in IPV4_RE.finditer(text):
         ip = match.group(0)
-        previous = text[match.start() - 1] if match.start() > 0 else ""
-        if previous == "-":
+        try:
+            IPv4Address(ip)
+        except AddressValueError:
+            continue
+        following = text[match.end():match.end() + 2].lstrip("`")
+        if VERSION_PREFIX_RE.search(text, 0, match.start()) and not following.startswith(
+            (":", "/", "%")
+        ):
             continue
         if ip not in {"0.0.0.0", "127.0.0.1", "127.0.1.1"}:
-            failures.append(DocCheckFailure("sensitive_content", str(path), f"literal IP {ip}"))
+            line = text.count("\n", 0, match.start()) + 1
+            failures.append(DocCheckFailure(
+                "sensitive_content", relative, f"literal IPv4 address at line {line}",
+            ))
     return failures
 
 
 def _is_external_link(target: str) -> bool:
-    return "://" in target or target.startswith("mailto:")
+    return "://" in target or target.startswith(("mailto:", "//"))
 
 
 def _ignored(path: Path, root: Path) -> bool:

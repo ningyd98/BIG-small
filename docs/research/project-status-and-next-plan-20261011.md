@@ -99,8 +99,8 @@ CPU正链先调用原episode一次，仅注入六项结局flags，22个自然文
 
 下一步依既定顺序推进B9/B、C、P7/P8、D；B9需显式区分SQL事实与已确认发布，并先按Astra计划限定验证。R153旧HEAD前置失败原件保留；R154只读诊断的文本覆盖限制及eligible=false未改写。R155明确采用315fd不相交基线，保全100个开题文档相关既有文件，不对其语义作本轮判断。本段编制时Git交付待执行，实际提交、推送与三SHA结果以本轮提交外postpush-receipt.json为准。远端选定载荷不是完整raw/数据库复现包。
 
-验收记录：/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round155-p6-disjoint-head-finite-delivery-20261012/acceptance.json
+验收记录：`artifacts/research/process/20261004-ced-development/astra-rounds/round155-p6-disjoint-head-finite-delivery-20261012/acceptance.json`
 
-终审原件：/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round152-p6-review-recovery-index-schema-20261012/review/final-review.json SHA256 db83f79f83f9fd50e56b965949a913da90f7c485776c16f15aa75e7c812b5bf4
+终审原件：`artifacts/research/process/20261004-ced-development/astra-rounds/round152-p6-review-recovery-index-schema-20261012/review/final-review.json` SHA256 db83f79f83f9fd50e56b965949a913da90f7c485776c16f15aa75e7c812b5bf4
 
-交付实际收据：/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round155-p6-disjoint-head-finite-delivery-20261012/postpush-receipt.json
+交付实际收据：`artifacts/research/process/20261004-ced-development/astra-rounds/round155-p6-disjoint-head-finite-delivery-20261012/postpush-receipt.json`

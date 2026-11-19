@@ -584,7 +584,7 @@ MUJOCO_GL=egl .venv/bin/python scripts/run_rgbd_pilot.py --stage joint-selection
 - `MODIFY scripts/run_rgbd_pilot.py（显式development配置/分母与方法入口）`
 - `NEW configs/research/t12_development.yaml`
 - `NEW artifacts/research/process/20261004-ced-development/t12-convergence-execution/P12/development-methods.json`
-- `NEW scripts/validate_t12_development.py`
+- `scripts` 目录中拟新增的 `validate_t12_development.py`
 - `NEW tests/test_t12_development_acceptance.py`
 - `NEW artifacts/research/process/20261004-ced-development/t12-convergence-execution/P12/acceptance.md`
 - `NEW artifacts/research/process/20261004-ced-development/t12-convergence-execution/P12/acceptance.json`
@@ -604,8 +604,12 @@ MUJOCO_GL=egl .venv/bin/python scripts/run_rgbd_pilot.py --stage joint-selection
 ```bash
 MUJOCO_GL=egl .venv/bin/python scripts/run_rgbd_pilot.py --stage development --config configs/research/t12_development.yaml --methods artifacts/research/process/20261004-ced-development/t12-convergence-execution/P12/development-methods.json --initial artifacts/research/process/20261004-ced-development/t12-convergence-execution/P9/initial --output artifacts/research/process/20261004-ced-development/t12-convergence-execution/P12/runs --profile-id "$MAX_PROFILE_ID" --model-control-db "$MAX_MODEL_CONTROL_DB" --secret-env BIGSMALL_VLM_API_KEY --execute --allow-paid
 ```
-```bash
-.venv/bin/python scripts/validate_t12_development.py --runs artifacts/research/process/20261004-ced-development/t12-convergence-execution/P12/runs --initial artifacts/research/process/20261004-ced-development/t12-convergence-execution/P9/initial --risk artifacts/research/process/20261004-ced-development/t12-convergence-execution/P10/risk --selection artifacts/research/process/20261004-ced-development/t12-convergence-execution/P11/selection/selection.json --output artifacts/research/process/20261004-ced-development/t12-convergence-execution/P12/verified
+拟新增的 `validate_t12_development.py` 仍为提案。原拟定参数中的 `T12_VERIFY_ROOT` 为 `artifacts/research/process/20261004-ced-development/t12-convergence-execution/`。
+
+```text
+--runs "$T12_VERIFY_ROOT/P12/runs" --initial "$T12_VERIFY_ROOT/P9/initial"
+--risk "$T12_VERIFY_ROOT/P10/risk" --selection "$T12_VERIFY_ROOT/P11/selection/selection.json"
+--output "$T12_VERIFY_ROOT/P12/verified"
 ```
 
 **验收出口：** T12a实现与实际决策验收独立闭合；证据有真正常正链和规定拒绝路径，来源/成本/提交可重算。正式收益与T13不在本出口内。

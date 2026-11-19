@@ -4,9 +4,11 @@
 
 本次形成了可启动、可开发、可测试的 Ubuntu 仿真研究环境；严格跨引擎物理配对、完整 Isaac 参数应用、真实模型性能和 full 最终封板尚未接受。本文记录部署验收，不是开题报告。论文工作仅复现已有管线，未重新设计研究项目。
 
+部署证据保存在原部署工作区的 `artifacts/deployment/`，随原本机环境留存。
+
 ## A. Git
 
-集成分支：`codex/ubuntu-integrated-deploy`。基线 / upstream：`origin/codex/macos-local-dev`，`3c2b5fd18f885367f543eae23c0e3d18343a84df`。交付后的精确 SHA、ahead/behind 和 clean 状态以 [final_acceptance.json](../../artifacts/deployment/final_acceptance.json) 及 `git rev-parse HEAD` 为准，避免将报告本身的提交 SHA 循环写入源文件。
+集成分支：`codex/ubuntu-integrated-deploy`。基线 / upstream：`origin/codex/macos-local-dev`，`3c2b5fd18f885367f543eae23c0e3d18343a84df`。交付后的精确 SHA、ahead/behind 和 clean 状态以 `artifacts/deployment/final_acceptance.json` 及 `git rev-parse HEAD` 为准，避免将报告本身的提交 SHA 循环写入源文件。
 
 首次 fetch 与交付前 fetch 均已执行。远端 SHA 和拓扑未变化：
 
@@ -26,7 +28,7 @@ thesis → sim2real ahead 2 / behind 0 → macOS ahead 2 / behind 0。Phase13 �
 - `b35e53905c4f50a3c94435bff12bbec1c5a9030c`：工作台完整门禁与 37 E2E，之后 fast-forward 纳入主工作区。
 - `da299bd9bd423e5c576b9492d30ccabba876cc05`：配对 repetition 聚合修复和独立重分析。
 
-原 macOS 基线已有 tracked artifacts 没有修改或删除；Phase13 原分支新增 artifacts 随审阅的提交迁移。初始审计见 [git_baseline.json](../../artifacts/deployment/git_baseline.json)，交付溯源见 [git_delivery_provenance.json](../../artifacts/deployment/git_delivery_provenance.json)。
+原 macOS 基线已有 tracked artifacts 没有修改或删除；Phase13 原分支新增 artifacts 随审阅的提交迁移。初始审计见 `artifacts/deployment/git_baseline.json`，交付溯源见 `artifacts/deployment/git_delivery_provenance.json`。
 
 ## B. Environment
 
@@ -42,16 +44,16 @@ thesis → sim2real ahead 2 / behind 0 → macOS ahead 2 / behind 0。Phase13 �
 | MuJoCo / Rerun | 3.3.7 / 0.38.1 |
 | ROS2 / MoveIt | RoboStack Jazzy 独立 micromamba 环境；MoveIt 2.12.4，desktop 0.11.0，Panda config 3.1.0 |
 | ROS workspace | `$HOME/bigsmall_runtime/ubuntu-6bebc95b/ros2_ws`；ASCII 路径，六个 packages 构建通过 |
-| Isaac Sim | 独立 `cache/isaac-sim-6.0`，6.0.0.1；项目简化 Franka-like MJCF 转 USD；用户已明确接受 EULA |
+| Isaac Sim | 独立 `cache/isaac-sim-6.0`，软件版本 `6.0.0.1`；项目简化 Franka-like MJCF 转 USD；用户已明确接受 EULA |
 | Isaac Lab | 官方 tag 3.0.0-beta2，commit 28a37cecdd433c22d9eabd6a5954add9f13a8951；extension version 6.1.11，独立 env |
 | Ollama / compatible model | 无可用 daemon/已有模型；无用户提供的 compatible endpoint/key |
 | Docker | 未安装；已使用 standalone Isaac / 用户态 ROS，无需 Docker 完成本次运行 |
 
 核心 extras 按 pyproject 和 Linux constraints 安装：dev、sim-mujoco、sim-analysis、sim-observability。ROS、Isaac 和 Lab 分环境保存。Lab coverage 7.6.1 与 isaacsim-kernel 要求 7.4.4 存在上游依赖冲突，记录为 WARN，没有改动核心环境掩盖冲突。初始 sandbox GPU 不可见观察已保留，当前 GPU/CUDA 结论来自实际主机探针与 GPU 运算。
 
-完整命令输出见 [system_inventory.json](../../artifacts/deployment/system_inventory.json)、[system_inventory.md](../../artifacts/deployment/system_inventory.md)、[dependency_report.json](../../artifacts/deployment/dependency_report.json)。
+完整命令输出见 `artifacts/deployment/system_inventory.json`、`artifacts/deployment/system_inventory.md`、`artifacts/deployment/dependency_report.json`。
 
-磁盘：`df -h .` 显示 1.2T SSD，约 70G 已用、1012G 可用、7%。`du -sh`：核心 venv 1012M；Isaac 25G；Lab env 1.3G / source 118M；ROS/mamba 8.8G；核心 pip cache 367M、Isaac pip 995M、Lab pip 304M、npm 75M；Chromium 646M；Node 203M；node_modules 456M；artifacts 128M；results 3.4G。精确时点输出见 [disk_usage.json](../../artifacts/deployment/disk_usage.json)。
+磁盘：`df -h .` 显示 1.2T SSD，约 70G 已用、1012G 可用、7%。`du -sh`：核心 venv 1012M；Isaac 25G；Lab env 1.3G / source 118M；ROS/mamba 8.8G；核心 pip cache 367M、Isaac pip 995M、Lab pip 304M、npm 75M；Chromium 646M；Node 203M；node_modules 456M；artifacts 128M；results 3.4G。精确时点输出见 `artifacts/deployment/disk_usage.json`。
 
 默认保留结构化 telemetry、JSON/JSONL/CSV、metrics、manifest/hash/provenance。RGB/depth/video 只保存代表、异常、论文 figure 或明确请求的 case；本次没有下载任意模型，也没有自动删除历史成果。
 
@@ -70,7 +72,7 @@ thesis → sim2real ahead 2 / behind 0 → macOS ahead 2 / behind 0。Phase13 �
 | Phase12 | WARN | smoke 闭环通过，full 和修正重分析完成；full verifier exit 1 / PHASE12_REJECTED，不能封板 |
 | Thesis | WARN | 历史 evidence/build 可复现，DOCX/PDF 全页渲染检查；新 full 素材独立导出，最终结论与提交版未接受 |
 
-状态索引在 [final_acceptance.json](../../artifacts/deployment/final_acceptance.json)，每个组件有 deployment JSON 与原始证据链接。Doctor 只检查依赖可用性，退出 0 仍可能包含 WARN/BLOCKED，不能代替 runtime 验收。
+状态索引在 `artifacts/deployment/final_acceptance.json`，每个组件有 deployment JSON 与原始证据链接。Doctor 只检查依赖可用性，退出 0 仍可能包含 WARN/BLOCKED，不能代替 runtime 验收。
 
 ## D. 实际执行与结果
 

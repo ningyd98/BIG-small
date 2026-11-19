@@ -51,7 +51,7 @@
 
 ## 文件与执行责任
 
-所有执行命令均从仓库根 `/home/ningyd/文档/ChatGPT/BIGsmall` 运行，统一设置 `PYTHONPATH=src:.`、`PYTHONDONTWRITEBYTECODE=1`；使用仓库 `.venv/bin/python`，避免误用已安装旧包或生成Python缓存。Go命令仅切换到明确的tools子目录，沿已验证绝对工具链路径和独立临时build/cache目录。实际渲染命令另显式 `MUJOCO_GL=egl`。
+所有执行命令均从BIGsmall 仓库根目录 运行，统一设置 `PYTHONPATH=src:.`、`PYTHONDONTWRITEBYTECODE=1`；使用仓库 `.venv/bin/python`，避免误用已安装旧包或生成Python缓存。Go命令仅切换到明确的tools子目录，沿已验证绝对工具链路径和独立临时build/cache目录。实际渲染命令另显式 `MUJOCO_GL=egl`。
 
 下文源码简写 `S/` 严格指 `src/cloud_edge_robot_arm/`，产物简写 `A/` 严格指 `artifacts/research/process/20261004-ced-development/`，V3简写 `V/` 指 `A/t7b-continuous-visibility-v3/`。这不是新的目录。命令中使用完整真实路径。新任务产物固定在 `A/astra-repair-execution/R01` 至 `R10`，每项含 `report.md`、`report.json`、命令/exit/stdout/stderr、输入/输出SHA及实际调用全分母。必须新增的CLI明确标“待实现”，现存CLI也不被视为已验收可运行。
 
@@ -96,13 +96,13 @@ V3 quiet handoff pins：runner `0f7c5d31f21bd35a5d7085e57376436b6bf33f043c47fe22
 
 ### R4：真实app-owned有限source正分支与至少九个独立支持组
 
-**Files:** 扩展 `S/vision/native_calibration.py`、`S/research/native_geometry_calibration.py`、`tests/test_native_calibration_source.py`，新增 `tests/test_native_calibration_v2.py`、`scripts/collect_native_calibration_v2.py`、`configs/research/native_calibration_v2.json`；index/catalog/registry及所有原件写R04的新版本目录，应用index路径固定 `configs/research/native_calibration_sources.json`，沿现有factory入口增加显式v2。v1原件/报告不改。
+**Files:** 扩展 `S/vision/native_calibration.py`、`S/research/native_geometry_calibration.py`、`tests/test_native_calibration_source.py`，新增 `tests/test_native_calibration_v2.py`、`scripts` 目录中拟新增的 `collect_native_calibration_v2.py`、`configs/research/native_calibration_v2.json`；index/catalog/registry及所有原件写R04的新版本目录，应用index路径固定 `configs/research/native_calibration_sources.json`，沿现有factory入口增加显式v2。v1原件/报告不改。
 
 **Interfaces:** 延续 `NativeCalibrationSource.from_application(role_binding: RoleRuntimeBinding) -> NativeCalibrationSource` 和 `.revalidate(role_binding)`；新增显式v2 schema分支消费R3 owned catalog、签名预注册与独立UTC sidecar，原RawV3 `utc_uncertainty_ns=None`仍如实保留。新CLI `--config PATH --output PATH --group-id ID --execute-once`由真实应用factory采一个已预分配组，不能调用DIRECT_OFFLINE_SCENE_ADAPTER冒充RESET。
 
 - [ ] 先RED测试v1仍缺RESET而INCOMPLETE、public登记/局部数值/mock verifier不能构造source；v2修改后的原pair/source/owner/horizon/compiled-model/asset/TCP/contact/ref/policy必须全部重算。运行 `.venv/bin/python -m pytest -q tests/test_native_calibration_source.py tests/test_native_calibration_v2.py`，最小实现后GREEN及静态。
 - [ ] 预注册完整来源组库存、固定reference/recipe/full horizons、范围和独立性图，不将R1或prefix改名充组。开发资产/640×480/实际noise与默认域差异需明确作用域；不能用零噪声离线场景证明默认0.001m native噪声支持。
-- [ ] 首先执行一个新预注册完整组（待实现CLI）：`MUJOCO_GL=egl .venv/bin/python scripts/collect_native_calibration_v2.py --config configs/research/native_calibration_v2.json --output artifacts/research/process/20261004-ced-development/astra-repair-execution/R04/group-001 --group-id group-001 --execute-once`。验证实际owned图与全部原件可重放；一组只证明source链，不声称n=9统计有限。
+- [ ] 待实现 `collect_native_calibration_v2.py` 后，首先执行一个新预注册完整组。原计划的环境为 `MUJOCO_GL=egl`，拟用参数为 `--config configs/research/native_calibration_v2.json --output artifacts/research/process/20261004-ced-development/astra-repair-execution/R04/group-001 --group-id group-001 --execute-once`。验证实际owned图与全部原件可重放；一组只证明source链，不声称n=9统计有限。
 - [ ] 首组链路及clock期限可行后，按预登记顺序逐组采集至少9个独立且支持的组，所有分配/失败组件进分母。`ceil((9+1)*.9)=9`，9组有一个UNKNOWN即不能给finite；更多组只能按预登记有界规则，不能删除失败/重命名共享component或为显著性不断追加。
 - [ ] 从完整顶点/接触/TCP/原resolved owner全horizon独立重建geometry/action经验界及范围，构造真实 `from_application` 正分支；finite或准入失败均报告。端点误差不能冒充连续supremum/未来稳定性，短窗口不能借完整horizon终态界。独审原件/分组/source链后root单独提交producer/registry，消费者仍待R5。
 

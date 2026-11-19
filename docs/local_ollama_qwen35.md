@@ -51,7 +51,7 @@ ollama stop qwen3.5:4b
 
 安装包来自[魔搭 Ollama 镜像](https://modelscope.cn/models/Lixiang/ollama-release)，固定 revision `3bc525537000ecb80ffadc9fdef4566e95385181`；SHA-256 与[官方 v0.35.1 发布](https://github.com/ollama/ollama/releases/tag/v0.35.1)提供的安装包摘要一致。模型来自[魔搭 Unsloth 仓库](https://modelscope.cn/models/unsloth/Qwen3.5-4B-GGUF)，固定 revision `167b4afc359863325cb4164418c715421b4e9118`，两个 GGUF 均与上游 SHA-256 一致。
 
-安装包和模型共下载 4,853,020,465 字节，均由 `modelscope.cn` 跳转到 `cdn-lfs-cn-1.modelscope.cn`。下载器使用仓库已有严格直连传输：DNS 和 TCP 绑定 `enp7s0`，显式 AliDNS，忽略代理变量，保留 TLS 校验，不允许系统网络回退。实际下载连接记录显示 `192.168.3.221%enp7s0 → 60.221.22.27:443`，见[套接字证据](../artifacts/research/process/20261003-ollama-qwen35/download-sockets.txt)。官方版本元数据也通过物理接口直连查询，未通过隧道。部署过程没有执行 `ollama pull`。
+安装包和模型共下载 4,853,020,465 字节，均由 `modelscope.cn` 跳转到 `cdn-lfs-cn-1.modelscope.cn`。下载器使用仓库已有严格直连传输：DNS 和 TCP 绑定 `enp7s0`，显式 AliDNS，忽略代理变量，保留 TLS 校验，不允许系统网络回退。实际下载连接绑定 `enp7s0`，目标端口为 HTTPS 443，完整地址留在[套接字证据](../artifacts/research/process/20261003-ollama-qwen35/download-sockets.txt)。官方版本元数据也通过物理接口直连查询，未通过隧道。部署过程没有执行 `ollama pull`。
 
 以后下载新模型仍应使用此直连流程；普通 `ollama pull` 不继承下载脚本的物理接口绑定。
 

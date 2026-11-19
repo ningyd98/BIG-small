@@ -4,11 +4,11 @@
 
 ## 环境与默认行为
 
-在当前 BIGsmall 工作树运行。脚本会优先导入自己的 `src`，避免共用虚拟环境导入另一份检出。
+在要运行的 BIGsmall 工作树根目录执行。使用另一份本机检出中的虚拟环境、模型缓存和数据库时，将 `BIGSMALL_LOCAL_ROOT` 指向该目录。脚本优先导入当前工作树的 `src`。
 
 ```bash
-cd /home/ningyd/.codex/worktrees/molmo-absence-protocol-1472/BIGsmall
-APP_PY=/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python
+APP_ROOT="${BIGSMALL_LOCAL_ROOT:-$PWD}"
+APP_PY="$APP_ROOT/.venv/bin/python"
 export MUJOCO_GL=egl PYTHONDONTWRITEBYTECODE=1
 "$APP_PY" -B scripts/run_sol_molmo_single_episode.py \
   --seed 42001 --output /tmp/bigsmall-single-dry-new
@@ -34,17 +34,17 @@ export MUJOCO_GL=egl PYTHONDONTWRITEBYTECODE=1
 使用已经验证的 Molmo 专用运行时，不能用应用环境的不同 Torch/Transformers 替换它。专用环境若缺少应用的 cryptography 等依赖，可把已有应用 site-packages **追加在后面**；不安装或升级依赖。
 
 ```bash
-CACHE=/home/ningyd/文档/ChatGPT/BIGsmall/datasets/model-cache
+CACHE="$APP_ROOT/datasets/model-cache"
 NATIVE_PY="$CACHE/ordered-small-vlm-20261109/runtimes/molmoer-r505/bin/python"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 "$NATIVE_PY" -B scripts/run_sol_molmo_single_episode.py \
   --seed 42001 --plan-only --allow-paid \
   --profile-id '<已有Sol配置ID>' \
-  --model-control-db /home/ningyd/文档/ChatGPT/BIGsmall/data/model_control.db \
+  --model-control-db "$APP_ROOT/data/model_control.db" \
   --model-directory "$CACHE/ordered-small-vlm-20261109/models/Molmo2-ER" \
   --asset-manifest '<既有Molmo资产清单绝对路径>' \
   --gpu-lock "$CACHE/zdtaichu5-9b-fp8-round473/research/.r468-r469-gpu.lock" \
-  --application-site-packages /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages \
+  --application-site-packages "$APP_ROOT/.venv/lib/python3.12/site-packages" \
   --output /tmp/bigsmall-single-plan-new
 ```
 
@@ -63,11 +63,11 @@ API key不作为CLI参数，也不写入场景配置。入口以只读SQLite连�
   --seed 42002 --execute --component-diagnostic --allow-paid \
   --marker-family side_y_plus_id7_75mm_component_v1 \
   --profile-id '<已有Sol配置ID>' \
-  --model-control-db /home/ningyd/文档/ChatGPT/BIGsmall/data/model_control.db \
+  --model-control-db "$APP_ROOT/data/model_control.db" \
   --model-directory "$CACHE/ordered-small-vlm-20261109/models/Molmo2-ER" \
   --asset-manifest '<既有Molmo资产清单绝对路径>' \
   --gpu-lock "$CACHE/zdtaichu5-9b-fp8-round473/research/.r468-r469-gpu.lock" \
-  --application-site-packages /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages \
+  --application-site-packages "$APP_ROOT/.venv/lib/python3.12/site-packages" \
   --output /tmp/bigsmall-single-component-new
 ```
 
