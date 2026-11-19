@@ -1,0 +1,550 @@
+"""Freeze the post-fix development cohort separately from any native launch."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import os
+import re
+import stat
+import subprocess
+from collections import Counter
+from pathlib import Path
+from typing import Any
+
+from cloud_edge_robot_arm.harness.config import load_config, strict_json
+from cloud_edge_robot_arm.research.pilot import validate_pilot_pools
+from cloud_edge_robot_arm.research.sol_molmo_scenarios import sample_component_scene
+
+ROUND = Path(__file__).resolve().parent.parent
+REPO = ROUND.parents[5]
+OLD_ROUND = ROUND.parent / "round-harness-four-fresh-positions-20261118"
+RAW = REPO / "experiments/results/phase9"
+OLD_RAW = RAW / "harness-four-fresh-20261118"
+PARENT = ROUND.parents[1]
+POOLS = PARENT / "t8b-module/fix-round-1-dry-selection/pools.json"
+TEACHER = RAW / "p0-first-teacher-20261119/v9-protocol/protocol.json"
+TEACHER_CONFIG = REPO / "configs/research/native_registered_single_teacher_p0_20261119.yaml"
+FROZEN_HISTORICAL = {
+    OLD_ROUND / "preallocation.json": (
+        "b68f756ff5570fc6886c5f8e50771a549eb73464bb539e3716a957ed1e116ec8"
+    ),
+    OLD_ROUND / "final-batch-summary.json": (
+        "9bc35bae41ee885a0faa675c6d5c3e07ea1f578664a57a4ba2dae0f2689a998a"
+    ),
+    OLD_RAW / "freeze-receipt.json": (
+        "daf46bd16aa98ff60b1e27afe3f1623f596e42553adb4d87996efdf5e0e6cc21"
+    ),
+    POOLS: "e86ac4858fffb0040301c38a0481da7261bece6070e3531cfe9fc2e863c10618",
+}
+ALLOCATION_SCHEMA = "bigsmall.development.preallocation.post-fix-20.v1"
+N_DEVELOPMENT = 20
+PLACE_CONTROL_SEED = 2026111802
+SEED_PREFIX = "bigsmall/post-worker-fix-development/20261119/v1"
+SLOT_BUDGET = {"cloud_requests": 1, "local_generations": 4, "model_loads": 1, "retries": 0}
+P1_PLAN = "fd292807f54204a775821b5210d8630127769005bc6d1f5c932bfe1653e2c7fd"
+ARCHIVE_ROOTS = ("experiments", "results", "artifacts/research/process")
+SOURCE_PATHS = ("pyproject.toml", "src", "assets", "configs", "scripts")
+INDEX_NAMES = {
+    "scene-assignment.json",
+    "scene-application.json",
+    "preallocation.json",
+    "assignments.json",
+    "protocol.json",
+    "pools.json",
+}
+SEED_KEYS = {"seed", "scene_seed", "pose_seed"}
+HEX_SHA256 = re.compile(r"[a-f0-9]{64}\Z")
+LEGACY_FIXTURE_ROOT = Path("/home/ningyd/.codex/worktrees/v4-marker-ambiguity/BIGsmall")
+LEGACY_SUITE = Path("experiments/results/phase9/grasp-lift-stop-20261117/regression/suite-02")
+LEGACY_FIXTURE = LEGACY_SUITE / "tmp/test_malformed_protocol_claims1/protocol/protocol.json"
+LEGACY_FIXTURE_SHA = "021fb596db81e6d02bf3d2586ee3981fe519f275c0ac9ca76bbcf2ebb4097d96"
+LEGACY_FIXTURE_PROOF = {
+    LEGACY_SUITE / "start.json": "6df2a0e1c5e581927d0a4754f08d3eca2efe455375e39400e3d5796048a0bd65",
+    LEGACY_SUITE / "nodes.txt": "70c02e4038e293fbae12757c23679c2b0b899a6ba926f8b2de3e9ccb9fa6574a",
+    LEGACY_SUITE
+    / "result.json": "5cd7ba7b6c5d8b69104822be484ea43e08e08c177c4f0adc8c67c2a09baddafe",
+    Path("tests/test_research_admission.py"): (
+        "a12dd1490f9a5b81658dbd44a6fffd588ffe19dc039b8e460a0faeefa0e8024b"
+    ),
+}
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def digest(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()
+
+
+def sha(path: Path) -> str:
+    return digest(path.read_bytes())
+
+
+def canonical(data: Any) -> bytes:
+    return (json.dumps(data, allow_nan=False, indent=2, sort_keys=True) + "\n").encode()
+
+
+def write_new(path: Path, data: Any) -> None:
+    with path.open("xb") as output:
+        output.write(canonical(data))
+
+
+def seed_for(index: int) -> int:
+    """Derive fixed 31-bit scene seeds with 5 in each original modulus-4 group."""
+    draw = hashlib.sha256(f"{SEED_PREFIX}/{index:02d}".encode()).digest()
+    return 4 * (400_000_000 + int.from_bytes(draw[:8], "big") % 100_000_000) + index % 4
+
+
+def make_assignments():
+    def slot(seed, identity, cohort):
+        return {
+            "assignment_id": identity,
+            "run_instance_id": f"p1-20261119-{identity}",
+            "pose_seed": seed,
+            "runtime_seed": seed,
+            "cohort": cohort,
+            "scene": sample_component_scene(seed, "development"),
+            "native_output": f"native/{identity}",
+            "model_budget": dict(SLOT_BUDGET),
+        }
+
+    development = [
+        slot(seed_for(index), f"development-{index:02d}", "FRESH_INDEPENDENT")
+        for index in range(1, N_DEVELOPMENT + 1)
+    ]
+    repeats = [
+        slot(PLACE_CONTROL_SEED, f"repeat-1802-{index:02d}", "FIXED_POSE_REPEAT_CONTROL")
+        for index in (1, 2)
+    ]
+    require(
+        len({row["pose_seed"] for row in development}) == N_DEVELOPMENT
+        and len({pose(row["scene"]["object_position_m"]) for row in development}) == N_DEVELOPMENT,
+        "derived positions or seeds collide, do not redraw",
+    )
+    return development, repeats
+
+
+def pose(value):
+    if (
+        isinstance(value, list)
+        and len(value) == 3
+        and all(type(number) in {float, int} and math.isfinite(number) for number in value)
+    ):
+        return tuple(round(number, 6) for number in value)
+    return None
+
+
+def collect_identities(document):
+    """Only compare typed numeric seeds and explicit target/object world XYZ."""
+    seeds, positions = set(), set()
+    pending = [document]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, list):
+            pending.extend(current)
+        elif isinstance(current, dict):
+            seeds.update(int(current[k]) for k in SEED_KEYS if type(current.get(k)) is int)
+            candidates = [
+                current.get(k)
+                for k in ("object_position_m", "applied_position_m", "requested_position_m")
+            ]
+            target = current.get("target")
+            if isinstance(target, dict):
+                candidates.append(target.get("position"))
+            positions.update(p for value in candidates if (p := pose(value)) is not None)
+            pending.extend(current.values())
+    return seeds, positions
+
+
+def assert_no_conflicts(assignments, history):
+    candidate_seeds = {row["pose_seed"] for row in assignments}
+    candidate_positions = {pose(row["scene"]["object_position_m"]) for row in assignments}
+    for label, (seeds, positions) in history.items():
+        common_seed = sorted(candidate_seeds.intersection(seeds))
+        common_position = sorted(candidate_positions.intersection(positions))
+        require(
+            not (common_seed or common_position),
+            f"{label} collides with new development: "
+            f"seed {common_seed}, position {common_position}",
+        )
+
+
+def sources_hashes():
+    require(sha(ROUND / "plan.json") == P1_PLAN, "P1 Astra plan changed")
+    plan = json.loads((ROUND / "plan.json").read_bytes())
+    require(sha(ROUND / "plan.md") == plan["plan_md_sha256"], "P1 Astra plan Markdown changed")
+    for path, expected in FROZEN_HISTORICAL.items():
+        require(sha(path) == expected, f"registered prior input differs: {path.name}")
+
+
+def read_history_document(path: Path, *, lines: bool):
+    raw = path.read_bytes()
+    content_sha = digest(raw)
+    if path == LEGACY_FIXTURE_ROOT / LEGACY_FIXTURE:
+        require(
+            not lines
+            and stat.S_ISREG(path.lstat().st_mode)
+            and path.resolve() == path
+            and len(raw) == 1
+            and raw == b"{"
+            and content_sha == LEGACY_FIXTURE_SHA,
+            "registered malformed pytest fixture changed",
+        )
+        return None, content_sha, "ATTESTED_MALFORMED_PYTEST_FIXTURE"
+    try:
+        values = (
+            [json.loads(line) for line in raw.splitlines() if line.strip()]
+            if lines
+            else (json.loads(raw))
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError(f"unregistered malformed history index: {path}") from exc
+    return values, content_sha, "PARSED_HISTORY"
+
+
+def history_index(workspace_root: Path, output: Path):
+    sources_hashes()
+    old_freeze = json.loads((OLD_RAW / "freeze-receipt.json").read_bytes())
+    roots = tuple(
+        dict.fromkeys(
+            Path(path).resolve(strict=True)
+            for path in (*old_freeze["history_roots"], workspace_root)
+        )
+    )
+    require(LEGACY_FIXTURE_ROOT in roots, "registered history root is missing")
+    for path, expected in LEGACY_FIXTURE_PROOF.items():
+        require(
+            sha(LEGACY_FIXTURE_ROOT / path) == expected,
+            "registered malformed pytest fixture provenance changed",
+        )
+    protocol = json.loads(TEACHER.read_bytes())
+    armed = protocol["assignments"]
+    require(
+        len(armed) == 9 and {row["seed"] for row in armed} == set(range(11919001, 11919010)),
+        "teacher allocation differs from the nine reserved seeds",
+    )
+    require(
+        protocol["teacher_release_config_sha256"] == sha(TEACHER_CONFIG),
+        "teacher allocation is not bound to the current v9 registration",
+    )
+    pools = strict_json(POOLS.read_bytes())
+    validate_pilot_pools(pools)
+    by_category = {
+        "teacher": collect_identities(armed),
+        "b0_and_future_pilot": collect_identities(pools),
+        "historical": (set(), set()),
+    }
+    record = {
+        "teacher": {
+            "protocol_sha256": sha(TEACHER),
+            "config_sha256": sha(TEACHER_CONFIG),
+            "allocations": len(armed),
+        },
+        "b0_and_future_pilot": {
+            "sha256": sha(POOLS),
+            "pools": {key: len(rows) for key, rows in sorted(pools.items())},
+        },
+        "historical": [],
+    }
+    visited = {TEACHER.resolve(), POOLS.resolve()}
+    known_bad = []
+
+    def add_history(path, label, relative, *, lines=False):
+        values, content_sha, classification = read_history_document(path, lines=lines)
+        seeds, positions = collect_identities(values)
+        by_category["historical"][0].update(seeds)
+        by_category["historical"][1].update(positions)
+        row = (label, relative, content_sha, len(seeds), len(positions), classification)
+        record["historical"].append(row)
+        if classification == "ATTESTED_MALFORMED_PYTEST_FIXTURE":
+            known_bad.append(row)
+
+    # See the original four-slot archive receipt for the registered historical worktrees.
+    for index, root in enumerate(roots, 1):
+        for prefix in ARCHIVE_ROOTS:
+            for base, dirs, filenames in os.walk(root / prefix):
+                folder = Path(base)
+                if folder.is_relative_to(output):
+                    dirs.clear()
+                    continue
+                for name in sorted(set(filenames) & INDEX_NAMES):
+                    path = folder / name
+                    resolved = path.resolve()
+                    if (
+                        resolved not in visited
+                        and resolved.is_relative_to(root)
+                        and resolved.is_file()
+                        and not resolved.is_relative_to(output)
+                    ):
+                        visited.add(resolved)
+                        add_history(resolved, index, resolved.relative_to(root).as_posix())
+    for dataset in (
+        "rgbd-ced-dev-smoke-20261004",
+        "rgbd-smoke-20261003",
+        "rgbd-validation-20261003",
+        "rgbd-teacher-fresh-gripper-v3",
+        "rgbd-teacher-smoke",
+        "rgbd-teacher-smoke-v2",
+        "rgbd-teacher-smoke-v3",
+    ):
+        rel = Path("datasets") / dataset / "samples.jsonl"
+        add_history(workspace_root / rel, "dataset", rel.as_posix(), lines=True)
+    require(len(known_bad) == 1, "registered malformed pytest fixture missing or repeated")
+    historical = sorted(record.pop("historical"), key=str)
+    record["historical"] = {
+        "roots_checked": len(roots),
+        "files_checked": len(historical),
+        "ordered_input_vector_sha256": digest(canonical(historical)),
+        "attested_negative_fixture": known_bad[0],
+    }
+    record["identity_counts"] = {
+        label: {"numeric_seeds": len(values[0]), "explicit_target_xyz": len(values[1])}
+        for label, values in by_category.items()
+    }
+    return by_category, record, historical
+
+
+def git(source, *args):
+    return subprocess.check_output(["git", "-C", source, *args], text=True).strip()
+
+
+def bind_source(source, expected):
+    require(
+        re.fullmatch(r"[a-f0-9]{40}", expected) is not None, "requires full approved product SHA"
+    )
+    head = git(source, "rev-parse", "HEAD")
+    require(head == expected, "approved post-fix product SHA does not match the checkout")
+    require(
+        head != "5103e7f483b9fccd40cf2e49d4bd5ef8979f64d2",
+        "previous 1801–1804 checkout cannot be the post-fix product",
+    )
+    require(not git(source, "status", "--porcelain", "--", *SOURCE_PATHS), "product tree is dirty")
+    sampler = Path(sample_component_scene.__code__.co_filename).resolve()
+    require(
+        sampler.is_relative_to(source), "trusted sampler not imported from the approved checkout"
+    )
+    return {
+        "product_commit": head,
+        "product_tree": git(source, "rev-parse", "HEAD^{tree}"),
+        "scope": "WORKER_EXCEPTION_FIX_PRODUCT",
+        "pose_sampler_sha256": sha(sampler),
+        "research_role_config_sha256": sha(source / "configs/research/ced_roles.yaml"),
+    }
+
+
+def allocation(source, expected, workspace, output):
+    sources_hashes()
+    frozen = bind_source(source, expected)
+    development, repeats = make_assignments()
+    previous = json.loads((OLD_ROUND / "preallocation.json").read_bytes())
+    original = next(row for row in previous["episodes"] if row["seed"] == PLACE_CONTROL_SEED)
+    require(
+        {key: val for key, val in original.items() if key != "id"} == repeats[0]["scene"],
+        "1802 original pose changed",
+    )
+    prior, audit, history_vector = history_index(workspace, output)
+    assert_no_conflicts(development, prior)
+    require(
+        PLACE_CONTROL_SEED in prior["historical"][0], "1802 repeat source not in prior inventory"
+    )
+    record = {
+        "schema": ALLOCATION_SCHEMA,
+        "phase": "PREALLOCATED_NOT_LAUNCHED",
+        "formal_research": "NOT_ACCEPTED",
+        "source": frozen,
+        "seed_design": {
+            "namespace": SEED_PREFIX,
+            "index_1_through_20": "4*(400000000+SHA256_BE_U64 mod 100000000)+(index mod 4)",
+            "block_counts": {"VISIBLE_POSE": 15, "ARM_OCCLUSION_STRESS": 5},
+            "sha256_input_pattern": "{namespace}/{index:02d}",
+            "redraw_on_conflict": False,
+        },
+        "history_audit": audit,
+        "development": development,
+        "repeats_1802": repeats,
+        "repeat_scope": (
+            "Same registered pose and simulator seed, independent clean invocation IDs."
+        ),
+        "trial_budget": SLOT_BUDGET,
+        "launch_authorized_by_this_record": False,
+    }
+    output.mkdir(exist_ok=False)
+    write_new(output / "history-input-vector.local.json", history_vector)
+    preset = load_config()
+    for row in development + repeats:
+        config = preset.model_copy(
+            update={"seed": row["runtime_seed"], "scene_split": "development"}
+        )
+        name = row["assignment_id"] + ".json"
+        row["config"] = name
+        config_path = output / name
+        write_new(config_path, config.model_dump(mode="json"))
+        require(load_config(config_path) == config, "persisted product configuration differs")
+        row["config_sha256"] = sha(config_path)
+        row["config_fingerprint"] = config.fingerprint()
+    record["roles"] = {
+        key: getattr(preset, key)
+        for key in ("cloud_model", "perception_model", "edge_provider", "marker_family")
+    }
+    write_new(output / "allocation.json", record)
+    write_new(output / "results-before-any-run.json", score_outcomes(record, [], closed=False))
+
+
+def wilson95(successes, total):
+    require(
+        type(successes) is int and type(total) is int and 0 <= successes <= total,
+        "invalid binomial counts",
+    )
+    if total == 0:
+        return None
+    z = 1.959963984540054
+    p = successes / total
+    factor = 1 + z * z / total
+    center = (p + z * z / (2 * total)) / factor
+    margin = z * math.sqrt(p * (1 - p) / total + z * z / (4 * total * total)) / factor
+    return [max(0, center - margin), min(1, center + margin)]
+
+
+def score_outcomes(allocation_record, outcomes, *, closed):
+    assignments = allocation_record["development"] + allocation_record["repeats_1802"]
+    expected = {slot["assignment_id"]: slot for slot in assignments}
+    require(len(expected) == len(assignments), "duplicate preallocated identifiers")
+    by_assignment = {}
+    for outcome in outcomes:
+        identity = outcome["assignment_id"]
+        require(
+            identity in expected and identity not in by_assignment,
+            "outcome is not a unique registered assignment",
+        )
+        slot = expected[identity]
+        require(
+            all(outcome[key] == slot[key] for key in ("run_instance_id", "pose_seed")),
+            "outcome run or pose identity differs",
+        )
+        status = outcome["status"]
+        require(
+            status in {"AUDITED", "STARTED_UNRESOLVED", "NOT_EXECUTED"}, "unknown outcome status"
+        )
+        if status == "AUDITED":
+            require(
+                all(
+                    type(outcome[key]) is bool
+                    for key in ("component_completed", "independent_physical_success")
+                )
+                and HEX_SHA256.fullmatch(outcome["audit_sha256"]) is not None,
+                "audited outcome lacks independent evidence or verified labels",
+            )
+        else:
+            require(
+                all(
+                    outcome[key] is None
+                    for key in (
+                        "component_completed",
+                        "independent_physical_success",
+                        "audit_sha256",
+                    )
+                ),
+                "unresolved or unexecuted status cannot claim success",
+            )
+        by_assignment[identity] = outcome
+    if closed:
+        require(set(by_assignment) == set(expected), "closed batch has missing assignments")
+        require(
+            all(x["status"] != "STARTED_UNRESOLVED" for x in outcomes),
+            "unresolved started slot cannot close the batch",
+        )
+    fresh = [
+        by_assignment.get(slot["assignment_id"], {"status": "NOT_EXECUTED"})
+        for slot in allocation_record["development"]
+    ]
+    status_counts = Counter(row["status"] for row in fresh)
+    observed = status_counts["AUDITED"]
+    interval_n = len(fresh) if closed and observed == len(fresh) else None
+
+    def metric(key):
+        n = sum(row.get(key) is True for row in fresh)
+        return {
+            "successes": n,
+            "interval_denominator": interval_n,
+            "wilson95": wilson95(n, interval_n) if interval_n else None,
+        }
+
+    historical = strict_json((OLD_ROUND / "final-batch-summary.json").read_bytes())
+    require(
+        sha(OLD_ROUND / "final-batch-summary.json")
+        == FROZEN_HISTORICAL[OLD_ROUND / "final-batch-summary.json"],
+        "historical series changed",
+    )
+    return {
+        "development": {
+            "state": "CLOSED" if closed else "OPEN",
+            "assigned": len(fresh),
+            "observed_audited": observed,
+            "started_unresolved": status_counts["STARTED_UNRESOLVED"],
+            "not_executed": status_counts["NOT_EXECUTED"],
+            "component_complete": metric("component_completed"),
+            "physical_success": metric("independent_physical_success"),
+        },
+        "repeats_1802": [
+            by_assignment.get(
+                slot["assignment_id"],
+                {key: slot[key] for key in ("assignment_id", "run_instance_id", "pose_seed")}
+                | {"status": "NOT_EXECUTED"},
+            )
+            for slot in allocation_record["repeats_1802"]
+        ],
+        "separate_historical_v5": {
+            "component_complete": historical["worker_completed"],
+            "physical_success": historical["physical_success"],
+            "audited_n": historical["audit_verified"],
+            "wilson95_component": wilson95(
+                historical["worker_completed"], historical["audit_verified"]
+            ),
+            "wilson95_physical": wilson95(
+                historical["physical_success"], historical["audit_verified"]
+            ),
+        },
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(required=True, dest="command")
+    freeze = sub.add_parser("freeze")
+    freeze.add_argument("--source-checkout", required=True, type=Path)
+    freeze.add_argument("--expected-product", required=True)
+    freeze.add_argument("--historical-dataset-workspace", required=True, type=Path)
+    freeze.add_argument("--output", required=True, type=Path)
+    stats = sub.add_parser("stats")
+    stats.add_argument("--allocation", required=True, type=Path)
+    stats.add_argument("--outcomes", required=True, type=Path)
+    stats.add_argument("--close", action="store_true")
+    stats.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    if args.command == "freeze":
+        allocation(
+            args.source_checkout.resolve(),
+            args.expected_product,
+            args.historical_dataset_workspace.resolve(),
+            args.output.resolve(),
+        )
+    else:
+        record = strict_json(args.allocation.read_bytes())
+        require(record["schema"] == ALLOCATION_SCHEMA, "allocation schema differs")
+        write_new(
+            args.output,
+            score_outcomes(
+                record,
+                strict_json(args.outcomes.read_bytes()),
+                closed=args.close,
+            ),
+        )
+
+
+if __name__ == "__main__":
+    main()
