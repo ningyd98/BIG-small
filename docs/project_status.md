@@ -2,7 +2,7 @@
 
 ## 2026-11-19 项目组状态
 
-BIGsmall Embodied Harness 已交付 H0/H1 工程开发版，冻结首场景契约并通过清洁环境安装、七条 CLI 正常路径和两条保护拒绝检查。产品冻结于 `5103e7f4`，本页引用的公开证据以研发分支 `research/harness-candidate-20261118` 的 `167bc0ff` 为基点。云端负责规划，边缘按规则和成本约束判断，端侧用 OpenCV/RGB-D 观测，沿用可见姿态标记、顶视相机、现有控制器与安全盾。边缘模型选型后置。 [现行计划](plan.md) · [公开交付范围](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/public-delivery.md)
+BIGsmall Embodied Harness 已交付 H0/H1 工程开发版，冻结首场景契约并通过清洁环境安装、七条 CLI 正常路径和两条保护拒绝检查。历史四位姿冻结于 `5103e7f4`，本轮新增开发位姿冻结于已含 worker 异常留痕的 `4bdb64eb`。教师单组入口与采集优化另在研发分支 `research/harness-candidate-20261118` 交付。云端负责规划，边缘按规则和成本约束判断，端侧用 OpenCV/RGB-D 观测，沿用可见姿态标记、顶视相机、现有控制器与安全盾。边缘模型选型后置。 [现行计划](plan.md) · [公开交付范围](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/public-delivery.md)
 
 冻结版首次整库收集 7,259 项，7,225 通过、33 跳过、1 项 dispatcher 清理错误，原判定为 `passed=false`。同版在原测试夹具下独占复验该节点通过，退出 0。 [回归、安装与固定场景回放](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/regression-and-install.md)
 
@@ -19,15 +19,25 @@ BIGsmall Embodied Harness 已交付 H0/H1 工程开发版，冻结首场景契�
 
 历史开发位姿四例仍为组件完成 1/4、独立物理成功 2/4。含这四例的跨版本历史七例分别为 3/7 和 4/7。 [历史七例独立复算](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/native-seven-verification.md)
 
-### 下一步归档诊断
+### 三例归档复核与 worker 修复
 
-1. **1803 身份差。** 以 1802 为对照，把原指点、深度、坐标变换和标记配准重建到同一坐标系，定位 30.882 mm 差值首次出现的步骤。
-2. **1804 顶面极值。** 在原 RGB-D 帧上标出核心、边界及最高最低像素，核对未舍入高度和邻域深度，判断原帧支持的成因。
-3. **1801 三视图耗时。** 对齐放置阶段三视图及上一接受帧，核对相机移动、捕获归档、视觉处理和逆运动学耗时。实际 100.041 ms 沿用在线记录。
+三例全部从 `5103e7f4` 的冻结 RGB-D、标记和执行原件重建，零新增模型调用。九份确定性结果经独立复算逐字节一致。 [输入与完整读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-archived-three-20261119/step-report-v2.md)
 
-三项使用现有归档，新增模型调用、试次和实机动作预算均为零。 [已登记的诊断次序与方法](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-four-fresh-positions-20261118/next-steps.md)
+| 位姿 | 找到的首个差异及处置 |
+| --- | --- |
+| 1803 | 原指点 (173,120) 通过 3×3 颜色检查，距登记顶心 6.237 像素。反投影后已出现 30.848 mm 的 TCP 横向差，全三维差 30.882 mm。1802 的关联将偏差从 8.836 像素降到 0.329 像素，最终 3.059 mm。两条路径均复现相同的刚体配准，物理成因为 `UNKNOWN`。 [登记叠图](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-archived-three-20261119/derived-v2/1803-1802-registered-identity.png) |
+| 1801 | 两例各有 143 个单主视图接受样本。1801 两次启用备选视图时，视觉处理 47.664 ms、捕获归档 29.716 ms、移机 10.153 ms，最终 100.041 ms 触发保护。最近系统采样在 4.155 秒后，1/5/15 分钟负载为 1.26/1.97/4.08。身份、时间、顺序和安全检查需同步完成。大文件异步写入仍需证明哈希登记可恢复、有界回压与落盘完整性。 [视图与分项耗时](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-archived-three-20261119/derived-v2/1801-place-timing.json) |
+| 1804 | 205 个支持像素中，147 个核心像素跨度 4.845 mm，203 个顶面像素跨度 8.0266 mm，原门限为 8.000 mm。两个极值都在有 RGB-D 过渡的边界。表面起伏、混合像素或遮挡的物理归因仍为 `UNKNOWN`。 [极值与 5×5 深度邻域](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-archived-three-20261119/1804-extrema-neighborhood-depth.png) |
 
-动作资格已合格 **0/9 组**，当前原生动作资格为 `UNKNOWN`。先取得当前来源下首个覆盖全部八种动作与完整时域的教师组及独立合格读出，再按冻结规则取得至少九个合格组，建立有限且不超过 10 mm 的联合误差界。真实 B0 selection 为 `NOT_RUN`，四个周期仍待按独立协议比较。正式研究为 `NOT_ACCEPTED`，实机为 `NOT_STARTED`。 [资格与 B0 前置审计](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/qualification.md) · [当前权威状态](current_authoritative_status.md)
+worker 自产品提交 `4bdb64eb` 起，把脱敏后的异常类型、消息、堆栈和阶段写入 episode。原停止条件沿用。定向回归 34/35，余下一项成功路径在同源独占复验通过，原 113.520 ms 超限记录保留。 [异常原件与回归](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-worker-exception-20261119/step-report.md) · [同源独占结果](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-worker-types-exclusive-deadline-20261119/step-report.md)
+
+### 教师、B0 和交付环境
+
+教师已从九个新组中单独开放 `native-p0-20261119-0001`。优化成功采集的不可变数据快照后，同一姿态在原 8 秒窗口内的实测进度由 181/1920 提至 391/1920 步。16 帧均有当前注册区域，红色身份仍出现分裂。正式验收要求独立 reader 重建八个完整动作。 [单组协议](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-first-teacher-20261119/step-report.md) · [原窗复验](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-capture-detach-20261119/step-report.md)
+
+B0 配置已绑定 3,260 个互斥分配和当前名义角色探针。探针 4/4 实发成功，零重试，共 3,073 tokens。用户授权 B0 及新增开发批次的付费次数、金额均无上限，实际账单金额和币种待供应商回执。真实 selection 待教师资格，协议读回仅有 1/200 恢复、0 份机会证据；三份旧生成协议与当前冻结池均精确匹配 0/3,260。 [配置和账本核对](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/b0/step-report.md)
+
+文档治理的 25 项问题已清零，8 项治理测试通过。三套历史冻结检出和安装包已迁至私有持久目录，原入口验证通过。主工作区 `config.py` 的一行改动已单独备份并恢复至 Git 基点。本轮先在研发分支交付，选定合入提交并完成同版回归及相对公开 main 的完整范围复审后，再合入 main。 [文档治理回执](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/governance/step-report.md) · [冻结迁移及 main 决定](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-freeze-directory-mode-20261119/step-report.md)
 
 ## 2026-10-04 历史分阶段开发状态
 
