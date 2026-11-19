@@ -36,6 +36,14 @@ BASE_SHA = "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2"
 _PREPARE_CONFIG = "configs/research/native_operational_calibration_75mm_r579.yaml"
 _PREPARE_CONFIG_DIGEST = "5e00a5bb52b465a9b49931357ae630cef8cc56766bd115b8db0bba42c3cf213b"
 _PREPARE_CONFIG_SHA = "621624088a9d3e3df7fe9de522b960abd8ea9c1c45193067b6978665fd88b6f3"
+REGISTERED_PREPARATION_SCHEMA = "native.calibration.operational.v6"
+REGISTERED_COLLECTION_SCHEMA = "native.calibration.operational.v7"
+REGISTERED_OCCLUSION_SCHEMA = "native.calibration.operational.v8"
+REGISTERED_TEACHER_SCHEMA = "native.calibration.operational.v9"
+REGISTERED_V2_STEP_SCHEMAS = frozenset({REGISTERED_OCCLUSION_SCHEMA, REGISTERED_TEACHER_SCHEMA})
+REGISTERED_STEP_SCHEMAS = REGISTERED_V2_STEP_SCHEMAS | {REGISTERED_COLLECTION_SCHEMA}
+_REGISTERED_TEACHER_CONFIG = "configs/research/native_registered_single_teacher_p0_20261119.yaml"
+_REGISTERED_TEACHER_CONFIG_SHA = "94dc78d497f3a5e2bbbedea5b6bfc4ae20f945203a1a83c8796bb46b47753fcf"
 
 
 @dataclass(frozen=True)
@@ -407,7 +415,12 @@ def _protocol(config: Path, *, historical_sources: dict[str, str] | None = None)
 
 
 def prepare_native_calibration(config: Path, *, output: Path) -> dict[str, Any]:
-    protocol = _protocol(config)
+    settings = load_json(config)
+    if isinstance(settings, dict) and settings.get("schema_version") == REGISTERED_TEACHER_SCHEMA:
+        release = _registered_teacher_settings(config)
+        protocol = _registered_teacher_protocol(release=release)
+    else:
+        protocol = _protocol(config)
     destination = fresh_directory(output)
     save_exclusive(destination / "protocol.json", protocol)
     return dict(
@@ -500,7 +513,17 @@ def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]
     protocol = load_json(path / "protocol.json")
     if (
         isinstance(protocol, dict)
-        and protocol.get("schema_version") == "native.calibration.operational.v8"
+        and protocol.get("schema_version") == REGISTERED_TEACHER_SCHEMA
+    ):
+        expected = _registered_teacher_protocol(
+            historical_sources=None if current_sources else protocol.get("source_hashes")
+        )
+        if canonical(protocol) != canonical(expected):
+            raise ValueError("registered teacher recipe/source/single-release identity changed")
+        return protocol
+    if (
+        isinstance(protocol, dict)
+        and protocol.get("schema_version") == REGISTERED_OCCLUSION_SCHEMA
     ):
         expected = _registered_collection_protocol_v2(
             None if current_sources else protocol.get("source_hashes")
@@ -562,10 +585,6 @@ def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]
     return protocol
 
 
-REGISTERED_PREPARATION_SCHEMA = "native.calibration.operational.v6"
-REGISTERED_COLLECTION_SCHEMA = "native.calibration.operational.v7"
-
-
 def _registered_collection_protocol(historical_sources=None):
     base = _protocol(
         ROOT / _PREPARE_POLICIES[SIDE_PREPARE_ONLY_FAMILY].config,
@@ -613,7 +632,7 @@ def _registered_collection_protocol_v2(historical_sources=None):
 
     base = _registered_collection_protocol(historical_sources)
     base.update(
-        schema_version="native.calibration.operational.v8",
+        schema_version=REGISTERED_OCCLUSION_SCHEMA,
         collection_policy_id="registered-model-collection-v2",
         input_schema="registered.grounding.inputs.v2",
         binding_schema="registered.collection.binding.v2",
@@ -633,6 +652,76 @@ def _registered_collection_protocol_v2(historical_sources=None):
         nominal_region_is_clearance=False,
     )
     return base
+
+
+def _registered_teacher_settings(path: Path) -> dict[str, Any]:
+    raw = regular(path).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != _REGISTERED_TEACHER_CONFIG_SHA:
+        raise ValueError("fixed registered teacher release config bytes required")
+    release = json.loads(raw)
+    if not isinstance(release, dict):
+        raise ValueError("fixed registered teacher release config required")
+    return release
+
+
+def _registered_teacher_protocol(
+    historical_sources: dict[str, str] | None = None, *, release: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Keep the reviewed v8 execution recipe and open only this new teacher assignment."""
+    fixed = _registered_teacher_settings(ROOT / _REGISTERED_TEACHER_CONFIG)
+    if release is not None and release != fixed:
+        raise ValueError("registered teacher release settings changed")
+    protocol = _registered_collection_protocol_v2(historical_sources)
+    release_id = fixed["release_id"]
+    first = fixed["released_assignment"]
+    assignments = []
+    for index in range(fixed["assigned_groups"]):
+        assignment_id = f"native-{release_id}-{index + 1:04d}"
+        assignments.append(
+            dict(
+                assignment_id=assignment_id,
+                seed=fixed["first_seed"] + index,
+                ancestors=[f"native-{release_id}-preregistered-{index + 1:04d}"],
+                pool="CALIBRATION_ONLY",
+                status="RELEASED" if assignment_id == first else "PREASSIGNED_NOT_RUN",
+            )
+        )
+    protocol["settings"].update(
+        schema_version=REGISTERED_TEACHER_SCHEMA,
+        assigned_groups=fixed["assigned_groups"],
+        first_seed=fixed["first_seed"],
+        released_assignment=first,
+    )
+    protocol.update(
+        schema_version=REGISTERED_TEACHER_SCHEMA,
+        teacher_release_config_sha256=_REGISTERED_TEACHER_CONFIG_SHA,
+        assignments=assignments,
+        released_assignments=[first],
+        execution_release="SINGLE_TEACHER_ASSIGNMENT_RELEASED",
+        execution_allowed=True,
+        prepare_only=False,
+        budget_basis="SINGLE_TEACHER_ATTEMPT_CEILINGS",
+        authorized_actual_budget=dict(
+            model_loads=0,
+            generations=0,
+            paid=0,
+            teacher_acquisitions=1,
+            mujoco_compile=1,
+            mj_forward=4501,
+            render=protocol["render_pass_budget"],
+            physics_steps=protocol["physical_budget"],
+            controller=len(protocol["actions"]),
+            hardware=0,
+            MjData=19,
+            mj_jacSite=4500,
+        ),
+        authorized_actual_roles={
+            "MjData": {"ENGINE": 1, "IK_SCRATCH": 18},
+            "mj_forward": {"RESET": 1, "IK_SCRATCH": 4500},
+            "mj_jacSite": {"IK_SCRATCH": 4500},
+        },
+    )
+    return protocol
 
 
 def prepare_registered_collection_protocol_v2(*, output: Path) -> dict[str, Any]:

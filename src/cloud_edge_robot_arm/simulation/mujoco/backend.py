@@ -8,7 +8,7 @@ import threading
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from functools import wraps
 from importlib.util import find_spec
 from pathlib import Path
@@ -139,6 +139,36 @@ def _operation_detach(value: Any) -> Any:
     return deepcopy(value)
 
 
+def _detach_successful_capture(result: Mapping[str, Any] | None) -> Any:
+    if (
+        type(result) is not dict
+        or any(type(key) is not str for key in result)
+        or tuple(result) != ("sensor_frame", "instance_ids", "instance_labels", "pass_state_hashes")
+    ):
+        return _operation_detach(result)
+    frame, instance_ids = result["sensor_frame"], result["instance_ids"]
+    if (
+        type(frame) is not SensorFrame
+        or type(frame.depth) is not tuple
+        or any(type(value) is not float for value in frame.depth)
+        or type(instance_ids) is not tuple
+        or any(type(value) is not int for value in instance_ids)
+    ):
+        return _operation_detach(result)
+
+    # Keep the original asdict/deepcopy path for metadata and share only proven
+    # immutable pixels. Replacing the existing key preserves the field order.
+    metadata = _operation_detach(replace(frame, depth=()))
+    return MappingProxyType(
+        {
+            "sensor_frame": MappingProxyType({**metadata, "depth": frame.depth}),
+            "instance_ids": instance_ids,
+            "instance_labels": _operation_detach(result["instance_labels"]),
+            "pass_state_hashes": _operation_detach(result["pass_state_hashes"]),
+        }
+    )
+
+
 def _operation_error_text(error: BaseException) -> str:
     """An audit message cannot replace or obstruct the foreground operation."""
     try:
@@ -174,7 +204,15 @@ class BackendOperationBoundary:
         } or self.phase not in {"BEGIN", "END"}:
             raise ValueError("unknown operation source boundary")
         object.__setattr__(self, "parameters", _operation_detach(self.parameters))
-        object.__setattr__(self, "result", _operation_detach(self.result))
+        if (
+            self.kind == "CAPTURE"
+            and self.phase == "END"
+            and self.error_type is None
+            and self.error is None
+        ):
+            object.__setattr__(self, "result", _detach_successful_capture(self.result))
+        else:
+            object.__setattr__(self, "result", _operation_detach(self.result))
 
 
 @dataclass(frozen=True, slots=True)

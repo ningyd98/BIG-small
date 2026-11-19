@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from importlib import import_module, util
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import numpy as np
 import pytest
@@ -14,8 +14,10 @@ import pytest
 from cloud_edge_robot_arm.simulation.config import SimulatorConfig
 from cloud_edge_robot_arm.simulation.models import JointCommand, PhysicalScenarioConfig, SensorFrame
 from cloud_edge_robot_arm.simulation.mujoco.backend import (
+    BackendOperationBoundary,
     MuJoCoPhysicsBackend,
     PhysicsStepObservation,
+    _operation_detach,
 )
 from tests import test_visual_worker_runtime as runtime_tests
 from tests.test_raw_episode_v3 import state
@@ -298,6 +300,98 @@ def test_observer_payloads_are_detached_and_nested_readonly():
     with pytest.raises(TypeError):
         events[-1].result["command_records"][0]["accepted"] = False
     assert backend.command_records[0]["accepted"] is True
+
+
+def capture_boundary_payload():
+    return {
+        "sensor_frame": SensorFrame(
+            frame_id="camera",
+            sim_time_s=0.0,
+            width=2,
+            height=1,
+            depth=(1.0, 2.0),
+            object_detections=[{"center": [10, 20]}],
+        ),
+        "instance_ids": (7, 8),
+        "instance_labels": {"7": ["workpiece"]},
+        "pass_state_hashes": ("one", "one", "one"),
+    }
+
+
+def test_capture_end_reuses_only_exact_immutable_pixel_arrays():
+    payload = capture_boundary_payload()
+    depth = payload["sensor_frame"].depth
+    boundary = BackendOperationBoundary(
+        1, "CAPTURE", "END", "episode", 1, 0.0, {}, payload, None, None
+    )
+    result = boundary.result
+    assert type(result) is MappingProxyType
+    assert type(result["sensor_frame"]) is MappingProxyType
+    assert tuple(result) == tuple(payload)
+    assert result == _operation_detach(payload)
+    assert tuple(result["sensor_frame"]) == tuple(_operation_detach(payload["sensor_frame"]))
+    assert result["sensor_frame"]["depth"] is depth
+    assert result["instance_ids"] is payload["instance_ids"]
+
+    payload["sensor_frame"].object_detections[0]["center"][0] = 90
+    payload["instance_labels"]["7"].append("changed")
+    assert result["sensor_frame"]["object_detections"][0]["center"] == (10, 20)
+    assert result["instance_labels"]["7"] == ("workpiece",)
+
+
+@pytest.mark.parametrize(
+    "unexpected",
+    ["begin", "failed", "other_kind", "shape", "sensor_subclass", "depth_subclass",
+     "instance_subclass", "mutable_depth", "mutable_instances"],
+)
+def test_capture_boundary_outside_exact_success_shape_preserves_original_copy(unexpected):
+    class CopyableFloat(float):
+        def __deepcopy__(self, memo):
+            return type(self)(self)
+
+    class CopyableInt(int):
+        def __deepcopy__(self, memo):
+            return type(self)(self)
+
+    class OtherSensorFrame(SensorFrame):
+        pass
+
+    payload = capture_boundary_payload()
+    frame = payload["sensor_frame"]
+    kind, phase, error_type = "CAPTURE", "END", None
+    if unexpected == "begin":
+        phase = "BEGIN"
+    elif unexpected == "failed":
+        error_type = "ValueError"
+    elif unexpected == "other_kind":
+        kind = "CONTROL"
+    elif unexpected == "shape":
+        payload["extra"] = "different event"
+    elif unexpected == "sensor_subclass":
+        payload["sensor_frame"] = OtherSensorFrame("camera", 0.0, 2, 1, depth=frame.depth)
+    elif unexpected == "depth_subclass":
+        payload["sensor_frame"] = replace(frame, depth=(CopyableFloat(1.0), 2.0))
+    elif unexpected == "instance_subclass":
+        payload["instance_ids"] = (CopyableInt(7), 8)
+    elif unexpected == "mutable_depth":
+        payload["sensor_frame"] = replace(frame, depth=([1.0], 2.0))
+    elif unexpected == "mutable_instances":
+        payload["instance_ids"] = ([7], 8)
+
+    boundary = BackendOperationBoundary(
+        1, kind, phase, "episode", 1, 0.0, {}, payload, error_type, None
+    )
+    result = boundary.result
+    assert result == _operation_detach(payload)
+    source_depth = payload["sensor_frame"].depth
+    assert result["sensor_frame"]["depth"] is not source_depth
+    assert result["instance_ids"] is not payload["instance_ids"]
+    if unexpected == "depth_subclass":
+        assert type(result["sensor_frame"]["depth"][0]) is CopyableFloat
+        assert result["sensor_frame"]["depth"][0] is not source_depth[0]
+    if unexpected == "instance_subclass":
+        assert type(result["instance_ids"][0]) is CopyableInt
+        assert result["instance_ids"][0] is not payload["instance_ids"][0]
 
 
 def test_missing_recorder_module_qualifies_feature_red_before_any_actual_operation():

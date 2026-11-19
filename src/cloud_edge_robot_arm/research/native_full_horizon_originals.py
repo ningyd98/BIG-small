@@ -34,6 +34,9 @@ from cloud_edge_robot_arm.research.native_archived_tracker import (
     _validated_utc,
 )
 from cloud_edge_robot_arm.research.native_calibration_collection import (
+    REGISTERED_STEP_SCHEMAS,
+    REGISTERED_TEACHER_SCHEMA,
+    REGISTERED_V2_STEP_SCHEMAS,
     canonical,
     detached,
     digest,
@@ -570,11 +573,8 @@ class _Audit:
         self.tracker_clock_end_utc: datetime | None = None
         self.tracker_clock_end_ns: int | None = None
         self.tracker_clock_keys: set[tuple[str, int | None, str | None]] = set()
-        self.registered_v2 = protocol.get("schema_version") == "native.calibration.operational.v8"
-        self.registered_collection = protocol.get("schema_version") in {
-            "native.calibration.operational.v7",
-            "native.calibration.operational.v8",
-        }
+        self.registered_v2 = protocol.get("schema_version") in REGISTERED_V2_STEP_SCHEMAS
+        self.registered_collection = protocol.get("schema_version") in REGISTERED_STEP_SCHEMAS
         self.registered_tracker = None
         self.registered_preview_finished = None
 
@@ -2717,6 +2717,12 @@ def read_native_full_horizon_group(
         raise ValueError("v6 preparation has no full-horizon action release or raw action spans")
     assigned = [r for r in registration["assignments"] if r["assignment_id"] == assignment_id]
     _require(len(assigned) == 1, "foreign calibration assignment")
+    if registration["schema_version"] == REGISTERED_TEACHER_SCHEMA:
+        _require(
+            assigned[0]["status"] == "RELEASED"
+            and assignment_id in registration["released_assignments"],
+            "unreleased registered teacher assignment",
+        )
     audit = _Audit(registration, assigned[0], Path(root))
     source_failures = False
     phases = (

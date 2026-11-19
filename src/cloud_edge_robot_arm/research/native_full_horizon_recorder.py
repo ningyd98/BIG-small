@@ -16,7 +16,12 @@ from dataclasses import asdict, fields
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from cloud_edge_robot_arm.research.native_calibration_collection import canonical, digest
+from cloud_edge_robot_arm.research.native_calibration_collection import (
+    REGISTERED_STEP_SCHEMAS,
+    REGISTERED_V2_STEP_SCHEMAS,
+    canonical,
+    digest,
+)
 from cloud_edge_robot_arm.research.native_calibration_collection import detached as _plain
 from cloud_edge_robot_arm.research.raw_episode_v3 import RawEpisodeIdentityV3
 from cloud_edge_robot_arm.simulation.mujoco.backend import BackendOperationBoundary
@@ -195,7 +200,7 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
             RegisteredCollectionStepBindingV2,
         } or (
             getattr(self.application, "protocol", {}).get("schema_version")
-            in {"native.calibration.operational.v7", "native.calibration.operational.v8"}
+            in REGISTERED_STEP_SCHEMAS
         ):
             self.application._validate_registered_dispatch(
                 self, contract=contract, step=step, attempt=attempt, binding=grounding
@@ -693,7 +698,7 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
     def capture(self) -> Any:
         v2 = (
             getattr(self.application, "protocol", {}).get("schema_version")
-            == "native.calibration.operational.v8"
+            in REGISTERED_V2_STEP_SCHEMAS
         )
         if v2:
             self._captured_feedback_json = self._captured_feedback_owner = None
@@ -776,12 +781,12 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
             raise RuntimeError("collection originals already frozen")
         v2 = (
             getattr(self.application, "protocol", {}).get("schema_version")
-            == "native.calibration.operational.v8"
+            in REGISTERED_V2_STEP_SCHEMAS
         )
-        registered = getattr(self.application, "protocol", {}).get("schema_version") in {
-            "native.calibration.operational.v7",
-            "native.calibration.operational.v8",
-        }
+        registered = (
+            getattr(self.application, "protocol", {}).get("schema_version")
+            in REGISTERED_STEP_SCHEMAS
+        )
         actions = self._actions
         if registered:
             from cloud_edge_robot_arm.research.raw_episode_v3 import (

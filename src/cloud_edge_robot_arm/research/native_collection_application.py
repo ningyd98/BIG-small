@@ -28,6 +28,11 @@ from cloud_edge_robot_arm.edge.evidence.conditions import (
     evaluate_conditions,
 )
 from cloud_edge_robot_arm.research.native_calibration_collection import (
+    REGISTERED_COLLECTION_SCHEMA,
+    REGISTERED_OCCLUSION_SCHEMA,
+    REGISTERED_STEP_SCHEMAS,
+    REGISTERED_TEACHER_SCHEMA,
+    REGISTERED_V2_STEP_SCHEMAS,
     ROOT,
     canonical,
     check_sources,
@@ -56,14 +61,21 @@ _ISSUER = object()
 
 
 def _check_protocol_sources(protocol: dict[str, Any]) -> None:
-    if protocol.get("schema_version") == "native.calibration.operational.v8":
+    if protocol.get("schema_version") == REGISTERED_TEACHER_SCHEMA:
+        from cloud_edge_robot_arm.research.native_calibration_collection import (
+            _registered_teacher_protocol,
+        )
+
+        if canonical(protocol) != canonical(_registered_teacher_protocol()):
+            raise ValueError("registered teacher source or recipe changed")
+    elif protocol.get("schema_version") == REGISTERED_OCCLUSION_SCHEMA:
         from cloud_edge_robot_arm.research.native_calibration_collection import (
             _registered_collection_protocol_v2,
         )
 
         if canonical(protocol) != canonical(_registered_collection_protocol_v2()):
             raise ValueError("registered occlusion source or recipe changed")
-    elif protocol.get("schema_version") == "native.calibration.operational.v7":
+    elif protocol.get("schema_version") == REGISTERED_COLLECTION_SCHEMA:
         from cloud_edge_robot_arm.research.native_calibration_collection import (
             _registered_collection_protocol,
         )
@@ -684,10 +696,7 @@ def _collect_grounded_step(
     *,
     consume_capture: Callable[[], dict[str, Any]],
 ) -> Any:
-    registered = protocol.get("schema_version") in {
-        "native.calibration.operational.v7",
-        "native.calibration.operational.v8",
-    }
+    registered = protocol.get("schema_version") in REGISTERED_STEP_SCHEMAS
     if registered:
         _check_protocol_sources(protocol)
         if dict(live.original.source_hashes) != protocol["source_hashes"]:
@@ -706,7 +715,7 @@ def _collect_grounded_step(
             if reason or not observation.captured_at <= started <= finished < until:
                 raise ValueError("registered collection publication expired or changed")
             data["final_validation_at"] = finished.isoformat()
-            if protocol["schema_version"] == "native.calibration.operational.v8":
+            if protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS:
                 after = consume_capture()
                 if not datetime.now(UTC) < until:
                     raise ValueError("registered collection publication expired after sampling")
@@ -730,7 +739,7 @@ def _collect_grounded_step(
             registered_collection_step,
         )
 
-        if protocol["schema_version"] == "native.calibration.operational.v8":
+        if protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS:
             from cloud_edge_robot_arm.research.native_collection_grounding import (
                 registered_collection_step_v2,
             )
@@ -1352,7 +1361,7 @@ class NativeCollectionApplication:
             control_source=(
                 "PIXELS_PROPRIO_REGISTERED_MODEL"
                 if self.protocol["schema_version"]
-                in {"native.calibration.operational.v7", "native.calibration.operational.v8"}
+                in REGISTERED_STEP_SCHEMAS
                 else "PIXELS_PROPRIO_REGISTERED_CONSTANTS"
             ),
             truth="OFFLINE_LABELS_ONLY",
@@ -1416,7 +1425,7 @@ class NativeCollectionApplication:
         binding: Any = None,
         shield_source: Any = None,
     ) -> CollectionAdmissionDecision:
-        if self.protocol["schema_version"] == "native.calibration.operational.v8":
+        if self.protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS:
             return self._evaluate_registered_admission_v2(
                 phase=phase,
                 step=step,
@@ -1436,7 +1445,7 @@ class NativeCollectionApplication:
         from cloud_edge_robot_arm.vision.tracking import _CONDITIONS, OpenCVTargetTracker
 
         live = _live(self)
-        registered = self.protocol["schema_version"] == "native.calibration.operational.v7"
+        registered = self.protocol["schema_version"] == REGISTERED_COLLECTION_SCHEMA
         expected_type = RegisteredCollectionStepBinding if registered else StepGroundingBinding
         if type(binding) is not expected_type:
             raise TypeError(
@@ -2072,12 +2081,12 @@ class NativeCollectionApplication:
         live = _live(self)
         context, live.registered_dispatch = live.registered_dispatch, None
         protocol = self.protocol
-        v2 = protocol["schema_version"] == "native.calibration.operational.v8"
+        v2 = protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS
         expected_type = RegisteredCollectionStepBindingV2 if v2 else RegisteredCollectionStepBinding
         if (
             context is None
             or protocol["schema_version"]
-            not in {"native.calibration.operational.v7", "native.calibration.operational.v8"}
+            not in REGISTERED_STEP_SCHEMAS
             or live.protocol_json != context["protocol_json"]
             or type(binding) is not expected_type
             or binding is not context["binding"]
@@ -2258,14 +2267,14 @@ class NativeCollectionApplication:
 
         expected_type = (
             RegisteredCollectionStepBindingV2
-            if self.protocol["schema_version"] == "native.calibration.operational.v8"
+            if self.protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS
             else RegisteredCollectionStepBinding
-            if self.protocol["schema_version"] == "native.calibration.operational.v7"
+            if self.protocol["schema_version"] == REGISTERED_COLLECTION_SCHEMA
             else StepGroundingBinding
         )
         if type(binding) is not expected_type:
             raise TypeError("exact protocol collection binding required before dispatch")
-        v2 = self.protocol["schema_version"] == "native.calibration.operational.v8"
+        v2 = self.protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS
         pre_context = None
         if v2:
             live.registered_execution = None
@@ -2275,16 +2284,13 @@ class NativeCollectionApplication:
         if live.pending != expected:
             raise RuntimeError("one unconsumed actual pre-admission required")
         live.pending = None
-        if self.protocol["schema_version"] == "native.calibration.operational.v8":
+        if self.protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS:
             if index in live.registered_attempted_indices:
                 raise RuntimeError("registered step attempt already consumed")
             live.registered_attempted_indices.add(index)
             pre_context, live.registered_pre = live.registered_pre, None
             self._consume_capture()
-        if self.protocol["schema_version"] in {
-            "native.calibration.operational.v7",
-            "native.calibration.operational.v8",
-        }:
+        if self.protocol["schema_version"] in REGISTERED_STEP_SCHEMAS:
             from cloud_edge_robot_arm.vision.owner_registration import (
                 RegisteredCollectionStepBinding,
                 RegisteredCollectionStepBindingV2,
@@ -2472,7 +2478,7 @@ class NativeCollectionApplication:
                     )
                     assert live.issued_at is not None
                     builder = build_collection_contract
-                    if self.protocol["schema_version"] == "native.calibration.operational.v8":
+                    if self.protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS:
                         from cloud_edge_robot_arm.research.native_collection_grounding import (
                             build_collection_contract_v2,
                         )
@@ -2497,7 +2503,7 @@ class NativeCollectionApplication:
                     recorder._write_original("bootstrap.json", live.grounding_evidence)
                     compiler_reference_acquisition = (
                         recorder.acquisition_source()
-                        if self.protocol["schema_version"] == "native.calibration.operational.v8"
+                        if self.protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS
                         else None
                     )
                     observation = _handoff_registered_capture(
@@ -2507,10 +2513,7 @@ class NativeCollectionApplication:
                         self.protocol,
                         consume_capture=self._consume_capture,
                     )
-                    if self.protocol["schema_version"] in {
-                        "native.calibration.operational.v7",
-                        "native.calibration.operational.v8",
-                    }:
+                    if self.protocol["schema_version"] in REGISTERED_STEP_SCHEMAS:
                         from cloud_edge_robot_arm.research.native_collection_grounding import (
                             bootstrap_registered_collection_tracker_v1,
                         )
@@ -2521,7 +2524,7 @@ class NativeCollectionApplication:
                         registered_started = datetime.now(UTC)
                         bootstrap = bootstrap_registered_collection_tracker_v1
                         options = {}
-                        if self.protocol["schema_version"] == "native.calibration.operational.v8":
+                        if self.protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS:
                             from cloud_edge_robot_arm.research.native_collection_grounding import (
                                 bootstrap_registered_collection_tracker_v2,
                             )
@@ -2630,7 +2633,7 @@ class NativeCollectionApplication:
                                 ],
                             )
                         )
-                        if self.protocol["schema_version"] == "native.calibration.operational.v8":
+                        if self.protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS:
                             post_context = post_context.model_copy(
                                 update=dict(
                                     robot_connected=state.connected,
@@ -2641,10 +2644,7 @@ class NativeCollectionApplication:
                         post, post_source = recorder.check_shield(
                             shield, post_context, index=index, phase="POST"
                         )
-                        if self.protocol["schema_version"] in {
-                            "native.calibration.operational.v7",
-                            "native.calibration.operational.v8",
-                        }:
+                        if self.protocol["schema_version"] in REGISTERED_STEP_SCHEMAS:
                             from cloud_edge_robot_arm.vision.worker_owner import (
                                 registered_collection_effect_conditions,
                             )
@@ -2652,7 +2652,7 @@ class NativeCollectionApplication:
                             effect = registered_collection_effect_conditions
                             if (
                                 self.protocol["schema_version"]
-                                == "native.calibration.operational.v8"
+                                in REGISTERED_V2_STEP_SCHEMAS
                             ):
                                 from cloud_edge_robot_arm.vision.worker_owner import (
                                     registered_collection_effect_conditions_v2,
@@ -2672,7 +2672,7 @@ class NativeCollectionApplication:
                             binding=binding,
                             shield_source=post_source,
                         )
-                        if self.protocol["schema_version"] == "native.calibration.operational.v8":
+                        if self.protocol["schema_version"] in REGISTERED_V2_STEP_SCHEMAS:
                             self._complete_collection_step(index=index, step=step, receipt=receipt)
                         else:
                             live.completed.append(receipt)
