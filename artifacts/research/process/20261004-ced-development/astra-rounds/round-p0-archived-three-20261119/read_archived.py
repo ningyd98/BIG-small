@@ -1,0 +1,927 @@
+"""Read the four frozen development slots without rendering or invoking models."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import csv
+import hashlib
+import io
+import json
+import math
+import os
+import re
+import struct
+import subprocess
+from collections import Counter
+from datetime import UTC, datetime
+from pathlib import Path
+from statistics import median
+from typing import Any
+from unittest.mock import patch
+
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw
+
+from cloud_edge_robot_arm.research.sol_molmo_offline_regression import FrozenCase, load_observation
+from cloud_edge_robot_arm.vision import tracking
+from cloud_edge_robot_arm.vision.messages import model_to_observation_pixel
+from cloud_edge_robot_arm.vision.molmo_pointing import parse_native_point
+from cloud_edge_robot_arm.vision.point_association import associate_target_point
+from cloud_edge_robot_arm.vision.servo import measure_registered_marker_grasp
+from cloud_edge_robot_arm.vision.top_grasp import resolve_top_grasp
+
+ROUND = Path(__file__).resolve().parent
+REPO = ROUND.parents[5]
+RAW = Path("experiments/results/phase9/harness-four-fresh-20261118")
+COMMIT = "5103e7f483b9fccd40cf2e49d4bd5ef8979f64d2"
+PLAN_SHA = "2e381a9b48fbfcd2344de43c866b264f198a2af383d3a9ba089edeba76f7b0d8"
+HISTORICAL_LOAD_SHA = "aba5a4a93e40f0b3a0be4ed20598aff277e3b1aa401f3c79cfa3bbac7a6566f5"
+INITIALIZATION = "component/servo-frames/step-01/reference"
+POST_CLOUD = "component/frames/post-cloud"
+PHASES = (
+    "initial_active",
+    "capture_and_archive",
+    "camera_reposition",
+    "vision",
+    "safety",
+    "camera_proposal",
+    "final_active",
+)
+CODE_FILES = (
+    "research/sol_molmo_components.py",
+    "research/sol_molmo_single_episode.py",
+    "research/sol_molmo_offline_regression.py",
+    "simulation/mujoco/visual_servo.py",
+    "vision/capture.py",
+    "vision/grounded_planner.py",
+    "vision/marker_families.py",
+    "vision/messages.py",
+    "vision/molmo_pointing.py",
+    "vision/observations.py",
+    "vision/planner.py",
+    "vision/point_association.py",
+    "vision/pose_markers.py",
+    "vision/servo.py",
+    "vision/top_grasp.py",
+    "vision/tracking.py",
+)
+NATIVE = "src/cloud_edge_robot_arm/"
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def sha(path: Path) -> str:
+    return digest(path.read_bytes())
+
+
+def write_json(path: Path, value: Any) -> None:
+    with path.open("x", encoding="utf-8") as stream:
+        json.dump(value, stream, sort_keys=True, indent=2, allow_nan=False)
+        stream.write("\n")
+
+
+class Archive(FrozenCase):
+    def read(self, name: str) -> bytes:
+        data = super().read(name)
+        self.row[name] = self.files[name]["sha256"]
+        return data
+
+
+def verify_inputs(source: Path) -> tuple[dict[int, Archive], dict]:
+    require(sha(ROUND / "plan.json") == PLAN_SHA, "P0 plan JSON differs")
+    plan = json.loads((ROUND / "plan.json").read_bytes())
+    require(sha(ROUND / "plan.md") == plan["plan_md_sha256"], "P0 plan Markdown differs")
+    checkout = subprocess.check_output(["git", "-C", source, "rev-parse", "HEAD"], text=True)
+    require(checkout.strip() == COMMIT, "product source checkout differs")
+    require(Path(tracking.__file__).resolve().is_relative_to(source), "imports not from source")
+    for name, expected in plan["inputs_sha256"].items():
+        path = (source if name.startswith("src/") else REPO) / name
+        require(sha(path) == expected, f"planned source or archive differs: {name}")
+    cases = {}
+    for n in (1801, 1802, 1803, 1804):
+        root = REPO / RAW / "native" / f"fresh-202611{n}"
+        manifest = json.loads((root / "evidence-manifest.json").read_bytes())
+        entries = {row["path"]: row for row in manifest["files"]}
+        require(len(entries) == len(manifest["files"]), "duplicate manifest path")
+        cases[n] = Archive(root, entries, {})
+    fingerprints = {}
+    for relative in CODE_FILES:
+        name = NATIVE + relative
+        frozen = subprocess.check_output(["git", "-C", source, "show", f"{COMMIT}:{name}"])
+        local = sha(source / name)
+        require(local == digest(frozen), f"source bytes differ from frozen product: {name}")
+        for case in cases.values():
+            historical = case.json("source-hashes.json")["files"].get(name)
+            require(historical in (None, local), f"episode source differs: {name}")
+        fingerprints[name] = local
+    return cases, fingerprints
+
+
+def frame(case: Archive, path: str):
+    observation = load_observation(case, path)
+    calibration = struct.pack("<20d", *observation.intrinsics, *observation.camera_to_world)
+    require(observation.source == "mujoco_camera", "frame source differs")
+    require(observation.calibration_version == digest(calibration)[:16], "calibration differs")
+    return observation
+
+
+def stage(case: Archive, number: int, observation):
+    report = case.json(f"planning/planning-stage-0{number}.json")
+    evidence = report["attempts"][0]["draft"]["observation_evidence"]
+    archived = observation.evidence()
+    for key in ("observation_id", "checksum_sha256", "calibration_version", "sim_time_s"):
+        require(evidence[key] == archived[key], f"{key} does not bind the planning frame")
+    points = []
+    for i, result in enumerate(evidence["native_results"], start=1):
+        folder = f"raw/molmo/request-{(number - 1) * 2 + i:04d}"
+        raw = case.read(f"{folder}/raw-response.txt")
+        normalized = parse_native_point(raw.decode()).normalized_1000
+        require(
+            digest(raw) == result["raw_sha256"] and list(normalized) == result["normalized_1000"],
+            "original point bytes or decoded coordinate differ",
+        )
+        pixel = model_to_observation_pixel(
+            normalized, observation, coordinate_system="normalized_1000"
+        )
+        label = "target" if i == 1 else "destination"
+        require(list(pixel) == evidence[f"native_original_pixel_{label}"], "model pixel differs")
+        points.append(
+            {
+                "role": label,
+                "raw_sha256": digest(raw),
+                "normalized_1000": normalized,
+                "measurement": pixel_sample(observation, pixel),
+            }
+        )
+    require(len(points) == 2, "expected two original native point responses")
+    return report, evidence, points
+
+
+def camera_point(observation, pixel, depth):
+    x, y = pixel
+    fx, fy, cx, cy = observation.intrinsics
+    return np.array([(x - cx) * depth / fx, (y - cy) * depth / fy, depth])
+
+
+def transform(observation):
+    return np.asarray(observation.camera_to_world).reshape(4, 4)
+
+
+def world_point(observation, camera):
+    matrix = transform(observation)
+    return matrix[:3, :3] @ camera + matrix[:3, 3]
+
+
+def project(observation, world):
+    matrix = transform(observation)
+    x, y, z = matrix[:3, :3].T @ (world - matrix[:3, 3])
+    fx, fy, cx, cy = observation.intrinsics
+    return np.array([fx * x / z + cx, fy * y / z + cy])
+
+
+def sample_with_depth(observation, pixel, depth):
+    camera = camera_point(observation, pixel, depth)
+    return {
+        "uv": list(pixel),
+        "optical_z_m": float(depth),
+        "camera_xyz_m": camera.tolist(),
+        "world_xyz_m": world_point(observation, camera).tolist(),
+    }
+
+
+def pixel_sample(observation, pixel):
+    u, v = pixel
+    index = v * observation.width + u
+    depth = np.frombuffer(base64.b64decode(observation.depth_float32_base64), dtype="<f4")
+    return sample_with_depth(observation, pixel, float(depth[index])) | {
+        "valid": bool(observation.valid_mask_bytes()[index]),
+    }
+
+
+def vector(mapping):
+    return np.array([mapping[key] for key in "xyz"])
+
+
+def frame_binding(observation):
+    e = observation.evidence()
+    keys = (
+        "observation_id",
+        "checksum_sha256",
+        "captured_at",
+        "sim_time_s",
+        "calibration_version",
+        "intrinsics",
+        "camera_to_world",
+        "rgb_sha256",
+        "depth_sha256",
+    )
+    return {key: e[key] for key in keys}
+
+
+def marker_measurement(case: Archive, observation, height: float):
+    family = case.json("scene-assignment.json")["marker_family_id"]
+    diagnostic = {}
+    tcp, estimate = measure_registered_marker_grasp(observation, family, diagnostics=diagnostic)
+    require(tcp is not None and estimate.status == "OBSERVED", "registered marker not observable")
+    depths = [
+        sample_with_depth(observation, row["pixel"], row["median_optical_depth_m"])
+        for row in diagnostic["depth_samples"]
+    ]
+    marker_to_world = np.eye(4)
+    marker_to_world[:3, :3] = np.asarray(estimate.rotation_marker_to_world).reshape(3, 3)
+    marker_to_world[:3, 3] = estimate.marker_center_world_m
+    attachment = np.array(diagnostic["registration"]["marker_to_object"]).reshape(4, 4)
+    world_from_object = marker_to_world @ np.linalg.inv(attachment)
+    independent_tcp = (world_from_object @ np.array([0.0, 0.0, 0.01, 1.0]))[:3]
+    require(
+        np.allclose(tcp, independent_tcp, rtol=0, atol=1e-14), "marker attachment direction differs"
+    )
+    require(
+        np.allclose(depths[-1]["world_xyz_m"], marker_to_world[:3, 3], rtol=0, atol=1e-12),
+        "fractional marker center depth does not reconstruct the pose translation",
+    )
+    expected_top = (world_from_object @ np.array([0.0, 0.0, height / 2, 1.0]))[:3]
+    return {
+        "diagnostics": diagnostic,
+        "sampled_marker_corners_and_center": depths,
+        "world_from_marker": marker_to_world.tolist(),
+        "marker_to_object": attachment.tolist(),
+        "world_from_object": world_from_object.tolist(),
+        "registered_object_center_world_m": world_from_object[:3, 3].tolist(),
+        "registered_tcp_world_m": independent_tcp.tolist(),
+        "registered_tcp_projection_uv": project(observation, independent_tcp).tolist(),
+        "registered_object_top_world_m": expected_top.tolist(),
+        "registered_object_top_projection_uv": project(observation, expected_top).tolist(),
+        "registered_object_top_estimate_height_source": "planning_estimated_object_height_m",
+    }
+
+
+def chain(case: Archive, number: int, path: str):
+    observation = frame(case, path)
+    _, evidence, responses = stage(case, number, observation)
+    target_raw = tuple(responses[0]["measurement"]["uv"])
+    association = associate_target_point(
+        observation,
+        target_raw,
+        target_phrase="red block",
+    )
+    selected = association.pixel
+    require(
+        list(selected) == evidence["associated_pixel_target"]
+        and json.loads(json.dumps(association.evidence)) == evidence["target_point_association"],
+        "frozen local association differs",
+    )
+    selected_measurement = pixel_sample(observation, selected)
+    recomputed = resolve_top_grasp(observation, selected, evidence["top_grasp_support_height_m"])
+    plan_tcp = vector(recomputed["resolved_top_grasp_tcp"])
+    surface = vector(evidence["target_visible_surface"])
+    require(
+        np.allclose(selected_measurement["world_xyz_m"], surface, rtol=0, atol=1e-12),
+        "color-selected independent pinhole backprojection differs",
+    )
+    for key in ("estimated_object_center", "resolved_top_grasp_tcp", "top_patch_world_z_span_m"):
+        require(recomputed[key] == evidence[key], f"planning {key} differs")
+    registered = marker_measurement(case, observation, recomputed["estimated_object_height_m"])
+    top_uv = np.asarray(registered["registered_object_top_projection_uv"])
+    raw_world = np.asarray(responses[0]["measurement"]["world_xyz_m"])
+    difference = np.asarray(registered["registered_tcp_world_m"]) - plan_tcp
+    return observation, {
+        "frame": frame_binding(observation),
+        "model_responses": responses,
+        "association": association.evidence,
+        "associated_sample": selected_measurement,
+        "planning": recomputed,
+        "planning_target_surface_xyz_m": surface.tolist(),
+        "planning_top_patch": [
+            pixel_sample(observation, (u, v))
+            for v in range(selected[1] - 1, selected[1] + 2)
+            for u in range(selected[0] - 1, selected[0] + 2)
+        ],
+        "registration": registered,
+        "raw_target_to_registered_top_uv_px": float(np.linalg.norm(target_raw - top_uv)),
+        "associated_to_registered_top_uv_px": float(np.linalg.norm(selected - top_uv)),
+        "association_shift_world_mm": (1000 * (surface - raw_world)).tolist(),
+        "selected_surface_to_registered_top_xyz_mm": (
+            1000 * (np.asarray(registered["registered_object_top_world_m"]) - surface)
+        ).tolist(),
+        "registered_minus_planned_tcp_mm": (1000 * difference).tolist(),
+        "registered_minus_planned_tcp_xy_mm": 1000 * float(np.linalg.norm(difference[:2])),
+        "registered_minus_planned_tcp_distance_mm": 1000 * float(np.linalg.norm(difference)),
+    }
+
+
+def image_for(observation):
+    return Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64))).convert("RGB")
+
+
+def cross(draw, point, color):
+    x, y = point
+    draw.line((x - 4, y, x + 4, y), fill=color, width=1)
+    draw.line((x, y - 4, x, y + 4), fill=color, width=1)
+
+
+def original_worker_terminal(case: Archive) -> dict[str, Any]:
+    sources = {}
+    for path in ("worker/result.json", "component/episode.json", "result.json"):
+        record = case.json(path)
+        require("terminal_reason" in record, f"terminal_reason missing: {path}")
+        reason = record["terminal_reason"]
+        require(
+            reason is None or (isinstance(reason, str) and bool(reason)),
+            f"invalid terminal_reason: {path}",
+        )
+        sources[path] = reason
+    require(
+        len(set(sources.values())) == 1, "conflicting terminal_reason in three archived sources"
+    )
+    return {
+        "sources": sources,
+        "online_exception_message": None,
+        "online_exception_stack": None,
+        "online_exception_detail_status": (
+            "NOT_SAVED" if sources["worker/result.json"] is not None else "NOT_APPLICABLE"
+        ),
+    }
+
+
+def identity(cases, out):
+    prior_audit = (
+        ROUND.parent
+        / "round-harness-four-fresh-positions-20261118"
+        / "initialization-stop-readback-2026111803.json"
+    )
+    prior = json.loads(prior_audit.read_bytes())["cases"]["2026111803"]
+    panels = []
+    results = {}
+    for n in (1803, 1802):
+        case = cases[n]
+        _, first = chain(case, 1, "before")
+        obs, second = chain(case, 2, POST_CLOUD)
+        reference = frame(case, INITIALIZATION)
+        registered = marker_measurement(
+            case, reference, second["planning"]["estimated_object_height_m"]
+        )
+        plan_tcp = vector(second["planning"]["resolved_top_grasp_tcp"])
+        error = 1000 * np.linalg.norm(np.asarray(registered["registered_tcp_world_m"]) - plan_tcp)
+        require(
+            reference.sim_time_s == obs.sim_time_s and reference.captured_at >= obs.captured_at,
+            "reference and planning frames do not bracket the same physical state",
+        )
+        episode = case.json("component/episode.json")
+        first_action = episode["actions"][0]
+        results[n] = {
+            "before": first,
+            "post_cloud": second,
+            "step01_reference_frame": frame_binding(reference),
+            "step01_reference_registration": registered,
+            "step01_reference_tcp_gap_mm": float(error),
+            "identity_guard_limit_mm": 10.0,
+            "post_cloud_guard_pass": second["registered_minus_planned_tcp_distance_mm"] <= 10,
+            "original_action_has_controller_return": "controller_return_step" in first_action,
+            "original_worker_terminal": original_worker_terminal(case),
+            "offline_constructor_diagnostic": {
+                "source": prior_audit.name,
+                "source_sha256": sha(prior_audit),
+                "guard_rejected_frozen_inputs": prior[
+                    "initial_identity_guard_rejected_on_archived_inputs"
+                ],
+            }
+            if n == 1803
+            else None,
+            "nomination_physical_cause": "UNKNOWN",
+        }
+        image = image_for(obs)
+        drawing = ImageDraw.Draw(image)
+        registration = second["registration"]
+        corners = [tuple(x["uv"]) for x in registration["sampled_marker_corners_and_center"][:4]]
+        drawing.line([*corners, corners[0]], fill="#39f0bf", width=1)
+        raw = second["model_responses"][0]["measurement"]["uv"]
+        selected = second["associated_sample"]["uv"]
+        drawing.ellipse((raw[0] - 5, raw[1] - 5, raw[0] + 5, raw[1] + 5), outline="#ffbf24")
+        cross(drawing, selected, "#ff67ee")
+        cross(drawing, registration["registered_object_top_projection_uv"], "#3ffaff")
+        panels.append(
+            (
+                image,
+                f"{n} post-cloud, TCP gap "
+                f"{second['registered_minus_planned_tcp_distance_mm']:.3f} mm",
+            )
+        )
+    require(
+        not results[1803]["post_cloud_guard_pass"] and results[1802]["post_cloud_guard_pass"],
+        "positive/negative identity controls differ",
+    )
+    require(
+        math.isclose(results[1803]["step01_reference_tcp_gap_mm"], 31.129708422, abs_tol=1e-7),
+        "1803 reference no longer reproduces the guard",
+    )
+    contact_sheet(
+        panels,
+        out / "1803-1802-registered-identity.png",
+        "Amber: model point | Pink: associated pixel | Cyan: marker-based top",
+    )
+    write_json(out / "1803-identity-v2.json", results)
+
+
+def contact_sheet(panels, path, legend):
+    width, height = panels[0][0].size
+    rows = (len(panels) + 1) // 2
+    canvas = Image.new("RGB", (width * 2, (height + 20) * rows + 24), "#0d1820")
+    draw = ImageDraw.Draw(canvas)
+    for i, (image, caption) in enumerate(panels):
+        x, y = (i % 2) * width, (i // 2) * (height + 20)
+        canvas.paste(image, (x, y))
+        draw.text((x + 5, y + height + 4), caption, fill="white")
+    draw.text((5, rows * (height + 20) + 5), legend, fill="white")
+    with path.open("xb") as stream:
+        canvas.save(stream, format="PNG")
+
+
+def place(case: Archive):
+    episode = case.json("component/episode.json")
+    action = next(row for row in episode["actions"] if row["skill"] == "PLACE")
+    require(action["step_id"] == "step-06", "PLACE step identity differs")
+    visual_servo = action["visual_servo"]
+    frames = visual_servo["visual_samples"]
+    controls = visual_servo["control_samples"]
+    require(
+        all(
+            row["sim_time_s"] == ctrl["sim_time_s"]
+            for row, ctrl in zip(frames, controls, strict=False)
+        ),
+        "accepted visual/control sample pairing differs",
+    )
+    return action, frames, controls
+
+
+def view_count(sample):
+    return 1 + len(sample.get("camera_recovery", []))
+
+
+def place_stats(frames, controls):
+    cohorts = {}
+    for count in sorted({view_count(row) for row in frames}):
+        pairs = [
+            (row, ctrl)
+            for row, ctrl in zip(frames, controls, strict=True)
+            if view_count(row) == count
+        ]
+        values = {}
+        for key in PHASES:
+            values[key] = [row["stage_wall_ms"][key] for row, _ in pairs]
+        values["sample_and_ik"] = [ctrl["sample_and_ik_s"] * 1000 for _, ctrl in pairs]
+        values["controller_minus_recorded_stage_sum"] = [
+            ctrl["sample_and_ik_s"] * 1000 - sum(row["stage_wall_ms"].values())
+            for row, ctrl in pairs
+        ]
+        cohorts[count] = {
+            "accepted_count": len(pairs),
+            "stages_ms": {
+                key: {"min": min(v), "median": median(v), "max": max(v)}
+                for key, v in values.items()
+            },
+        }
+    return cohorts
+
+
+def paired_views(case, index, row, rejections):
+    output = []
+    for number in range(view_count(row)):
+        suffix = f"-view-{number:02d}" if number else ""
+        path = f"component/servo-frames/step-06/sample-{index:04d}{suffix}"
+        obs = frame(case, path)
+        previous = number < view_count(row) - 1
+        expected = row["camera_recovery"][number] if previous else row
+        require(
+            obs.observation_id == expected["observation_id"]
+            and obs.sim_time_s == row["sim_time_s"],
+            "archived camera frame is not at the logged physical instant",
+        )
+        if previous:
+            observed = next(r for r in rejections if r["observation_id"] == obs.observation_id)
+            require(observed["reason"] == expected["reason"], "rejected view reason differs")
+        else:
+            observed = expected
+        require(observed["checksum_sha256"] == obs.checksum_sha256, "camera view checksum differs")
+        require(observed["camera_to_world"] == list(obs.camera_to_world), "camera pose differs")
+        output.append(
+            (
+                obs,
+                {
+                    "relative_frame_path": path,
+                    "binding": frame_binding(obs),
+                    "controller_visual_disposition": expected["reason"]
+                    if previous
+                    else "VISION_ACCEPTED",
+                    "rgbd_payload_bytes": sum(
+                        case.files[f"{path}/{x}"]["bytes"]
+                        for x in ("rgb.png", "depth.f32", "valid_mask.u8")
+                    ),
+                    "observation_metadata_bytes": case.files[f"{path}/observation.json"]["bytes"],
+                },
+            )
+        )
+    return output
+
+
+def historical_load(path, event_time):
+    require(sha(path) == HISTORICAL_LOAD_SHA, "historical host sysstat source differs")
+    command = [
+        "sadf",
+        "-d",
+        "-T",
+        "-s",
+        "14:20:00",
+        "-e",
+        "15:00:00",
+        str(path),
+        "--",
+        "-q",
+        "LOAD",
+        "-u",
+        "-b",
+    ]
+    output = subprocess.check_output(command, env=os.environ | {"TZ": "UTC"}, text=True)
+    rows = []
+    for line in output.splitlines():
+        if line.startswith("# "):
+            fields = line[2:].split(";")
+            continue
+        raw = dict(zip(fields, line.split(";"), strict=True))
+        raw.pop("hostname")
+        instant = datetime.fromisoformat(raw.pop("timestamp")).replace(tzinfo=UTC)
+        if abs((instant - event_time).total_seconds()) <= 610:
+            rows.append(
+                {
+                    "sampled_at_utc": instant.isoformat(),
+                    "offset_from_event_s": (instant - event_time).total_seconds(),
+                    **raw,
+                }
+            )
+    require(
+        any(row["offset_from_event_s"] < 0 for row in rows)
+        and any(row["offset_from_event_s"] > 0 for row in rows),
+        "historical host load does not bracket the event",
+    )
+    return {
+        "sha256": HISTORICAL_LOAD_SHA,
+        "source_name": path.name,
+        "rows": rows,
+        "event_load_at_subsecond_resolution": "UNKNOWN",
+    }
+
+
+def timing(cases, out, sysstat):
+    negative, frames, controls = place(cases[1801])
+    success, comparison, comparison_controls = place(cases[1802])
+    require(
+        (len(controls), len(frames), len(comparison)) == (143, 144, 146),
+        "PLACE archived denominator differs",
+    )
+    require(
+        Counter(map(view_count, comparison)) == {1: 143, 2: 3}, "PLACE comparator groups differ"
+    )
+    terminal_index = len(frames) - 1
+    terminal = frames[terminal_index]
+    terminal_views = paired_views(
+        cases[1801],
+        terminal_index,
+        terminal,
+        negative["visual_servo"]["camera_reobservation_rejections"],
+    )
+    previous_views = paired_views(
+        cases[1801],
+        terminal_index - 1,
+        frames[-2],
+        negative["visual_servo"]["camera_reobservation_rejections"],
+    )
+    step = negative["controller_return_step"]
+    require(
+        step == 5400 and controls[-1]["physics_step"] == 5392 and len(terminal_views) == 3,
+        "terminal sample is not the 5400 three-view rejection",
+    )
+    reason = negative["visual_servo"]["terminal_reason"]
+    latency = float(re.search(r"\(([0-9.]+)s\)", reason).group(1)) * 1000
+    require(
+        "sample/IK deadline exceeded" in reason and latency > 100, "original deadline not triggered"
+    )
+    raw_commands = cases[1801].json("component/commands.json")
+    at_stop = [row for row in raw_commands if row["physics_step"] == step]
+    camera = [row for row in at_stop if row["type"] == "camera_position"]
+    require(
+        len(camera) == 2 and all(row["accepted"] for row in camera),
+        "two camera moves not evidenced",
+    )
+    for record, (obs, _) in zip(camera, terminal_views[1:], strict=True):
+        require(
+            record["position_m"] == transform(obs)[:3, 3].tolist(), "camera translation differs"
+        )
+        require(record["sim_time_s"] == obs.sim_time_s, "camera command physical instant differs")
+    require(
+        Counter(row["type"] for row in at_stop)
+        == {"camera_position": 2, "hold_current_joints": 2, "emergency_stop": 1},
+        "commands beyond camera/stop boundaries at terminal sample",
+    )
+    compare_bound = []
+    for index, (row, ctrl) in enumerate(zip(comparison, comparison_controls, strict=True)):
+        if view_count(row) == 2 or ctrl["physics_step"] == step:
+            bound = paired_views(
+                cases[1802], index, row, success["visual_servo"]["camera_reobservation_rejections"]
+            )
+            compare_bound.append(
+                {
+                    "step": ctrl["physics_step"],
+                    "sample_index": index,
+                    "source_sample": ctrl,
+                    "stage_wall_ms": row["stage_wall_ms"],
+                    "views": [data for _, data in bound],
+                }
+            )
+    prior = previous_views[-1][0]
+    start = terminal_views[0][0].captured_at
+    end = terminal_views[-1][0].captured_at
+    stages = terminal["stage_wall_ms"]
+    write_json(
+        out / "1801-place-timing.json",
+        {
+            "historical_load": historical_load(sysstat, end),
+            "model_loading_receipts": {
+                n: cases[n].json("raw/molmo/loaded.json")["load_s"] for n in (1801, 1802)
+            },
+            "original_terminal_reason": reason,
+            "sample_and_ik_reported_ms": latency,
+            "original_limit_ms": 100,
+            "rejected_physics_step": step,
+            "accepted_count": len(controls),
+            "visual_count": len(frames),
+            "terminal_stage_wall_ms": stages,
+            "terminal_stage_sum_ms": sum(stages.values()),
+            "sample_and_ik_minus_stage_sum_ms": latency - sum(stages.values()),
+            "terminal_sim_time_s": terminal["sim_time_s"],
+            "terminal_capture_interval_ms": 1000 * (end - start).total_seconds(),
+            "terminal_frame_bytes": [data for _, data in terminal_views],
+            "previous_accepted_frame_bytes": [data for _, data in previous_views],
+            "previous_accepted_control": controls[-1],
+            "terminal_commands": at_stop,
+            "same_step_or_reobserved_1802": compare_bound,
+            "accepted_group_statistics": {
+                1801: place_stats(frames[: len(controls)], controls),
+                1802: place_stats(comparison, comparison_controls),
+            },
+        },
+    )
+    panels = [
+        (image_for(prior), "1801 step 5392 / last accepted"),
+        *[
+            (image_for(obs), f"1801 step 5400 / view {index + 1}")
+            for index, (obs, _) in enumerate(terminal_views)
+        ],
+    ]
+    contact_sheet(
+        panels,
+        out / "1801-place-views.png",
+        "Step 5400: primary and backup 1 rejected. Backup 2 passed vision only.",
+    )
+
+
+def depth_support(case, number, out):
+    obs = frame(case, "before")
+    report, evidence, responses = stage(case, 1, obs)
+    diagnostics = {}
+    observed = {}
+    production = tracking.OpenCVTargetTracker._top_support
+
+    def record(owner, points, selected, ys, xs):
+        top, interval, reason = production(owner, points, selected, ys, xs)
+        core = cv2.erode(selected.astype(np.uint8), np.ones((3, 3), np.uint8))[ys, xs] > 0
+        require(not observed, "more than one target top support call")
+        observed.update(
+            points=points,
+            selected=selected,
+            ys=ys,
+            xs=xs,
+            top=top,
+            core=core,
+            interval=interval,
+            reason=reason,
+        )
+        return top, interval, reason
+
+    with patch.object(tracking.OpenCVTargetTracker, "_top_support", record):
+        try:
+            tracking.OpenCVTargetTracker._inspect_frozen_geometry(obs, evidence, diagnostics)
+        except ValueError as exc:
+            require(
+                number == 1804 and str(exc) == report["reason"], "unexpected top-support rejection"
+            )
+    require(diagnostics["destination"]["status"] == "ACCEPTED", "destination support differs")
+    pixels = image_for(obs)
+    rgb = np.asarray(pixels)
+    source_depth = np.frombuffer(base64.b64decode(obs.depth_float32_base64), dtype="<f4").reshape(
+        obs.height,
+        obs.width,
+    )
+    valid = np.frombuffer(obs.valid_mask_bytes(), dtype=np.uint8).reshape(obs.height, obs.width)
+    xs, ys, points, core, top = [observed[key] for key in ("xs", "ys", "points", "core", "top")]
+    height = points[:, 2]
+    low_index, high_index = np.flatnonzero(top)[[height[top].argmin(), height[top].argmax()]]
+
+    def ranges(selector):
+        low = float(height[selector].min())
+        high = float(height[selector].max())
+        return {
+            "count": int(selector.sum()),
+            "min_m": low,
+            "max_m": high,
+            "span_mm": 1000 * (high - low),
+        }
+
+    def row(u, v):
+        return {
+            "u": int(u),
+            "v": int(v),
+            "depth_float32_m": float(source_depth[v, u]),
+            "mask_valid": int(valid[v, u]),
+            "rgb": rgb[v, u].tolist(),
+            "world_z_m": float(world_point(obs, camera_point(obs, (u, v), source_depth[v, u]))[2]),
+        }
+
+    def extreme(index):
+        u, v = int(xs[index]), int(ys[index])
+        return {
+            "pixel": row(u, v) | {"core": bool(core[index]), "in_top": bool(top[index])},
+            "neighbors": [
+                row(nx, ny) | {"in_color_support": bool(observed["selected"][ny, nx])}
+                for ny in range(v - 2, v + 3)
+                for nx in range(u - 2, u + 3)
+            ],
+        }
+
+    with (out / f"{number}-top-support-pixels.csv").open("x", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(
+            (
+                "u",
+                "v",
+                "depth_float32_m",
+                "valid",
+                "red",
+                "green",
+                "blue",
+                "world_x_m",
+                "world_y_m",
+                "world_z_m",
+                "is_core",
+                "is_final_top",
+            )
+        )
+        for x, y, point, c, t in zip(xs, ys, points, core, top, strict=True):
+            writer.writerow(
+                (
+                    int(x),
+                    int(y),
+                    float(source_depth[y, x]),
+                    int(valid[y, x]),
+                    *rgb[y, x].tolist(),
+                    *point.tolist(),
+                    int(c),
+                    int(t),
+                )
+            )
+
+    u, v = evidence["original_pixel_target"]
+    crop = (u - 21, v - 18, u + 22, v + 23)
+    image = pixels.crop(crop).resize((344, 328), Image.Resampling.NEAREST)
+    draw = ImageDraw.Draw(image)
+    for x, y, interior, final in zip(xs, ys, core, top, strict=True):
+        left, upper = int((x - crop[0]) * 8), int((y - crop[1]) * 8)
+        color = "#26ccff" if interior else "#fc7917" if final else "#d44dd2"
+        draw.rectangle((left, upper, left + 7, upper + 7), outline=color)
+    for idx, color in ((low_index, "white"), (high_index, "yellow")):
+        x, y = int((xs[idx] - crop[0]) * 8), int((ys[idx] - crop[1]) * 8)
+        draw.rectangle((x - 1, y - 1, x + 8, y + 8), outline=color, width=2)
+    return {
+        "frame": frame_binding(obs),
+        "native_responses": responses,
+        "planning_outcome": report["outcome"],
+        "planning_reason": report["reason"],
+        "target_and_destination": diagnostics,
+        "original_span_limit_mm": 8.0,
+        "color_support": ranges(np.ones(len(height), dtype=bool)),
+        "eroded_core": ranges(core),
+        "final_top": ranges(top),
+        "top_support_reason": observed["reason"],
+        "min_final_top": extreme(low_index),
+        "max_final_top": extreme(high_index),
+        "outside_final_top_pixels": [row(x, y) for x, y in zip(xs[~top], ys[~top], strict=True)],
+    }, image
+
+
+def extrema(cases, out):
+    results = {}
+    panels = []
+    for n in (1804, 1802):
+        result, image = depth_support(cases[n], n, out)
+        results[n] = result
+        panels.append((image, f"{n} before / top span {result['final_top']['span_mm']:.3f} mm"))
+    stopped, accepted = results[1804], results[1802]
+    require(
+        [stopped[key]["count"] for key in ("color_support", "eroded_core", "final_top")]
+        == [205, 147, 203],
+        "1804 support denominator differs",
+    )
+    require(
+        stopped["top_support_reason"] == "top_support_height_span_unresolved"
+        and accepted["top_support_reason"] is None
+        and stopped["target_and_destination"]["target"]["depth"]["rejected_pixels"] == 0
+        and stopped["eroded_core"]["span_mm"] < 8 < stopped["final_top"]["span_mm"]
+        and accepted["final_top"]["span_mm"] < 8,
+        "1804 failure or 1802 positive control differs",
+    )
+    contact_sheet(
+        panels,
+        out / "1804-1802-top-support.png",
+        "Cyan: core | Orange: top boundary | Purple: outside top | White: min | Yellow: max",
+    )
+    write_json(out / "1804-top-extrema.json", results)
+
+
+def load_snapshot(stage_name):
+    stat = Path("/proc/stat").read_text().splitlines()
+    return {
+        "stage": stage_name,
+        "utc": datetime.now(UTC).isoformat(),
+        "source": "/proc/loadavg + /proc/stat + process CPU affinity",
+        "loadavg": Path("/proc/loadavg").read_text().split()[:4],
+        "cpu_counters": stat[0].split()[1:],
+        "concurrency": {
+            line.split()[0]: int(line.split()[1])
+            for line in stat
+            if line.startswith(("procs_running ", "procs_blocked "))
+        },
+        "affinity": sorted(os.sched_getaffinity(0)),
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source-checkout", required=True, type=Path)
+    parser.add_argument("--historical-sysstat", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    out = args.output.resolve()
+    require(
+        not out.is_relative_to((REPO / RAW).resolve()), "output must be outside the source archive"
+    )
+    samples = [load_snapshot("start_input_attestation")]
+    cases, sources = verify_inputs(args.source_checkout.resolve())
+    out.mkdir(exist_ok=False)
+    for name, fn, extra in (
+        ("1803_identity", identity, ()),
+        ("1801_timing", timing, (args.historical_sysstat,)),
+        ("1804_top_support", extrema, ()),
+    ):
+        samples.append(load_snapshot("start_" + name))
+        fn(cases, out, *extra)
+        samples.append(load_snapshot("end_" + name))
+    after, after_sources = verify_inputs(args.source_checkout.resolve())
+    inspected = {}
+    for number, case in cases.items():
+        for path in sorted(case.row):
+            after[number].read(path)
+        require(case.row == after[number].row, "raw SHA readback differs")
+        inspected[number] = case.row
+    require(sources == after_sources, "frozen source readback differs")
+    write_json(
+        out / "input-verification-v2.json",
+        {
+            "frozen_product": COMMIT,
+            "astra_plan_sha256": PLAN_SHA,
+            "source_sha256": sources,
+            "raw_sha256_verified_before_and_after": inspected,
+        },
+    )
+    samples.append(load_snapshot("end_input_reattestation"))
+    write_json(
+        out / "offline-host-load.json",
+        {
+            "scope": "CURRENT_OFFLINE_ARCHIVE_ANALYSIS_NOT_HISTORICAL_PLACE_LOAD",
+            "model_calls": 0,
+            "simulation_launches": 0,
+            "hardware_dispatch": False,
+            "process_samples": samples,
+        },
+    )
+
+
+if __name__ == "__main__":
+    main()
