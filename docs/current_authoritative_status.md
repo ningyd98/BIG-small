@@ -1,5 +1,11 @@
 # Current Authoritative Status
 
+## 2026-11-20 开发批次与教师实测
+
+冻结产品 `4bdb64eb` 完成 20 个新 MuJoCo 位姿，组件完成率与独立物理成功率均为 5/20，各自 95% Wilson 区间为 11.19%–46.87%。原安装包装通过 3/20。第 11、19 例经原件补读确认完成，第 18 例触发右指硬限位，原严格审计有 3 项未确认。两次固定 1802 复测另计，两次均成功且稳定 9.475 秒。22 次试次零重试、实际 16 次云请求、76 次本地生成、10,663 个云端 token，账单金额与币种待回执。 [项目状态](project_status.md) · [全部分配与原退出](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-hard-limit-prefix-resume-20261120/final-batch-report.md)
+
+教师正式首组 PRE 通过，首动作 POST 在 332.829 秒触发原 8 秒限额，生产独立 reader 重建 3,373 帧，完整准入动作 0/8。独立开发 EGL 短窗使用新的 worker、租约和冻结来源，在原 8 秒内推进 99/1,920 个物理步，独立核对 242 帧。后八个正式组未启动，教师资格 0/9，联合误差界为空。B0 selection 等待教师资格；费用授权已明确，六池及名义角色探针已有原件。 [正式首组](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-first-actual-v9-teacher-20261119/step-report.md) · [阶段总结与下一步](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/phase-summary.md)
+
 ## 2026-11-19 Harness 工程与研究验收状态
 
 BIGsmall Embodied Harness H0/H1 工程开发版采用冻结产品 `5103e7f4`，公开证据基点为 `167bc0ff`。清洁环境安装通过。整库首次收集 7,259 项，7,225 通过、33 跳过、1 项 dispatcher 清理错误，原判定为 `passed=false`。同版原节点独占复验通过。 [回归与安装回执](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/regression-and-install.md)

@@ -12,8 +12,9 @@ BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制�
 
 ## 2. 当前状态
 
-截至 2026-11-19，BIGsmall Embodied Harness H0/H1 工程开发版已交付，四个同版本 MuJoCo 开发试次中，组件完整执行与独立物理成功均为 1/4。
-正式研究尚未验收，实机尚未启动。 [项目状态](docs/project_status.md) · [当前权威状态](docs/current_authoritative_status.md)
+截至 2026-11-20，H0/H1 工程开发版已交付。修复后的 20 个新 MuJoCo 开发位姿中，5 个完成全部动作，5 个经独立物理读回确认稳定放置，1 个触发手指硬限位。固定 1802 位姿两次复测均成功，单独记账。
+
+教师首组在原 8 秒门限超时，八个动作中通过 0 个，合格组仍为 0/9。正式 B0 selection 等待教师资格，实机尚未启动。 [项目状态、区间与逐例证据](docs/project_status.md) · [当前权威状态](docs/current_authoritative_status.md)
 
 ### 2026-10-04 历史计划与验收快照
 

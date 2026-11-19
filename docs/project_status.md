@@ -1,6 +1,6 @@
 # 项目状态
 
-## 2026-11-19 项目组状态
+## 2026-11-20 项目组状态
 
 BIGsmall Embodied Harness 已交付 H0/H1 工程开发版，冻结首场景契约并通过清洁环境安装、七条 CLI 正常路径和两条保护拒绝检查。历史四位姿冻结于 `5103e7f4`，本轮新增开发位姿冻结于已含 worker 异常留痕的 `4bdb64eb`。教师单组入口与采集优化另在研发分支 `research/harness-candidate-20261118` 交付。云端负责规划，边缘按规则和成本约束判断，端侧用 OpenCV/RGB-D 观测，沿用可见姿态标记、顶视相机、现有控制器与安全盾。边缘模型选型后置。 [现行计划](plan.md) · [公开交付范围](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/public-delivery.md)
 
@@ -31,9 +31,28 @@ BIGsmall Embodied Harness 已交付 H0/H1 工程开发版，冻结首场景契�
 
 worker 自产品提交 `4bdb64eb` 起，把脱敏后的异常类型、消息、堆栈和阶段写入 episode。原停止条件沿用。定向回归 34/35，余下一项成功路径在同源独占复验通过，原 113.520 ms 超限记录保留。 [异常原件与回归](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-worker-exception-20261119/step-report.md) · [同源独占结果](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-worker-types-exclusive-deadline-20261119/step-report.md)
 
+### 修复后开发批次
+
+在首个 BEGIN 前公开冻结 20 个新位姿（15 个常规、5 个遮挡压力位姿）和同一 1802 位姿的两次独立复测。全部分配使用产品 `4bdb64eb` 和清洁安装包 `96ff9e22`。20 个新 seed 与历史、教师及 B0 六池核对互斥，固定复测单列。每个分配最多一次云请求、四次本地生成，零重试。 [逐例预登记](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/development/preallocation/allocation.json) · [启动前冻结](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/development/live-freeze-public.json)
+
+22 个分配均已按顺序结束，每个分配有唯一的开始和终态回执。新位姿的两项指标由不同原件独立核对，分别以全部 20 例为分母。 [逐例结果与费用](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-hard-limit-prefix-resume-20261120/final-batch-report.md)
+
+| 验证口径 | 20 个新位姿 | 固定 1802 位姿的两次复测 |
+| --- | --- | --- |
+| 九个组件动作完整执行 | 5/20，25.0%，95% Wilson 区间 11.2%–46.9% | 2/2 |
+| 独立物理判定稳定放置 | 5/20，25.0%，95% Wilson 区间 11.2%–46.9% | 2/2，两次均稳定 9.475 秒 |
+| 冻结 Harness 三层均正常返回 | 3/20 | 2/2 |
+| 独立物理读回发现安全违规 | 1/20 | 0/2 |
+
+原严格审计直接读回 17/20 个新位姿。第 11、19 例的原结果超出冻结版 8 MiB 读入上限，原包装均为 `INCOMPLETE_UNKNOWN`。从完整原件补充读回，二者均完成九个动作并稳定放置。第 18 例的动作和独立物理两项均失败，右指越过含容差上限 0.158 mm，已触发急停。其原包装退出保留，单独复核动作前缀和安全事件。预登记的全样本严格评分缺三份原严格审计；表中两个区间使用补充原件在内的完整 20 例。15 个失败中有 6 个初始规划拒绝、6 个视觉伺服拒绝、2 个初始化异常、1 个硬指限位。两次固定复测单列，样本量不足以估计整体运行方差。 [第 18 例安全原件核对](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/development/live-18-finger-safety-diagnosis.json) · [大结果文件读回修复](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-large-result-reader-20261119/step-report.md)
+
+新位姿实发 14 次云请求和 68 次本地生成，共 9,339 个云端 token。两次固定复测另计 2 次云请求、8 次本地生成和 1,324 个云端 token。全批共 22 次模型加载，零重试；16 条付费请求均可与供应商用量核对，账单金额及币种待回执。
+
 ### 教师、B0 和交付环境
 
 教师按预登记实际释放首组 `native-p0-20261119-0001` 一次。PRE 通过，首动作 MOVE_ABOVE 在 740 个物理步后执行返回，随后保持 1,180 步。POST 读到 332.829 秒，超过原 8 秒限额，触发急停。独立生产 reader 重建 3,373/3,373 帧，验收完整动作 0/8，首组部分采集，后八组未启动，资格 0/9，联合误差界为空。诊断阶段的采集复制优化曾在原 8 秒内将同姿态进度从 181 提至 391/1920 步。 [真实首组与独立读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-first-actual-v9-teacher-20261119/step-report.md) · [采集复制优化](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-capture-detach-20261119/step-report.md)
+
+另用独立新 seed、真实 worker、SQLite 租约与 EGL 相机测量 8 秒开发短窗。99/1,920 个首动作物理步在窗内完成，独立 reader 核对 242/242 帧。动作窗 1,331 次 SQLite 快照共 1.345 秒，117 次窗内完整采集的 owner 区间共 3.042 秒，两个统计有重叠。末次采集在截止前获准，截止后 29.226 ms 被原检查点拒绝，随后保持并急停。原件记录到第 219 步，停后生效步的独立物理状态未知。开发短窗零模型调用。优先从这批原件拆分转换、编码和写盘的耗时，正式组继续保留原 8 秒和逐步采集要求。 [独立读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-checkpoint-egl-development-20261120/independent-readback.md) · [窗口和负载](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-checkpoint-egl-development-20261120/step-report.md)
 
 B0 配置已绑定 3,260 个互斥分配和当前名义角色探针。探针 4/4 实发成功，零重试，共 3,073 tokens。用户授权 B0 及新增开发批次的付费次数、金额均无上限，实际账单金额和币种待供应商回执。真实 selection 待教师资格，协议读回仅有 1/200 恢复、0 份机会证据；三份旧生成协议与当前冻结池均精确匹配 0/3,260。 [配置和账本核对](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/b0/step-report.md)
 
