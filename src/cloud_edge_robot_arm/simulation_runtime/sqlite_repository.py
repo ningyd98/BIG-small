@@ -16,7 +16,7 @@ import sys
 import threading
 from _thread import RLock
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager, closing
+from contextlib import closing, contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from functools import wraps
@@ -97,6 +97,13 @@ class _WriterOwner:
     dispatch: _DispatchOwner | None
 
 
+@dataclass(frozen=True, slots=True)
+class _TeacherCheckpointDatabase:
+    path: Path
+    device: int
+    inode: int
+
+
 def _job_writer[**P, R](function: Callable[P, R]) -> Callable[P, R]:
     """Every public writer joins one guarded connection; nested helpers cannot bypass it."""
 
@@ -119,6 +126,7 @@ class SQLiteSimulationJobRepository:
 
     def __init__(self, database_path: Path, *, artifact_root: Path | None = None) -> None:
         self._transactions = threading.local()
+        self._teacher_reads = threading.local()
         self.database_path = database_path
         self._artifact_root = None if artifact_root is None else Path(artifact_root).resolve()
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -509,6 +517,54 @@ class SQLiteSimulationJobRepository:
                     held.remove(key)
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
+    def _teacher_checkpoint_database(self) -> _TeacherCheckpointDatabase:
+        path = self.database_path.absolute()
+        try:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode):
+                raise RuntimeError("teacher checkpoint requires its original regular database")
+            path = path.resolve(strict=True)
+        except OSError as error:
+            raise RuntimeError("teacher checkpoint database unavailable") from error
+        return _TeacherCheckpointDatabase(path, info.st_dev, info.st_ino)
+
+    @contextmanager
+    def _teacher_checkpoint_read(self, database: _TeacherCheckpointDatabase) -> Iterator[None]:
+        """Read one current teacher checkpoint without reopening or initializing SQLite."""
+        if getattr(self._transactions, "connection", None) is not None:
+            # Keep original nested reads on their existing authenticated writer.
+            self._writer_binding()
+            yield
+            return
+        if getattr(self._teacher_reads, "snapshot", None) is not None:
+            raise RuntimeError("nested teacher checkpoint cannot reuse a read snapshot")
+        with self.publication_guard():
+            if self._teacher_checkpoint_database() != database:
+                raise RuntimeError("teacher checkpoint database identity changed")
+            uri = database.path.as_uri() + "?mode=ro"
+            with closing(sqlite3.connect(uri, uri=True, isolation_level=None)) as connection:
+                connection.row_factory = sqlite3.Row
+                connection.execute("BEGIN")
+                self._teacher_reads.snapshot = (os.getpid(), connection)
+                try:
+                    yield
+                    if self._teacher_checkpoint_database() != database:
+                        raise RuntimeError("teacher checkpoint database identity changed")
+                finally:
+                    del self._teacher_reads.snapshot
+                    connection.rollback()
+
+    def _teacher_checkpoint_connection(self) -> sqlite3.Connection | None:
+        snapshot: tuple[int, sqlite3.Connection] | None = getattr(
+            self._teacher_reads, "snapshot", None
+        )
+        if snapshot is None or getattr(self._transactions, "connection", None) is not None:
+            return None
+        pid, connection = snapshot
+        if pid != os.getpid():
+            raise RuntimeError("teacher read snapshot belongs to another process")
+        return connection
+
     @_job_writer
     def create_job(
         self,
@@ -584,8 +640,13 @@ class SQLiteSimulationJobRepository:
         return self.get_job(job_id)
 
     def get_job(self, job_id: str) -> SimulationJobRecord:
-        self._initialize()
-        row = self._fetch_one("SELECT * FROM simulation_jobs WHERE job_id = ?", (job_id,))
+        query = "SELECT * FROM simulation_jobs WHERE job_id = ?"
+        checkpoint = self._teacher_checkpoint_connection()
+        if checkpoint is None:
+            self._initialize()
+            row = self._fetch_one(query, (job_id,))
+        else:
+            row = checkpoint.execute(query, (job_id,)).fetchone()
         if row is None:
             raise KeyError(job_id)
         return _job_from_row(row)
@@ -943,8 +1004,10 @@ class SQLiteSimulationJobRepository:
             )
 
     def list_leases(self, run_id: str) -> list[SimulationJobLease]:
-        self._initialize()
-        with self._connect() as conn:
+        checkpoint = self._teacher_checkpoint_connection()
+        if checkpoint is None:
+            self._initialize()
+        with nullcontext(checkpoint) if checkpoint is not None else self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT leases.* FROM simulation_job_leases AS leases
@@ -1200,8 +1263,10 @@ class SQLiteSimulationJobRepository:
         return [_job_from_row(row) for row in rows]
 
     def list_attempts(self, run_id: str) -> list[SimulationJobAttempt]:
-        self._initialize()
-        with self._connect() as conn:
+        checkpoint = self._teacher_checkpoint_connection()
+        if checkpoint is None:
+            self._initialize()
+        with nullcontext(checkpoint) if checkpoint is not None else self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT * FROM simulation_job_attempts

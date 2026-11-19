@@ -1,10 +1,18 @@
 """Private startup identity and live worker/lease tests; no actual simulation."""
 
 import copy
+import json
+import os
 import pickle
+import sqlite3
+import threading
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from importlib import import_module, util
+from time import monotonic
 from types import SimpleNamespace
 
 import pytest
@@ -27,6 +35,10 @@ from cloud_edge_robot_arm.research.native_full_horizon_recorder import (
     NativeFullHorizonRecorder,
 )
 from cloud_edge_robot_arm.research.operational_time_v1 import open_operational_clock
+from cloud_edge_robot_arm.simulation_runtime import sqlite_repository
+from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+from cloud_edge_robot_arm.simulation_runtime.worker import CancelledByOperator, TimedOut
+from cloud_edge_robot_arm.vision.worker_owner import read_visual_worker_lease
 from tests.test_visual_raw_recorder_v3 import recorder_fixture, software_sensor_camera
 
 
@@ -127,6 +139,309 @@ def test_actual_worker_poll_claims_real_lease_without_physics(tmp_path, monkeypa
     assert _REGISTRY[app].closed
     with pytest.raises(RuntimeError):
         app.execute_once()
+
+
+def test_actual_teacher_checkpoint_reads_one_sqlite_snapshot(tmp_path, monkeypatch):
+    app = application(tmp_path)
+    queries = Counter()
+    actual_connect = sqlite3.connect
+
+    def trace_connect(*args, **kwargs):
+        connection = actual_connect(*args, **kwargs)
+        queries["connections"] += 1
+        connection.set_trace_callback(lambda sql: queries.update([sql.split()[0].upper()]))
+        return connection
+
+    def software_body(self, worker, job, *, start_monotonic):
+        live = _live(self)
+        live.worker_origin = worker._active_task_origin
+        with monkeypatch.context() as patch:
+            patch.setattr(sqlite3, "connect", trace_connect)
+            source = self.check_active()["lease"]
+        assert queries["connections"] == 1, dict(queries)
+        assert queries["CREATE"] == queries["INSERT"] == 0, dict(queries)
+        assert queries["BEGIN"] == queries["ROLLBACK"] == 1, dict(queries)
+        baseline = read_visual_worker_lease(
+            live.repository,
+            job_id=job.job_id,
+            run_id=job.run_id,
+            worker_id=worker.worker_id,
+            lease_id=job.lease_id,
+            now=datetime.fromisoformat(source["observed_at"]),
+        )
+        assert source == baseline.to_payload()
+        live.result = dict(status="SOFTWARE_ONLY", native_qualification="UNKNOWN")
+        return dict(evaluation_scope="TEACHER_COLLECTION", task_success=False), [], []
+
+    monkeypatch.setattr(NativeCollectionApplication, "run_from_worker", software_body)
+    assert app.execute_once()["status"] == "SOFTWARE_ONLY"
+
+
+@pytest.fixture
+def active_teacher_checkpoint(tmp_path):
+    app = application(tmp_path)
+    job = app.prepare_once()
+    live = _live(app)
+    owner = live.worker.worker_id
+    lease = live.repository.acquire_lease(worker_id=owner, backend="MUJOCO", lease_ttl_seconds=60)
+    assert lease is not None
+    live.repository.start_attempt(job.job_id, worker_id=owner)
+    for old, new in ((RuntimeJobStatus.LEASED, RuntimeJobStatus.STARTING),
+                     (RuntimeJobStatus.STARTING, RuntimeJobStatus.RUNNING)):
+        assert live.repository.update_status_cas(
+            job.job_id, expected=old, next_status=new, reason_code="software checkpoint test",
+            worker_id=owner, lease_id=lease.lease_id, expected_lease_id=lease.lease_id,
+        ) is not None
+    live.worker.active_job_id = job.job_id
+    origin = (job.job_id, monotonic(), datetime.now(UTC))
+    live.worker._active_task_origin = live.worker_origin = origin
+    try:
+        yield app, live.repository.get_job(job.job_id), lease
+    finally:
+        live.owner.close()
+
+
+@pytest.mark.parametrize("mutation", ["renew", "cancel", "release", "finish_attempt"])
+def test_teacher_checkpoint_serializes_current_writer_and_rereads(
+    active_teacher_checkpoint, monkeypatch, mutation,
+):
+    app, job, lease = active_teacher_checkpoint
+    repo = app.repository
+    other = sqlite_repository.SQLiteSimulationJobRepository(repo.database_path)
+    ready = threading.Event()
+    checked = threading.Event()
+    lock_key = (os.getpid(), str(repo.database_path.resolve()))
+    baseline = app.check_active()["lease"]
+    acquired = []
+
+    def concurrent_write():
+        assert ready.wait(5)
+        lock = sqlite_repository._PUBLICATION_LOCKS[lock_key]
+        entered = lock.acquire(blocking=False)
+        acquired.append(entered)
+        if entered:
+            lock.release()
+        checked.set()
+        if mutation == "renew":
+            other.heartbeat_lease(lease.lease_id, lease_ttl_seconds=90)
+        elif mutation == "cancel":
+            other.request_cancel(job.job_id)
+        elif mutation == "release":
+            other.release_lease(lease.lease_id)
+        else:
+            other.finish_attempt(
+                job.job_id, attempt=1, result="FAILED", error="software checkpoint test",
+                artifact_paths={},
+            )
+
+    original = repo.get_job
+
+    def staged_job_read(job_id):
+        result = original(job_id)
+        ready.set()
+        assert checked.wait(5)
+        return result
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(concurrent_write)
+        with monkeypatch.context() as patch:
+            patch.setattr(repo, "get_job", staged_job_read)
+            observed = app.check_active()["lease"]
+            assert acquired == [False]
+            assert all(observed[k] == baseline[k] for k in (
+                "job_state_hash", "lease_state_hash", "attempt_state_hash",
+            ))
+        future.result(timeout=5)
+    if mutation == "renew":
+        fresh = app.check_active()["lease"]
+        assert fresh["job_state_hash"] != baseline["job_state_hash"]
+        assert fresh["lease_state_hash"] != baseline["lease_state_hash"]
+        assert fresh["attempt_state_hash"] == baseline["attempt_state_hash"]
+    elif mutation == "cancel":
+        with pytest.raises(CancelledByOperator):
+            app.check_active()
+    else:
+        expected = "unique live job lease" if mutation == "release" else "unique open job attempt"
+        with pytest.raises(ValueError, match=expected):
+            app.check_active()
+
+
+@pytest.mark.parametrize("condition,exception,pattern", [
+    ("legacy_timeout", TimedOut, "timeout"),
+    ("heartbeat", RuntimeError, "heartbeat failed"),
+    ("foreign_worker", ValueError, "worker job identity"),
+    ("expired", ValueError, "worker job identity"),
+    ("wrong_attempt", RuntimeError, "lease/attempt changed"),
+    ("duplicate_lease", ValueError, "unique live job lease"),
+    ("duplicate_attempt", ValueError, "unique open job attempt"),
+    ("bad_date", ValueError, "Invalid isoformat"),
+    ("local_mode", RuntimeError, "current local task/lease authority unavailable"),
+])
+def test_teacher_checkpoint_retains_original_rejection(
+    active_teacher_checkpoint, condition, exception, pattern,
+):
+    app, job, lease = active_teacher_checkpoint
+    live = _live(app)
+    if condition == "legacy_timeout":
+        origin = (job.job_id, monotonic() - job.timeout_seconds - 1, datetime.now(UTC))
+        live.worker._active_task_origin = live.worker_origin = origin
+    elif condition == "heartbeat":
+        live.worker._heartbeat_failed.set()
+    elif condition == "foreign_worker":
+        live.worker.worker_id = "foreign-worker"
+    elif condition == "local_mode":
+        live.worker._frozen_operational_time_mode = "LOCAL_TEMPORAL_PUBLICATION_V1"
+    else:
+        with closing(sqlite3.connect(app.repository.database_path)) as db, db:
+            if condition == "expired":
+                db.execute("UPDATE simulation_jobs SET lease_expires_at=? WHERE job_id=?", (
+                    (datetime.now(UTC) - timedelta(seconds=1)).isoformat(), job.job_id,
+                ))
+            elif condition == "wrong_attempt":
+                db.execute("UPDATE simulation_jobs SET attempt=2")
+                db.execute("UPDATE simulation_job_attempts SET attempt=2")
+            elif condition == "duplicate_lease":
+                db.execute(
+                    "INSERT INTO simulation_job_leases SELECT 'duplicate',job_id,worker_id,"
+                    "acquired_at,expires_at,heartbeat_at,released_at FROM simulation_job_leases "
+                    "WHERE lease_id=?", (lease.lease_id,),
+                )
+            elif condition == "duplicate_attempt":
+                db.execute("INSERT INTO simulation_job_attempts SELECT job_id,run_id,2,worker_id,"
+                           "started_at,ended_at,result,error,artifact_paths_json "
+                           "FROM simulation_job_attempts WHERE job_id=?", (job.job_id,))
+            else:
+                db.execute("UPDATE simulation_job_leases SET expires_at='invalid'")
+    with pytest.raises(exception, match=pattern):
+        app.check_active()
+    assert app.repository._teacher_checkpoint_connection() is None
+
+
+def test_teacher_checkpoint_preserves_typed_timezone_offset(active_teacher_checkpoint):
+    app, job, lease = active_teacher_checkpoint
+    offset = datetime.now(timezone(timedelta(hours=-5))) + timedelta(seconds=35)
+    with closing(sqlite3.connect(app.repository.database_path)) as db, db:
+        db.execute("UPDATE simulation_jobs SET lease_expires_at=?", (offset.isoformat(),))
+        db.execute("UPDATE simulation_job_leases SET expires_at=?", (offset.isoformat(),))
+    observed = app.check_active()["lease"]
+    baseline = read_visual_worker_lease(
+        app.repository, job_id=job.job_id, run_id=job.run_id, worker_id=lease.worker_id,
+        lease_id=lease.lease_id, now=datetime.fromisoformat(observed["observed_at"]),
+    )
+    assert observed == baseline.to_payload()
+
+
+def test_teacher_checkpoint_rejects_replaced_database(active_teacher_checkpoint):
+    app, _, _ = active_teacher_checkpoint
+    path = app.repository.database_path
+    path.rename(path.with_suffix(".historical"))
+    sqlite_repository.SQLiteSimulationJobRepository(path)
+    with pytest.raises(RuntimeError, match="database identity changed"):
+        app.check_active()
+
+
+def test_teacher_checkpoint_fault_releases_guard_without_rebuilding_schema(
+    active_teacher_checkpoint,
+):
+    app, _, lease = active_teacher_checkpoint
+    path = app.repository.database_path
+    other = sqlite_repository.SQLiteSimulationJobRepository(path)
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("DROP TABLE simulation_job_attempts")
+    with pytest.raises(sqlite3.OperationalError, match="no such table"):
+        app.check_active()
+    assert app.repository._teacher_checkpoint_connection() is None
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute(
+            "SELECT name FROM sqlite_master WHERE name='simulation_job_attempts'"
+        ).fetchone() is None
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(other.heartbeat_lease, lease.lease_id, lease_ttl_seconds=90).result(timeout=5)
+
+
+def test_teacher_checkpoint_does_not_replace_nested_writer(active_teacher_checkpoint, monkeypatch):
+    app, job, lease = active_teacher_checkpoint
+    repo = app.repository
+    recorded = []
+    actual_now = sqlite_repository._now
+
+    def check_during_write():
+        if getattr(repo._transactions, "connection", None) is not None and not recorded:
+            owner = repo._writer_binding()
+            with repo._teacher_checkpoint_read(_live(app).checkpoint_database):
+                assert repo._teacher_checkpoint_connection() is None
+                assert repo.get_job(job.job_id).lease_id == lease.lease_id
+                assert repo._writer_binding() is owner
+            recorded.append(True)
+        return actual_now()
+
+    monkeypatch.setattr(sqlite_repository, "_now", check_during_write)
+    repo.heartbeat_lease(lease.lease_id, lease_ttl_seconds=90)
+    assert recorded == [True]
+
+
+def test_teacher_checkpoint_dense_cpu_capture_stops_on_fresh_cancel(active_teacher_checkpoint):
+    from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor
+    from cloud_edge_robot_arm.edge.runtime.skill_registry import SkillRegistry
+    from cloud_edge_robot_arm.research.native_collection_application import _collection_guard
+    from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+    from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+    from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+    from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+
+    app, job, _ = active_teacher_checkpoint
+    live = _live(app)
+    backend = live.backend = MuJoCoPhysicsBackend()
+    backend.initialize(SimulatorConfig(domain_randomization=False))
+    software_sensor_camera(backend)
+    camera = backend._camera
+
+    def cached_capture(*args, **kwargs):
+        frame, _, _, passes = camera.capture_with_instances(*args, **kwargs)
+        return frame, (), {}, passes[:2]
+
+    camera._capture, camera.close = cached_capture, lambda: None
+    live.robot = MuJoCoSkillRobot(backend)
+    live.executor = SkillExecutor(robot=live.robot, registry=SkillRegistry.default())
+    live.capture = MuJoCoCaptureSession(backend._config, backend=backend)
+    recorder = live.recorder = NativeFullHorizonRecorder(
+        backend, live.capture, live.executor, directory=app.output / "cpu-originals",
+        source_root=ROOT, source_hashes=app.protocol["source_hashes"], application=app,
+        owner=live.owner, _token=_ISSUER,
+    )
+    canceller = sqlite_repository.SQLiteSimulationJobRepository(app.repository.database_path)
+    try:
+        with live.capture, recorder:
+            backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=job.seed))
+            recorder.require_clean_reset()
+            with pytest.raises(CancelledByOperator):
+                with _collection_guard(live, app._guard, app.policy["guard_event_limit"]):
+                    with backend.capture_each_physics_step(max_captures=16):
+                        start = monotonic()
+                        for _ in range(4):
+                            backend.step(1)
+                        elapsed = monotonic() - start
+                        active_checks = len(live.checks)
+                        canceller.request_cancel(job.job_id)
+                        backend.step(1)
+            assert backend.total_physics_steps == 4
+            assert backend.estop_engaged
+            assert recorder.render_passes == 22  # 4 x (3 registered + 2 cache), plus reset pair.
+            assert active_checks >= 12 * 4
+            assert live.repository._teacher_checkpoint_connection() is None
+            print(json.dumps({
+                "scope": "CPU_MUJOCO_WITH_SOFTWARE_SENSOR",
+                "physical_steps": backend.total_physics_steps,
+                "render_fixture_passes": recorder.render_passes,
+                "completed_guard_checks": active_checks,
+                "before_cancel_wall_s": elapsed,
+                "stop_engaged": backend.estop_engaged,
+                "original_members": len(recorder.inventory),
+                "model_calls": 0,
+            }))
+    finally:
+        backend.shutdown()
 
 
 def unknown_row(**changes):

@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -95,6 +95,7 @@ def _check_protocol_sources(protocol: dict[str, Any]) -> None:
 if TYPE_CHECKING:
     from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
         SQLiteSimulationJobRepository,
+        _TeacherCheckpointDatabase,
     )
     from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
 
@@ -116,6 +117,7 @@ class _Live:
     closed: bool = False
     job_id: str | None = None
     job_basis: bytes | None = None
+    checkpoint_database: _TeacherCheckpointDatabase | None = None
     worker_origin: tuple[Any, ...] | None = None
     fencing: tuple[Any, ...] | None = None
     owner: Any = None
@@ -1012,6 +1014,7 @@ class NativeCollectionApplication:
             assignment_id,
             os.getpid(),
             threading.get_ident(),
+            checkpoint_database=app.repository._teacher_checkpoint_database(),
         )
         return app
 
@@ -1227,22 +1230,27 @@ class NativeCollectionApplication:
         live = _live(self)
         if live.worker_origin is None or live.job_id is None:
             raise RuntimeError("actual running worker origin required")
-        job = live.repository.get_job(live.job_id)
-        if (
-            _job_basis(job) != live.job_basis
-            or live.worker._active_task_origin != live.worker_origin
-            or live.worker.active_job_id != live.job_id
-            or job.max_attempts != 1
+        with (
+            live.repository._teacher_checkpoint_read(live.checkpoint_database)
+            if live.worker._frozen_operational_time_mode == "UTC_LEGACY_VETO"
+            else nullcontext()
         ):
-            raise RuntimeError("original assignment/worker origin changed")
-        live.worker._raise_if_cancelled_or_timed_out(job.job_id, job, live.worker_origin[1])
-        lease = read_visual_worker_lease(
-            live.repository,
-            job_id=job.job_id,
-            run_id=job.run_id,
-            worker_id=live.worker.worker_id,
-            lease_id=job.lease_id,
-        )
+            job = live.repository.get_job(live.job_id)
+            if (
+                _job_basis(job) != live.job_basis
+                or live.worker._active_task_origin != live.worker_origin
+                or live.worker.active_job_id != live.job_id
+                or job.max_attempts != 1
+            ):
+                raise RuntimeError("original assignment/worker origin changed")
+            live.worker._raise_if_cancelled_or_timed_out(job.job_id, job, live.worker_origin[1])
+            lease = read_visual_worker_lease(
+                live.repository,
+                job_id=job.job_id,
+                run_id=job.run_id,
+                worker_id=live.worker.worker_id,
+                lease_id=job.lease_id,
+            )
         fencing = (
             job.job_id,
             job.run_id,
