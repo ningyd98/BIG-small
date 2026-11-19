@@ -33,7 +33,7 @@ worker 自产品提交 `4bdb64eb` 起，把脱敏后的异常类型、消息、�
 
 ### 教师、B0 和交付环境
 
-教师已从九个新组中单独开放 `native-p0-20261119-0001`。优化成功采集的不可变数据快照后，同一姿态在原 8 秒窗口内的实测进度由 181/1920 提至 391/1920 步。16 帧均有当前注册区域，红色身份仍出现分裂。正式验收要求独立 reader 重建八个完整动作。 [单组协议](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-first-teacher-20261119/step-report.md) · [原窗复验](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-capture-detach-20261119/step-report.md)
+教师按预登记实际释放首组 `native-p0-20261119-0001` 一次。PRE 通过，首动作 MOVE_ABOVE 在 740 个物理步后执行返回，随后保持 1,180 步。POST 读到 332.829 秒，超过原 8 秒限额，触发急停。独立生产 reader 重建 3,373/3,373 帧，验收完整动作 0/8，首组部分采集，后八组未启动，资格 0/9，联合误差界为空。诊断阶段的采集复制优化曾在原 8 秒内将同姿态进度从 181 提至 391/1920 步。 [真实首组与独立读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-first-actual-v9-teacher-20261119/step-report.md) · [采集复制优化](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-capture-detach-20261119/step-report.md)
 
 B0 配置已绑定 3,260 个互斥分配和当前名义角色探针。探针 4/4 实发成功，零重试，共 3,073 tokens。用户授权 B0 及新增开发批次的付费次数、金额均无上限，实际账单金额和币种待供应商回执。真实 selection 待教师资格，协议读回仅有 1/200 恢复、0 份机会证据；三份旧生成协议与当前冻结池均精确匹配 0/3,260。 [配置和账本核对](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/b0/step-report.md)
 
