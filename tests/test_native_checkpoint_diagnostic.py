@@ -201,3 +201,154 @@ def test_real_backend_cutoff_leaves_no_physics_authorized():
         assert events[-1]["error_type"] == "_CheckpointDiagnosticDeadline"
     finally:
         backend.shutdown()
+
+
+@pytest.fixture
+def cutoff_receipt():
+    from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import (
+        DIAGNOSTIC_ASSIGNMENT,
+        DIAGNOSTIC_SCOPE,
+    )
+
+    return dict(
+        status="COLLECTION_PARTIAL",
+        assignment_id=DIAGNOSTIC_ASSIGNMENT,
+        scope=DIAGNOSTIC_SCOPE,
+        qualification_credit=0,
+        final_lifecycle_receipt=True,
+        execution_admitted=False,
+        teacher_collection_admitted=False,
+        native_qualification="UNKNOWN",
+        checkpoint_diagnostic=dict(
+            scope=DIAGNOSTIC_SCOPE,
+            status="CUTOFF",
+            qualification_credit=0,
+            registration_sha256="a" * 64,
+        ),
+        failures=[
+            dict(
+                phase="collection_body",
+                role="PRIMARY",
+                error_type="_CheckpointDiagnosticDeadline",
+                error=(
+                    "_CheckpointDiagnosticDeadline: "
+                    "8-second development first-action deadline reached"
+                ),
+            )
+        ],
+        worker_snapshot={"job": {"status": "BLOCKED_BY_ENV"}, "attempts": [], "events": []},
+        owner_closure={"completed": True},
+    )
+
+
+def test_read_cutoff_result_retains_original_mapping(tmp_path, cutoff_receipt):
+    from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import _read_cutoff_result
+
+    path = tmp_path / "collection-result.json"
+    path.write_text(json.dumps(cutoff_receipt))
+    assert _read_cutoff_result(path, registration_sha256="a" * 64) == cutoff_receipt
+
+
+@pytest.mark.parametrize(
+    "raw", [None, "0", "[]", "null", "{}", "{bad JSON", '{"status":1,"status":2}']
+)
+def test_read_cutoff_result_rejects_missing_scalar_and_bad_json(tmp_path, raw):
+    from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import _read_cutoff_result
+
+    path = tmp_path / "collection-result.json"
+    if raw is not None:
+        path.write_text(raw)
+    assert _read_cutoff_result(path, registration_sha256="a" * 64) is None
+
+
+@pytest.mark.parametrize(
+    ("section", "name", "value"),
+    [
+        (None, "assignment_id", "wrong-assignment"),
+        (None, "status", "COLLECTION_COMPLETE_WITH_UNRESOLVED_EFFECTS"),
+        (None, "scope", "TEACHER_COLLECTION"),
+        (None, "qualification_credit", False),
+        (None, "qualification_credit", 1),
+        (None, "final_lifecycle_receipt", False),
+        (None, "execution_admitted", True),
+        (None, "teacher_collection_admitted", True),
+        (None, "native_qualification", "QUALIFIED"),
+        (None, "checkpoint_diagnostic", []),
+        (None, "failures", []),
+        (None, "failures", [None]),
+        ("checkpoint_diagnostic", "status", "EARLY_STOP"),
+        ("checkpoint_diagnostic", "scope", "TEACHER_COLLECTION"),
+        ("checkpoint_diagnostic", "qualification_credit", False),
+        ("checkpoint_diagnostic", "qualification_credit", 1),
+        ("checkpoint_diagnostic", "registration_sha256", "b" * 64),
+    ],
+)
+def test_read_cutoff_result_rejects_wrong_identity_or_state(
+    tmp_path, cutoff_receipt, section, name, value
+):
+    from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import _read_cutoff_result
+
+    receipt = cutoff_receipt if section is None else cutoff_receipt[section]
+    receipt[name] = value
+    path = tmp_path / "collection-result.json"
+    path.write_text(json.dumps(cutoff_receipt))
+    assert _read_cutoff_result(path, registration_sha256="a" * 64) is None
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("role", "SECONDARY"), ("phase", "preflight"), ("error", "unrelated deadline")],
+)
+def test_read_cutoff_result_rejects_nonprimary_or_unrelated_cutoff(
+    tmp_path, cutoff_receipt, name, value
+):
+    from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import _read_cutoff_result
+
+    cutoff_receipt["failures"][0][name] = value
+    path = tmp_path / "collection-result.json"
+    path.write_text(json.dumps(cutoff_receipt))
+    assert _read_cutoff_result(path, registration_sha256="a" * 64) is None
+
+
+@pytest.mark.parametrize(
+    "case", ["bound-cutoff", "unrelated", "different-worker", "malformed-receipt"]
+)
+def test_checkpoint_runtime_readback_preserves_unrelated_exception(
+    tmp_path, monkeypatch, cutoff_receipt, case
+):
+    from cloud_edge_robot_arm.research import native_checkpoint_diagnostic as diagnostic
+    from cloud_edge_robot_arm.research.native_calibration_collection import digest
+
+    release = {"recipe": {"source_hashes": {}}}
+    cutoff_receipt["checkpoint_diagnostic"]["registration_sha256"] = digest(release)
+    path = tmp_path / "collection-result.json"
+    path.write_text("{bad JSON" if case == "malformed-receipt" else json.dumps(cutoff_receipt))
+    snapshot = cutoff_receipt["worker_snapshot"]
+    failure = RuntimeError("worker terminal outcome: " + json.dumps(snapshot, ensure_ascii=False))
+    if case == "unrelated":
+        failure = RuntimeError("lease expired")
+    if case == "different-worker":
+        failure = RuntimeError('worker terminal outcome: {"job":{"status":"TIMED_OUT"}}')
+
+    class FailingApplication:
+        output = tmp_path
+
+        def execute_once(self):
+            raise failure
+
+    monkeypatch.setattr(diagnostic, "_read_registration", lambda _: release)
+    monkeypatch.setattr(diagnostic, "_import_sources", lambda _: {})
+    monkeypatch.setattr(
+        NativeCollectionApplication,
+        "from_checkpoint_diagnostic",
+        lambda _: FailingApplication(),
+    )
+    if case == "bound-cutoff":
+        assert diagnostic.run_checkpoint_diagnostic(tmp_path) == cutoff_receipt
+    else:
+        with pytest.raises(RuntimeError) as caught:
+            diagnostic.run_checkpoint_diagnostic(tmp_path)
+        assert caught.value is failure
+    assert load_json(tmp_path / "imported-source-manifest.json")["registration_sha256"] == digest(
+        release
+    )

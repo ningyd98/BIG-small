@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sys
 import time
@@ -182,24 +183,92 @@ def _import_sources(registered_hashes: dict[str, str]) -> dict[str, dict[str, st
     return imported
 
 
+def _read_cutoff_result(path: Path, *, registration_sha256: str) -> dict[str, Any] | None:
+    try:
+        result: object = load_json(path)
+    except (OSError, ValueError, RecursionError):
+        return None
+    if not isinstance(result, dict):
+        return None
+    qualification = result.get("qualification_credit")
+    if (
+        result.get("status") != "COLLECTION_PARTIAL"
+        or result.get("assignment_id") != DIAGNOSTIC_ASSIGNMENT
+        or result.get("scope") != DIAGNOSTIC_SCOPE
+        or type(qualification) is not int
+        or qualification != 0
+        or result.get("final_lifecycle_receipt") is not True
+        or result.get("execution_admitted") is not False
+        or result.get("teacher_collection_admitted") is not False
+        or result.get("native_qualification") != "UNKNOWN"
+    ):
+        return None
+    diagnostic = result.get("checkpoint_diagnostic")
+    if not isinstance(diagnostic, dict):
+        return None
+    qualification = diagnostic.get("qualification_credit")
+    if (
+        diagnostic.get("status") != "CUTOFF"
+        or diagnostic.get("scope") != DIAGNOSTIC_SCOPE
+        or diagnostic.get("registration_sha256") != registration_sha256
+        or type(qualification) is not int
+        or qualification != 0
+    ):
+        return None
+    failures = result.get("failures")
+    if not isinstance(failures, list) or any(not isinstance(row, dict) for row in failures):
+        return None
+    primary = [row for row in failures if row.get("role") == "PRIMARY"]
+    deadline_type = _CheckpointDiagnosticDeadline.__name__
+    if len(primary) != 1 or not all(
+        primary[0].get(key) == value
+        for key, value in (
+            ("phase", "collection_body"),
+            ("error_type", deadline_type),
+            ("error", f"{deadline_type}: 8-second development first-action deadline reached"),
+        )
+    ):
+        return None
+    return result
+
+
+def _worker_terminal_matches(error: RuntimeError, receipt: dict[str, Any]) -> bool:
+    # execute_once includes the worker snapshot in its terminal RuntimeError.
+    # A receipt from the same registration alone does not identify that exception.
+    prefix = "worker terminal outcome: "
+    if type(error) is not RuntimeError or len(error.args) != 1:
+        return False
+    message = error.args[0]
+    snapshot = receipt.get("worker_snapshot")
+    if not isinstance(message, str) or not message.startswith(prefix):
+        return False
+    if not isinstance(snapshot, dict):
+        return False
+    try:
+        observed: object = json.loads(message[len(prefix) :])
+        return isinstance(observed, dict) and canonical(observed) == canonical(snapshot)
+    except (ValueError, RecursionError):
+        return False
+
+
 def run_checkpoint_diagnostic(protocol: Path) -> dict[str, Any]:
     from cloud_edge_robot_arm.research.native_collection_application import (
         NativeCollectionApplication,
     )
 
     registration = _read_registration(protocol)
+    registration_sha256 = digest(registration)
     sources = registration["recipe"]["source_hashes"]
     before = _import_sources(sources)
     app = NativeCollectionApplication.from_checkpoint_diagnostic(protocol)
     try:
         return app.execute_once()
-    except RuntimeError:
-        # The worker publishes its actual FAILED terminal state for the cutoff.
-        result_path = app.output / "collection-result.json"
-        if result_path.is_file():
-            result = load_json(result_path)
-            if result.get("checkpoint_diagnostic", {}).get("status") == "CUTOFF":
-                return result
+    except RuntimeError as error:
+        receipt = _read_cutoff_result(
+            app.output / "collection-result.json", registration_sha256=registration_sha256
+        )
+        if receipt is not None and _worker_terminal_matches(error, receipt):
+            return receipt
         raise
     finally:
         after = _import_sources(sources)
@@ -208,7 +277,7 @@ def run_checkpoint_diagnostic(protocol: Path) -> dict[str, Any]:
         save_exclusive(
             app.output / "imported-source-manifest.json",
             dict(
-                registration_sha256=digest(registration),
+                registration_sha256=registration_sha256,
                 before=before,
                 after=after,
             ),
