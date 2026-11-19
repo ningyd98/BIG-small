@@ -258,6 +258,119 @@ def _evidence(tmp_path: Path, result: dict[str, Any]) -> Path:
     return output
 
 
+def _replace_evidence_file(
+    output: Path, name: str, raw: bytes, *, size: int | None = None,
+    digest: str | None = None,
+) -> None:
+    (output / name).write_bytes(raw)
+    manifest = output / "evidence-manifest.json"
+    record = json.loads(manifest.read_bytes())
+    row = next(item for item in record["files"] if item["path"] == name)
+    row.update(bytes=len(raw) if size is None else size,
+               sha256=hashlib.sha256(raw).hexdigest() if digest is None else digest)
+    manifest.write_text(json.dumps(record))
+
+
+@pytest.fixture
+def prepared_evidence(tmp_path: Path) -> Path:
+    from cloud_edge_robot_arm.harness.config import load_config
+    from cloud_edge_robot_arm.research.sol_molmo_single_episode import run_single_episode
+
+    config = load_config()
+    output = tmp_path / "episode"
+    run_single_episode(output=output, seed=config.seed, marker_family_id=config.marker_family)
+    return output
+
+
+def _pad_result(output: Path, size: int) -> bytes:
+    result = json.loads((output / "result.json").read_bytes())
+    result["recorded_diagnostics"] = ""
+    overhead = len(json.dumps(result).encode())
+    result["recorded_diagnostics"] = "a" * (size - overhead)
+    return json.dumps(result).encode()
+
+
+@pytest.mark.parametrize("size", [8 * 1024 * 1024 + 1, 16 * 1024 * 1024])
+def test_evidence_accepts_large_manifest_bound_result(
+    tmp_path: Path, prepared_evidence: Path, size: int,
+) -> None:
+    from cloud_edge_robot_arm.harness import cli
+    from cloud_edge_robot_arm.harness.checkout import verify_checkout
+    from cloud_edge_robot_arm.harness.config import load_config
+    from cloud_edge_robot_arm.harness.evidence import EpisodeExpectation
+
+    output = prepared_evidence
+    raw = _pad_result(output, size)
+    assert len(raw) == size
+    _replace_evidence_file(output, "result.json", raw)
+    reply = _cli("evidence", output, cwd=tmp_path)
+    assert reply.returncode == 0, reply.stderr or reply.stdout
+    index = json.loads(reply.stdout)
+    assert index["status"] == "VERIFIED"
+    assert index["episode"]["status"] == "PREPARED"
+    assert index["manifest_sha256"] == hashlib.sha256(
+        (output / "evidence-manifest.json").read_bytes()
+    ).hexdigest()
+
+    config = load_config()
+    expected = EpisodeExpectation(verify_checkout(ROOT, config), config, False)
+    code, report = cli._finish_launch(
+        {}, config, output, cli._ChildExit(0, "", None), None, expected=expected,
+    )
+    assert code == report["wrapper_exit_code"] == 0
+    assert report["status"] == "PREPARED"
+    assert report["evidence"]["status"] == "VERIFIED"
+
+
+@pytest.mark.parametrize(
+    ("problem", "error"),
+    [
+        ("over_limit", "exceeds 16 MiB"),
+        ("small_declaration", "exceeds 16 MiB"),
+        ("wrong_size", "differs from manifest size or hash"),
+        ("wrong_digest", "differs from manifest size or hash"),
+        ("invalid_json", "Expecting property name"),
+        ("duplicate_key", "duplicate JSON key"),
+        ("nonfinite", "nonfinite JSON literal"),
+    ],
+)
+def test_evidence_rejects_invalid_large_result(
+    tmp_path: Path, prepared_evidence: Path, problem: str, error: str,
+) -> None:
+    output = prepared_evidence
+    size_mib = 16 if problem in {"over_limit", "small_declaration"} else 8
+    raw = _pad_result(output, size_mib * 1024 * 1024 + 1)
+    if problem == "invalid_json":
+        raw = b"{" + raw
+    elif problem == "duplicate_key":
+        raw = b'{"mode":"dry-run",' + raw[1:]
+    elif problem == "nonfinite":
+        raw = b'{"invalid":NaN,' + raw[1:]
+    declared_size = {"small_declaration": 1, "wrong_size": len(raw) - 1}.get(problem)
+    claimed_digest = "0" * 64 if problem == "wrong_digest" else None
+    _replace_evidence_file(output, "result.json", raw, size=declared_size, digest=claimed_digest)
+    reply = _cli("evidence", output, cwd=tmp_path)
+    assert reply.returncode == 2
+    assert error in json.loads(reply.stdout)["error"]
+
+
+@pytest.mark.parametrize(
+    "name", ["evidence-manifest.json", "scene-assignment.json", "source-hashes.json"],
+)
+def test_other_evidence_json_keeps_original_limit(
+    tmp_path: Path, prepared_evidence: Path, name: str,
+) -> None:
+    output = prepared_evidence
+    oversized = b" " * (8 * 1024 * 1024 + 1)
+    if name == "evidence-manifest.json":
+        (output / name).write_bytes(oversized)
+    else:
+        _replace_evidence_file(output, name, oversized)
+    reply = _cli("evidence", output, cwd=tmp_path)
+    assert reply.returncode == 2
+    assert json.loads(reply.stdout)["error"] == "evidence JSON exceeds 8 MiB"
+
+
 @pytest.mark.parametrize("extra", [{}, {"mode": "dry-run"}])
 def test_evidence_rejects_schema_only_and_missing_status(
     tmp_path: Path, extra: dict[str, str],

@@ -160,6 +160,19 @@ def _json_bytes(stream: BinaryIO) -> bytes:
     return raw
 
 
+def _manifest_result(stream: BinaryIO, size: int, digest: str) -> object:
+    limit = 16 * 1024 * 1024
+    actual_size = os.fstat(stream.fileno()).st_size
+    if size > limit or actual_size > limit:
+        raise ValueError("evidence result.json exceeds 16 MiB")
+    if actual_size != size:
+        raise ValueError("local evidence differs from manifest size or hash")
+    raw = stream.read(size + 1)
+    if len(raw) != size or hashlib.sha256(raw).hexdigest() != digest:
+        raise ValueError("local evidence differs from manifest size or hash")
+    return strict_json(raw)
+
+
 def stage_files(output: Path) -> list[str]:
     """Name stage files that survived an incomplete run, without asserting validity."""
     try:
@@ -292,7 +305,10 @@ def verify_evidence(
                 raise ValueError("invalid or duplicate local evidence entry")
             names.add(path)
             with _artifact(root_fd, path) as stream:
-                if path in {RESULT, ASSIGNMENT, SOURCES}:
+                if path == RESULT:
+                    phase_json[path] = _manifest_result(stream, size, digest)
+                    continue
+                if path in {ASSIGNMENT, SOURCES}:
                     raw = _json_bytes(stream)
                     phase_json[path] = strict_json(raw)
                     actual_size, actual_digest = len(raw), hashlib.sha256(raw).hexdigest()
