@@ -23,6 +23,7 @@ from cloud_edge_robot_arm.research.native_calibration_collection import (
     digest,
 )
 from cloud_edge_robot_arm.research.native_calibration_collection import detached as _plain
+from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import DIAGNOSTIC_SCOPE
 from cloud_edge_robot_arm.research.raw_episode_v3 import RawEpisodeIdentityV3
 from cloud_edge_robot_arm.simulation.mujoco.backend import BackendOperationBoundary
 from cloud_edge_robot_arm.simulation.mujoco.native_horizon import FullHorizonExecutionReceipt
@@ -779,14 +780,9 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
         self._require_open()
         if self._published:
             raise RuntimeError("collection originals already frozen")
-        v2 = (
-            getattr(self.application, "protocol", {}).get("schema_version")
-            in REGISTERED_V2_STEP_SCHEMAS
-        )
-        registered = (
-            getattr(self.application, "protocol", {}).get("schema_version")
-            in REGISTERED_STEP_SCHEMAS
-        )
+        protocol = getattr(self.application, "protocol", {})
+        v2 = protocol.get("schema_version") in REGISTERED_V2_STEP_SCHEMAS
+        registered = protocol.get("schema_version") in REGISTERED_STEP_SCHEMAS
         actions = self._actions
         if registered:
             from cloud_edge_robot_arm.research.raw_episode_v3 import (
@@ -817,9 +813,13 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
                     if registered
                     else "native.full-horizon.originals.v1"
                 ),
-                source_scope="REGISTERED_MODEL_TEACHER_COLLECTION"
-                if registered
-                else "TEACHER_COLLECTION",
+                source_scope=(
+                    DIAGNOSTIC_SCOPE
+                    if protocol.get("scope") == DIAGNOSTIC_SCOPE
+                    else "REGISTERED_MODEL_TEACHER_COLLECTION"
+                    if registered
+                    else "TEACHER_COLLECTION"
+                ),
                 identity=self._identity.to_payload() if self._identity is not None else None,
                 descriptor=self._descriptor.to_payload() if self._descriptor is not None else None,
                 reset=self._reset_result,

@@ -1,0 +1,17 @@
+{
+  "planner": "GPT-6.2 Astra",
+  "issue": "两个原 authority 测试在新诊断实现上实测失败。_collection_guard 直接取旧辅助对象上不存在的 diagnostic，在退出时报 AttributeError；_close_body_resources 的 freeze 闭包在 recorder.freeze 前取同一属性，异常走次要失败路径并漏掉原 freeze。诊断新入口五项已过；旧失败日志含实际 argv 和源码清单。",
+  "scope": "仅在 _collection_guard 与 _close_body_resources 传可选的诊断状态参数，默认 None；从 run_from_worker 的真实 live/已绑定 diagnostic 明确传入。两个 helper 内仅使用该参数写诊断的 guard_exit 时刻和附加 payload。旧调用保持原 guard 退出、TERMINATION、freeze → detach → close 的顺序及初次/次要异常传递，真实诊断仍写原字段。不得只改旧 fixture 补属性、捕获异常吞掉、改单次语义或正式资格/控制程序。",
+  "preconditions": "核对旧失败、首个源码清单和测试原件，修前核对两个实际调用点。保留数据及旧回执，单独输出新结果。",
+  "acceptance": "原两个完整 node 与新增5项在真实模块复验通过，再跑受影响相邻集，核 freeze 一次、顺序及 dual-failure 次序；真实诊断写 guard_exit/payload，源码、测试与 Ruff 核验。无关旧静态基线逐项分列。所有适用原前置满足时即可按父轮在真实窗口执行一次。",
+  "inputs_sha256": {
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-checkpoint-egl-development-20261120/plan.json": "1559123cb75414fa3cb073cb829c9dd52a666cd44d90b72759f49e6b0d7b53db",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/first-candidate-files.sha256": "ad64d32d82875ef426e40d5961567c8ace19dbdcce4982e678fec3b6880ae5ca",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/software-original-helper-failure.log": "bccd65edb460272ad1a083c9a44a28f305ad693edbfe997f45fa99b0ed59b45e",
+    "experiments/results/phase9/p0-first-teacher-20261119/checkpoint-egl-development-20261120/software-targeted-green.log": "43d5685df606d8634e21793c150b75cfeef9d4919695f0dd6af5541c587768de",
+    "src/cloud_edge_robot_arm/research/native_collection_application.py": "183e096e9ba41ad314790385aea4f5ca72039b55ea77ee6a667a70c5f843de84",
+    "tests/test_native_collection_authority.py": "09f886bd68597a8e40ce00e1737cd59f356ca6a02d43a2b1b0492a211f157412",
+    "tests/test_native_checkpoint_diagnostic.py": "4d8229eb782ea648a14d32c51939c0ca589d0f1d9829675e89157ea2c8a3810b"
+  },
+  "plan_md_sha256": "443d9d07183c870ec50f11182440fb8a01d61c8a5f635567b74e5a34c1727a56"
+}

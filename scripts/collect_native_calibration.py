@@ -25,14 +25,43 @@ def main() -> None:
     modes.add_argument("--prepare-registered-occlusion-collection-protocol", action="store_true")
     modes.add_argument("--prepare-registered-step", action="store_true")
     modes.add_argument("--verify-registered-step", action="store_true")
+    modes.add_argument("--register-checkpoint-diagnostic", action="store_true")
+    modes.add_argument("--run-checkpoint-diagnostic", action="store_true")
     parser.add_argument("--config", type=Path)
     parser.add_argument("--protocol", type=Path)
     parser.add_argument("--assignment-id")
     parser.add_argument("--context", type=Path)
     parser.add_argument("--prepared", type=Path)
     parser.add_argument("--repository", type=Path)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    if args.register_checkpoint_diagnostic or args.run_checkpoint_diagnostic:
+        from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import (
+            register_checkpoint_diagnostic,
+            run_checkpoint_diagnostic,
+        )
+
+        if any(
+            value is not None
+            for value in (
+                args.config, args.assignment_id, args.context, args.prepared, args.repository
+            )
+        ):
+            parser.error("checkpoint diagnostic uses only its registration directory")
+        if args.register_checkpoint_diagnostic:
+            if args.output is None or args.protocol is not None:
+                parser.error("checkpoint diagnostic registration requires only output")
+            result = register_checkpoint_diagnostic(args.output)
+        else:
+            if args.protocol is None or args.output is not None:
+                parser.error("checkpoint diagnostic run requires only its registration as protocol")
+            result = run_checkpoint_diagnostic(args.protocol)
+        print(json.dumps(result, sort_keys=True, allow_nan=False))
+        if result.get("status") == "COLLECTION_PARTIAL":
+            raise SystemExit(1)
+        return
+    if args.output is None:
+        parser.error("this mode requires output")
     registered = (
         args.prepare_registered_protocol
         or args.prepare_registered_collection_protocol
