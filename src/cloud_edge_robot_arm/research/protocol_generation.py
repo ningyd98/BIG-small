@@ -18,6 +18,7 @@ import platform
 import queue
 import shutil
 import signal
+import stat
 import threading
 import time
 from collections.abc import Callable
@@ -29,16 +30,21 @@ from typing import Any, cast
 
 import yaml
 
-from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
+from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec, canonical_json, content_digest
 from cloud_edge_robot_arm.research.protocol import build_scene_pools
 from cloud_edge_robot_arm.research.protocol_evidence import (
+    POOL_SIZES_V2,
     RULES_PATH,
     _candidate,
     _eligible,
     _fault,
+    _history,
+    _nonstandard_number,
     _pool_check,
     _recovery,
+    _scene,
     _topology_complete,
+    _vector,
     write_recovery_source,
 )
 
@@ -126,7 +132,44 @@ def _physical_key(parameters: dict) -> str | None:
     return content_digest(geometry)
 
 
-def inventory_history(sources: list[Path]) -> dict:
+def _bind_canonical_lineage(value: dict, registered: dict[Path, str]) -> tuple[str, str]:
+    reference = Path(value["parent"])
+    if not reference.name or ".." in reference.parts:
+        raise ValueError("invalid canonical lineage parent reference")
+    parents = [
+        path
+        for path in registered
+        if path == reference
+        or (not reference.is_absolute() and path.parts[-len(reference.parts) :] == reference.parts)
+    ]
+    if len(parents) != 1:
+        raise ValueError("canonical lineage requires exactly one registered parent")
+    parent = parents[0]
+    _plain_path(parent)
+    raw = parent.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != registered[parent] or (
+        registered[parent] != value.get("parent_sha256")
+    ):
+        raise ValueError("canonical lineage parent SHA mismatch")
+    document = json.loads(raw, parse_constant=_nonstandard_number)
+    scene = SceneSpec.model_validate(document["scene"])
+    canonical = SceneSpec.from_parameters(
+        scene.scene_parameters, scene.asset_family_hash, scene.seed
+    )
+    physical = _physical_key(scene.scene_parameters)
+    if (
+        physical is None
+        or scene.scene_hash != document.get("scene_hash")
+        or scene.scene_hash != value.get("scene_hash")
+        or canonical.group_id != value["canonical_physical_group"]
+        or value.get("new_independent_calibration_group") is not False
+        or not isinstance(value.get("group_id"), str)
+    ):
+        raise ValueError("canonical lineage scene/group/physical identity mismatch")
+    return canonical.group_id, physical
+
+
+def inventory_history(sources: list[Path], *, bind_canonical_lineage: bool = False) -> dict:
     """Join explicit original metadata identities, including renamed components."""
     if not sources or len({p.resolve() for p in sources}) != len(sources):
         raise ValueError("nonempty unique history sources required")
@@ -134,6 +177,7 @@ def inventory_history(sources: list[Path]) -> dict:
     group_files: dict[str, set[str]] = {}
     physical: set[str] = set()
     scene_hashes: set[str] = set()
+    lineage: list[tuple[dict, str]] = []
 
     def find(node: str) -> str:
         parents.setdefault(node, node)
@@ -149,6 +193,8 @@ def inventory_history(sources: list[Path]) -> dict:
 
     def walk(value: Any, path: str, component: str | None = None) -> None:
         if isinstance(value, dict):
+            if bind_canonical_lineage and "canonical_physical_group" in value:
+                lineage.append((value, path))
             component = value.get("component", component)
             group = value.get("group_id")
             scene = value.get("scene_hash")
@@ -191,6 +237,25 @@ def inventory_history(sources: list[Path]) -> dict:
                     walk(json.loads(line), str(source))
         else:
             walk(_read(source), str(source))
+    if bind_canonical_lineage:
+        registered = {Path(e["path"]): e["sha256"] for e in entries}
+        for value, path in lineage:
+            canonical, physical_key = _bind_canonical_lineage(value, registered)
+            if physical_key not in physical or find("g:" + value["group_id"]) != find(
+                "p:" + physical_key
+            ):
+                raise ValueError(
+                    "canonical lineage parent is outside the recorded physical component"
+                )
+            group_files.setdefault(canonical, set()).add(path)
+            join(["p:" + physical_key, "g:" + canonical])
+        previous = _history({"history_roots": [e["path"] for e in entries]})
+        if any(
+            row["source_hash"] != registered[Path(row["source"])]
+            or not set(row["groups"]) <= group_files.keys()
+            for row in previous
+        ):
+            raise ValueError("frozen pool history does not close independent prior-used groups")
     components: dict[str, list[str]] = {}
     for node in parents:
         components.setdefault(find(node), []).append(node)
@@ -232,9 +297,97 @@ def _environment() -> dict:
     }
 
 
-def prepare_generation(history_sources: list[Path], output: Path, seed: int = 2026100507) -> dict:
+def _read_frozen_pools(path: Path) -> tuple[dict, dict]:
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict:
+        value = dict(pairs)
+        if len(value) != len(pairs):
+            raise ValueError("frozen pool source contains duplicate JSON keys")
+        return value
+
+    _plain_path(path)
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as source:
+        if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+            raise ValueError("frozen pool source must be a regular file")
+        raw = source.read()
+    parsed = json.loads(raw, object_pairs_hook=unique_object, parse_constant=_nonstandard_number)
+    if not isinstance(parsed, dict) or set(parsed) != set(POOL_SIZES_V2):
+        raise ValueError("frozen pool file must contain exactly the six registered pool names")
+    return parsed, {
+        "mode": "frozen-pools.v1",
+        "path": str(path.resolve(strict=True)),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "content_digest": content_digest(parsed),
+    }
+
+
+def _validate_frozen_pool_rows(pools: dict, inventory: dict) -> None:
+    if not all(
+        isinstance(rows, list) and all(isinstance(r, dict) for r in rows) for rows in pools.values()
+    ) or not _topology_complete(pools, "ced.research.v2"):
+        raise ValueError("all six complete v2 assignment pools are required")
+    fields = {
+        "assignment_id",
+        "stratum_id",
+        "scene",
+        "scene_hash",
+        "perturbation",
+        "ood_definition",
+    }
+    old_scenes = set(inventory["scene_hashes"])
+    old_physical = set(inventory["physical_keys"])
+    seen_physical: set[str] = set()
+    _pool_check(pools, set(inventory["group_ids"]))
+    for name, rows in pools.items():
+        ood = "unseen camera fovy 60-65 degrees" if name == "ood" else None
+        for row in rows:
+            if set(row) != fields or canonical_json(row["scene"]) != canonical_json(
+                _scene(row).model_dump(mode="json")
+            ):
+                raise ValueError("unexpected or incomplete frozen assignment row fields")
+            if row["ood_definition"] != ood:
+                raise ValueError("frozen assignment OOD definition drift")
+            parameters = row["scene"]["scene_parameters"]
+            physical = _physical_key(parameters)
+            if physical is None:
+                raise ValueError("frozen assignment physical identity is missing")
+            for body in (
+                parameters["target"],
+                parameters["destination"],
+                *parameters["distractors"],
+            ):
+                _vector(body["position"])
+                if (_vector(body["half_size"]) <= 0).any():
+                    raise ValueError("frozen assignment physical extent is invalid")
+            if row["scene_hash"] in old_scenes or physical in old_physical:
+                raise ValueError("frozen assignment overlaps a historical scene or physical group")
+            if physical in seen_physical:
+                raise ValueError("frozen assignment duplicates a cross-pool physical group")
+            seen_physical.add(physical)
+
+
+def _verify_frozen_pool_source(header: dict, locked_pools: dict) -> None:
+    source = header.get("pool_source")
+    if "pool_source" not in header and header["seed"] is not None:
+        return
+    if (
+        header["seed"] is not None
+        or not isinstance(source, dict)
+        or source.get("mode") != "frozen-pools.v1"
+        or not isinstance(source.get("path"), str)
+        or not Path(source["path"]).is_absolute()
+    ):
+        raise ValueError("invalid frozen pool source binding")
+    pools, actual = _read_frozen_pools(Path(source["path"]))
+    clean = {name: rows for name, rows in locked_pools.items() if name != "_evidence"}
+    if actual != source or content_digest(clean) != actual["content_digest"] or clean != pools:
+        raise ValueError("frozen pool source or derived pool drift")
+
+
+def prepare_generation(
+    history_sources: list[Path], output: Path, seed: int = 2026100507, *, pools: Path | None = None
+) -> dict:
     """Pure CPU: archive inventory and register fresh complete pools and all schedules."""
-    inventory = inventory_history(history_sources)
+    inventory = inventory_history(history_sources, bind_canonical_lineage=pools is not None)
     rules = yaml.safe_load(RULES_PATH.read_text())
     if (
         rules["fault_type"],
@@ -246,27 +399,32 @@ def prepare_generation(history_sources: list[Path], output: Path, seed: int = 20
     ) != ("TARGET_MOTION", 200, 0.02, 1.0, [1.0, -1.0], 60.0):
         raise ValueError("unsupported original fault recipe")
     excluded = set(inventory["group_ids"])
-    pools: dict[str, Any]
-    for _ in range(5):
-        pools = cast(
-            dict[str, Any], build_scene_pools(seed, excluded, protocol_version="ced.research.v2")
-        )
-        aliases = {
-            row["scene"]["group_id"]
-            for rows in pools.values()
-            for row in rows
-            if row["scene_hash"] in inventory["scene_hashes"]
-            or _physical_key(row["scene"]["scene_parameters"]) in inventory["physical_keys"]
-        }
-        if not aliases:
-            break
-        excluded.update(aliases)
+    source = None
+    if pools is not None:
+        locked, source = _read_frozen_pools(pools)
+        _validate_frozen_pool_rows(locked, inventory)
     else:
-        raise ValueError("bounded history isolation sampling exhausted")
-    _pool_check(pools, excluded)
-    if not _topology_complete(pools, "ced.research.v2"):
-        raise ValueError("complete3260v2 topology required")
-    pools["_evidence"] = {
+        for _ in range(5):
+            locked = cast(
+                dict[str, Any],
+                build_scene_pools(seed, excluded, protocol_version="ced.research.v2"),
+            )
+            aliases = {
+                row["scene"]["group_id"]
+                for rows in locked.values()
+                for row in rows
+                if row["scene_hash"] in inventory["scene_hashes"]
+                or _physical_key(row["scene"]["scene_parameters"]) in inventory["physical_keys"]
+            }
+            if not aliases:
+                break
+            excluded.update(aliases)
+        else:
+            raise ValueError("bounded history isolation sampling exhausted")
+        _pool_check(locked, excluded)
+        if not _topology_complete(locked, "ced.research.v2"):
+            raise ValueError("complete3260v2 topology required")
+    locked["_evidence"] = {
         "protocol_version": "ced.research.v2",
         "history_roots": [e["path"] for e in inventory["entries"]],
         "excluded_groups": sorted(excluded),
@@ -275,23 +433,23 @@ def prepare_generation(history_sources: list[Path], output: Path, seed: int = 20
     }
     schedules = {
         row["assignment_id"]: {"fault": _fault(index, rules), "eligible": _eligible(row, rules)}
-        for index, row in enumerate(pools["recovery"])
+        for index, row in enumerate(locked["recovery"])
     }
     _fresh(output)
     payloads = {
         "history.json": inventory,
-        "pools.json": pools,
+        "pools.json": locked,
         "recipe.json": rules,
         "schedules.json": schedules,
         "budgets.json": BUDGETS,
-        "candidates.json": {r["assignment_id"]: _candidate(r) for r in pools["formal"]},
+        "candidates.json": {r["assignment_id"]: _candidate(r) for r in locked["formal"]},
     }
     for name, value in payloads.items():
         _write(output / name, value)
     header = {
         "schema_version": "ced.recovery-generation.v1",
         "protocol_directory": str(output.resolve()),
-        "seed": seed,
+        "seed": seed if source is None else None,
         "history_complete": inventory["complete"],
         "payload_hashes": {name: _hash(output / name) for name in payloads},
         "source_hashes": _source_pins(),
@@ -309,6 +467,8 @@ def prepare_generation(history_sources: list[Path], output: Path, seed: int = 20
         "provider_calls": 0,
         "implicit_retries": 0,
     }
+    if source is not None:
+        header["pool_source"] = source
     _write(output / "generation.json", header)
     return {
         "status": "READY_FOR_REVIEW" if inventory["complete"] else "BLOCKED_HISTORY",
@@ -403,6 +563,7 @@ def prepare_successor_generation(
         if _hash(Path(entry["path"])) != entry["sha256"]:
             raise ValueError("predecessor history source drift")
     pools = _read(predecessor / "pools.json")
+    _verify_frozen_pool_source(prior, pools)
     _pool_check(pools, set(pools["_evidence"]["excluded_groups"]))
     if not _topology_complete(
         {k: v for k, v in pools.items() if not k.startswith("_")}, "ced.research.v2"
@@ -490,6 +651,8 @@ def _generation_inputs(protocol: Path) -> tuple[dict, Path, Path]:
             != header["predecessor_archive_sha256"]
             or _read(protocol / "predecessor-generation.json") != prior
             or header["payload_hashes"] != prior["payload_hashes"]
+            or ("pool_source" in header) != ("pool_source" in prior)
+            or header.get("pool_source") != prior.get("pool_source")
             or any(
                 header[k] != prior[k]
                 for k in (
@@ -530,6 +693,8 @@ def _generation_inputs(protocol: Path) -> tuple[dict, Path, Path]:
     _payloads_match(inputs, header)
     if header["source_hashes"] != _source_pins() or header["environment"] != _environment():
         raise ValueError("execution source/environment drift")
+    if "pool_source" in header or header["seed"] is None:
+        _verify_frozen_pool_source(header, _read(inputs / "pools.json"))
     return header, inputs, allocations
 
 

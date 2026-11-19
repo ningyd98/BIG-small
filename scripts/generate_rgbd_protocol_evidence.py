@@ -22,6 +22,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--protocol", type=Path, required=True)
     parser.add_argument("--prepare", action="store_true")
+    parser.add_argument("--pools", type=Path, help="import six frozen pools during normal prepare")
     parser.add_argument("--history-source", type=Path, action="append", default=[])
     parser.add_argument("--history-catalog", type=Path)
     parser.add_argument("--seed", type=int, default=2026100507)
@@ -34,6 +35,10 @@ def main() -> int:
     parser.add_argument("--expected-predecessor-hash")
     args = parser.parse_args()
     try:
+        if args.pools is not None and (
+            not args.prepare or args.execute_once or args.successor_of is not None
+        ):
+            raise ValueError("--pools requires normal --prepare")
         if args.successor_of is not None:
             if (
                 not args.prepare
@@ -56,7 +61,7 @@ def main() -> int:
                 sources += [
                     Path(p) for p in json.loads(args.history_catalog.read_text())["sources"]
                 ]
-            report = prepare_generation(sources, args.protocol, args.seed)
+            report = prepare_generation(sources, args.protocol, args.seed, pools=args.pools)
         elif args.execute_once:
             if args.output is None or not args.expected_protocol_hash:
                 raise ValueError("execute-once requires fresh output and reviewed protocol hash")
