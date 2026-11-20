@@ -145,11 +145,19 @@ def test_actual_teacher_checkpoint_reads_one_sqlite_snapshot(tmp_path, monkeypat
     app = application(tmp_path)
     queries = Counter()
     actual_connect = sqlite3.connect
+    connections = []
+
+    def track_sql(sql):
+        words = sql.split()
+        queries[words[0].upper()] += 1
+        if words[0] == "SELECT":
+            queries[words[words.index("FROM") + 1]] += 1
 
     def trace_connect(*args, **kwargs):
         connection = actual_connect(*args, **kwargs)
-        queries["connections"] += 1
-        connection.set_trace_callback(lambda sql: queries.update([sql.split()[0].upper()]))
+        if kwargs.get("uri") and str(args[0]).endswith("?mode=ro"):
+            connections.append(connection)
+            connection.set_trace_callback(track_sql)
         return connection
 
     def software_body(self, worker, job, *, start_monotonic):
@@ -157,10 +165,17 @@ def test_actual_teacher_checkpoint_reads_one_sqlite_snapshot(tmp_path, monkeypat
         live.worker_origin = worker._active_task_origin
         with monkeypatch.context() as patch:
             patch.setattr(sqlite3, "connect", trace_connect)
+            first = self.check_active()["lease"]
+            assert not connections[-1].in_transaction
             source = self.check_active()["lease"]
-        assert queries["connections"] == 1, dict(queries)
+            assert not connections[-1].in_transaction
+        assert source["observed_at"] >= first["observed_at"]
+        assert len(connections) == 1
         assert queries["CREATE"] == queries["INSERT"] == 0, dict(queries)
-        assert queries["BEGIN"] == queries["ROLLBACK"] == 1, dict(queries)
+        assert queries["BEGIN"] == queries["ROLLBACK"] == 2, dict(queries)
+        assert queries["simulation_jobs"] == 2, dict(queries)
+        assert queries["simulation_job_leases"] == 2, dict(queries)
+        assert queries["simulation_job_attempts"] == 2, dict(queries)
         baseline = read_visual_worker_lease(
             live.repository,
             job_id=job.job_id,
@@ -175,6 +190,8 @@ def test_actual_teacher_checkpoint_reads_one_sqlite_snapshot(tmp_path, monkeypat
 
     monkeypatch.setattr(NativeCollectionApplication, "run_from_worker", software_body)
     assert app.execute_once()["status"] == "SOFTWARE_ONLY"
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        connections[0].execute("SELECT 1")
 
 
 @pytest.fixture
@@ -199,6 +216,17 @@ def active_teacher_checkpoint(tmp_path):
         yield app, live.repository.get_job(job.job_id), lease
     finally:
         live.owner.close()
+
+
+def test_teacher_checkpoint_job_records_are_independent(active_teacher_checkpoint):
+    app, job, _ = active_teacher_checkpoint
+    repo = app.repository
+    with repo._teacher_checkpoint_read(_live(app).checkpoint_database):
+        first = repo.get_job(job.job_id)
+        first.draft["seeds"].clear()
+        second = repo.get_job(job.job_id)
+        assert first is not second
+        assert second.draft["seeds"] == job.draft["seeds"]
 
 
 @pytest.mark.parametrize("mutation", ["renew", "cancel", "release", "finish_attempt"])

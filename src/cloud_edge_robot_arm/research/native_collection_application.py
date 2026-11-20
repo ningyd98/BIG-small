@@ -53,7 +53,6 @@ from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import (
     CLAIM_FILE,
     DIAGNOSTIC_ASSIGNMENT,
     DIAGNOSTIC_SCOPE,
-    WHOLE_ACTION_ASSIGNMENT,
     WHOLE_ACTION_BEGIN_FILE,
     WHOLE_ACTION_SCOPE,
     _CheckpointDiagnostic,
@@ -143,6 +142,7 @@ class _Live:
     job_id: str | None = None
     job_basis: bytes | None = None
     checkpoint_database: _TeacherCheckpointDatabase | None = None
+    guard_limits: tuple[bytes, int, int] | None = None
     diagnostic: _CheckpointDiagnostic | None = None
     action_timing: ActionTiming | None = None
     worker_origin: tuple[Any, ...] | None = None
@@ -1071,7 +1071,7 @@ class NativeCollectionApplication:
         save_exclusive(
             begin,
             dict(
-                assignment_id=WHOLE_ACTION_ASSIGNMENT,
+                assignment_id=registration["assignment_id"],
                 scope=WHOLE_ACTION_SCOPE,
                 registration_sha256=registration_sha256,
                 pid=os.getpid(),
@@ -1080,7 +1080,7 @@ class NativeCollectionApplication:
         )
         return cls._create(
             path,
-            WHOLE_ACTION_ASSIGNMENT,
+            registration["assignment_id"],
             Path(registration["output"]),
             registration["recipe"],
             diagnostic=_CheckpointDiagnostic(
@@ -1114,16 +1114,25 @@ class NativeCollectionApplication:
             artifact_root=destination,
         )
         app.worker._native_collection_application = app
+        protocol_json = canonical(recipe)
+        settings = recipe.get("settings")
+        rss_bytes = settings.get("rss_bytes") if type(settings) is dict else None
+        physical_budget = recipe.get("physical_budget")
+        guard_limits = (
+            (protocol_json, rss_bytes, physical_budget)
+            if type(rss_bytes) is int and type(physical_budget) is int else None
+        )
         _REGISTRY[app] = _Live(
             app.repository,
             app.worker,
             destination,
             protocol.absolute(),
-            canonical(recipe),
+            protocol_json,
             assignment_id,
             os.getpid(),
             threading.get_ident(),
             checkpoint_database=app.repository._teacher_checkpoint_database(),
+            guard_limits=guard_limits,
             diagnostic=diagnostic,
             action_timing=(
                 ActionTiming() if diagnostic is not None and diagnostic.whole_action else None
@@ -1272,8 +1281,9 @@ class NativeCollectionApplication:
             ):
                 if not live.prepared:
                     self.prepare_once()
-                if not live.worker.poll_once():
-                    raise RuntimeError("sole worker did not acquire the assignment")
+                with live.repository._teacher_checkpoint_lifecycle(live.checkpoint_database):
+                    if not live.worker.poll_once():
+                        raise RuntimeError("sole worker did not acquire the assignment")
         except BaseException as error:
             _remember(live, "prepare_or_worker_poll", error)
             primary = error
@@ -1417,12 +1427,22 @@ class NativeCollectionApplication:
         current = live.owner.read_current(after=live.origin_token)
         if not live.owner.before_deadline(live.deadline, current):
             raise RuntimeError("original operational deadline expired")
-        if resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024 > self.policy["rss_bytes"]:
+        limits = live.guard_limits
+        original_limits = (
+            limits if limits is not None and limits[0] is live.protocol_json else None
+        )
+        if resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024 > (
+            original_limits[1] if original_limits is not None else self.policy["rss_bytes"]
+        ):
             raise RuntimeError("registered process RSS budget exhausted")
         if live.backend is not None and live.config_json is not None:
             if canonical(live.backend._config.model_dump(mode="json")) != live.config_json:
                 raise RuntimeError("backend configuration changed")
-            if live.backend.total_physics_steps > self.protocol["physical_budget"]:
+            if live.backend.total_physics_steps > (
+                original_limits[2]
+                if original_limits is not None
+                else self.protocol["physical_budget"]
+            ):
                 raise RuntimeError("registered physical budget exhausted")
         snapshot = dict(
             lease=lease.to_payload(),

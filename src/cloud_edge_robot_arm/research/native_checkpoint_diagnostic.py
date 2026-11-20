@@ -49,21 +49,58 @@ WHOLE_ACTION_PARENT_SOURCE_FREEZE_SHA = (
 WHOLE_ACTION_BEGIN_FILE = "worker-begin.json"
 
 
+@dataclass(frozen=True)
+class _WholeActionRelease:
+    source_suffix: Path
+    assignment: str
+    parent_freeze_sha256: str
+
+
+_WHOLE_ACTION_ORIGINAL = _WholeActionRelease(
+    WHOLE_ACTION_SOURCE_SUFFIX, WHOLE_ACTION_ASSIGNMENT, WHOLE_ACTION_PARENT_SOURCE_FREEZE_SHA
+)
+_WHOLE_ACTION_ACTIVE_CHECKS = _WholeActionRelease(
+    WHOLE_ACTION_SOURCE_SUFFIX.parent.with_name(
+        "whole-action-egl-active-checks-development-20261121"
+    )
+    / "source",
+    "native-dev-whole-action-20261121-0001",
+    "5413b71737266d49098d144bb562ec05b183534c9b1b6d25b788dafcb76b78b0",
+)
+_WHOLE_ACTION_RELEASES = (_WHOLE_ACTION_ORIGINAL, _WHOLE_ACTION_ACTIVE_CHECKS)
+
+
+def _whole_action_release_for_source(root: Path) -> _WholeActionRelease | None:
+    return next(
+        (
+            entry
+            for entry in _WHOLE_ACTION_RELEASES
+            if root.parts[-len(entry.source_suffix.parts) :] == entry.source_suffix.parts
+        ),
+        None,
+    )
+
+
 def _sha256(path: Path) -> str:
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def _diagnostic_recipe(*, whole_action: bool = False) -> dict[str, Any]:
+def _diagnostic_recipe(
+    *, whole_action: bool = False, whole_action_release: _WholeActionRelease | None = None
+) -> dict[str, Any]:
     # The internal recipe retains v9's typed grounding, full horizon and sensors.
     # Its development identity can never reconstruct the nine-assignment v9 protocol.
     recipe = _registered_teacher_protocol()
-    assignment_id = WHOLE_ACTION_ASSIGNMENT if whole_action else DIAGNOSTIC_ASSIGNMENT
+    release = (
+        whole_action_release or _whole_action_release_for_source(ROOT) or _WHOLE_ACTION_ORIGINAL
+    )
+    assignment_id = release.assignment if whole_action else DIAGNOSTIC_ASSIGNMENT
     assignment = dict(
         assignment_id=assignment_id,
         seed=DIAGNOSTIC_SEED,
         ancestors=[
-            "whole-action-egl-development-20261120"
+            release.source_suffix.parent.name
             if whole_action
             else "checkpoint-egl-development-20261120"
         ],
@@ -124,22 +161,20 @@ def _release_path(path: Path) -> Path:
 
 def _whole_action_release_path(path: Path) -> Path:
     path = _release_path(path)
-    if (
-        ROOT.parts[-len(WHOLE_ACTION_SOURCE_SUFFIX.parts) :] != WHOLE_ACTION_SOURCE_SUFFIX.parts
-        or path != ROOT.parent / "release"
-    ):
+    if _whole_action_release_for_source(ROOT) is None or path != ROOT.parent / "release":
         raise ValueError("whole-action diagnostic requires its canonical release directory")
     return path
 
 
 def _registration(path: Path, *, whole_action: bool = False) -> dict[str, Any]:
     python = Path(sys.executable).resolve(strict=True)
+    release = _whole_action_release_for_source(ROOT) or _WHOLE_ACTION_ORIGINAL
     registration = dict(
         schema_version=WHOLE_ACTION_SCHEMA if whole_action else DIAGNOSTIC_SCHEMA,
         scope=WHOLE_ACTION_SCOPE if whole_action else DIAGNOSTIC_SCOPE,
         registration_directory=str(path),
         output=str(path / "run"),
-        assignment_id=WHOLE_ACTION_ASSIGNMENT if whole_action else DIAGNOSTIC_ASSIGNMENT,
+        assignment_id=release.assignment if whole_action else DIAGNOSTIC_ASSIGNMENT,
         seed=DIAGNOSTIC_SEED,
         first_action="MOVE_ABOVE",
         step_wall_budget_ns=DIAGNOSTIC_WALL_NS,
@@ -159,7 +194,7 @@ def _registration(path: Path, *, whole_action: bool = False) -> dict[str, Any]:
         registration.update(
             png_compress_level=1,
             step_wall_budget_kind="ORIGINAL_POST_STEP_TIMEOUT",
-            parent_source_freeze_sha256=WHOLE_ACTION_PARENT_SOURCE_FREEZE_SHA,
+            parent_source_freeze_sha256=release.parent_freeze_sha256,
         )
     return registration
 

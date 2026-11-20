@@ -1,0 +1,183 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+___________ test_actual_teacher_checkpoint_reads_one_sqlite_snapshot ___________
+
+tmp_path = PosixPath('<PYTEST_TMP>/test_actual_teacher_checkpoint0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x775e98779010>
+
+    def test_actual_teacher_checkpoint_reads_one_sqlite_snapshot(tmp_path, monkeypatch):
+        app = application(tmp_path)
+        queries = Counter()
+        actual_connect = sqlite3.connect
+        connections = []
+
+        def track_sql(sql):
+            words = sql.split()
+            queries[words[0].upper()] += 1
+            if words[0] == "SELECT":
+                queries[words[words.index("FROM") + 1]] += 1
+
+        def trace_connect(*args, **kwargs):
+            connection = actual_connect(*args, **kwargs)
+            connections.append(connection)
+            connection.set_trace_callback(track_sql)
+            return connection
+
+        def software_body(self, worker, job, *, start_monotonic):
+            live = _live(self)
+            live.worker_origin = worker._active_task_origin
+            with monkeypatch.context() as patch:
+                patch.setattr(sqlite3, "connect", trace_connect)
+                first = self.check_active()["lease"]
+                assert not connections[-1].in_transaction
+                source = self.check_active()["lease"]
+                assert not connections[-1].in_transaction
+            assert source["observed_at"] >= first["observed_at"]
+            assert len(connections) == 1
+            assert queries["CREATE"] == queries["INSERT"] == 0, dict(queries)
+            assert queries["BEGIN"] == queries["ROLLBACK"] == 2, dict(queries)
+            assert queries["simulation_jobs"] == 2, dict(queries)
+            assert queries["simulation_job_leases"] == 2, dict(queries)
+            assert queries["simulation_job_attempts"] == 2, dict(queries)
+            baseline = read_visual_worker_lease(
+                live.repository,
+                job_id=job.job_id,
+                run_id=job.run_id,
+                worker_id=worker.worker_id,
+                lease_id=job.lease_id,
+                now=datetime.fromisoformat(source["observed_at"]),
+            )
+            assert source == baseline.to_payload()
+            live.result = dict(status="SOFTWARE_ONLY", native_qualification="UNKNOWN")
+            return dict(evaluation_scope="TEACHER_COLLECTION", task_success=False), [], []
+
+        monkeypatch.setattr(NativeCollectionApplication, "run_from_worker", software_body)
+>       assert app.execute_once()["status"] == "SOFTWARE_ONLY"
+               ^^^^^^^^^^^^^^^^^^
+
+tests/test_native_collection_authority.py:191:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <cloud_edge_robot_arm.research.native_collection_application.NativeCollectionApplication object at 0x775e9e9a2480>
+
+    def execute_once(self) -> dict[str, Any]:
+        live = _live(self)
+        if live.executed:
+            raise RuntimeError("collection application cannot execute twice")
+        live.executed = True
+        primary: BaseException | None = None
+        worker_snapshot: dict[str, Any] = {}
+        closure = dict(attempted=False, completed=False)
+        try:
+            with (
+                use_action_timing(live.action_timing)
+                if live.action_timing is not None
+                else nullcontext()
+            ):
+                if not live.prepared:
+                    self.prepare_once()
+                if not live.worker.poll_once():
+                    raise RuntimeError("sole worker did not acquire the assignment")
+        except BaseException as error:
+            _remember(live, "prepare_or_worker_poll", error)
+            primary = error
+        finally:
+            if live.job_id is not None and live.job_basis is not None:
+                run_id = json.loads(live.job_basis)["run_id"]
+                queries = {
+                    "job": lambda: live.repository.get_job(live.job_id),
+                    "attempts": lambda: [
+                        r
+                        for r in live.repository.list_attempts(run_id)
+                        if r.job_id == live.job_id and r.attempt == 1
+                    ],
+                    "events": lambda: [
+                        r for r in live.repository.list_events(run_id) if r.job_id == live.job_id
+                    ],
+                }
+                for name, query in queries.items():
+                    try:
+                        worker_snapshot[name] = _plain(query())
+                    except BaseException as error:
+                        _remember(live, "repository_" + name, error, secondary=primary is not None)
+                        primary = primary or error
+                job = worker_snapshot.get("job", {})
+                if job.get("status") != "SUCCEEDED":
+                    terminal_error = RuntimeError(
+                        "worker terminal outcome: "
+                        + json.dumps(worker_snapshot, ensure_ascii=False)
+                    )
+                    _remember(
+                        live, "worker_terminal", terminal_error, secondary=primary is not None
+                    )
+                    primary = primary or terminal_error
+            if live.result is None:
+                missing_body_error = RuntimeError(
+                    "worker returned without a collection body receipt"
+                )
+                _remember(live, "missing_body", missing_body_error, secondary=primary is not None)
+                primary = primary or missing_body_error
+            try:
+                if live.owner is not None:
+                    closure["attempted"] = True
+                    live.owner.close()
+                    closure["completed"] = True
+            except BaseException as error:
+                _remember(live, "owner_close", error, secondary=primary is not None)
+                primary = primary or error
+            finally:
+                live.closed = True
+        body = dict(live.result or {})
+        links: dict[str, Any] = {}
+        for name in ("collection-body-result.json", "originals/inventory.json"):
+            try:
+                path = live.output / name
+                if path.is_file():
+                    links[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            except BaseException as error:
+                _remember(live, "final_links", error, secondary=primary is not None)
+                primary = primary or error
+        live.result = dict(
+            body,
+            assignment_id=live.assignment_id,
+            worker_snapshot=worker_snapshot,
+            owner_closure=closure,
+            progress=dict(live.progress),
+            lifecycle_links=links,
+            failures=list(live.failures),
+            source_generation=json.loads(live.protocol_json)["source_generation"],
+            status="COLLECTION_PARTIAL"
+            if primary or live.failures
+            else body.get("status", "COLLECTION_PARTIAL"),
+            teacher_collection_admitted=not (primary or live.failures)
+            and body.get("teacher_collection_admitted", False),
+            online_effect_status="UNKNOWN",
+            native_qualification="UNKNOWN",
+            execution_admitted=False,
+            joint_bound_m=None,
+            qualified_group_score=None,
+            final_lifecycle_receipt=True,
+            **(
+                live.diagnostic.result_fields(prefix_complete=len(live.completed) == 1)
+                if live.diagnostic is not None else {}
+            ),
+        )
+        try:
+            save_exclusive(live.output / "collection-result.json", live.result)
+        except BaseException as error:
+            _remember(live, "final_save", error, secondary=primary is not None)
+            live.result.update(
+                status="COLLECTION_PARTIAL",
+                teacher_collection_admitted=False,
+                failures=list(live.failures),
+                final_receipt_persisted=False,
+            )
+            primary = primary or error
+        if primary is not None:
+>           raise primary
+E           RuntimeError: worker terminal outcome: {"job": {"job_id": "job-fb6308a4f469419e", "run_id": "native-collection-af0c7dd18c5c41bea6ff62bd435525ab", "batch_id": "", "backend": "MUJOCO", "scenario_id": "S01_NORMAL_STATIC", "control_mode": "PCSC", "seed": 439001, "manifest_id": "native.calibration.operational.v2", "reproducibility_hash": "252498e3786e55c44febb3eddb62e7b52742ec0f94143123cccbf27ee9fb3b79", "status": "FAILED", "draft": {"backend": "MUJOCO", "control_modes": ["PCSC"], "execution_scope": "VISION_CLOSED_LOOP", "input_mode": "RGBD", "scenarios": ["S01_NORMAL_STATIC"], "seeds": [439001], "user_instruction": "Move the red block to the green region."}, "manifest": {}, "attempt": 1, "max_attempts": 1, "priority": 0, "created_at": "2026-11-20T16:57:02.990742+00:00", "queued_at": "2026-11-20T16:57:03.027368+00:00", "started_at": "2026-11-20T16:57:03.132047+00:00", "completed_at": "2026-11-20T16:57:03.195022+00:00", "updated_at": "2026-11-20T16:57:03.558410+00:00", "timeout_seconds": 1800, "cancel_requested": false, "worker_id": "native-collection-a82f4606bb344e5187e31d8434a5a914", "lease_id": "lease-8702c6dd5faa4642", "lease_expires_at": "2026-11-20T16:57:33.078678+00:00", "blocker_codes": [], "error_code": "", "error_message": "ProgrammingError: Cannot operate on a closed database.", "artifact_root": "worker-attempt", "artifact_paths": {"attempts": "worker-attempt/attempts.jsonl", "backend_parameter_mapping": "worker-attempt/backend_parameter_mapping.json", "cancellation": "worker-attempt/cancellation.json", "events": "worker-attempt/events.jsonl", "evidence_consistency": "worker-attempt/evidence_consistency.json", "job": "worker-attempt/job.json", "lease_history": "worker-attempt/lease_history.jsonl", "leases": "worker-attempt/leases.jsonl", "logs": "worker-attempt/logs.json", "metrics": "worker-attempt/metrics.json", "provenance": "worker-attempt/provenance.json", "randomization_sample": "worker-attempt/randomization_sample.json", "recovery": "worker-attempt/recovery.json", "rerun_viewer_manifest": "worker-attempt/rerun_viewer_manifest.json", "resource_usage": "worker-attempt/resource_usage.json", "result": "worker-attempt/result.json", "run_manifest": "worker-attempt/run_manifest.json", "runtime_job": "worker-attempt/runtime_job.json", "sensor_stream": "worker-attempt/sensor_stream.json", "sim_real_gap_report": "worker-attempt/sim_real_gap_report.json", "sim_trace": "worker-attempt/sim_trace.json", "state_transitions": "worker-attempt/state_transitions.jsonl", "trajectory": "worker-attempt/trajectory.json"}, "provenance": {"protocol_sha256": "8c7b53f8e1f9993f84944e92a878fb73681b8de81ba8b72a5612179fe80a18d6", "scope": "TEACHER_COLLECTION"}, "source_commit": "CURRENT_REGISTERED_SOURCE_BYTES", "source_tree_hash": "312f41f7b37db7fecaab5e4c95e8e114fe75942fafba0a064c90b514060ed1be"}, "attempts": [{"job_id": "job-fb6308a4f469419e", "run_id": "native-collection-af0c7dd18c5c41bea6ff62bd435525ab", "attempt": 1, "worker_id": "native-collection-a82f4606bb344e5187e31d8434a5a914", "started_at": "2026-11-20T16:57:03.109969+00:00", "ended_at": "2026-11-20T16:57:03.231668+00:00", "result": "FAILED", "error": "ProgrammingError: Cannot operate on a closed database.", "artifact_paths": {"attempts": "worker-attempt/attempts.jsonl", "backend_parameter_mapping": "worker-attempt/backend_parameter_mapping.json", "cancellation": "worker-attempt/cancellation.json", "events": "worker-attempt/events.jsonl", "evidence_consistency": "worker-attempt/evidence_consistency.json", "job": "worker-attempt/job.json", "lease_history": "worker-attempt/lease_history.jsonl", "leases": "worker-attempt/leases.jsonl", "logs": "worker-attempt/logs.json", "metrics": "worker-attempt/metrics.json", "provenance": "worker-attempt/provenance.json", "randomization_sample": "worker-attempt/randomization_sample.json", "recovery": "worker-attempt/recovery.json", "rerun_viewer_manifest": "worker-attempt/rerun_viewer_manifest.json", "resource_usage": "worker-attempt/resource_usage.json", "result": "worker-attempt/result.json", "run_manifest": "worker-attempt/run_manifest.json", "runtime_job": "worker-attempt/runtime_job.json", "sensor_stream": "worker-attempt/sensor_stream.json", "sim_real_gap_report": "worker-attempt/sim_real_gap_report.json", "sim_trace": "worker-attempt/sim_trace.json", "state_transitions": "worker-attempt/state_transitions.jsonl", "trajectory": "worker-attempt/trajectory.json"}}], "events": [{"event_id": "evt-a1ebd29c45e34fb3", "job_id": "job-fb6308a4f469419e", "run_id": "native-collection-af0c7dd18c5c41bea6ff62bd435525ab", "sequence": 1, "stream_sequence": 1, "event_type": "job_created", "previous_status": "", "next_status": "CREATED", "reason_code": "created", "timestamp": "2026-11-20T16:57:02.991007+00:00", "source": "simulation_runtime", "payload": {"backend": "MUJOCO", "run_id": "native-collection-af0c7dd18c5c41bea6ff62bd435525ab", "status": "CREATED"}}, {"event_id": "evt-60a5dbb40d71436d", "job_id": "job-fb6308a4f469419e", "run_id": "native-collection-af0c7dd18c5c41bea6ff62bd435525ab", "sequence": 2, "stream_sequence": 2, "event_type": "job_queued", "previous_status": "CREATED", "next_status": "QUEUED", "reason_code": "native_collection_startup", "timestamp": "2026-11-20T16:57:03.027586+00:00", "source": "simulation_runtime", "payload": {"lease_id": "", "status": "QUEUED", "worker_id": ""}}, {"event_id": "evt-81f639f2f3344103", "job_id": "job-fb6308a4f469419e", "run_id": "native-collection-af0c7dd18c5c41bea6ff62bd435525ab", "sequence": 3, "stream_sequence": 3, "event_type": "job_leased", "previous_status": "QUEUED", "next_status": "LEASED", "reason_code": "lease_acquired", "timestamp": "2026-11-20T16:57:03.050649+00:00", "source": "simulation_runtime", "payload": {"lease_id": "lease-8702c6dd5faa4642", "worker_id": "native-collection-a82f4606bb344e5187e31d8434a5a914"}}, {"event_id": "evt-358794fe3b034126", "job_id": "job-fb6308a4f469419e", "run_id": "native-collection-af0c7dd18c5c41bea6ff62bd435525ab", "sequence": 4, "stream_sequence": 4, "event_type": "job_started", "previous_status": "LEASED", "next_status": "STARTING", "reason_code": "starting", "timestamp": "2026-11-20T16:57:03.132266+00:00", "source": "simulation_runtime", "payload": {"lease_id": "lease-8702c6dd5faa4642", "status": "STARTING", "worker_id": "native-collection-a82f4606bb344e5187e31d8434a5a914"}}, {"event_id": "evt-954aa6f91db84a93", "job_id": "job-fb6308a4f469419e", "run_id": "native-collection-af0c7dd18c5c41bea6ff62bd435525ab", "sequence": 5, "stream_sequence": 5, "event_type": "job_started", "previous_status": "STARTING", "next_status": "RUNNING", "reason_code": "running", "timestamp": "2026-11-20T16:57:03.161196+00:00", "source": "simulation_runtime", "payload": {"lease_id": "lease-8702c6dd5faa4642", "status": "RUNNING", "worker_id": "native-collection-a82f4606bb344e5187e31d8434a5a914"}}, {"event_id": "evt-5dd3fc669e9441f9", "job_id": "job-fb6308a4f469419e", "run_id": "native-collection-af0c7dd18c5c41bea6ff62bd435525ab", "sequence": 6, "stream_sequence": 6, "event_type": "job_failed", "previous_status": "RUNNING", "next_status": "FAILED", "reason_code": "failed", "timestamp": "2026-11-20T16:57:03.195270+00:00", "source": "simulation_runtime", "payload": {"lease_id": "lease-8702c6dd5faa4642", "status": "FAILED", "worker_id": "native-collection-a82f4606bb344e5187e31d8434a5a914"}}, {"event_id": "evt-f0ba76784cf04362", "job_id": "job-fb6308a4f469419e", "run_id": "native-collection-af0c7dd18c5c41bea6ff62bd435525ab", "sequence": 7, "stream_sequence": 7, "event_type": "artifact_created", "previous_status": "", "next_status": "", "reason_code": "", "timestamp": "2026-11-20T16:57:03.261692+00:00", "source": "simulation_runtime", "payload": {"attempts": "worker-attempt/attempts.jsonl", "backend_parameter_mapping": "worker-attempt/backend_parameter_mapping.json", "cancellation": "worker-attempt/cancellation.json", "events": "worker-attempt/events.jsonl", "evidence_consistency": "worker-attempt/evidence_consistency.json", "job": "worker-attempt/job.json", "lease_history": "worker-attempt/lease_history.jsonl", "leases": "worker-attempt/leases.jsonl", "logs": "worker-attempt/logs.json", "metrics": "worker-attempt/metrics.json", "provenance": "worker-attempt/provenance.json", "randomization_sample": "worker-attempt/randomization_sample.json", "recovery": "worker-attempt/recovery.json", "rerun_viewer_manifest": "worker-attempt/rerun_viewer_manifest.json", "resource_usage": "worker-attempt/resource_usage.json", "result": "worker-attempt/result.json", "run_manifest": "worker-attempt/run_manifest.json", "runtime_job": "worker-attempt/runtime_job.json", "sensor_stream": "worker-attempt/sensor_stream.json", "sim_real_gap_report": "worker-attempt/sim_real_gap_report.json", "sim_trace": "worker-attempt/sim_trace.json", "state_transitions": "worker-attempt/state_transitions.jsonl", "trajectory": "worker-attempt/trajectory.json"}}]}
+
+src/cloud_edge_robot_arm/research/native_collection_application.py:1372: RuntimeError
+=========================== short test summary info ============================
+FAILED tests/test_native_collection_authority.py::test_actual_teacher_checkpoint_reads_one_sqlite_snapshot
+1 failed, 1 passed, 34 deselected in 1.99s

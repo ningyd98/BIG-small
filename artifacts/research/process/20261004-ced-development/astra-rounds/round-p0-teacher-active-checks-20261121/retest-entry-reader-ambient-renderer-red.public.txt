@@ -1,0 +1,92 @@
+.......................................F                                 [100%]
+=================================== FAILURES ===================================
+____________ test_whole_action_owners_have_distinct_fixed_releases _____________
+
+tmp_path = PosixPath('<PYTEST_TMP>/test_whole_action_owners_have_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7398cab8dca0>
+
+    def test_whole_action_owners_have_distinct_fixed_releases(tmp_path, monkeypatch):
+        from cloud_edge_robot_arm.research import native_checkpoint_diagnostic as diagnostic
+
+        config = Path("configs/research/native_registered_single_teacher_p0_20261119.yaml")
+        original_source = tmp_path / diagnostic.WHOLE_ACTION_SOURCE_SUFFIX
+        retest_source = (
+            original_source.parent.with_name("whole-action-egl-active-checks-development-20261121")
+            / "source"
+        )
+        prior, current = (source.parent / "release" for source in (original_source, retest_source))
+        for source in (original_source, retest_source):
+            (source / config).parent.mkdir(parents=True)
+            (source / config).write_bytes((ROOT / config).read_bytes())
+
+        monkeypatch.setattr(diagnostic, "ROOT", original_source)
+        diagnostic.register_whole_action_diagnostic(prior)
+        original = (prior / "protocol.json").read_bytes()
+        old_protocol = json.loads(original)
+        assert old_protocol["assignment_id"] == diagnostic.WHOLE_ACTION_ASSIGNMENT
+        assert (
+            old_protocol["parent_source_freeze_sha256"]
+            == diagnostic.WHOLE_ACTION_PARENT_SOURCE_FREEZE_SHA
+        )
+
+        monkeypatch.setattr(diagnostic, "ROOT", retest_source)
+        with pytest.raises(ValueError, match="canonical release"):
+            diagnostic.register_whole_action_diagnostic(prior)
+        before = current.parent / "worker-begin.json"
+        diagnostic.register_whole_action_diagnostic(current)
+        new_protocol = diagnostic._read_registration(current, whole_action=True)
+        assert new_protocol["assignment_id"] == "native-dev-whole-action-20261121-0001"
+        assert new_protocol["parent_source_freeze_sha256"] == (
+            "5413b71737266d49098d144bb562ec05b183534c9b1b6d25b788dafcb76b78b0"
+        )
+        assert (
+            new_protocol["recipe"]["assignments"][0]["assignment_id"] == new_protocol["assignment_id"]
+        )
+        assert (prior / "protocol.json").read_bytes() == original
+
+        protocol_path = current / "protocol.json"
+        new_bytes = protocol_path.read_bytes()
+        new_protocol["assignment_id"] = old_protocol["assignment_id"]
+        protocol_path.write_text(json.dumps(new_protocol))
+        with pytest.raises(ValueError, match="fixed diagnostic registration"):
+            NativeCollectionApplication.from_whole_action_diagnostic(current)
+        assert not before.exists()
+
+        protocol_path.write_bytes(new_bytes)
+        monkeypatch.setenv("MUJOCO_GL", "egl")
+        monkeypatch.chdir(retest_source)
+        # Isolate the exclusive factory claim from the actual backend and verify
+        # the admitted identity at the application-creation boundary.
+        monkeypatch.setattr(diagnostic, "_require_egl_source", lambda: None)
+        monkeypatch.setattr(
+            NativeCollectionApplication, "_create", staticmethod(lambda *args, **kwargs: args)
+        )
+>       assert NativeCollectionApplication.from_whole_action_diagnostic(current)[1] == (
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            "native-dev-whole-action-20261121-0001"
+        )
+
+<CHECKOUT>/tests/test_native_checkpoint_diagnostic.py:413:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+<CHECKOUT>/src/cloud_edge_robot_arm/research/native_collection_application.py:1069: in from_whole_action_diagnostic
+    _require_egl_source()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    def _require_egl_source() -> None:
+        if Path.cwd() != ROOT or os.environ.get("MUJOCO_GL") != "egl":
+            raise ValueError(
+                "diagnostic requires the registered source root and explicit MUJOCO_GL=egl"
+            )
+        # An earlier offscreen import can choose another driver permanently for this process.
+        gl = sys.modules.get("mujoco.gl_context")
+        if (
+            gl is not None
+            and getattr(getattr(gl, "GLContext", None), "__module__", None) != "mujoco.egl"
+        ):
+>           raise ValueError("diagnostic already imported a non-EGL MuJoCo renderer")
+E           ValueError: diagnostic already imported a non-EGL MuJoCo renderer
+
+<CHECKOUT>/src/cloud_edge_robot_arm/research/native_checkpoint_diagnostic.py:257: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_native_checkpoint_diagnostic.py::test_whole_action_owners_have_distinct_fixed_releases
+1 failed, 39 passed in 2.46s

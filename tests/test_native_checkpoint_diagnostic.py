@@ -352,3 +352,75 @@ def test_checkpoint_runtime_readback_preserves_unrelated_exception(
     assert load_json(tmp_path / "imported-source-manifest.json")["registration_sha256"] == digest(
         release
     )
+
+
+def test_whole_action_owners_have_distinct_fixed_releases(tmp_path, monkeypatch):
+    from cloud_edge_robot_arm.research import native_checkpoint_diagnostic as diagnostic
+
+    config = Path("configs/research/native_registered_single_teacher_p0_20261119.yaml")
+    original_source = tmp_path / diagnostic.WHOLE_ACTION_SOURCE_SUFFIX
+    retest_source = (
+        original_source.parent.with_name("whole-action-egl-active-checks-development-20261121")
+        / "source"
+    )
+    prior, current = (source.parent / "release" for source in (original_source, retest_source))
+    for source in (original_source, retest_source):
+        (source / config).parent.mkdir(parents=True)
+        (source / config).write_bytes((ROOT / config).read_bytes())
+
+    monkeypatch.setattr(diagnostic, "ROOT", original_source)
+    diagnostic.register_whole_action_diagnostic(prior)
+    original = (prior / "protocol.json").read_bytes()
+    old_protocol = json.loads(original)
+    assert old_protocol["assignment_id"] == diagnostic.WHOLE_ACTION_ASSIGNMENT
+    assert (
+        old_protocol["parent_source_freeze_sha256"]
+        == diagnostic.WHOLE_ACTION_PARENT_SOURCE_FREEZE_SHA
+    )
+
+    monkeypatch.setattr(diagnostic, "ROOT", retest_source)
+    with pytest.raises(ValueError, match="canonical release"):
+        diagnostic.register_whole_action_diagnostic(prior)
+    before = current.parent / "worker-begin.json"
+    diagnostic.register_whole_action_diagnostic(current)
+    new_protocol = diagnostic._read_registration(current, whole_action=True)
+    assert new_protocol["assignment_id"] == "native-dev-whole-action-20261121-0001"
+    assert new_protocol["parent_source_freeze_sha256"] == (
+        "5413b71737266d49098d144bb562ec05b183534c9b1b6d25b788dafcb76b78b0"
+    )
+    assert (
+        new_protocol["recipe"]["assignments"][0]["assignment_id"] == new_protocol["assignment_id"]
+    )
+    assert (prior / "protocol.json").read_bytes() == original
+
+    protocol_path = current / "protocol.json"
+    new_bytes = protocol_path.read_bytes()
+    new_protocol["assignment_id"] = old_protocol["assignment_id"]
+    protocol_path.write_text(json.dumps(new_protocol))
+    with pytest.raises(ValueError, match="fixed diagnostic registration"):
+        NativeCollectionApplication.from_whole_action_diagnostic(current)
+    assert not before.exists()
+
+    protocol_path.write_bytes(new_bytes)
+    monkeypatch.setenv("MUJOCO_GL", "egl")
+    monkeypatch.chdir(retest_source)
+    # Isolate the exclusive factory claim from the actual backend and verify
+    # the admitted identity at the application-creation boundary.
+    monkeypatch.setattr(diagnostic, "_require_egl_source", lambda: None)
+    monkeypatch.setattr(
+        NativeCollectionApplication, "_create", staticmethod(lambda *args, **kwargs: args)
+    )
+    assert NativeCollectionApplication.from_whole_action_diagnostic(current)[1] == (
+        "native-dev-whole-action-20261121-0001"
+    )
+    assert (
+        json.loads(before.read_bytes())["assignment_id"] == "native-dev-whole-action-20261121-0001"
+    )
+    begin_bytes = before.read_bytes()
+    with pytest.raises(RuntimeError, match="no retry or restart"):
+        NativeCollectionApplication.from_whole_action_diagnostic(current)
+    with pytest.raises(RuntimeError, match="no retry or restart"):
+        diagnostic.register_whole_action_diagnostic(current)
+    assert not (current / "diagnostic-claim.json").exists()
+    assert before.read_bytes() == begin_bytes
+    assert (prior / "protocol.json").read_bytes() == original

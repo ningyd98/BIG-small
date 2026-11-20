@@ -16,7 +16,7 @@ import sys
 import threading
 from _thread import RLock
 from collections.abc import Callable, Iterator
-from contextlib import closing, contextmanager, nullcontext
+from contextlib import closing, contextmanager, nullcontext, suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from functools import wraps
@@ -102,6 +102,25 @@ class _TeacherCheckpointDatabase:
     path: Path
     device: int
     inode: int
+
+
+@dataclass(slots=True)
+class _TeacherCheckpointReader:
+    database: _TeacherCheckpointDatabase
+    pid: int
+    connection: sqlite3.Connection | None = None
+
+    def close(self) -> None:
+        connection, self.connection = self.connection, None
+        if connection is not None:
+            connection.close()
+
+
+@dataclass(frozen=True, slots=True)
+class _TeacherCheckpointSnapshot:
+    pid: int
+    connection: sqlite3.Connection
+    job_rows: dict[str, sqlite3.Row]
 
 
 def _job_writer[**P, R](function: Callable[P, R]) -> Callable[P, R]:
@@ -529,8 +548,28 @@ class SQLiteSimulationJobRepository:
         return _TeacherCheckpointDatabase(path, info.st_dev, info.st_ino)
 
     @contextmanager
+    def _teacher_checkpoint_lifecycle(
+        self, database: _TeacherCheckpointDatabase
+    ) -> Iterator[None]:
+        """Keep a lazy, thread-local reader open only for the teacher's worker poll."""
+        if getattr(self._teacher_reads, "reader", None) is not None:
+            raise RuntimeError("nested teacher checkpoint lifecycle")
+        reader = _TeacherCheckpointReader(database, os.getpid())
+        self._teacher_reads.reader = reader
+        try:
+            yield
+        except BaseException:
+            with suppress(sqlite3.Error):
+                reader.close()
+            raise
+        else:
+            reader.close()
+        finally:
+            del self._teacher_reads.reader
+
+    @contextmanager
     def _teacher_checkpoint_read(self, database: _TeacherCheckpointDatabase) -> Iterator[None]:
-        """Read one current teacher checkpoint without reopening or initializing SQLite."""
+        """Start a fresh read transaction for one teacher checkpoint."""
         if getattr(self._transactions, "connection", None) is not None:
             # Keep original nested reads on their existing authenticated writer.
             self._writer_binding()
@@ -538,32 +577,56 @@ class SQLiteSimulationJobRepository:
             return
         if getattr(self._teacher_reads, "snapshot", None) is not None:
             raise RuntimeError("nested teacher checkpoint cannot reuse a read snapshot")
+        reader: _TeacherCheckpointReader | None = getattr(self._teacher_reads, "reader", None)
+        one_shot = reader is None
+        if reader is None:
+            reader = _TeacherCheckpointReader(database, os.getpid())
+        elif reader.pid != os.getpid() or reader.database != database:
+            raise RuntimeError("teacher checkpoint reader owner or database changed")
         with self.publication_guard():
-            if self._teacher_checkpoint_database() != database:
-                raise RuntimeError("teacher checkpoint database identity changed")
-            uri = database.path.as_uri() + "?mode=ro"
-            with closing(sqlite3.connect(uri, uri=True, isolation_level=None)) as connection:
-                connection.row_factory = sqlite3.Row
+            try:
+                if self._teacher_checkpoint_database() != database:
+                    raise RuntimeError("teacher checkpoint database identity changed")
+                connection = reader.connection
+                if connection is None:
+                    uri = database.path.as_uri() + "?mode=ro"
+                    connection = sqlite3.connect(uri, uri=True, isolation_level=None)
+                    reader.connection = connection
+                    connection.row_factory = sqlite3.Row
                 connection.execute("BEGIN")
-                self._teacher_reads.snapshot = (os.getpid(), connection)
+                self._teacher_reads.snapshot = _TeacherCheckpointSnapshot(
+                    reader.pid, connection, {}
+                )
                 try:
                     yield
                     if self._teacher_checkpoint_database() != database:
                         raise RuntimeError("teacher checkpoint database identity changed")
                 finally:
                     del self._teacher_reads.snapshot
-                    connection.rollback()
+                connection.rollback()
+            except BaseException:
+                # Closing also abandons a failed transaction. Keep the original error
+                # if SQLite cannot roll back or close a poisoned connection.
+                if reader.connection is not None:
+                    with suppress(sqlite3.Error):
+                        reader.connection.rollback()
+                    with suppress(sqlite3.Error):
+                        reader.close()
+                raise
+            if one_shot:
+                reader.close()
+
+    def _teacher_checkpoint_snapshot(self) -> _TeacherCheckpointSnapshot | None:
+        if getattr(self._transactions, "connection", None) is not None:
+            return None
+        snapshot: _TeacherCheckpointSnapshot | None = getattr(self._teacher_reads, "snapshot", None)
+        if snapshot is not None and snapshot.pid != os.getpid():
+            raise RuntimeError("teacher read snapshot belongs to another process")
+        return snapshot
 
     def _teacher_checkpoint_connection(self) -> sqlite3.Connection | None:
-        snapshot: tuple[int, sqlite3.Connection] | None = getattr(
-            self._teacher_reads, "snapshot", None
-        )
-        if snapshot is None or getattr(self._transactions, "connection", None) is not None:
-            return None
-        pid, connection = snapshot
-        if pid != os.getpid():
-            raise RuntimeError("teacher read snapshot belongs to another process")
-        return connection
+        snapshot = self._teacher_checkpoint_snapshot()
+        return snapshot.connection if snapshot is not None else None
 
     @_job_writer
     def create_job(
@@ -641,12 +704,16 @@ class SQLiteSimulationJobRepository:
 
     def get_job(self, job_id: str) -> SimulationJobRecord:
         query = "SELECT * FROM simulation_jobs WHERE job_id = ?"
-        checkpoint = self._teacher_checkpoint_connection()
-        if checkpoint is None:
+        snapshot = self._teacher_checkpoint_snapshot()
+        if snapshot is None:
             self._initialize()
             row = self._fetch_one(query, (job_id,))
         else:
-            row = checkpoint.execute(query, (job_id,)).fetchone()
+            row = snapshot.job_rows.get(job_id)
+            if row is None:
+                row = snapshot.connection.execute(query, (job_id,)).fetchone()
+                if row is not None:
+                    snapshot.job_rows[job_id] = row
         if row is None:
             raise KeyError(job_id)
         return _job_from_row(row)

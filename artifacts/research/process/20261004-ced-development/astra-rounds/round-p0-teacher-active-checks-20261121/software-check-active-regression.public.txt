@@ -1,0 +1,209 @@
+......................................F................................. [ 23%]
+.......................................................Fssssssssssssssss [ 46%]
+sss...F................................................................. [ 69%]
+........................................................................ [ 92%]
+.........................                                                [100%]
+=================================== FAILURES ===================================
+_ test_checkpoint_actual_dispatch_captures_fresh_sqlite_read_and_cannot_resume _
+
+tmp_path = PosixPath('<PYTEST_TMP>/test_checkpoint_actual_dispatc0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x748867b13590>
+
+    def test_checkpoint_actual_dispatch_captures_fresh_sqlite_read_and_cannot_resume(
+        tmp_path, monkeypatch
+    ):
+        from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import (
+            DIAGNOSTIC_ASSIGNMENT,
+            DIAGNOSTIC_SCOPE,
+            DIAGNOSTIC_SEED,
+            register_checkpoint_diagnostic,
+        )
+        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+
+        root = tmp_path / "development"
+        register_checkpoint_diagnostic(root)
+        monkeypatch.setenv("MUJOCO_GL", "egl")
+        monkeypatch.chdir(ROOT)
+>       app = NativeCollectionApplication.from_checkpoint_diagnostic(root)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_native_checkpoint_diagnostic.py:98:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src/cloud_edge_robot_arm/research/native_collection_application.py:1050: in from_checkpoint_diagnostic
+    _require_egl_source()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    def _require_egl_source() -> None:
+        if Path.cwd() != ROOT or os.environ.get("MUJOCO_GL") != "egl":
+            raise ValueError(
+                "diagnostic requires the registered source root and explicit MUJOCO_GL=egl"
+            )
+        # An earlier offscreen import can choose another driver permanently for this process.
+        gl = sys.modules.get("mujoco.gl_context")
+        if (
+            gl is not None
+            and getattr(getattr(gl, "GLContext", None), "__module__", None) != "mujoco.egl"
+        ):
+>           raise ValueError("diagnostic already imported a non-EGL MuJoCo renderer")
+E           ValueError: diagnostic already imported a non-EGL MuJoCo renderer
+
+src/cloud_edge_robot_arm/research/native_checkpoint_diagnostic.py:257: ValueError
+_ test_authority_source_drift_stops_before_construction_or_action_dispatch[2] __
+
+tmp_path = PosixPath('<PYTEST_TMP>/test_authority_source_drift_st1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x74885f1c1400>
+fail_gate = 2
+
+    @pytest.mark.parametrize("fail_gate", [1, 2])
+    def test_authority_source_drift_stops_before_construction_or_action_dispatch(
+        tmp_path, monkeypatch, fail_gate
+    ):
+        from cloud_edge_robot_arm.edge.runtime import skill_executor
+        from cloud_edge_robot_arm.research import native_collection_application as module
+        from cloud_edge_robot_arm.research import native_full_horizon_recorder as recorder_module
+        from cloud_edge_robot_arm.simulation.mujoco import backend, native_horizon, skill_robot
+        from cloud_edge_robot_arm.vision import capture, execution, top_grasp
+
+        app = application(tmp_path)
+        seen = []
+        effects = []
+        original_check = module.check_sources
+
+        def check(expected, **kwargs):
+            seen.append(kwargs)
+            assert kwargs == {"marker_family_id": FAMILY, "protocol_schema": SCHEMA}
+            if len(seen) == fail_gate:
+                raise RuntimeError("synthetic source drift")
+            return original_check(expected, **kwargs)
+
+        # Workflow-only stubs: no sensor arrays, native data, camera or physics calls.
+        class Backend:
+            def __init__(self):
+                effects.append("construct")
+                self.total_physics_steps = 0
+                self.execution_guard_events = []
+                self._model = object()
+
+            def initialize(self, config):
+                effects.append("initialize")
+                self._config = config
+
+            def reset(self, scenario):
+                effects.append("reset")
+
+            def step(self, steps):
+                self.total_physics_steps += steps
+
+            def capture_each_physics_step(self, **kwargs):
+                return nullcontext()
+
+            def shutdown(self):
+                effects.append("shutdown")
+
+        class Capture:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        class Recorder(Capture):
+            bytes_written = 0
+            render_accounting = {"exact_passes": 0, "known_completed_passes": 0, "status": "EXACT"}
+
+            def require_clean_reset(self):
+                pass
+
+            def purpose(self, purpose):
+                return nullcontext()
+
+            def capture(self):
+                return object()
+
+            def bind_collection_source(self, source):
+                pass
+
+            def _write_original(self, *args):
+                pass
+
+            def record_shield_config(self, shield):
+                pass
+
+            def record_failure(self, *args):
+                pass
+
+            def freeze(self):
+                pass
+
+        def no_dispatch(*args, **kwargs):
+            effects.append("dispatch")
+            raise AssertionError("source drift reached action grounding")
+
+        monkeypatch.setattr(module, "check_sources", check)
+        monkeypatch.setattr(backend, "MuJoCoPhysicsBackend", Backend)
+        monkeypatch.setattr(skill_robot, "MuJoCoSkillRobot", lambda value: object())
+        monkeypatch.setattr(skill_executor, "SkillExecutor", lambda **kwargs: object())
+        monkeypatch.setattr(capture, "MuJoCoCaptureSession", Capture)
+        monkeypatch.setattr(recorder_module, "NativeFullHorizonRecorder", Recorder)
+        monkeypatch.setattr(top_grasp, "matches_calibrated_gripper", lambda *args: True)
+        monkeypatch.setattr(module, "_collection_guard", lambda *args: nullcontext())
+        monkeypatch.setattr(module, "_record_bootstrap_tracker", lambda *args, **kwargs: (object(), {}))
+        monkeypatch.setattr(module, "build_collection_contract", lambda **kwargs: object())
+        monkeypatch.setattr(
+            module, "_handoff_registered_capture", lambda live, obs, *args, **kwargs: obs
+        )
+        monkeypatch.setattr(native_horizon, "_issue_collection_session", lambda *args: object())
+        monkeypatch.setattr(execution, "research_safety_shield", lambda *args: SimpleNamespace())
+        monkeypatch.setattr(module, "_collect_grounded_step", no_dispatch)
+        with pytest.raises(RuntimeError, match="worker terminal outcome:") as caught:
+            app.execute_once()
+>       assert "synthetic source drift" in str(caught.value)
+E       assert 'synthetic source drift' in 'worker terminal outcome: {"job": {"job_id": "job-05d1e948c5ff4de2", "run_id": "native-collection-736fac2c6e8a460b9efd...on", "state_transitions": "worker-attempt/state_transitions.jsonl", "trajectory": "worker-attempt/trajectory.json"}}]}'
+E        +  where 'worker terminal outcome: {"job": {"job_id": "job-05d1e948c5ff4de2", "run_id": "native-collection-736fac2c6e8a460b9efd...on", "state_transitions": "worker-attempt/state_transitions.jsonl", "trajectory": "worker-attempt/trajectory.json"}}]}' = str(RuntimeError('worker terminal outcome: {"job": {"job_id": "job-05d1e948c5ff4de2", "run_id": "native-collection-736fac2...n", "state_transitions": "worker-attempt/state_transitions.jsonl", "trajectory": "worker-attempt/trajectory.json"}}]}'))
+E        +    where RuntimeError('worker terminal outcome: {"job": {"job_id": "job-05d1e948c5ff4de2", "run_id": "native-collection-736fac2...n", "state_transitions": "worker-attempt/state_transitions.jsonl", "trajectory": "worker-attempt/trajectory.json"}}]}') = <ExceptionInfo RuntimeError('worker terminal outcome: {"job": {"job_id": "job-05d1e948c5ff4de2", "run_id": "native-col...e_transitions": "worker-attempt/state_transitions.jsonl", "trajectory": "worker-attempt/trajectory.json"}}]}') tblen=2>.value
+
+tests/test_native_single_teacher_release.py:449: AssertionError
+___ test_whole_action_dispatch_preserves_real_early_veto_and_exclusive_claim ___
+
+whole_slot = PosixPath('<PYTEST_TMP>/test_whole_action_dispatch_pre0/experiments/results/phase9/p0-first-teacher-20261119/whole-action-egl-development-20261120/release')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x748867bc43e0>
+
+    def test_whole_action_dispatch_preserves_real_early_veto_and_exclusive_claim(
+        whole_slot, monkeypatch
+    ):
+        from cloud_edge_robot_arm.research import native_collection_application
+        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+
+        diagnostic.register_whole_action_diagnostic(whole_slot)
+>       app = NativeCollectionApplication.from_whole_action_diagnostic(whole_slot)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+<CHECKOUT>/tests/test_native_whole_action_diagnostic.py:80:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+<CHECKOUT>/src/cloud_edge_robot_arm/research/native_collection_application.py:1069: in from_whole_action_diagnostic
+    _require_egl_source()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    def _require_egl_source() -> None:
+        if Path.cwd() != ROOT or os.environ.get("MUJOCO_GL") != "egl":
+            raise ValueError(
+                "diagnostic requires the registered source root and explicit MUJOCO_GL=egl"
+            )
+        # An earlier offscreen import can choose another driver permanently for this process.
+        gl = sys.modules.get("mujoco.gl_context")
+        if (
+            gl is not None
+            and getattr(getattr(gl, "GLContext", None), "__module__", None) != "mujoco.egl"
+        ):
+>           raise ValueError("diagnostic already imported a non-EGL MuJoCo renderer")
+E           ValueError: diagnostic already imported a non-EGL MuJoCo renderer
+
+<CHECKOUT>/src/cloud_edge_robot_arm/research/native_checkpoint_diagnostic.py:257: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_native_checkpoint_diagnostic.py::test_checkpoint_actual_dispatch_captures_fresh_sqlite_read_and_cannot_resume
+FAILED tests/test_native_single_teacher_release.py::test_authority_source_drift_stops_before_construction_or_action_dispatch[2]
+FAILED tests/test_native_whole_action_diagnostic.py::test_whole_action_dispatch_preserves_real_early_veto_and_exclusive_claim
+3 failed, 291 passed, 19 skipped in 70.25s (0:01:10)

@@ -1,10 +1,18 @@
 # 项目状态
 
+## 2026-11-21 教师状态检查修复与复测
+
+同一开发位姿 `11920067` 的首动作从 **150.403 秒降至 128.739 秒**，少用 **21.665 秒（14.4%）**。修复的是单次检查内重复的作业查询、冻结协议解析和同一 worker 的只读建连。动作窗内的 31,238 次活动检查全部保留，检查本身及其 SQLite 读取由 78.719 秒降至 50.771 秒。软件负控验证了取消、租约到期及急停仍在原检查点拒绝。 [修复与实测](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-active-checks-20261121/step-report.md)
+
+两个独立实例的 2,040 步控制载荷及步后状态全部对齐，3,385 帧的 RGB、深度、掩码和实例文件逐帧一致。控制和保持都到达原终点，POST 仍因超过原 8 秒墙钟门限返回 `STEP_TIMEOUT`，后续七个动作未派发。正式合格组 **0/9**，B0 selection 等待首个合格组。本轮各项原件已校验并持久留存。 [物理对照](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-active-checks-20261121/physical-comparison.json) · [复测回执](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-active-checks-20261121/retest-measurement.json)
+
+本轮扣除全部活动检查后，其余工作仍用 77.967 秒。采集端 36 帧先导测得两处重复计算，按全窗帧数理想外推约 6.28 秒。后续原 8 秒资格开发需同时量化渲染、编码和证据复制的成本。 [未决耗时与负载](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-active-checks-20261121/feasibility.md) · [采集端离线配对](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-active-check-repair-20261121/residual-pilot.md)
+
 ## 2026-11-21 教师动作实测
 
 教师首动作 `MOVE_ABOVE` 已在新的 MuJoCo/EGL 开发实例中完成 1,920 个物理步。从 PRE 到 POST 的实际墙钟为 **150.403 秒**。控制器在 45.621 秒内用 725 步到达目标，保持再用 103.913 秒、1,195 步。终点位置条件通过，实际用时超过原 8 秒门限，安全盾返回 `STEP_TIMEOUT`，后续七个动作未运行。正式教师资格仍为 **0/9**，B0 selection 继续等待首个合格组。 [本轮轨迹与停止位置](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-whole-action-20261120/step-report.md)
 
-独立读回两遍均核对了 3,385 帧、8,813 次渲染及最终急停命令。本轮一次运行，零重试、零任务模型调用。原动作窗内有 31,238 次活动状态检查。这些检查扣除 SQLite 后占 46.546 秒，SQLite 读取占 32.172 秒，两项合计 78.719 秒，占动作墙钟的 52.34%。下一轮优先拆解这些检查，同时验证取消与租约失效时仍在原检查点拒绝。 [独立物理读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-whole-action-20261120/independent-physical-readback.md) · [计时分解](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-whole-action-20261120/action-timing.md)
+独立读回两遍均核对了 3,385 帧、8,813 次渲染及最终急停命令。本轮一次运行，零重试、零任务模型调用。原动作窗内有 31,238 次活动状态检查。这些检查扣除 SQLite 后占 46.546 秒，SQLite 读取占 32.172 秒，两项合计 78.719 秒，占动作墙钟的 52.34%。同位姿的修复复测见本页上方。 [独立物理读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-whole-action-20261120/independent-physical-readback.md) · [计时分解](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-whole-action-20261120/action-timing.md)
 
 ## 2026-11-20 项目组状态
 

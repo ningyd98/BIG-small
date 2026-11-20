@@ -1,5 +1,9 @@
 # Current Authoritative Status
 
+## 2026-11-21 教师状态检查修复后的同位姿复测
+
+`MOVE_ABOVE` 原 PRE 至 POST 从 150.403 秒降至 **128.739 秒**。原 31,238 次活动检查全部保留，2,040 步控制及步后状态、3,385 帧四个观测通道逐项一致。终点位置通过，原 8 秒墙钟仍在 POST 拒绝，后续七个动作未派发。正式教师资格 **0/9**，B0 selection 等待首个合格组。 [步骤与读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-active-checks-20261121/step-report.md) · [项目状态](project_status.md)
+
 ## 2026-11-21 教师首动作的完整实测
 
 开发位姿 `11920067` 的首动作 `MOVE_ABOVE` 已在 MuJoCo/EGL 中执行到终帧。控制器在 725 步后到达目标，随后保持 1,195 步。PRE 至原 POST 为 150.403 秒，超过 8 秒，安全盾以 `STEP_TIMEOUT` 拒绝。其余七个动作未运行。独立双读一致，核对了 3,385 帧和 8,813 次渲染。正式教师资格为 0/9，B0 selection 等待首个合格组。 [本轮报告](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-whole-action-20261120/step-report.md) · [项目状态](project_status.md)

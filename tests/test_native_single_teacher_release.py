@@ -428,6 +428,12 @@ def test_authority_source_drift_stops_before_construction_or_action_dispatch(
         effects.append("dispatch")
         raise AssertionError("source drift reached action grounding")
 
+    def software_guard(
+        live: object, callback: object, event_limit: int, *, diagnostic: object = None
+    ) -> nullcontext[None]:
+        assert diagnostic is None
+        return nullcontext()
+
     monkeypatch.setattr(module, "check_sources", check)
     monkeypatch.setattr(backend, "MuJoCoPhysicsBackend", Backend)
     monkeypatch.setattr(skill_robot, "MuJoCoSkillRobot", lambda value: object())
@@ -435,7 +441,7 @@ def test_authority_source_drift_stops_before_construction_or_action_dispatch(
     monkeypatch.setattr(capture, "MuJoCoCaptureSession", Capture)
     monkeypatch.setattr(recorder_module, "NativeFullHorizonRecorder", Recorder)
     monkeypatch.setattr(top_grasp, "matches_calibrated_gripper", lambda *args: True)
-    monkeypatch.setattr(module, "_collection_guard", lambda *args: nullcontext())
+    monkeypatch.setattr(module, "_collection_guard", software_guard)
     monkeypatch.setattr(module, "_record_bootstrap_tracker", lambda *args, **kwargs: (object(), {}))
     monkeypatch.setattr(module, "build_collection_contract", lambda **kwargs: object())
     monkeypatch.setattr(
