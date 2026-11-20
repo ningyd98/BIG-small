@@ -27,6 +27,8 @@ def main() -> None:
     modes.add_argument("--verify-registered-step", action="store_true")
     modes.add_argument("--register-checkpoint-diagnostic", action="store_true")
     modes.add_argument("--run-checkpoint-diagnostic", action="store_true")
+    modes.add_argument("--register-whole-action-diagnostic", action="store_true")
+    modes.add_argument("--run-whole-action-diagnostic", action="store_true")
     parser.add_argument("--config", type=Path)
     parser.add_argument("--protocol", type=Path)
     parser.add_argument("--assignment-id")
@@ -35,10 +37,13 @@ def main() -> None:
     parser.add_argument("--repository", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    if args.register_checkpoint_diagnostic or args.run_checkpoint_diagnostic:
+    whole_action = args.register_whole_action_diagnostic or args.run_whole_action_diagnostic
+    if whole_action or args.register_checkpoint_diagnostic or args.run_checkpoint_diagnostic:
         from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import (
             register_checkpoint_diagnostic,
+            register_whole_action_diagnostic,
             run_checkpoint_diagnostic,
+            run_whole_action_diagnostic,
         )
 
         if any(
@@ -48,14 +53,18 @@ def main() -> None:
             )
         ):
             parser.error("checkpoint diagnostic uses only its registration directory")
-        if args.register_checkpoint_diagnostic:
+        if args.register_checkpoint_diagnostic or args.register_whole_action_diagnostic:
             if args.output is None or args.protocol is not None:
                 parser.error("checkpoint diagnostic registration requires only output")
-            result = register_checkpoint_diagnostic(args.output)
+            register = (
+                register_whole_action_diagnostic if whole_action else register_checkpoint_diagnostic
+            )
+            result = register(args.output)
         else:
             if args.protocol is None or args.output is not None:
                 parser.error("checkpoint diagnostic run requires only its registration as protocol")
-            result = run_checkpoint_diagnostic(args.protocol)
+            run = run_whole_action_diagnostic if whole_action else run_checkpoint_diagnostic
+            result = run(args.protocol)
         print(json.dumps(result, sort_keys=True, allow_nan=False))
         if result.get("status") == "COLLECTION_PARTIAL":
             raise SystemExit(1)

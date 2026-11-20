@@ -20,6 +20,7 @@ from uuid import uuid4
 import numpy as np
 
 from cloud_edge_robot_arm.contracts import Pose
+from cloud_edge_robot_arm.research.native_action_timing import timed, timed_call
 from cloud_edge_robot_arm.simulation.config import SimulatorConfig
 from cloud_edge_robot_arm.simulation.models import (
     ContactSnapshot,
@@ -272,7 +273,10 @@ def _observed_operation(kind: str) -> Callable[[Callable[..., Any]], Callable[..
                     if checked:
                         self._check_execution_guard(kind, "AFTER")
                 else:
-                    with self._operation_source(kind, parameters) as source:
+                    with (
+                        timed("backend_" + kind.lower(), operation_id=self._operation_sequence + 1),
+                        self._operation_source(kind, parameters) as source,
+                    ):
                         if checked:
                             self._check_execution_guard(kind, "BEFORE")
                         elif not safe:
@@ -480,6 +484,7 @@ class MuJoCoPhysicsBackend:
             if primary is None:
                 raise
 
+    @timed_call("guard")
     def _check_execution_guard(self, kind: str, phase: str) -> None:
         if not self._execution_guard_used:
             return
@@ -616,18 +621,19 @@ class MuJoCoPhysicsBackend:
         self._operation_ledger.append(_operation_detach(row))
         started = monotonic_ns()
         try:
-            event = BackendOperationBoundary(
-                operation_id,
-                cast(Literal["RESET", "CONTROL", "PHYSICS", "COMMAND", "CAPTURE"], kind),
-                cast(Literal["BEGIN", "END"], phase),
-                self._episode_id,
-                self._total_physics_steps,
-                self.get_sim_time() if self._data is not None else None,
-                parameters,
-                result,
-                cast(str | None, row["error_type"]),
-                cast(str | None, row["error"]),
-            )
+            with timed("detach"):
+                event = BackendOperationBoundary(
+                    operation_id,
+                    cast(Literal["RESET", "CONTROL", "PHYSICS", "COMMAND", "CAPTURE"], kind),
+                    cast(Literal["BEGIN", "END"], phase),
+                    self._episode_id,
+                    self._total_physics_steps,
+                    self.get_sim_time() if self._data is not None else None,
+                    parameters,
+                    result,
+                    cast(str | None, row["error_type"]),
+                    cast(str | None, row["error"]),
+                )
             self._in_observer_callback = True
             if callback is not None:
                 callback(event)
@@ -916,7 +922,8 @@ class MuJoCoPhysicsBackend:
         self._require_not_in_observer_callback()
         assert self._mujoco is not None and self._model is not None and self._data is not None
         self._check_execution_guard("PHYSICS", "BEFORE")
-        self._mujoco.mj_step(self._model, self._data)
+        with timed("mj_step"):
+            self._mujoco.mj_step(self._model, self._data)
         self._total_physics_steps += 1
         self._check_execution_guard("PHYSICS", "AFTER")
 

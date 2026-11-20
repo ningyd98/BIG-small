@@ -1,5 +1,11 @@
 # 项目状态
 
+## 2026-11-21 教师动作实测
+
+教师首动作 `MOVE_ABOVE` 已在新的 MuJoCo/EGL 开发实例中完成 1,920 个物理步。从 PRE 到 POST 的实际墙钟为 **150.403 秒**。控制器在 45.621 秒内用 725 步到达目标，保持再用 103.913 秒、1,195 步。终点位置条件通过，实际用时超过原 8 秒门限，安全盾返回 `STEP_TIMEOUT`，后续七个动作未运行。正式教师资格仍为 **0/9**，B0 selection 继续等待首个合格组。 [本轮轨迹与停止位置](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-whole-action-20261120/step-report.md)
+
+独立读回两遍均核对了 3,385 帧、8,813 次渲染及最终急停命令。本轮一次运行，零重试、零任务模型调用。原动作窗内有 31,238 次活动状态检查。这些检查扣除 SQLite 后占 46.546 秒，SQLite 读取占 32.172 秒，两项合计 78.719 秒，占动作墙钟的 52.34%。下一轮优先拆解这些检查，同时验证取消与租约失效时仍在原检查点拒绝。 [独立物理读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-whole-action-20261120/independent-physical-readback.md) · [计时分解](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-whole-action-20261120/action-timing.md)
+
 ## 2026-11-20 项目组状态
 
 BIGsmall Embodied Harness 已交付 H0/H1 工程开发版，冻结首场景契约并通过清洁环境安装、七条 CLI 正常路径和两条保护拒绝检查。历史四位姿冻结于 `5103e7f4`，本轮新增开发位姿冻结于已含 worker 异常留痕的 `4bdb64eb`。教师单组入口与采集优化另在研发分支 `research/harness-candidate-20261118` 交付。云端负责规划，边缘按规则和成本约束判断，端侧用 OpenCV/RGB-D 观测，沿用可见姿态标记、顶视相机、现有控制器与安全盾。边缘模型选型后置。 [现行计划](plan.md) · [公开交付范围](../artifacts/research/process/20261004-ced-development/astra-rounds/round-harness-candidate-generalization-20261118/implementation/public-delivery.md)
@@ -54,7 +60,7 @@ worker 自产品提交 `4bdb64eb` 起，把脱敏后的异常类型、消息、�
 
 另用独立新 seed、真实 worker、SQLite 租约与 EGL 相机测量 8 秒开发短窗。99/1,920 个首动作物理步在窗内完成，独立 reader 核对 242/242 帧。动作窗 1,331 次 SQLite 快照共 1.345 秒，117 次窗内完整采集的 owner 区间共 3.042 秒，两个统计有重叠。末次采集在截止前获准，截止后 29.226 ms 被原检查点拒绝，随后保持并急停。原件记录到第 219 步，停后生效步的独立物理状态未知。开发短窗零模型调用。正式组沿用原 8 秒和逐步采集要求。 [独立读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-checkpoint-egl-development-20261120/independent-readback.md) · [窗口和负载](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-checkpoint-egl-development-20261120/step-report.md)
 
-对开发短窗的 242 个归档 RGB-D 帧另做 CPU 配对。四轮里，PNG 压缩级别从 6 调到 1，使这一段记录写出路径的累计墙钟从每轮 2.319–2.331 秒降到 1.747–1.757 秒，降幅 24.28%–24.87%。完整原件体积增加 0.99%。968 对的像素、深度、标定和身份均等值，PNG 字节及依赖摘要发生变化。单看与 8 秒窗对应的 117 帧，四次离线写出各节省 0.273–0.283 秒。离线跨接口复核中，两端同用级别 6 或同用级别 1 均通过全部 242 帧。两份显式采集经原会话回放。两种混配以及把同一物理步的两个采集互换，均遭原反馈和 PRE 消费者拒绝。下一步在新登记的开发配方中绑定两端编码策略，实测同姿态的整段 8 秒窗口。 [逐帧 CPU 对照](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-action-window-next-20261120/step-report.md) · [两端编码与 PRE 反馈复核](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-action-window-next-20261120/cross-interface-readback.md) · [后续开发方案](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-action-window-next-20261120/next-development.md)
+对开发短窗的 242 个归档 RGB-D 帧另做 CPU 配对。四轮里，PNG 压缩级别从 6 调到 1，使这一段记录写出路径的累计墙钟从每轮 2.319–2.331 秒降到 1.747–1.757 秒，降幅 24.28%–24.87%。完整原件体积增加 0.99%。968 对的像素、深度、标定和身份均等值，PNG 字节及依赖摘要发生变化。单看与 8 秒窗对应的 117 帧，四次离线写出各节省 0.273–0.283 秒。离线跨接口复核中，两端同用级别 6 或同用级别 1 均通过全部 242 帧。两份显式采集经原会话回放。两种混配以及把同一物理步的两个采集互换，均遭原反馈和 PRE 消费者拒绝。该对照选定了两端一致的编码策略，11 月 21 日的完整动作实测见本页顶部。 [逐帧 CPU 对照](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-action-window-next-20261120/step-report.md) · [两端编码与 PRE 反馈复核](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-action-window-next-20261120/cross-interface-readback.md) · [后续开发方案](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-action-window-next-20261120/next-development.md)
 
 B0 配置已经绑定 3,260 个互斥分配和名义角色探针。探针 4/4 实发成功，零重试，共 3,073 tokens。协议准备入口现可直接导入这六池。持久目录中的逐项读回确认 3,260 行、2,400 个候选与 200 个恢复调度对应同一池锁。原 reader 判定完整性、拓扑通过，当前池的实证仍是恢复 0/200、机会 0/2,400。历史的 1/200 恢复及三份与本池精确匹配 0/3,260 的旧协议单列。正式 selection 等待教师资格，`selection_evidence` 和 `protocol_evidence` 仍待真实原件。用户已授权 B0 及新增开发批次的付费次数和金额无上限，实际账单金额及币种待供应商回执。 [B0 台账](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/b0/step-report.md) · [冻结池及协议独立读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-protocol-frozen-pools-20261120/step-report.md)
 

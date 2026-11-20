@@ -16,6 +16,7 @@ from dataclasses import asdict, fields
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from cloud_edge_robot_arm.research.native_action_timing import timed, timed_call
 from cloud_edge_robot_arm.research.native_calibration_collection import (
     REGISTERED_STEP_SCHEMAS,
     REGISTERED_V2_STEP_SCHEMAS,
@@ -23,7 +24,10 @@ from cloud_edge_robot_arm.research.native_calibration_collection import (
     digest,
 )
 from cloud_edge_robot_arm.research.native_calibration_collection import detached as _plain
-from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import DIAGNOSTIC_SCOPE
+from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import (
+    DIAGNOSTIC_SCOPE,
+    WHOLE_ACTION_SCOPE,
+)
 from cloud_edge_robot_arm.research.raw_episode_v3 import RawEpisodeIdentityV3
 from cloud_edge_robot_arm.simulation.mujoco.backend import BackendOperationBoundary
 from cloud_edge_robot_arm.simulation.mujoco.native_horizon import FullHorizonExecutionReceipt
@@ -394,6 +398,7 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
         finally:
             self._open = False
 
+    @timed_call("spool_index_hash")
     def _write_blob(self, name: str, raw: bytes) -> str:
         if self._published or name in self.inventory:
             raise RuntimeError("original output cannot be overwritten or extended after freeze")
@@ -401,7 +406,7 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
             raise RuntimeError("registered original output budget exhausted")
         path = self.directory / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("xb") as stream:
+        with timed("sync_write"), path.open("xb") as stream:
             stream.write(raw)
             stream.flush()
         sha = hashlib.sha256(raw).hexdigest()
@@ -409,6 +414,7 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
         self.bytes_written += len(raw)
         return sha
 
+    @timed_call("metadata")
     def _write_original(self, name: str, value: Any) -> str:
         return self._write_blob(name, canonical(_plain(value)) + b"\n")
 
@@ -497,6 +503,14 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
         )
 
     def _record_frame(self, event: BackendOperationBoundary, operation: dict[str, Any]) -> None:
+        with timed(
+            "raw_frame_spool",
+            operation_id=event.operation_id,
+            acquisition_id=operation["acquisition_id"],
+        ):
+            self._spool_frame(event, operation)
+
+    def _spool_frame(self, event: BackendOperationBoundary, operation: dict[str, Any]) -> None:
         super()._record_frame(event, operation)
         frame = self._frames[-1]
         aid = frame["acquisition_id"]
@@ -552,6 +566,7 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
             }
         del self._frame_aux[aid]
 
+    @timed_call("recorder_boundary")
     def _on_boundary(self, event: BackendOperationBoundary) -> None:
         row: dict[str, Any] | None = None
         try:
@@ -588,7 +603,8 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
                     error=None,
                 )
                 self.operational_events.append(row)
-                token = self.owner.begin_event(event.kind)
+                with timed("owner_event"):
+                    token = self.owner.begin_event(event.kind)
                 row["token"] = token.event_identity
                 self._pending[event.operation_id] = (row, token)
                 if event.kind == "CAPTURE":
@@ -623,8 +639,9 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
                 raise ValueError("successful source operation lacks returned original")
             if event.kind == "CAPTURE":
                 self.application.check_active()
-            self.owner.mark_event(token)
-            bracket = self.owner.end_event(token)
+            with timed("owner_event"):
+                self.owner.mark_event(token)
+                bracket = self.owner.end_event(token)
             row["bracket"] = _plain(asdict(bracket))
             aid = row["acquisition_id"]
             if aid is not None:
@@ -814,8 +831,8 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
                     else "native.full-horizon.originals.v1"
                 ),
                 source_scope=(
-                    DIAGNOSTIC_SCOPE
-                    if protocol.get("scope") == DIAGNOSTIC_SCOPE
+                    protocol["scope"]
+                    if protocol.get("scope") in {DIAGNOSTIC_SCOPE, WHOLE_ACTION_SCOPE}
                     else "REGISTERED_MODEL_TEACHER_COLLECTION"
                     if registered
                     else "TEACHER_COLLECTION"

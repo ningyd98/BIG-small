@@ -1,5 +1,9 @@
 # Current Authoritative Status
 
+## 2026-11-21 教师首动作的完整实测
+
+开发位姿 `11920067` 的首动作 `MOVE_ABOVE` 已在 MuJoCo/EGL 中执行到终帧。控制器在 725 步后到达目标，随后保持 1,195 步。PRE 至原 POST 为 150.403 秒，超过 8 秒，安全盾以 `STEP_TIMEOUT` 拒绝。其余七个动作未运行。独立双读一致，核对了 3,385 帧和 8,813 次渲染。正式教师资格为 0/9，B0 selection 等待首个合格组。 [本轮报告](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-whole-action-20261120/step-report.md) · [项目状态](project_status.md)
+
 ## 2026-11-20 开发批次与教师实测
 
 冻结产品 `4bdb64eb` 完成 20 个新 MuJoCo 位姿，组件完成率与独立物理成功率均为 5/20，各自 95% Wilson 区间为 11.19%–46.87%。原安装包装通过 3/20。第 11、19 例经原件补读确认完成，第 18 例触发右指硬限位，原严格审计有 3 项未确认。两次固定 1802 复测另计，两次均成功且稳定 9.475 秒。22 次试次零重试、实际 16 次云请求、76 次本地生成、10,663 个云端 token，账单金额与币种待回执。 [项目状态](project_status.md) · [全部分配与原退出](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-hard-limit-prefix-resume-20261120/final-batch-report.md)

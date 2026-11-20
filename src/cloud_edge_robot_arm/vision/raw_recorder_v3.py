@@ -25,6 +25,7 @@ from uuid import uuid4
 
 from cloud_edge_robot_arm.contracts import TaskContract, TaskStep
 from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor, StepExecutionResult
+from cloud_edge_robot_arm.research.native_action_timing import mark_timing, timed
 from cloud_edge_robot_arm.research.raw_episode_v3 import (
     ActionFrameJoinV3,
     ClockDescriptorV3,
@@ -116,6 +117,7 @@ class VisualRawRecorderV3:
         directory: Path,
         source_root: Path,
         source_hashes: Mapping[str, str],
+        png_compress_level: int = 6,
     ) -> None:
         if (
             not isinstance(backend, MuJoCoPhysicsBackend)
@@ -132,6 +134,9 @@ class VisualRawRecorderV3:
             or executor._robot._backend is not backend
         ):
             raise ValueError("recorder must borrow the same backend for capture and sole executor")
+        if type(png_compress_level) is not int or png_compress_level != capture.png_compress_level:
+            raise ValueError("recorder and capture session PNG compression levels must agree")
+        self._png_compress_level = png_compress_level
         self.backend, self.capture_session, self.executor = backend, capture, executor
         self.directory, self.source_root = Path(directory), Path(source_root)
         self.source_hashes = pin_worker_source_inventory(
@@ -571,9 +576,16 @@ class VisualRawRecorderV3:
         observation = None
         if result.get("sensor_frame") is not None:
             try:
-                observation = observation_from_sensor_frame(
-                    _sensor_frame(result["sensor_frame"]), source="mujoco_camera"
-                ).model_dump(mode="json")
+                with timed(
+                    "raw_encode",
+                    operation_id=event.operation_id,
+                    acquisition_id=operation["acquisition_id"],
+                ):
+                    observation = observation_from_sensor_frame(
+                        _sensor_frame(result["sensor_frame"]),
+                        source="mujoco_camera",
+                        png_compress_level=self._png_compress_level,
+                    ).model_dump(mode="json")
             except BaseException as source_error:
                 operation["row"].update(disposition="ABORTED", error=_error(source_error))
         camera_state = operation["parameters"].get("camera_state")
@@ -747,7 +759,11 @@ class VisualRawRecorderV3:
             self._before_executor_attempt(
                 contract=contract, step=step, attempt=attempt, grounding=grounding
             )
-            result = self.executor.execute_attempt(contract=contract, step=step, attempt=attempt)
+            with timed("controller"):
+                result = self.executor.execute_attempt(
+                    contract=contract, step=step, attempt=attempt
+                )
+            mark_timing("executor_return", physics_step=self.backend.total_physics_steps)
             return result
         except BaseException as operation_error:
             error = _error(operation_error)

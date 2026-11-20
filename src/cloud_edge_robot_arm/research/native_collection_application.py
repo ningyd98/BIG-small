@@ -27,6 +27,13 @@ from cloud_edge_robot_arm.edge.evidence.conditions import (
     OnlineEvidenceSnapshot,
     evaluate_conditions,
 )
+from cloud_edge_robot_arm.research.native_action_timing import (
+    ActionTiming,
+    mark_timing,
+    timed,
+    timed_call,
+    use_action_timing,
+)
 from cloud_edge_robot_arm.research.native_calibration_collection import (
     REGISTERED_COLLECTION_SCHEMA,
     REGISTERED_OCCLUSION_SCHEMA,
@@ -45,8 +52,10 @@ from cloud_edge_robot_arm.research.native_calibration_collection import detached
 from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import (
     CLAIM_FILE,
     DIAGNOSTIC_ASSIGNMENT,
-    DIAGNOSTIC_SCHEMA,
     DIAGNOSTIC_SCOPE,
+    WHOLE_ACTION_ASSIGNMENT,
+    WHOLE_ACTION_BEGIN_FILE,
+    WHOLE_ACTION_SCOPE,
     _CheckpointDiagnostic,
     _diagnostic_recipe,
     _read_registration,
@@ -71,8 +80,11 @@ _ISSUER = object()
 
 
 def _check_protocol_sources(protocol: dict[str, Any]) -> None:
-    if protocol.get("scope") == DIAGNOSTIC_SCOPE:
-        if canonical(protocol) != canonical(_diagnostic_recipe()):
+    scope = protocol.get("scope")
+    if scope in {DIAGNOSTIC_SCOPE, WHOLE_ACTION_SCOPE}:
+        if canonical(protocol) != canonical(
+            _diagnostic_recipe(whole_action=scope == WHOLE_ACTION_SCOPE)
+        ):
             raise ValueError("registered diagnostic source or recipe changed")
     elif protocol.get("schema_version") == REGISTERED_TEACHER_SCHEMA:
         from cloud_edge_robot_arm.research.native_calibration_collection import (
@@ -132,6 +144,7 @@ class _Live:
     job_basis: bytes | None = None
     checkpoint_database: _TeacherCheckpointDatabase | None = None
     diagnostic: _CheckpointDiagnostic | None = None
+    action_timing: ActionTiming | None = None
     worker_origin: tuple[Any, ...] | None = None
     fencing: tuple[Any, ...] | None = None
     owner: Any = None
@@ -931,6 +944,7 @@ def _close_body_resources(
     primary: BaseException | None,
     *,
     diagnostic: _CheckpointDiagnostic | None = None,
+    action_timing: ActionTiming | None = None,
 ) -> BaseException | None:
     recorder = live.recorder
     operations: list[tuple[str, Any]] = []
@@ -941,9 +955,11 @@ def _close_body_resources(
             recorder._write_original("capture-consumptions.json", live.consumptions)
             if diagnostic is not None:
                 recorder._write_original(
-                    "checkpoint-diagnostic.json",
+                    diagnostic.receipt_key.replace("_", "-") + ".json",
                     diagnostic.payload(prefix_complete=len(live.completed) == 1),
                 )
+            if action_timing is not None:
+                recorder._write_original("whole-action-timing.json", action_timing.payload())
             recorder.freeze()
 
         operations.extend(
@@ -1041,6 +1057,38 @@ class NativeCollectionApplication:
         )
 
     @classmethod
+    def from_whole_action_diagnostic(cls, protocol: Path) -> NativeCollectionApplication:
+        if cls is not NativeCollectionApplication:
+            raise TypeError("exact collection factory required")
+        registration = _read_registration(protocol, whole_action=True)
+        path = Path(registration["registration_directory"])
+        claim = path / CLAIM_FILE
+        begin = path.parent / WHOLE_ACTION_BEGIN_FILE
+        if any(p.exists() or p.is_symlink() for p in (claim, begin, path / "run")):
+            raise RuntimeError("whole-action diagnostic already began; no retry or restart")
+        _require_egl_source()
+        registration_sha256 = digest(registration)
+        save_exclusive(
+            begin,
+            dict(
+                assignment_id=WHOLE_ACTION_ASSIGNMENT,
+                scope=WHOLE_ACTION_SCOPE,
+                registration_sha256=registration_sha256,
+                pid=os.getpid(),
+                began_at=datetime.now(UTC).isoformat(),
+            ),
+        )
+        return cls._create(
+            path,
+            WHOLE_ACTION_ASSIGNMENT,
+            Path(registration["output"]),
+            registration["recipe"],
+            diagnostic=_CheckpointDiagnostic(
+                registration_sha256=registration_sha256, whole_action=True
+            ),
+        )
+
+    @classmethod
     def _create(
         cls,
         protocol: Path,
@@ -1077,6 +1125,9 @@ class NativeCollectionApplication:
             threading.get_ident(),
             checkpoint_database=app.repository._teacher_checkpoint_database(),
             diagnostic=diagnostic,
+            action_timing=(
+                ActionTiming() if diagnostic is not None and diagnostic.whole_action else None
+            ),
         )
         return app
 
@@ -1112,13 +1163,15 @@ class NativeCollectionApplication:
             claim_path = live.protocol_path / "claims" / (live.assignment_id + ".json")
             claim["protocol_sha256"] = digest(protocol)
         else:
-            registration = _read_registration(live.protocol_path)
+            registration = _read_registration(
+                live.protocol_path, whole_action=diagnostic.whole_action
+            )
             if digest(registration) != diagnostic.registration_sha256:
                 raise ValueError("diagnostic preregistration changed")
             protocol = registration["recipe"]
             claim_path = live.protocol_path / CLAIM_FILE
             claim.update(
-                scope=DIAGNOSTIC_SCOPE,
+                scope=diagnostic.scope,
                 registration_sha256=diagnostic.registration_sha256,
                 seed=registration["seed"],
             )
@@ -1154,7 +1207,7 @@ class NativeCollectionApplication:
             scenario_id="S01_NORMAL_STATIC",
             control_mode="PCSC",
             seed=assignment["seed"],
-            manifest_id=protocol["schema_version"] if diagnostic is None else DIAGNOSTIC_SCHEMA,
+            manifest_id=protocol["schema_version"] if diagnostic is None else diagnostic.schema,
             reproducibility_hash=digest(assignment),
             draft=draft,
             timeout_seconds=self.policy["task_timeout_s"],
@@ -1163,7 +1216,7 @@ class NativeCollectionApplication:
             source_commit="CURRENT_REGISTERED_SOURCE_BYTES",
             source_tree_hash=protocol["source_generation"],
             provenance=dict(
-                scope="TEACHER_COLLECTION" if diagnostic is None else DIAGNOSTIC_SCOPE,
+                scope="TEACHER_COLLECTION" if diagnostic is None else diagnostic.scope,
                 protocol_sha256=digest(protocol),
             ),
         )
@@ -1183,7 +1236,7 @@ class NativeCollectionApplication:
                 native_qualification="UNKNOWN",
                 **(
                     dict(
-                        scope=DIAGNOSTIC_SCOPE,
+                        scope=diagnostic.scope,
                         registration_sha256=diagnostic.registration_sha256,
                         qualification_credit=0,
                     )
@@ -1212,10 +1265,15 @@ class NativeCollectionApplication:
         worker_snapshot: dict[str, Any] = {}
         closure = dict(attempted=False, completed=False)
         try:
-            if not live.prepared:
-                self.prepare_once()
-            if not live.worker.poll_once():
-                raise RuntimeError("sole worker did not acquire the assignment")
+            with (
+                use_action_timing(live.action_timing)
+                if live.action_timing is not None
+                else nullcontext()
+            ):
+                if not live.prepared:
+                    self.prepare_once()
+                if not live.worker.poll_once():
+                    raise RuntimeError("sole worker did not acquire the assignment")
         except BaseException as error:
             _remember(live, "prepare_or_worker_poll", error)
             primary = error
@@ -1296,15 +1354,8 @@ class NativeCollectionApplication:
             qualified_group_score=None,
             final_lifecycle_receipt=True,
             **(
-                dict(
-                    scope=DIAGNOSTIC_SCOPE,
-                    qualification_credit=0,
-                    checkpoint_diagnostic=live.diagnostic.payload(
-                        prefix_complete=len(live.completed) == 1
-                    ),
-                )
-                if live.diagnostic is not None
-                else {}
+                live.diagnostic.result_fields(prefix_complete=len(live.completed) == 1)
+                if live.diagnostic is not None else {}
             ),
         )
         try:
@@ -1322,6 +1373,7 @@ class NativeCollectionApplication:
             raise primary
         return dict(live.result)
 
+    @timed_call("owner_check")
     def check_active(self) -> dict[str, Any]:
         live = _live(self)
         if live.worker_origin is None or live.job_id is None:
@@ -1334,7 +1386,7 @@ class NativeCollectionApplication:
         )
         if live.diagnostic is not None:
             read_scope = live.diagnostic.measure_sqlite(read_scope, live.repository, mode)
-        with read_scope:
+        with timed("sqlite"), read_scope:
             job = live.repository.get_job(live.job_id)
             if (
                 _job_basis(job) != live.job_basis
@@ -1380,6 +1432,7 @@ class NativeCollectionApplication:
         )
         return snapshot
 
+    @timed_call("guard")
     def _guard(self, checkpoint: Any) -> None:
         live = _live(self)
         snapshot = self.check_active()
@@ -1393,7 +1446,10 @@ class NativeCollectionApplication:
             current=snapshot["current"],
             lease_id=snapshot["lease"]["lease_id"],
         )
-        if live.diagnostic is not None and live.diagnostic.cutoff_monotonic_ns is not None:
+        if (
+            live.diagnostic is not None
+            and live.diagnostic.first_action_started_monotonic_ns is not None
+        ):
             now = time.monotonic_ns()
             live.diagnostic.authorize(checkpoint, now)
             row["diagnostic_authorized_monotonic_ns"] = now
@@ -1483,7 +1539,7 @@ class NativeCollectionApplication:
             source_generation=self.protocol["source_generation"],
             asset_sha256=self.policy["marked_asset_sha256"],
             original=live.original,
-            scope="TEACHER_COLLECTION" if live.diagnostic is None else DIAGNOSTIC_SCOPE,
+            scope="TEACHER_COLLECTION" if live.diagnostic is None else live.diagnostic.scope,
             source=source,
             origin=_plain(live.origin),
             deadline=_plain(live.deadline),
@@ -2538,7 +2594,10 @@ class NativeCollectionApplication:
             live.backend = MuJoCoPhysicsBackend()
             live.robot = MuJoCoSkillRobot(live.backend)
             live.executor = SkillExecutor(robot=live.robot, registry=SkillRegistry.default())
-            live.capture = MuJoCoCaptureSession(config, backend=live.backend)
+            png_level = self.policy.get("png_compress_level", 6)
+            live.capture = MuJoCoCaptureSession(
+                config, backend=live.backend, png_compress_level=png_level
+            )
             phase = "backend_initialization"
             live.progress["backend_initialization_attempted"] = True
             live.backend.initialize(config)
@@ -2555,6 +2614,7 @@ class NativeCollectionApplication:
                 directory=live.output / "originals",
                 source_root=ROOT,
                 source_hashes=self.protocol["source_hashes"],
+                png_compress_level=png_level,
                 application=self,
                 owner=live.owner,
                 _token=recorder_issuer,
@@ -2696,6 +2756,10 @@ class NativeCollectionApplication:
                             diagnostic.start_action(
                                 action_started_ns, live.backend.total_physics_steps
                             )
+                            mark_timing(
+                                "pre_start", now_ns=action_started_ns,
+                                physics_step=live.backend.total_physics_steps,
+                            )
                         context = shield.context_builder.build(
                             contract=contract,
                             step=step,
@@ -2731,6 +2795,7 @@ class NativeCollectionApplication:
                             binding=binding,
                             shield_source=pre_source,
                         )
+                        mark_timing("pre_end", physics_step=live.backend.total_physics_steps)
                         receipt = live.session.execute(
                             index=index, contract=contract, step=step, binding=binding
                         )
@@ -2741,6 +2806,15 @@ class NativeCollectionApplication:
                             )
                         observation = terminal_frame.observation
                         state = live.robot.get_state()
+                        post_ns = None
+                        if diagnostic is not None and diagnostic.whole_action:
+                            post_ns = time.monotonic_ns()
+                            diagnostic.post_monotonic_ns = post_ns
+                            mark_timing(
+                                "post_context",
+                                now_ns=post_ns,
+                                physics_step=live.backend.total_physics_steps,
+                            )
                         post_context = context.model_copy(
                             update=dict(
                                 robot_collision_detected=state.collision_detected,
@@ -2751,7 +2825,9 @@ class NativeCollectionApplication:
                                 scene_updated_at=observation.captured_at,
                                 wall_clock_now=datetime.now(UTC),
                                 telemetry_timestamp=datetime.now(UTC),
-                                monotonic_now=time.monotonic(),
+                                monotonic_now=(
+                                    post_ns / 10**9 if post_ns is not None else time.monotonic()
+                                ),
                                 joint_velocities=[
                                     abs(v) for v in live.backend.get_joint_state().velocities
                                 ],
@@ -2768,6 +2844,13 @@ class NativeCollectionApplication:
                         post, post_source = recorder.check_shield(
                             shield, post_context, index=index, phase="POST"
                         )
+                        if diagnostic is not None and diagnostic.whole_action:
+                            diagnostic.post_shield = dict(
+                                allowed=post.allowed,
+                                limiting_rule=_plain(post.limiting_rule),
+                                source=post_source,
+                            )
+                        mark_timing("post_evaluated", physics_step=live.backend.total_physics_steps)
                         if self.protocol["schema_version"] in REGISTERED_STEP_SCHEMAS:
                             from cloud_edge_robot_arm.vision.worker_owner import (
                                 registered_collection_effect_conditions,
@@ -2820,6 +2903,13 @@ class NativeCollectionApplication:
             if recorder is not None:
                 recorder.record_failure(phase, error)
         finally:
+            mark_timing("action_exit")
+            if diagnostic is not None and diagnostic.whole_action and recorder is not None:
+                if recorder.horizons:
+                    diagnostic.full_horizon = recorder.horizons[-1]
+                for row in recorder.decisions:
+                    if row["inputs"]["phase"] == "POST":
+                        diagnostic.post_admission_allowed = row["decision"]["allowed"]
             if live.progress.get("backend_initialized"):
                 try:
                     physics_steps = live.backend.total_physics_steps
@@ -2848,7 +2938,9 @@ class NativeCollectionApplication:
                 physics_steps = render_passes = 0
             if diagnostic is not None:
                 diagnostic.final_physics_step = physics_steps
-            primary = _close_body_resources(live, primary, diagnostic=diagnostic)
+            primary = _close_body_resources(
+                live, primary, diagnostic=diagnostic, action_timing=live.action_timing
+            )
             if diagnostic is not None:
                 diagnostic.body_cleanup_finished_monotonic_ns = time.monotonic_ns()
             live.result = dict(
@@ -2897,13 +2989,7 @@ class NativeCollectionApplication:
                 qualified_group_score=None,
                 intermediate_body_receipt=True,
                 **(
-                    dict(
-                        scope=DIAGNOSTIC_SCOPE,
-                        qualification_credit=0,
-                        checkpoint_diagnostic=diagnostic.payload(
-                            prefix_complete=len(live.completed) == 1
-                        ),
-                    )
+                    diagnostic.result_fields(prefix_complete=len(live.completed) == 1)
                     if diagnostic is not None else {}
                 ),
             )
@@ -2921,7 +3007,7 @@ class NativeCollectionApplication:
             raise primary
         return (
             dict(
-                evaluation_scope="TEACHER_COLLECTION" if diagnostic is None else DIAGNOSTIC_SCOPE,
+                evaluation_scope="TEACHER_COLLECTION" if diagnostic is None else diagnostic.scope,
                 task_success=False,
                 **live.result,
             ),

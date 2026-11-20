@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import numpy as np
 
+from cloud_edge_robot_arm.research.native_action_timing import timed, timed_call
 from cloud_edge_robot_arm.simulation.models import SensorFrame
 
 
@@ -88,6 +89,7 @@ class MuJoCoRGBDCamera:
             digest.update(values.tobytes())
         return digest.hexdigest()
 
+    @timed_call("camera")
     def _capture(
         self,
         data: Any,
@@ -121,18 +123,27 @@ class MuJoCoRGBDCamera:
 
         self._renderer.disable_depth_rendering()
         self._renderer.disable_segmentation_rendering()
-        self._renderer.update_scene(data, camera=self._camera_id)
+        with timed("render_scene_update"):
+            self._renderer.update_scene(data, camera=self._camera_id)
         if self._physics_state_hash(data) != initial_hash:
             raise RuntimeError("physics state changed while preparing camera scene")
         check_calibration()
         pass_hashes: list[str] = []
-        rgb = self._renderer.render().copy()
+        with timed("render_rgb_return"):
+            rgb_buffer = self._renderer.render()
+        with timed("camera_copy"):
+            rgb = rgb_buffer.copy()
+            del rgb_buffer
         pass_hashes.append(self._physics_state_hash(data))
         if pass_hashes[-1] != initial_hash:
             raise RuntimeError("physics state changed during RGB render")
         check_calibration()
         self._renderer.enable_depth_rendering()
-        depth = self._renderer.render().copy()
+        with timed("render_depth_return"):
+            depth_buffer = self._renderer.render()
+        with timed("camera_copy"):
+            depth = depth_buffer.copy()
+            del depth_buffer
         pass_hashes.append(self._physics_state_hash(data))
         if pass_hashes[-1] != initial_hash:
             raise RuntimeError("physics state changed during depth render")
@@ -142,7 +153,11 @@ class MuJoCoRGBDCamera:
         instance_labels: dict[int, str] = {}
         if include_instances:
             self._renderer.enable_segmentation_rendering()
-            segmentation = self._renderer.render().copy()
+            with timed("render_instance_return"):
+                segmentation_buffer = self._renderer.render()
+            with timed("camera_copy"):
+                segmentation = segmentation_buffer.copy()
+                del segmentation_buffer
             self._renderer.disable_segmentation_rendering()
             pass_hashes.append(self._physics_state_hash(data))
             if pass_hashes[-1] != initial_hash:

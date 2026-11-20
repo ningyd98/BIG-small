@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from cloud_edge_robot_arm.research.native_action_timing import timed
 from cloud_edge_robot_arm.simulation.backend import SimulatorBackend
 from cloud_edge_robot_arm.simulation.config import SimulatorConfig
 from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
@@ -37,8 +38,15 @@ class MuJoCoCaptureSession:
     """
 
     def __init__(
-        self, config: SimulatorConfig, *, backend: MuJoCoPhysicsBackend | None = None
+        self,
+        config: SimulatorConfig,
+        *,
+        backend: MuJoCoPhysicsBackend | None = None,
+        png_compress_level: int = 6,
     ) -> None:
+        if type(png_compress_level) is not int or not 0 <= png_compress_level <= 9:
+            raise ValueError("PNG compression level must be an integer in 0..9")
+        self._png_compress_level = png_compress_level
         self._config = config.model_copy(update={"render_rgb": True, "render_depth": True})
         self._owns_backend = backend is None
         self._backend = MuJoCoPhysicsBackend() if backend is None else backend
@@ -46,6 +54,10 @@ class MuJoCoCaptureSession:
         self._dataset_scene: SceneSpec | None = None
         self._dataset_prepared = False
         self._dataset_settled = False
+
+    @property
+    def png_compress_level(self) -> int:
+        return self._png_compress_level
 
     def __enter__(self) -> MuJoCoCaptureSession:
         self._dataset_scene = None
@@ -87,8 +99,12 @@ class MuJoCoCaptureSession:
         frame, ids, labels, pass_hashes = self._backend.capture_sensor_frame_with_instances()
         if len(set(pass_hashes)) != 1:
             raise RuntimeError("render passes observed different physics states")
+        with timed("session_encode"):
+            observation = observation_from_sensor_frame(
+                frame, source="mujoco_camera", png_compress_level=self.png_compress_level
+            )
         return CapturedFrame(
-            observation=observation_from_sensor_frame(frame, source="mujoco_camera"),
+            observation=observation,
             instance_ids=ids,
             instance_labels=labels,
             physics_state_hash=pass_hashes[0],

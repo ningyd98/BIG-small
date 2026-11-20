@@ -16,6 +16,7 @@ from pydantic_core import to_jsonable_python
 
 from cloud_edge_robot_arm.contracts import TaskContract, TaskStep
 from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor
+from cloud_edge_robot_arm.research.native_action_timing import mark_timing
 from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
 from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
 from cloud_edge_robot_arm.vision.native_completion_horizon import RationalCompletionHorizonV1
@@ -172,10 +173,12 @@ def _run_registered_horizon(
 
     try:
         check_active()
+        mark_timing("dispatch", physics_step=dispatch)
         result = recorder.execute_attempt(
             contract=contract, step=step, attempt=1, grounding=grounding
         )
         returned = backend.total_physics_steps
+        mark_timing("controller_return", physics_step=returned)
         result_json = _json(result)
         check_active()
         if not result.success or result.action_result is None:
@@ -193,6 +196,7 @@ def _run_registered_horizon(
             backend._close_execution_guard(RuntimeError(reasons[0]))
         else:
             check_hold()
+            mark_timing("hold_begin", physics_step=backend.total_physics_steps)
             with recorder.purpose("FULL_HORIZON_HOLD") as padding:
                 while backend.total_physics_steps < terminal:
                     check_active()
@@ -200,8 +204,11 @@ def _run_registered_horizon(
                     backend.step(1)
                     check_active()
                     check_hold()
+            mark_timing("hold_end", physics_step=backend.total_physics_steps)
             check_active()
+            mark_timing("terminal_capture_begin", physics_step=backend.total_physics_steps)
             recorder.capture()
+            mark_timing("terminal_capture_end", physics_step=backend.total_physics_steps)
             terminal_acquisition = recorder.allocated_acquisition_ids[-1]
             check_active()
             if backend.total_physics_steps != terminal:
