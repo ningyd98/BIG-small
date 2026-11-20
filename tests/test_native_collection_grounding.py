@@ -393,6 +393,67 @@ def _registration_case(monkeypatch, tmp_path):
     )
 
 
+@pytest.mark.parametrize(
+    "builder_name", ["build_collection_contract", "build_collection_contract_v2"]
+)
+def test_physics_timeout_metadata_survives_original_plan_freezing(
+    monkeypatch, tmp_path, builder_name
+):
+    case = _registration_case(monkeypatch, tmp_path)
+    original = getattr(case.module, builder_name)(
+        **case.args,
+        protocol_settings={
+            "schema_version": "native.calibration.operational.v10",
+            "timeout_basis": "physics_steps",
+        },
+    )
+    contract = original.contract
+    assert contract.metadata == {"timeout_basis": "PHYSICS_STEPS"}
+    expected_steps = [
+        (1920, 1920),
+        (1920, 1920),
+        (240, 240),
+        (1920, 2040),
+        (2400, 2400),
+        (1920, 1920),
+        (240, 480),
+        (1920, 1920),
+    ]
+    for step, (deadline, terminal) in zip(contract.steps, expected_steps, strict=True):
+        horizon = step.metadata["horizon"]
+        assert horizon["controller_deadline_steps"] == deadline
+        assert horizon["terminal_steps"] == terminal
+        assert horizon["schema_version"] == "native.completion.horizon.rational.v2"
+        assert original.requirements[step.step_id].expected_duration_s == terminal / 240
+    assert contract.steps[3].timeout_ms == 8000
+    assert contract.steps[6].timeout_ms == 1000
+
+
+@pytest.mark.parametrize(
+    "builder_name", ["build_collection_contract", "build_collection_contract_v2"]
+)
+@pytest.mark.parametrize(
+    "settings",
+    [
+        None,
+        {},
+        {"schema_version": "native.calibration.operational.v9"},
+        {"timeout_basis": "wall_clock"},
+    ],
+)
+def test_legacy_collection_settings_preserve_frozen_contract(
+    monkeypatch, tmp_path, builder_name, settings
+):
+    case = _registration_case(monkeypatch, tmp_path)
+    builder = getattr(case.module, builder_name)
+    original = builder(**case.args)
+    candidate = builder(**case.args, protocol_settings=settings)
+    assert candidate.to_payload() == original.to_payload()
+    assert candidate.digest() == original.digest()
+    assert candidate.contract.metadata is None
+    assert all(step.metadata is None for step in candidate.contract.steps)
+
+
 def test_original_registration_requires_new_first_dispatch_frame(monkeypatch, tmp_path):
     import numpy as np
 

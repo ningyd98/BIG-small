@@ -2679,6 +2679,10 @@ class NativeCollectionApplication:
                         )
 
                         builder = build_collection_contract_v2
+                    protocol_settings = {
+                        "timeout_basis": self.protocol.get("timeout_basis"),
+                        "schema_version": self.protocol.get("schema_version"),
+                    }
                     live.original = builder(
                         assignment=self.protocol["assignments"][0],
                         current_owner=dict(
@@ -2693,6 +2697,7 @@ class NativeCollectionApplication:
                         geometry=self.protocol["geometry"],
                         source_hashes=self.protocol["source_hashes"],
                         observation=observation,
+                        protocol_settings=protocol_settings,
                     )
                     recorder.bind_collection_source(self)
                     recorder._write_original("bootstrap.json", live.grounding_evidence)
@@ -2796,6 +2801,7 @@ class NativeCollectionApplication:
                             ),
                             task_started_at_mono=start_monotonic,
                             monotonic_now=time.monotonic(),
+                            physics_step=live.backend.total_physics_steps,
                             requested_joint_velocities=[
                                 *[abs(v) for v in live.backend.get_joint_state().velocities],
                                 float(params.get("tcp_velocity", 0.0)) / 0.3,
@@ -2848,6 +2854,7 @@ class NativeCollectionApplication:
                                 monotonic_now=(
                                     post_ns / 10**9 if post_ns is not None else time.monotonic()
                                 ),
+                                physics_step=live.backend.total_physics_steps,
                                 joint_velocities=[
                                     abs(v) for v in live.backend.get_joint_state().velocities
                                 ],

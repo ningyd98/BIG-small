@@ -9,7 +9,16 @@ from enum import StrEnum
 from math import hypot, isfinite
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from cloud_edge_robot_arm.errors import StructuredError
 
@@ -244,6 +253,15 @@ class TaskStep(BaseModel):
     retry_limit: int = Field(ge=0)
     preconditions: list[str] = Field(default_factory=list)
     success_conditions: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] | None = Field(default=None)
+
+    # Keep the model's field schema by leaving the serializer return type implicit.
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler):  # type: ignore[no-untyped-def]
+        payload = handler(self)
+        if self.metadata is None:
+            payload.pop("metadata", None)
+        return payload
 
 
 class SafetyConstraints(BaseModel):
@@ -283,6 +301,15 @@ class TaskContract(TraceableMessage):
     supervision_period_ms: int | None = Field(default=None, gt=0)
     command_ttl_ms: int | None = Field(default=None, gt=0)
     previous_command_seq: int | None = Field(default=None, ge=0)
+    metadata: dict[str, Any] | None = Field(default=None)
+
+    # Keep the model's field schema by leaving the serializer return type implicit.
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler):  # type: ignore[no-untyped-def]
+        payload = handler(self)
+        if self.metadata is None:
+            payload.pop("metadata", None)
+        return payload
 
     @field_validator("issued_at", "valid_until")
     @classmethod

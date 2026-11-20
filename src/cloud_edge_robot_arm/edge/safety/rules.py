@@ -898,15 +898,8 @@ class StepTimeoutRule(SafetyRuleEvaluator):
 
     def evaluate(self, ctx: object) -> SafetyRuleResult:
         assert isinstance(ctx, SafetyContext)
-        if ctx.step_started_at is None:
-            return SafetyRuleResult(
-                rule_id=self.rule_id,
-                decision=SafetyDecision.REJECT,
-                reason_code="STEP_START_MISSING",
-                message="step start time missing - fail closed",
-            )
-        now = ctx.monotonic_now if ctx.monotonic_now is not None else time.monotonic()
-        elapsed_ms = (now - ctx.step_started_at) * 1000
+        
+        # Find step definition in contract
         step_obj = None
         for s in ctx.contract.steps:
             if s.step_id == ctx.step_id:
@@ -919,6 +912,61 @@ class StepTimeoutRule(SafetyRuleEvaluator):
                 reason_code="STEP_NOT_FOUND",
                 message=f"step {ctx.step_id!r} not found in contract - fail closed",
             )
+        
+        # Check if protocol uses physics-step timeout (v10+)
+        # This is indicated by protocol-level metadata in the contract
+        use_physics_steps = False
+        if hasattr(ctx.contract, 'metadata') and isinstance(ctx.contract.metadata, dict):
+            use_physics_steps = ctx.contract.metadata.get('timeout_basis') == 'PHYSICS_STEPS'
+        
+        if use_physics_steps and ctx.physics_step is not None:
+            # V10+: Use physics-step timeout
+            # The horizon is stored in step metadata
+            horizon = step_obj.metadata.get('horizon') if hasattr(step_obj, 'metadata') and isinstance(step_obj.metadata, dict) else None
+            
+            if horizon is None or not isinstance(horizon, dict):
+                # Fallback to wall-clock if horizon not available
+                use_physics_steps = False
+            else:
+                terminal_steps = horizon.get('terminal_steps')
+                
+                if terminal_steps is None or not isinstance(terminal_steps, int):
+                    return SafetyRuleResult(
+                        rule_id=self.rule_id,
+                        decision=SafetyDecision.REJECT,
+                        reason_code="HORIZON_INCOMPLETE",
+                        message="horizon missing terminal_steps - fail closed",
+                    )
+                
+                # Check physics step against terminal_steps (complete action window)
+                if ctx.physics_step > terminal_steps:
+                    return SafetyRuleResult(
+                        rule_id=self.rule_id,
+                        decision=SafetyDecision.REJECT,
+                        reason_code="STEP_TIMEOUT",
+                        message=(
+                            f"step {ctx.step_id} exceeded terminal: physics_step {ctx.physics_step} > {terminal_steps}"
+                        ),
+                        measured_value=float(ctx.physics_step),
+                        limit_value=float(terminal_steps),
+                    )
+                return SafetyRuleResult(
+                    rule_id=self.rule_id,
+                    decision=SafetyDecision.ALLOW,
+                    reason_code="STEP_TIME_OK",
+                    message=f"step within terminal: {ctx.physics_step}/{terminal_steps} steps",
+                )
+        
+        # V9 and earlier, or fallback: Use wall-clock timeout (original behavior)
+        if ctx.step_started_at is None:
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.REJECT,
+                reason_code="STEP_START_MISSING",
+                message="step start time missing - fail closed",
+            )
+        now = ctx.monotonic_now if ctx.monotonic_now is not None else time.monotonic()
+        elapsed_ms = (now - ctx.step_started_at) * 1000
         limit_ms = float(step_obj.timeout_ms)
         if elapsed_ms > limit_ms:
             return SafetyRuleResult(

@@ -331,9 +331,14 @@ def build_collection_contract(
     geometry: Mapping[str, Any],
     source_hashes: Mapping[str, str],
     observation: RGBDObservation,
+    protocol_settings: Mapping[str, Any] | None = None,
 ) -> VisualOriginalPlan:
     validate_camera(observation, geometry)
-    horizons = action_horizons()
+    use_physics_timeout = (
+        protocol_settings is not None
+        and protocol_settings.get("timeout_basis") == "physics_steps"
+    )
+    horizons = action_horizons(use_v2=use_physics_timeout)
     issued = current_owner["issued_at"]
     contract = TaskContract(
         task_id=current_owner["task_id"],
@@ -356,6 +361,7 @@ def build_collection_contract(
                 expected_duration_ms=row["original_timeout_ms"],
                 timeout_ms=row["original_timeout_ms"],
                 retry_limit=0,
+                metadata={"horizon": row["horizon"]} if use_physics_timeout else None,
             )
             for i, row in enumerate(horizons)
         ],
@@ -373,6 +379,7 @@ def build_collection_contract(
             on_network_loss="STOP",
         ),
         completion_criteria=["object_placed", "placement_stable"],
+        metadata={"timeout_basis": "PHYSICS_STEPS"} if use_physics_timeout else None,
     )
     lease = current_owner["lease"]
     identity = lease.identity(
@@ -1488,9 +1495,14 @@ def build_collection_contract_v2(
     geometry: Mapping[str, Any],
     source_hashes: Mapping[str, str],
     observation: RGBDObservation,
+    protocol_settings: Mapping[str, Any] | None = None,
 ) -> VisualOriginalPlan:
     validate_camera(observation, geometry)
-    horizons = action_horizons()
+    use_physics_timeout = (
+        protocol_settings is not None
+        and protocol_settings.get("timeout_basis") == "physics_steps"
+    )
+    horizons = action_horizons(use_v2=use_physics_timeout)
     issued = current_owner["issued_at"]
     contract = TaskContract(
         task_id=current_owner["task_id"],
@@ -1513,6 +1525,7 @@ def build_collection_contract_v2(
                 expected_duration_ms=row["original_timeout_ms"],
                 timeout_ms=row["original_timeout_ms"],
                 retry_limit=0,
+                metadata={"horizon": row["horizon"]} if use_physics_timeout else None,
             )
             for i, row in enumerate(horizons)
         ],
@@ -1530,6 +1543,7 @@ def build_collection_contract_v2(
             on_network_loss="STOP",
         ),
         completion_criteria=["object_placed", "placement_stable"],
+        metadata={"timeout_basis": "PHYSICS_STEPS"} if use_physics_timeout else None,
     )
     lease = current_owner["lease"]
     identity = lease.identity(

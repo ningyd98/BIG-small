@@ -40,10 +40,13 @@ REGISTERED_PREPARATION_SCHEMA = "native.calibration.operational.v6"
 REGISTERED_COLLECTION_SCHEMA = "native.calibration.operational.v7"
 REGISTERED_OCCLUSION_SCHEMA = "native.calibration.operational.v8"
 REGISTERED_TEACHER_SCHEMA = "native.calibration.operational.v9"
-REGISTERED_V2_STEP_SCHEMAS = frozenset({REGISTERED_OCCLUSION_SCHEMA, REGISTERED_TEACHER_SCHEMA})
+REGISTERED_TEACHER_V10_SCHEMA = "native.calibration.operational.v10"
+REGISTERED_V2_STEP_SCHEMAS = frozenset({REGISTERED_OCCLUSION_SCHEMA, REGISTERED_TEACHER_SCHEMA, REGISTERED_TEACHER_V10_SCHEMA})
 REGISTERED_STEP_SCHEMAS = REGISTERED_V2_STEP_SCHEMAS | {REGISTERED_COLLECTION_SCHEMA}
 _REGISTERED_TEACHER_CONFIG = "configs/research/native_registered_single_teacher_p0_20261119.yaml"
 _REGISTERED_TEACHER_CONFIG_SHA = "94dc78d497f3a5e2bbbedea5b6bfc4ae20f945203a1a83c8796bb46b47753fcf"
+_REGISTERED_TEACHER_V10_CONFIG = "configs/research/native_registered_single_teacher_p0_v10_20261121.yaml"
+_REGISTERED_TEACHER_V10_CONFIG_SHA = "2b893cbcd1b959703ceada3663433eebb975adbcf8278a522967f2ad12131cf8"
 
 
 @dataclass(frozen=True)
@@ -212,7 +215,17 @@ def check_sources(
         raise ValueError("registered source generation changed")
 
 
-def action_horizons() -> list[dict[str, Any]]:
+def action_horizons(*, use_v2: bool = False) -> list[dict[str, Any]]:
+    """Generate action horizon recipes.
+    
+    Args:
+        use_v2: If True, use RationalCompletionHorizonV2 with physics-step timeout
+    """
+    from cloud_edge_robot_arm.vision.native_completion_horizon import (
+        completion_horizon_rational_v1,
+        completion_horizon_rational_v2,
+    )
+    
     rows = []
     for skill, duration in zip(
         COMPLETION_SKILLS_V2, (8000, 8000, 1000, 8000, 10000, 8000, 1000, 8000), strict=True
@@ -230,11 +243,12 @@ def action_horizons() -> list[dict[str, Any]]:
             builtin_tail_included=False,
             registered_wait_steps=0,
         )
-        initial = completion_horizon_rational_v1(skill, **recipe)
+        builder = completion_horizon_rational_v2 if use_v2 else completion_horizon_rational_v1
+        initial = builder(skill, **recipe)
         # Freeze the effective owner requirement before issuing the original plan.
         recipe["effective_owner_required_ns"] = initial.total_steps * 10**9 // 240
         recipe["builtin_tail_included"] = skill in {"LIFT", "RELEASE"}
-        final = completion_horizon_rational_v1(skill, **recipe)
+        final = builder(skill, **recipe)
         if final.total_steps != initial.total_steps:
             raise ValueError("tail counted twice in registered owner duration")
         rows.append(
@@ -416,9 +430,15 @@ def _protocol(config: Path, *, historical_sources: dict[str, str] | None = None)
 
 def prepare_native_calibration(config: Path, *, output: Path) -> dict[str, Any]:
     settings = load_json(config)
-    if isinstance(settings, dict) and settings.get("schema_version") == REGISTERED_TEACHER_SCHEMA:
-        release = _registered_teacher_settings(config)
-        protocol = _registered_teacher_protocol(release=release)
+    if isinstance(settings, dict):
+        if settings.get("schema_version") == REGISTERED_TEACHER_V10_SCHEMA:
+            release = _registered_teacher_v10_settings(config)
+            protocol = _registered_teacher_v10_protocol(release=release)
+        elif settings.get("schema_version") == REGISTERED_TEACHER_SCHEMA:
+            release = _registered_teacher_settings(config)
+            protocol = _registered_teacher_protocol(release=release)
+        else:
+            protocol = _protocol(config)
     else:
         protocol = _protocol(config)
     destination = fresh_directory(output)
@@ -701,6 +721,84 @@ def _registered_teacher_protocol(
         execution_allowed=True,
         prepare_only=False,
         budget_basis="SINGLE_TEACHER_ATTEMPT_CEILINGS",
+        authorized_actual_budget=dict(
+            model_loads=0,
+            generations=0,
+            paid=0,
+            teacher_acquisitions=1,
+            mujoco_compile=1,
+            mj_forward=4501,
+            render=protocol["render_pass_budget"],
+            physics_steps=protocol["physical_budget"],
+            controller=len(protocol["actions"]),
+            hardware=0,
+            MjData=19,
+            mj_jacSite=4500,
+        ),
+        authorized_actual_roles={
+            "MjData": {"ENGINE": 1, "IK_SCRATCH": 18},
+            "mj_forward": {"RESET": 1, "IK_SCRATCH": 4500},
+            "mj_jacSite": {"IK_SCRATCH": 4500},
+        },
+    )
+    return protocol
+
+
+def _registered_teacher_v10_settings(path: Path) -> dict[str, Any]:
+    raw = regular(path).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != _REGISTERED_TEACHER_V10_CONFIG_SHA:
+        raise ValueError("fixed registered teacher v10 release config bytes required")
+    release = json.loads(raw)
+    if not isinstance(release, dict):
+        raise ValueError("fixed registered teacher v10 release config required")
+    return release
+
+
+def _registered_teacher_v10_protocol(
+    historical_sources: dict[str, str] | None = None, *, release: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """V10: Physics-step timeout for simulation teacher."""
+    fixed = _registered_teacher_v10_settings(ROOT / _REGISTERED_TEACHER_V10_CONFIG)
+    if release is not None and release != fixed:
+        raise ValueError("registered teacher v10 release settings changed")
+    protocol = _registered_collection_protocol_v2(historical_sources)
+    
+    # Use v2 horizons with physics-step timeout
+    protocol["actions"] = action_horizons(use_v2=True)
+    
+    release_id = fixed["release_id"]
+    first = fixed["released_assignment"]
+    assignments = []
+    for index in range(fixed["assigned_groups"]):
+        assignment_id = f"native-{release_id}-{index + 1:04d}"
+        assignments.append(
+            dict(
+                assignment_id=assignment_id,
+                seed=fixed["first_seed"] + index,
+                ancestors=[f"native-{release_id}-preregistered-{index + 1:04d}"],
+                pool="CALIBRATION_ONLY",
+                status="RELEASED" if assignment_id == first else "PREASSIGNED_NOT_RUN",
+            )
+        )
+    protocol["settings"].update(
+        schema_version=REGISTERED_TEACHER_V10_SCHEMA,
+        assigned_groups=fixed["assigned_groups"],
+        first_seed=fixed["first_seed"],
+        released_assignment=first,
+        timeout_basis="physics_steps",
+        wall_clock_metric=True,
+    )
+    protocol.update(
+        schema_version=REGISTERED_TEACHER_V10_SCHEMA,
+        teacher_release_config_sha256=_REGISTERED_TEACHER_V10_CONFIG_SHA,
+        assignments=assignments,
+        released_assignments=[first],
+        execution_release="SINGLE_TEACHER_ASSIGNMENT_RELEASED",
+        execution_allowed=True,
+        prepare_only=False,
+        budget_basis="SINGLE_TEACHER_ATTEMPT_CEILINGS",
+        timeout_basis="physics_steps",
+        wall_clock_metric=True,
         authorized_actual_budget=dict(
             model_loads=0,
             generations=0,
