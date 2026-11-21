@@ -118,7 +118,14 @@ def _v2_receipt(value, action, *, task_id, step):
     """仅严格解码回执及注册配方；调用方独立核对其采集和执行来源。"""
     from cloud_edge_robot_arm.contracts import ActionResult
     from cloud_edge_robot_arm.edge.runtime.skill_executor import StepExecutionResult
-    from cloud_edge_robot_arm.vision.native_completion_horizon import completion_horizon_rational_v1
+    from cloud_edge_robot_arm.vision.native_completion_horizon import (
+        RATIONAL_HORIZON_V2_SCHEMA,
+        RationalCompletionHorizonV2,
+        completion_horizon_rational_v1,
+        completion_horizon_rational_v2,
+        controller_window_error_v2,
+        registered_teacher_horizon_v2,
+    )
 
     _v2_exact(value, {f.name for f in fields(FullHorizonExecutionReceipt)})
     _v2_same(value["schema_version"], "native.full-horizon.execution.v1")
@@ -138,7 +145,13 @@ def _v2_receipt(value, action, *, task_id, step):
         raise ValueError("registered complete receipt required")
     if type(value["horizon_json"]) is not str:
         raise ValueError("registered receipt recipe required")
-    expected = _plain(asdict(completion_horizon_rational_v1(action["skill"], **action["recipe"])))
+    builder = (
+        completion_horizon_rational_v2
+        if action["horizon"]["schema_version"] == RATIONAL_HORIZON_V2_SCHEMA
+        else completion_horizon_rational_v1
+    )
+    horizon = builder(action["skill"], **action["recipe"])
+    expected = _plain(asdict(horizon))
     _v2_same(expected, action["horizon"])
     _v2_same(json.loads(value["horizon_json"]), expected)
     d, r, t = (value[k] for k in ("dispatch_step", "controller_return_step", "terminal_step"))
@@ -187,6 +200,16 @@ def _v2_receipt(value, action, *, task_id, step):
         <= _v2_utc(controller["timestamp"])
     ):
         raise ValueError("registered successful matching action result required")
+    if isinstance(horizon, RationalCompletionHorizonV2):
+        _v2_same(value["step_id"], step.step_id)
+        fixed = registered_teacher_horizon_v2(step.skill.value, step.timeout_ms)
+        _v2_same(expected, _plain(asdict(fixed)))
+        _v2_same((step.metadata or {}).get("horizon"), expected)
+        violation = controller_window_error_v2(horizon, r - d, typed.details)
+        if violation is not None:
+            raise ValueError(violation)
+        if t - d != horizon.terminal_steps:
+            raise ValueError("registered v10 receipt requires the exact terminal step")
     return controller
 
 

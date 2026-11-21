@@ -5,18 +5,35 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.test_native_single_teacher_release import SCHEMA, application
+from tests.test_native_registered_teacher_release import CONFIG as V9_CONFIG
+from tests.test_native_registered_teacher_release import V10_CONFIG
+from tests.test_native_single_teacher_release import CONFIG, SCHEMA, application
 from tests.test_visual_owner_registration import values
 
 
-def test_worker_passes_protocol_settings_and_refreshes_post_physics_step(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "config,schema,expected_counts",
+    [
+        (CONFIG, SCHEMA, (120, 2041)),
+        (V9_CONFIG, "native.calibration.operational.v9", (120, 2041)),
+        (V10_CONFIG, "native.calibration.operational.v10", (0, 1921)),
+    ],
+)
+def test_worker_passes_protocol_settings_and_refreshes_post_physics_step(
+    tmp_path,
+    monkeypatch,
+    config,
+    schema,
+    expected_counts,
+):
     from cloud_edge_robot_arm.edge.runtime import skill_executor
     from cloud_edge_robot_arm.research import native_collection_application as module
+    from cloud_edge_robot_arm.research import native_collection_grounding as grounding_module
     from cloud_edge_robot_arm.research import native_full_horizon_recorder as recorder_module
     from cloud_edge_robot_arm.simulation.mujoco import backend, native_horizon, skill_robot
     from cloud_edge_robot_arm.vision import capture, top_grasp
 
-    app = application(tmp_path)
+    app = application(tmp_path, config=config)
     fixture = values()
     original = fixture["original"]
     observation = fixture["online"].observation
@@ -72,6 +89,9 @@ def test_worker_passes_protocol_settings_and_refreshes_post_physics_step(tmp_pat
         def capture(self):
             return observation
 
+        def acquisition_source(self):
+            return {"acquisition_id": "software-frame"}
+
         def bind_collection_source(self, source):
             pass
 
@@ -99,8 +119,12 @@ def test_worker_passes_protocol_settings_and_refreshes_post_physics_step(tmp_pat
 
     def execute(**kwargs):
         live = module._live(app)
+        dispatch = live.backend.total_physics_steps
         live.backend.step(1921)
-        return SimpleNamespace()
+        return SimpleNamespace(
+            dispatch_step=dispatch,
+            terminal_step=live.backend.total_physics_steps,
+        )
 
     step = original.contract.steps[0]
     monkeypatch.setattr(backend, "MuJoCoPhysicsBackend", Backend)
@@ -114,6 +138,12 @@ def test_worker_passes_protocol_settings_and_refreshes_post_physics_step(tmp_pat
     monkeypatch.setattr(module, "_collection_guard", lambda *args, **kwargs: nullcontext())
     monkeypatch.setattr(module, "_record_bootstrap_tracker", lambda *args, **kwargs: (object(), {}))
     monkeypatch.setattr(module, "build_collection_contract", build)
+    monkeypatch.setattr(grounding_module, "build_collection_contract_v2", build)
+    monkeypatch.setattr(
+        grounding_module,
+        "bootstrap_registered_collection_tracker_v2",
+        lambda *args, **kwargs: object(),
+    )
     monkeypatch.setattr(
         module,
         "_handoff_registered_capture",
@@ -135,6 +165,9 @@ def test_worker_passes_protocol_settings_and_refreshes_post_physics_step(tmp_pat
     with pytest.raises(RuntimeError, match="software POST context recorded"):
         app.execute_once()
 
-    assert settings_seen == [{"timeout_basis": None, "schema_version": SCHEMA}]
-    assert [(phase, ctx.physics_step) for phase, ctx in contexts] == [("PRE", 120), ("POST", 2041)]
-    assert contexts[0][1].physics_step == 120
+    timeout_basis = "physics_steps" if config == V10_CONFIG else None
+    assert settings_seen == [{"timeout_basis": timeout_basis, "schema_version": schema}]
+    assert [(phase, ctx.physics_step) for phase, ctx in contexts] == [
+        ("PRE", expected_counts[0]),
+        ("POST", expected_counts[1]),
+    ]

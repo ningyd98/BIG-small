@@ -39,6 +39,7 @@ from cloud_edge_robot_arm.research.native_calibration_collection import (
     REGISTERED_OCCLUSION_SCHEMA,
     REGISTERED_STEP_SCHEMAS,
     REGISTERED_TEACHER_SCHEMA,
+    REGISTERED_TEACHER_V10_SCHEMA,
     REGISTERED_V2_STEP_SCHEMAS,
     ROOT,
     canonical,
@@ -85,12 +86,20 @@ def _check_protocol_sources(protocol: dict[str, Any]) -> None:
             _diagnostic_recipe(whole_action=scope == WHOLE_ACTION_SCOPE)
         ):
             raise ValueError("registered diagnostic source or recipe changed")
-    elif protocol.get("schema_version") == REGISTERED_TEACHER_SCHEMA:
+    elif protocol.get("schema_version") in (
+        REGISTERED_TEACHER_SCHEMA, REGISTERED_TEACHER_V10_SCHEMA,
+    ):
         from cloud_edge_robot_arm.research.native_calibration_collection import (
             _registered_teacher_protocol,
+            _registered_teacher_v10_protocol,
         )
 
-        if canonical(protocol) != canonical(_registered_teacher_protocol()):
+        registered = (
+            _registered_teacher_v10_protocol
+            if protocol["schema_version"] == REGISTERED_TEACHER_V10_SCHEMA
+            else _registered_teacher_protocol
+        )
+        if canonical(protocol) != canonical(registered()):
             raise ValueError("registered teacher source or recipe changed")
     elif protocol.get("schema_version") == REGISTERED_OCCLUSION_SCHEMA:
         from cloud_edge_robot_arm.research.native_calibration_collection import (
@@ -2442,6 +2451,7 @@ class NativeCollectionApplication:
         from cloud_edge_robot_arm.simulation.mujoco.native_horizon import _run_registered_horizon
         from cloud_edge_robot_arm.vision.native_completion_horizon import (
             completion_horizon_rational_v1,
+            completion_horizon_rational_v2,
         )
 
         live = _live(self)
@@ -2497,9 +2507,15 @@ class NativeCollectionApplication:
                 < binding.valid_until
             ):
                 raise RuntimeError("registered collection dispatch original/lease/frame expired")
-        row = self.protocol["actions"][index]
+        protocol = self.protocol
+        row = protocol["actions"][index]
         if step.skill.value != row["skill"] or binding.grounded_step != step:
             raise RuntimeError("fixed original step/payload mismatch")
+        horizon_builder = (
+            completion_horizon_rational_v2
+            if protocol["schema_version"] == REGISTERED_TEACHER_V10_SCHEMA
+            else completion_horizon_rational_v1
+        )
         if expected_type in {RegisteredCollectionStepBinding, RegisteredCollectionStepBindingV2}:
             live.registered_dispatch = dict(
                 session=session,
@@ -2532,7 +2548,7 @@ class NativeCollectionApplication:
                 contract=contract,
                 step=step,
                 grounding=binding,
-                horizon=completion_horizon_rational_v1(row["skill"], **row["recipe"]),
+                horizon=horizon_builder(row["skill"], **row["recipe"]),
                 check_active=self.check_active,
             )
         finally:
@@ -2766,6 +2782,9 @@ class NativeCollectionApplication:
                     live.session = _issue_collection_session(self)
                     shield = research_safety_shield(self.policy["task_timeout_s"])
                     recorder.record_shield_config(shield)
+                    physics_timeout = (
+                        self.protocol["schema_version"] == REGISTERED_TEACHER_V10_SCHEMA
+                    )
                     for index in range(8 if diagnostic is None else 1):
                         _check_protocol_sources(self.protocol)
                         contract, step, binding, _, _ = _collect_grounded_step(
@@ -2785,6 +2804,8 @@ class NativeCollectionApplication:
                                 "pre_start", now_ns=action_started_ns,
                                 physics_step=live.backend.total_physics_steps,
                             )
+                        # The registered frame and receipt bind this absolute step to dispatch.
+                        pre_physics_step = live.backend.total_physics_steps
                         context = shield.context_builder.build(
                             contract=contract,
                             step=step,
@@ -2801,7 +2822,7 @@ class NativeCollectionApplication:
                             ),
                             task_started_at_mono=start_monotonic,
                             monotonic_now=time.monotonic(),
-                            physics_step=live.backend.total_physics_steps,
+                            physics_step=0 if physics_timeout else pre_physics_step,
                             requested_joint_velocities=[
                                 *[abs(v) for v in live.backend.get_joint_state().velocities],
                                 float(params.get("tcp_velocity", 0.0)) / 0.3,
@@ -2841,6 +2862,14 @@ class NativeCollectionApplication:
                                 now_ns=post_ns,
                                 physics_step=live.backend.total_physics_steps,
                             )
+                        post_physics_step = live.backend.total_physics_steps
+                        if physics_timeout:
+                            if (
+                                receipt.dispatch_step != pre_physics_step
+                                or receipt.terminal_step != post_physics_step
+                            ):
+                                raise RuntimeError("registered v10 Shield action window changed")
+                            post_physics_step -= receipt.dispatch_step
                         post_context = context.model_copy(
                             update=dict(
                                 robot_collision_detected=state.collision_detected,
@@ -2854,7 +2883,7 @@ class NativeCollectionApplication:
                                 monotonic_now=(
                                     post_ns / 10**9 if post_ns is not None else time.monotonic()
                                 ),
-                                physics_step=live.backend.total_physics_steps,
+                                physics_step=post_physics_step,
                                 joint_velocities=[
                                     abs(v) for v in live.backend.get_joint_state().velocities
                                 ],

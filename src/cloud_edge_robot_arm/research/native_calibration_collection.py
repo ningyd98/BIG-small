@@ -25,7 +25,10 @@ from cloud_edge_robot_arm.vision.marker_families import (
     marker_family,
 )
 from cloud_edge_robot_arm.vision.native_completion import COMPLETION_SKILLS_V2
-from cloud_edge_robot_arm.vision.native_completion_horizon import completion_horizon_rational_v1
+from cloud_edge_robot_arm.vision.native_completion_horizon import (
+    completion_horizon_rational_v1,
+    completion_horizon_rational_v2,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG = "configs/research/native_operational_calibration.yaml"
@@ -41,12 +44,18 @@ REGISTERED_COLLECTION_SCHEMA = "native.calibration.operational.v7"
 REGISTERED_OCCLUSION_SCHEMA = "native.calibration.operational.v8"
 REGISTERED_TEACHER_SCHEMA = "native.calibration.operational.v9"
 REGISTERED_TEACHER_V10_SCHEMA = "native.calibration.operational.v10"
-REGISTERED_V2_STEP_SCHEMAS = frozenset({REGISTERED_OCCLUSION_SCHEMA, REGISTERED_TEACHER_SCHEMA, REGISTERED_TEACHER_V10_SCHEMA})
+REGISTERED_V2_STEP_SCHEMAS = frozenset(
+    {REGISTERED_OCCLUSION_SCHEMA, REGISTERED_TEACHER_SCHEMA, REGISTERED_TEACHER_V10_SCHEMA}
+)
 REGISTERED_STEP_SCHEMAS = REGISTERED_V2_STEP_SCHEMAS | {REGISTERED_COLLECTION_SCHEMA}
 _REGISTERED_TEACHER_CONFIG = "configs/research/native_registered_single_teacher_p0_20261119.yaml"
 _REGISTERED_TEACHER_CONFIG_SHA = "94dc78d497f3a5e2bbbedea5b6bfc4ae20f945203a1a83c8796bb46b47753fcf"
-_REGISTERED_TEACHER_V10_CONFIG = "configs/research/native_registered_single_teacher_p0_v10_20261121.yaml"
-_REGISTERED_TEACHER_V10_CONFIG_SHA = "2b893cbcd1b959703ceada3663433eebb975adbcf8278a522967f2ad12131cf8"
+_REGISTERED_TEACHER_V10_CONFIG = (
+    "configs/research/native_registered_single_teacher_p0_v10_20261121.yaml"
+)
+_REGISTERED_TEACHER_V10_CONFIG_SHA = (
+    "2b893cbcd1b959703ceada3663433eebb975adbcf8278a522967f2ad12131cf8"
+)
 
 
 @dataclass(frozen=True)
@@ -216,16 +225,8 @@ def check_sources(
 
 
 def action_horizons(*, use_v2: bool = False) -> list[dict[str, Any]]:
-    """Generate action horizon recipes.
-    
-    Args:
-        use_v2: If True, use RationalCompletionHorizonV2 with physics-step timeout
-    """
-    from cloud_edge_robot_arm.vision.native_completion_horizon import (
-        completion_horizon_rational_v1,
-        completion_horizon_rational_v2,
-    )
-    
+    """Generate the eight action recipes for the requested horizon version."""
+    builder = completion_horizon_rational_v2 if use_v2 else completion_horizon_rational_v1
     rows = []
     for skill, duration in zip(
         COMPLETION_SKILLS_V2, (8000, 8000, 1000, 8000, 10000, 8000, 1000, 8000), strict=True
@@ -243,7 +244,6 @@ def action_horizons(*, use_v2: bool = False) -> list[dict[str, Any]]:
             builtin_tail_included=False,
             registered_wait_steps=0,
         )
-        builder = completion_horizon_rational_v2 if use_v2 else completion_horizon_rational_v1
         initial = builder(skill, **recipe)
         # Freeze the effective owner requirement before issuing the original plan.
         recipe["effective_owner_required_ns"] = initial.total_steps * 10**9 // 240
@@ -533,6 +533,16 @@ def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]
     protocol = load_json(path / "protocol.json")
     if (
         isinstance(protocol, dict)
+        and protocol.get("schema_version") == REGISTERED_TEACHER_V10_SCHEMA
+    ):
+        expected = _registered_teacher_v10_protocol(
+            historical_sources=None if current_sources else protocol.get("source_hashes")
+        )
+        if canonical(protocol) != canonical(expected):
+            raise ValueError("registered v10 teacher recipe/source/single-release identity changed")
+        return protocol
+    if (
+        isinstance(protocol, dict)
         and protocol.get("schema_version") == REGISTERED_TEACHER_SCHEMA
     ):
         expected = _registered_teacher_protocol(
@@ -762,10 +772,9 @@ def _registered_teacher_v10_protocol(
     if release is not None and release != fixed:
         raise ValueError("registered teacher v10 release settings changed")
     protocol = _registered_collection_protocol_v2(historical_sources)
-    
     # Use v2 horizons with physics-step timeout
     protocol["actions"] = action_horizons(use_v2=True)
-    
+
     release_id = fixed["release_id"]
     first = fixed["released_assignment"]
     assignments = []

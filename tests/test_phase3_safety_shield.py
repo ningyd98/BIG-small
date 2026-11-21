@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from cloud_edge_robot_arm.contracts import SafetyDecision
+from cloud_edge_robot_arm.contracts import SafetyDecision, SkillName, TaskStep
 from cloud_edge_robot_arm.edge.safety.errors import (
     COLLISION_DETECTED,
     COMMAND_EXPIRED,
@@ -28,7 +28,9 @@ from cloud_edge_robot_arm.edge.safety.models import (
     SafetyContext,
     WorkspaceDefinition,
 )
+from cloud_edge_robot_arm.edge.safety.rules import StepTimeoutRule
 from cloud_edge_robot_arm.edge.safety.shield import SafetyShield, load_safety_config
+from cloud_edge_robot_arm.research.native_calibration_collection import action_horizons
 from tests.phase2_helpers import contract
 
 
@@ -60,6 +62,85 @@ def _base_context(**overrides: object) -> SafetyContext:
     for key, val in overrides.items():
         defaults[key] = val
     return SafetyContext(**defaults)  # type: ignore[arg-type]
+
+
+def _v10_step_timeout_context(**overrides):
+    horizon = action_horizons(use_v2=True)[0]["horizon"]
+    step = TaskStep(
+        step_id="step-move",
+        skill=SkillName.MOVE_ABOVE,
+        expected_duration_ms=8000,
+        timeout_ms=8000,
+        retry_limit=0,
+        metadata={"horizon": horizon},
+    )
+    model = contract(steps=[step])
+    model.metadata = {"timeout_basis": "PHYSICS_STEPS"}
+    context = _base_context(
+        contract=model,
+        step_id=step.step_id,
+        skill=step.skill.value,
+        step_started_at=0.0,
+        monotonic_now=20.0,
+    )
+    return context.model_copy(update=overrides)
+
+
+@pytest.mark.parametrize(
+    "elapsed,decision,reason",
+    [
+        (0, SafetyDecision.ALLOW, "STEP_TIME_OK"),
+        (1920, SafetyDecision.ALLOW, "STEP_TIME_OK"),
+        (1921, SafetyDecision.REJECT, "STEP_TIMEOUT"),
+        (None, SafetyDecision.REJECT, "PHYSICS_STEP_INVALID"),
+        (-1, SafetyDecision.REJECT, "PHYSICS_STEP_INVALID"),
+        (True, SafetyDecision.REJECT, "PHYSICS_STEP_INVALID"),
+        (1920.0, SafetyDecision.REJECT, "PHYSICS_STEP_INVALID"),
+    ],
+)
+def test_v10_step_timeout_uses_valid_relative_steps(elapsed, decision, reason):
+    ctx = _v10_step_timeout_context(physics_step=elapsed)
+    result = StepTimeoutRule().evaluate(ctx)
+    assert (result.decision, result.reason_code) == (decision, reason)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        None,
+        ("schema_version", "native.completion.horizon.rational.v1"),
+        ("terminal_steps", 1921),
+        ("controller_deadline_steps", True),
+        ("skill", "RELEASE"),
+        ("dt_denominator", 239),
+        ("original_timeout_ns", 8_000_000_001),
+        ("registered_wait_steps", 1),
+    ],
+)
+def test_v10_step_timeout_fails_closed_if_the_horizon_is_missing_or_drifted(change):
+    ctx = _v10_step_timeout_context(physics_step=0, monotonic_now=0.0)
+    step = ctx.contract.steps[0]
+    if change is None:
+        step.metadata = None
+    else:
+        field, value = change
+        step.metadata["horizon"][field] = value
+    result = StepTimeoutRule().evaluate(ctx)
+    assert (result.decision, result.reason_code) == (SafetyDecision.REJECT, "HORIZON_INCOMPLETE")
+
+
+def test_wall_clock_step_timeout_keeps_its_boundary_with_an_absolute_physics_step():
+    ctx = _v10_step_timeout_context(physics_step=2041, monotonic_now=8.0)
+    ctx.contract.metadata = None
+    ctx.contract.steps[0].metadata = None
+    timeout = StepTimeoutRule()
+    assert timeout.evaluate(ctx).decision == SafetyDecision.ALLOW
+    later = timeout.evaluate(ctx.model_copy(update={"monotonic_now": 8.001}))
+    assert (later.decision, later.reason_code, later.limit_value) == (
+        SafetyDecision.REJECT,
+        "STEP_TIMEOUT",
+        8000,
+    )
 
 
 def test_shield_allows_normal_motion_task() -> None:

@@ -7,10 +7,17 @@ the actual configuration encoding; a float alone never implies a denominator.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from fractions import Fraction
 
 from cloud_edge_robot_arm.vision.native_completion import COMPLETION_SKILLS_V2
+
+RATIONAL_HORIZON_V2_SCHEMA = "native.completion.horizon.rational.v2"
+
+
+def _builtin_tail_duration(skill: str) -> Fraction:
+    return Fraction(1, 2) if skill == "LIFT" else Fraction(int(skill == "RELEASE"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +70,7 @@ class RationalCompletionHorizonV2:
     controller_deadline_steps: int
     terminal_steps: int
     timeout_basis: str = field(default="PHYSICS_STEPS", init=False)
-    schema_version: str = field(default="native.completion.horizon.rational.v2", init=False)
+    schema_version: str = field(default=RATIONAL_HORIZON_V2_SCHEMA, init=False)
     evidence_scope: str = field(default="SOFTWARE_ONLY", init=False)
     native_authority: str = field(default="UNAVAILABLE", init=False)
     qualification: str = field(default="UNKNOWN", init=False)
@@ -116,8 +123,7 @@ def completion_horizon_rational_v1(
     if encoding.hex() != registered_dt_s.hex():
         raise ValueError("explicit rational recipe differs from actual float configuration")
     base = math.ceil(Fraction(max(durations), 1_000_000_000) / dt)
-    tail_duration = Fraction(1, 2) if skill == "LIFT" else Fraction(int(skill == "RELEASE"))
-    tail = math.ceil(tail_duration / dt)
+    tail = math.ceil(_builtin_tail_duration(skill) / dt)
     if builtin_tail_included and (tail == 0 or base < tail):
         raise ValueError("included tail must exist and fit the original base horizon")
     added = 0 if builtin_tail_included else tail
@@ -155,14 +161,7 @@ def completion_horizon_rational_v2(
     builtin_tail_included: bool = False,
     registered_wait_steps: int = 0,
 ) -> RationalCompletionHorizonV2:
-    """V2: physics-step timeout for simulation, wall-clock metrics preserved.
-    
-    For LIFT/RELEASE with builtin_tail_included=True:
-      controller_deadline_steps = original_timeout_ns converted to steps
-      terminal_steps = total_steps (includes tail)
-    For other skills:
-      controller_deadline_steps = terminal_steps = total_steps
-    """
+    """Set a deadline for controller motion and an endpoint that includes the tail."""
     v1 = completion_horizon_rational_v1(
         skill,
         dt_numerator=dt_numerator,
@@ -176,29 +175,15 @@ def completion_horizon_rational_v2(
         builtin_tail_included=builtin_tail_included,
         registered_wait_steps=registered_wait_steps,
     )
-    
     dt = Fraction(dt_numerator, dt_denominator)
-    # Controller deadline is always based on original_timeout_ns
     controller_deadline_steps = math.ceil(Fraction(original_timeout_ns, 1_000_000_000) / dt)
     terminal_steps = v1.total_steps
-    
-    # For skills with builtin tail (LIFT/RELEASE when final call has builtin_tail_included=True),
-    # controller_deadline < terminal. Otherwise they're equal.
-    # Note: action_horizons() calls this twice per skill, first with builtin_tail_included=False
-    # (where effective_owner_required_ns may already include tail), then with True.
     if skill in {"LIFT", "RELEASE"}:
-        # These skills always have controller_deadline < terminal in final recipe
         if controller_deadline_steps >= terminal_steps:
-            raise ValueError(
-                f"{skill}: controller_deadline_steps={controller_deadline_steps} must be < terminal_steps={terminal_steps}"
-            )
-    else:
-        # Other skills: controller_deadline == terminal
-        if controller_deadline_steps != terminal_steps:
-            raise ValueError(
-                f"{skill}: controller_deadline_steps={controller_deadline_steps} must equal terminal_steps={terminal_steps}"
-            )
-    
+            raise ValueError(f"{skill}: controller deadline must precede terminal step")
+    elif controller_deadline_steps != terminal_steps:
+        raise ValueError(f"{skill}: controller deadline must equal terminal step")
+
     return RationalCompletionHorizonV2(
         v1.skill,
         v1.dt_numerator,
@@ -221,3 +206,57 @@ def completion_horizon_rational_v2(
         controller_deadline_steps,
         terminal_steps,
     )
+
+
+def registered_teacher_horizon_v2(skill: str, timeout_ms: int) -> RationalCompletionHorizonV2:
+    """Recompute the fixed v10 teacher horizon from the original action timeout."""
+    if type(timeout_ms) is not int or timeout_ms <= 0:
+        raise ValueError("registered teacher timeout must be a positive integer")
+    dt = Fraction(1, 240)
+    controller_steps = math.ceil(Fraction(timeout_ms, 1000) / dt)
+    tail_steps = math.ceil(_builtin_tail_duration(skill) / dt)
+    timeout_ns = timeout_ms * 1_000_000
+    return completion_horizon_rational_v2(
+        skill,
+        dt_numerator=dt.numerator,
+        dt_denominator=dt.denominator,
+        registered_dt_s=float(dt),
+        original_timeout_ns=timeout_ns,
+        original_expected_ns=timeout_ns,
+        compiled_timeout_ns=timeout_ns,
+        compiled_expected_ns=timeout_ns,
+        effective_owner_required_ns=(controller_steps + tail_steps) * 10**9 // dt.denominator,
+        builtin_tail_included=tail_steps > 0,
+    )
+
+
+def controller_window_error_v2(
+    horizon: RationalCompletionHorizonV2,
+    elapsed_steps: int,
+    details: Mapping[str, object],
+) -> str | None:
+    """Check the controller return window for an exact registered v10 recipe."""
+    if type(elapsed_steps) is not int or elapsed_steps < 0:
+        return "controller_physics_step_order_invalid"
+    controller_steps = elapsed_steps
+    if horizon.skill == "LIFT":
+        reported_steps = details.get("physics_steps")
+        hold_s = details.get("contact_hold_s")
+        if (
+            type(reported_steps) is not int
+            or reported_steps != elapsed_steps
+            or horizon.builtin_tail_steps != 120
+            or elapsed_steps < horizon.builtin_tail_steps
+            or type(hold_s) not in (int, float)
+            or hold_s != horizon.builtin_tail_steps * float.fromhex(horizon.registered_dt_hex)
+        ):
+            return "controller_lift_hold_incomplete"
+        # The registered lift controller measures its final contact hold after motion.
+        controller_steps -= horizon.builtin_tail_steps
+    if controller_steps > horizon.controller_deadline_steps:
+        return "controller_exceeded_registered_deadline"
+    if horizon.skill == "RELEASE" and (
+        horizon.terminal_steps - elapsed_steps < horizon.builtin_tail_steps
+    ):
+        return "release_open_return_leaves_insufficient_tail"
+    return None

@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from cloud_edge_robot_arm.research.native_calibration_collection import (
+    collect_native_calibration_once,
+    digest,
     load_json,
     prepare_native_calibration,
     prepare_registered_collection_protocol_v2,
@@ -18,6 +20,7 @@ from cloud_edge_robot_arm.research.native_calibration_collection import (
 from cloud_edge_robot_arm.research.native_collection_application import (
     _REGISTRY,
     NativeCollectionApplication,
+    _check_protocol_sources,
 )
 from cloud_edge_robot_arm.research.native_full_horizon_originals import (
     read_native_full_horizon_group,
@@ -28,6 +31,129 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/research/native_registered_single_teacher_p0_20261119.yaml"
 FIRST = "native-p0-20261119-0001"
 SECOND = "native-p0-20261119-0002"
+V10_CONFIG = ROOT / "configs/research/native_registered_single_teacher_p0_v10_20261121.yaml"
+V10_FIRST = "native-p0-v10-20261121-0001"
+V10_SECOND = "native-p0-v10-20261121-0002"
+
+
+def test_v10_prepared_protocol_reaches_the_single_release_gate(tmp_path, monkeypatch):
+    registration = tmp_path / "protocol"
+    prepared = prepare_native_calibration(V10_CONFIG, output=registration)
+    protocol = read_protocol(registration)
+    assert prepared["released_assignments"] == protocol["released_assignments"] == [V10_FIRST]
+    assert protocol["schema_version"] == "native.calibration.operational.v10"
+    assert protocol["timeout_basis"] == "physics_steps"
+    assert protocol["wall_clock_metric"] is True
+    assert [a["seed"] for a in protocol["assignments"]] == list(range(11921001, 11921010))
+    assert [a["status"] for a in protocol["assignments"]] == ["RELEASED"] + [
+        "PREASSIGNED_NOT_RUN"
+    ] * 8
+    assert protocol["authorized_actual_budget"]["teacher_acquisitions"] == 1
+    _check_protocol_sources(protocol)
+
+    output = tmp_path / "run"
+    with pytest.raises(ValueError, match="only the first preregistered"):
+        NativeCollectionApplication.from_startup(
+            registration, assignment_id=V10_SECOND, output=output
+        )
+    assert not output.exists()
+
+    def prepare_without_worker(app):
+        live = _REGISTRY[app]
+        try:
+            job = app.prepare_once()
+            assert job.status == "QUEUED" and job.max_attempts == 1 and job.seed == 11921001
+            assert job.manifest_id == protocol["schema_version"]
+            assert live.deadline.deadline_ns == live.origin.lower_ns + 1800 * 10**9
+            return {"queued": True}
+        finally:
+            if live.owner is not None:
+                live.owner.close()
+
+    monkeypatch.setattr(NativeCollectionApplication, "execute_once", prepare_without_worker)
+    assert collect_native_calibration_once(
+        registration, assignment_id=V10_FIRST, output=output
+    ) == {"queued": True}
+    with pytest.raises(RuntimeError, match="already claimed"):
+        NativeCollectionApplication.from_startup(
+            registration, assignment_id=V10_FIRST, output=tmp_path / "retry"
+        )
+    assert not (tmp_path / "retry").exists()
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["release", "second", "deadline", "terminal", "clock", "metric", "source", "generation"],
+)
+def test_v10_drift_is_rejected_before_creating_runtime(tmp_path, field):
+    registration = tmp_path / "protocol"
+    prepare_native_calibration(V10_CONFIG, output=registration)
+    protocol = load_json(registration / "protocol.json")
+    if field == "release":
+        protocol["assignments"][0]["status"] = "PREASSIGNED_NOT_RUN"
+    elif field == "second":
+        protocol["released_assignments"].append(V10_SECOND)
+    elif field in {"deadline", "terminal"}:
+        name = "controller_deadline_steps" if field == "deadline" else "terminal_steps"
+        protocol["actions"][3]["horizon"][name] += 1
+    elif field == "clock":
+        protocol["timeout_basis"] = "wall_clock"
+    elif field == "metric":
+        protocol["wall_clock_metric"] = False
+    elif field == "source":
+        protocol["source_hashes"]["pyproject.toml"] = "0" * 64
+        protocol["source_generation"] = digest(protocol["source_hashes"])
+    else:
+        protocol["source_generation"] = "0" * 64
+    candidate = tmp_path / "drift"
+    candidate.mkdir()
+    save_exclusive(candidate / "protocol.json", protocol)
+    output = tmp_path / "run"
+    with pytest.raises(ValueError, match="recipe/source"):
+        NativeCollectionApplication.from_startup(candidate, assignment_id=V10_FIRST, output=output)
+    assert not output.exists()
+    assert not (candidate / "claims").exists()
+
+
+def test_v10_fixed_config_and_live_source_cannot_be_replaced(tmp_path, monkeypatch):
+    from cloud_edge_robot_arm.research import native_calibration_collection as collection
+
+    config = tmp_path / "copied.yaml"
+    config.write_bytes(V10_CONFIG.read_bytes() + b"\n")
+    with pytest.raises(ValueError, match="release config bytes"):
+        prepare_native_calibration(config, output=tmp_path / "invalid-config")
+    assert not (tmp_path / "invalid-config").exists()
+
+    registration = tmp_path / "protocol"
+    prepare_native_calibration(V10_CONFIG, output=registration)
+    frozen = read_protocol(registration)
+    real_inventory = collection.source_inventory
+
+    def drifted_inventory(**kwargs):
+        sources = real_inventory(**kwargs)
+        sources["src/cloud_edge_robot_arm/research/native_calibration_collection.py"] = "0" * 64
+        return sources
+
+    monkeypatch.setattr(collection, "source_inventory", drifted_inventory)
+    assert read_protocol(registration, current_sources=False) == frozen
+    with pytest.raises(ValueError, match="recipe/source"):
+        read_protocol(registration)
+    with pytest.raises(ValueError, match="source or recipe"):
+        _check_protocol_sources(frozen)
+
+
+def test_v10_verify_empty_registry_and_refuse_unreleased_group(tmp_path):
+    registration = tmp_path / "protocol"
+    prepare_native_calibration(V10_CONFIG, output=registration)
+    output = tmp_path / "verify"
+    result = verify_native_calibration_collection(registration, output=output)
+    assert result["assigned_groups"] == 9
+    assert result["native_qualification"] == "UNKNOWN" and result["joint_bound_m"] is None
+    assert [row["state"] for row in load_json(output / "groups.json")] == ["NOT_RUN"] * 9
+    with pytest.raises(ValueError, match="unreleased"):
+        read_native_full_horizon_group(
+            registration, assignment_id=V10_SECOND, root=tmp_path / "unused"
+        )
 
 
 def test_v9_new_single_release_preserves_v8_recipe(tmp_path):

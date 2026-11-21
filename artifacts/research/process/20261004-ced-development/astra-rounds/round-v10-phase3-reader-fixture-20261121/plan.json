@@ -1,0 +1,139 @@
+{
+  "schema_version": "astra.supplement-plan.v1",
+  "planner_model": "gpt-6-astra",
+  "round": "round-v10-phase3-reader-fixture-20261121",
+  "date": "2026-11-21",
+  "status": "PLAN_GENERATED_IMPLEMENTATION_NOT_STARTED",
+  "baseline_commit": "fc6520c04011cd211c4d4c2888f9e3b8fb8cf598",
+  "input_state": "uncommitted Phase 3 candidate",
+  "scope": "SOFTWARE_ONLY",
+  "inputs": [
+    {
+      "path": "tests/test_native_full_horizon_originals.py",
+      "sha256": "6ae868fd8e8726cd6f3f07d15430192d769e9f4b88c22ef6d98556e701bceab4",
+      "bytes": 22303,
+      "source": "current uncommitted Phase 3 candidate; baseline HEAD is fc6520c0"
+    },
+    {
+      "path": "tests/test_native_horizon_execution.py",
+      "sha256": "dd33ab30df0b42769e5d5ac78f51559bb6aff7c2f56ee2cab5f6b249e3142041",
+      "bytes": 15499,
+      "source": "current uncommitted Phase 3 candidate; baseline HEAD is fc6520c0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/native_full_horizon_recorder.py",
+      "sha256": "d2fd1bc215dba4c174be69463729dc1dd9550f63adefd2ba4fd3eb40d16dff8c",
+      "bytes": 41571,
+      "source": "current uncommitted Phase 3 candidate; baseline HEAD is fc6520c0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/native_full_horizon_originals.py",
+      "sha256": "89316d77934d97ed1ee61a3b868c173ecdd47aa32b2e3c0a15b534c27195b8e7",
+      "bytes": 167239,
+      "source": "current uncommitted Phase 3 candidate; baseline HEAD is fc6520c0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/native_calibration_collection.py",
+      "sha256": "c0abbe8922cee0063208ff4b88cf4a0252bb5c5c667022a36fdb9221ea0485d1",
+      "bytes": 39218,
+      "source": "current uncommitted Phase 3 candidate; baseline HEAD is fc6520c0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/native_collection_application.py",
+      "sha256": "f1a5e2e555fb4bb2f231497754451f0e21cb5c2f3bb5303f965b7db84f562d2c",
+      "bytes": 134772,
+      "source": "current uncommitted Phase 3 candidate; baseline HEAD is fc6520c0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/mujoco/native_horizon.py",
+      "sha256": "d52d7a612544cbddde4a42ba0a2c1e827db2ed12d80f75b29f952e43cc5d38d3",
+      "bytes": 11214,
+      "source": "current uncommitted Phase 3 candidate; baseline HEAD is fc6520c0"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/native_completion_horizon.py",
+      "sha256": "7a0337c8a44e1d63188957a421dc10a49f4b80b47719d6e9d5a2d5e1382bf0a3",
+      "bytes": 9924,
+      "source": "current uncommitted Phase 3 candidate; baseline HEAD is fc6520c0"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-20261121/plan.md",
+      "sha256": "3e4503a288374e32bb95a063beb2291e42cd230d8bed283b2c11421d55058d0a",
+      "bytes": 23497,
+      "source": "current uncommitted Phase 3 candidate; baseline HEAD is fc6520c0"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-20261121/plan.json",
+      "sha256": "c0db3d7e282dde5dde6002b946b543d73a39184173d381f17618f0acf57db6ea",
+      "bytes": 23951,
+      "source": "current uncommitted Phase 3 candidate; baseline HEAD is fc6520c0"
+    }
+  ],
+  "original_failure_evidence": {
+    "title": "Phase 3 eight-action reader fixture initial failure",
+    "sha256": "f5b47ba2fb3f505260aa866a1a897715734c3b8d5c9654098a9dec12e83f0e1f",
+    "bytes": 2800,
+    "raw_retained_privately": true,
+    "exit_summary": "2 failed, 9 deselected in 1.31s",
+    "failed_nodes": [
+      "tests/test_native_full_horizon_originals.py::test_v10_original_horizon_reader_binds_receipts_to_observed_action_windows[False]",
+      "tests/test_native_full_horizon_originals.py::test_v10_original_horizon_reader_binds_receipts_to_observed_action_windows[True]"
+    ],
+    "original_failure": "tests/test_native_full_horizon_originals.py:327: controller_result_json=canonical(asdict(result)).decode(); TypeError: Object of type ActionResult is not JSON serializable"
+  },
+  "root_causes": [
+    "New test fixture calls canonical(asdict(StepExecutionResult)), retaining nested Pydantic ActionResult and datetime instead of using existing detached JSON conversion.",
+    "V10 strict offline receipt decoder needs explicit outer receipt step_id equality; nested identity and live ownership already checked."
+  ],
+  "changes": [
+    {
+      "path": "tests/test_native_full_horizon_originals.py",
+      "change": "Import existing detached and encode new fixture with canonical(detached(result)).decode(); preserve actual typed result and negative case."
+    },
+    {
+      "path": "tests/test_native_horizon_execution.py",
+      "change": "Add actual V2 receipt mutation control changing only outer step_id to a different nonempty string; valid control and V1 regressions retained."
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/native_full_horizon_recorder.py",
+      "change": "Inside existing RationalCompletionHorizonV2 branch only, _v2_same(value['step_id'], step.step_id)."
+    }
+  ],
+  "validation": [
+    "Run new eight-action parametrized reader test: legal complete absolute 12960-step graph accepted, incorrect LIFT count rejected with controller_lift_hold_incomplete.",
+    "Capture expected RED for outer V2 step_id mismatch; after narrow check legal V2 accepted and mismatch rejected.",
+    "Run both whole affected test files and main Phase3 gate; record actual counts and exit status.",
+    "Compile and ruff affected files; do not replace main baseline/static comparison with this narrow check."
+  ],
+  "preconditions": [
+    "Revalidate current candidate input hashes, baseline HEAD and worktree imports.",
+    "Reuse controlled Python and software fixtures; no renderer/formal collection.",
+    "Preserve original raw failure logs and all existing candidate work."
+  ],
+  "acceptance": [
+    "Both reader parameters pass with meaningful timing validation and intended LIFT rejection.",
+    "V10 outer-step identity mismatch is rejected while valid V2 and old V1/v9 behavior remains.",
+    "Fresh affected/main checks recorded; any new unplanned failure gets next Astra plan.",
+    "Only scoped source/tests and safe reports change; no formal simulation or research qualification claims."
+  ],
+  "known_deferred_limits": [
+    "Full admissions reader still assumes v7-style registered_pose_evaluated_at/registered_pose_verdict fields not written by v2 admission path; keep existing limitation explicit and do not widen this supplemental fix.",
+    "Eight-action _Audit.horizons software timing test is not full original source/admissions/physics qualification."
+  ],
+  "parent_reported_prior_results": {
+    "main_gate_passed": 156,
+    "broader_baseline_and_candidate_sqlite_failures": 33,
+    "status": "Parent reported prior results, not supplemental post-change validation"
+  },
+  "forbidden": [
+    "Changing production JSON canonicalization or model schema to hide test failure",
+    "Changing horizon deadlines/tails/guard/lease/watchdog/capture semantics",
+    "Editing frozen raw, database, historical bytes or logs",
+    "Broadening v9/V1 or full admissions reader",
+    "Formal simulation, commit or push by this planning agent"
+  ],
+  "public_paths": [
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-reader-fixture-20261121/plan.md",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-reader-fixture-20261121/plan.json"
+  ]
+}

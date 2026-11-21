@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
+import json
 import time
+from dataclasses import asdict
 from datetime import UTC, datetime
 from math import hypot, isfinite, sqrt
 
-from cloud_edge_robot_arm.contracts import SafetyDecision
+from cloud_edge_robot_arm.contracts import SafetyDecision, TaskStep
 from cloud_edge_robot_arm.edge.safety.errors import (
     ACCELERATION_EXCEEDED,
     CARRY_SAFETY_MARGIN,
@@ -34,6 +36,7 @@ from cloud_edge_robot_arm.edge.safety.errors import (
 )
 from cloud_edge_robot_arm.edge.safety.models import SafetyContext
 from cloud_edge_robot_arm.edge.safety.rule_registry import SafetyRuleEvaluator, SafetyRuleResult
+from cloud_edge_robot_arm.vision.native_completion_horizon import registered_teacher_horizon_v2
 
 MOTION_SKILLS = {
     "HOME",
@@ -898,13 +901,7 @@ class StepTimeoutRule(SafetyRuleEvaluator):
 
     def evaluate(self, ctx: object) -> SafetyRuleResult:
         assert isinstance(ctx, SafetyContext)
-        
-        # Find step definition in contract
-        step_obj = None
-        for s in ctx.contract.steps:
-            if s.step_id == ctx.step_id:
-                step_obj = s
-                break
+        step_obj = next((step for step in ctx.contract.steps if step.step_id == ctx.step_id), None)
         if step_obj is None:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
@@ -912,52 +909,10 @@ class StepTimeoutRule(SafetyRuleEvaluator):
                 reason_code="STEP_NOT_FOUND",
                 message=f"step {ctx.step_id!r} not found in contract - fail closed",
             )
-        
-        # Check if protocol uses physics-step timeout (v10+)
-        # This is indicated by protocol-level metadata in the contract
-        use_physics_steps = False
-        if hasattr(ctx.contract, 'metadata') and isinstance(ctx.contract.metadata, dict):
-            use_physics_steps = ctx.contract.metadata.get('timeout_basis') == 'PHYSICS_STEPS'
-        
-        if use_physics_steps and ctx.physics_step is not None:
-            # V10+: Use physics-step timeout
-            # The horizon is stored in step metadata
-            horizon = step_obj.metadata.get('horizon') if hasattr(step_obj, 'metadata') and isinstance(step_obj.metadata, dict) else None
-            
-            if horizon is None or not isinstance(horizon, dict):
-                # Fallback to wall-clock if horizon not available
-                use_physics_steps = False
-            else:
-                terminal_steps = horizon.get('terminal_steps')
-                
-                if terminal_steps is None or not isinstance(terminal_steps, int):
-                    return SafetyRuleResult(
-                        rule_id=self.rule_id,
-                        decision=SafetyDecision.REJECT,
-                        reason_code="HORIZON_INCOMPLETE",
-                        message="horizon missing terminal_steps - fail closed",
-                    )
-                
-                # Check physics step against terminal_steps (complete action window)
-                if ctx.physics_step > terminal_steps:
-                    return SafetyRuleResult(
-                        rule_id=self.rule_id,
-                        decision=SafetyDecision.REJECT,
-                        reason_code="STEP_TIMEOUT",
-                        message=(
-                            f"step {ctx.step_id} exceeded terminal: physics_step {ctx.physics_step} > {terminal_steps}"
-                        ),
-                        measured_value=float(ctx.physics_step),
-                        limit_value=float(terminal_steps),
-                    )
-                return SafetyRuleResult(
-                    rule_id=self.rule_id,
-                    decision=SafetyDecision.ALLOW,
-                    reason_code="STEP_TIME_OK",
-                    message=f"step within terminal: {ctx.physics_step}/{terminal_steps} steps",
-                )
-        
-        # V9 and earlier, or fallback: Use wall-clock timeout (original behavior)
+        metadata = getattr(ctx.contract, "metadata", None)
+        if isinstance(metadata, dict) and metadata.get("timeout_basis") == "PHYSICS_STEPS":
+            return self._evaluate_physics_window(ctx, step_obj)
+
         if ctx.step_started_at is None:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
@@ -984,6 +939,46 @@ class StepTimeoutRule(SafetyRuleEvaluator):
             decision=SafetyDecision.ALLOW,
             reason_code="STEP_TIME_OK",
             message="step within timeout",
+        )
+
+    def _evaluate_physics_window(self, ctx: SafetyContext, step: TaskStep) -> SafetyRuleResult:
+        elapsed = ctx.physics_step
+        if type(elapsed) is not int or elapsed < 0:
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.REJECT,
+                reason_code="PHYSICS_STEP_INVALID",
+                message="a nonnegative action-relative physics step is required",
+            )
+        try:
+            expected = registered_teacher_horizon_v2(step.skill.value, step.timeout_ms)
+            actual = (step.metadata or {}).get("horizon")
+            if json.dumps(actual, sort_keys=True, allow_nan=False) != json.dumps(
+                asdict(expected), sort_keys=True, allow_nan=False
+            ):
+                raise ValueError("registered horizon differs")
+        except (TypeError, ValueError):
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.REJECT,
+                reason_code="HORIZON_INCOMPLETE",
+                message="the exact registered v10 step horizon is required",
+            )
+        limit = expected.terminal_steps
+        if elapsed > limit:
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.REJECT,
+                reason_code=STEP_TIMEOUT,
+                message=f"step {ctx.step_id} exceeded terminal: {elapsed} > {limit} physics steps",
+                measured_value=elapsed,
+                limit_value=limit,
+            )
+        return SafetyRuleResult(
+            rule_id=self.rule_id,
+            decision=SafetyDecision.ALLOW,
+            reason_code="STEP_TIME_OK",
+            message=f"step within terminal: {elapsed}/{limit} steps",
         )
 
 

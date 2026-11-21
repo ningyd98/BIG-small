@@ -19,7 +19,12 @@ from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor
 from cloud_edge_robot_arm.research.native_action_timing import mark_timing
 from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
 from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
-from cloud_edge_robot_arm.vision.native_completion_horizon import RationalCompletionHorizonV1
+from cloud_edge_robot_arm.vision.native_completion_horizon import (
+    RationalCompletionHorizonV1,
+    RationalCompletionHorizonV2,
+    controller_window_error_v2,
+    registered_teacher_horizon_v2,
+)
 
 
 def _json(value: Any) -> str:
@@ -128,7 +133,7 @@ def _run_registered_horizon(
     contract: TaskContract,
     step: TaskStep,
     grounding: Any,
-    horizon: RationalCompletionHorizonV1,
+    horizon: RationalCompletionHorizonV1 | RationalCompletionHorizonV2,
     check_active: Callable[[], Any],
 ) -> FullHorizonExecutionReceipt:
     """Retain controller return and then hold its existing target through full H.
@@ -149,9 +154,22 @@ def _run_registered_horizon(
         raise RuntimeError(
             "same guarded backend, sole executor, original recorder and sampler required"
         )
-    if type(horizon) is not RationalCompletionHorizonV1 or horizon.skill != step.skill.value:
+    if (
+        type(horizon) not in (RationalCompletionHorizonV1, RationalCompletionHorizonV2)
+        or horizon.skill != step.skill.value
+    ):
         raise ValueError("exact registered skill horizon required")
+    if isinstance(horizon, RationalCompletionHorizonV2):
+        config = backend._config
+        if config is None or config.physics_dt_s.hex() != horizon.registered_dt_hex:
+            raise ValueError("registered v10 backend physics grid changed")
+        if horizon != registered_teacher_horizon_v2(step.skill.value, step.timeout_ms):
+            raise ValueError("exact registered v10 action horizon required")
     dispatch = backend.total_physics_steps
+    if isinstance(horizon, RationalCompletionHorizonV2) and (
+        type(dispatch) is not int or dispatch < 0
+    ):
+        raise ValueError("registered v10 dispatch requires a valid absolute physics step")
     terminal = dispatch + horizon.total_steps
     original_hash = recorder._original.digest()
     executed_hash = _sha(step.model_dump(mode="json"))
@@ -183,6 +201,16 @@ def _run_registered_horizon(
         check_active()
         if not result.success or result.action_result is None:
             reasons.append("controller_unsuccessful")
+        elif isinstance(horizon, RationalCompletionHorizonV2):
+            violation = (
+                controller_window_error_v2(
+                    horizon, returned - dispatch, result.action_result.details
+                )
+                if type(returned) is int
+                else "controller_physics_step_order_invalid"
+            )
+            if violation is not None:
+                reasons.append(violation)
         elif returned > terminal:
             reasons.append("controller_exceeded_registered_horizon")
         elif step.skill.value == "RELEASE" and terminal - returned < horizon.builtin_tail_steps:
@@ -206,10 +234,24 @@ def _run_registered_horizon(
                     check_hold()
             mark_timing("hold_end", physics_step=backend.total_physics_steps)
             check_active()
+            if isinstance(horizon, RationalCompletionHorizonV2) and (
+                backend.total_physics_steps != terminal
+            ):
+                raise RuntimeError("registered hold did not end at the v10 terminal step")
             mark_timing("terminal_capture_begin", physics_step=backend.total_physics_steps)
+            previous_acquisitions = (
+                len(recorder.allocated_acquisition_ids)
+                if isinstance(horizon, RationalCompletionHorizonV2)
+                else None
+            )
             recorder.capture()
             mark_timing("terminal_capture_end", physics_step=backend.total_physics_steps)
-            terminal_acquisition = recorder.allocated_acquisition_ids[-1]
+            acquisitions = recorder.allocated_acquisition_ids
+            if previous_acquisitions is not None and (
+                len(acquisitions) != previous_acquisitions + 1 or not acquisitions[-1]
+            ):
+                raise RuntimeError("v10 terminal capture did not produce one new acquisition")
+            terminal_acquisition = acquisitions[-1]
             check_active()
             if backend.total_physics_steps != terminal:
                 raise RuntimeError("terminal capture advanced the registered horizon")

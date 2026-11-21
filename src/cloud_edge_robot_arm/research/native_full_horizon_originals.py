@@ -36,6 +36,7 @@ from cloud_edge_robot_arm.research.native_archived_tracker import (
 from cloud_edge_robot_arm.research.native_calibration_collection import (
     REGISTERED_STEP_SCHEMAS,
     REGISTERED_TEACHER_SCHEMA,
+    REGISTERED_TEACHER_V10_SCHEMA,
     REGISTERED_V2_STEP_SCHEMAS,
     canonical,
     detached,
@@ -1184,7 +1185,10 @@ class _Audit:
         self.geometry_ok = len(self.geometry_errors) == len(assigned) > 0
 
     def horizons(self) -> None:
+        from cloud_edge_robot_arm.research.native_full_horizon_recorder import _v2_receipt
+
         raw = self.raw
+        physics_timeout = self.protocol["schema_version"] == REGISTERED_TEACHER_V10_SCHEMA
         _require(
             len(raw["actions"]) == len(raw["horizons"]) == len(raw["allocated_actions"]) == 8,
             "all eight original actions required",
@@ -1269,6 +1273,13 @@ class _Audit:
                 self.frames[receipt["terminal_acquisition_id"]]["step"] == terminal,
                 "terminal frame is not at full H",
             )
+            if physics_timeout:
+                _v2_receipt(
+                    receipt,
+                    registered,
+                    task_id=self.original.contract.task_id,
+                    step=span.grounding.grounded_step,
+                )
             before = [
                 row
                 for row in raw["joins"]
@@ -2406,6 +2417,20 @@ class _Audit:
                     sources["reused_from"] == "POST", "terminal must retain actual POST invocation"
                 )
             context = SafetyContext.model_validate(source["context"])
+            if self.protocol["schema_version"] == REGISTERED_TEACHER_V10_SCHEMA:
+                _same(
+                    context.contract.metadata,
+                    {"timeout_basis": "PHYSICS_STEPS"},
+                    "v10 Shield timeout basis differs",
+                )
+                receipt = self.raw["horizons"][index]
+                elapsed = self.frames[aid]["step"] - receipt["dispatch_step"]
+                terminal_steps = self.protocol["actions"][index]["horizon"]["terminal_steps"]
+                expected_elapsed = 0 if phase == "PRE" else terminal_steps
+                _same(elapsed, expected_elapsed, "v10 Shield frame outside its action boundary")
+                _same(
+                    source["context"]["physics_step"], elapsed, "v10 Shield physics count differs"
+                )
             _same(
                 context.parameters, step.parameters, "Shield checked different command parameters"
             )
@@ -2717,7 +2742,7 @@ def read_native_full_horizon_group(
         raise ValueError("v6 preparation has no full-horizon action release or raw action spans")
     assigned = [r for r in registration["assignments"] if r["assignment_id"] == assignment_id]
     _require(len(assigned) == 1, "foreign calibration assignment")
-    if registration["schema_version"] == REGISTERED_TEACHER_SCHEMA:
+    if registration["schema_version"] in (REGISTERED_TEACHER_SCHEMA, REGISTERED_TEACHER_V10_SCHEMA):
         _require(
             assigned[0]["status"] == "RELEASED"
             and assignment_id in registration["released_assignments"],

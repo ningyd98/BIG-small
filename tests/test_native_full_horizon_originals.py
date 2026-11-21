@@ -3,15 +3,20 @@
 import copy
 import json
 from dataclasses import replace
+from datetime import datetime
 from importlib import import_module, util
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from cloud_edge_robot_arm.research.native_calibration_collection import (
     CONFIG,
+    REGISTERED_TEACHER_V10_SCHEMA,
     ROOT,
+    action_horizons,
     canonical,
+    detached,
     digest,
     load_json,
     prepare_native_calibration,
@@ -262,6 +267,73 @@ def test_complete_eight_action_byte_horizons_and_required_counterexamples(eight_
         change(broken)
         with pytest.raises((ValueError, KeyError, TypeError)):
             broken.horizons()
+
+
+@pytest.mark.parametrize("wrong_lift_hold_count", [False, True])
+def test_v10_original_horizon_reader_binds_receipts_to_observed_action_windows(
+    eight_action_originals,
+    monkeypatch,
+    wrong_lift_hold_count,
+):
+    from cloud_edge_robot_arm.contracts import ActionResult
+    from cloud_edge_robot_arm.edge.runtime.skill_executor import StepExecutionResult
+
+    factory, _, _ = eight_action_originals
+    audit = factory()
+    rows = action_horizons(use_v2=True)
+    audit.protocol.update(schema_version=REGISTERED_TEACHER_V10_SCHEMA, actions=rows)
+    # The fixture's intervals and frames are software observations. Use its decoded span
+    # identity and supply v10 grounded steps at the timing reader's codec boundary.
+    spans = {}
+    for action, receipt, row in zip(audit.raw["actions"], audit.raw["horizons"], rows, strict=True):
+        span = audit.action_span(action)
+        step = span.grounding.grounded_step.model_copy(
+            update={"metadata": {"horizon": row["horizon"]}},
+        )
+        action_result = ActionResult.model_validate(action["returned_result"])
+        if wrong_lift_hold_count and step.skill.value == "LIFT":
+            action_result.details["physics_steps"] -= 1
+        executed = step.model_dump(mode="json")
+        span = SimpleNamespace(
+            original_plan=span.original_plan,
+            grounding=SimpleNamespace(grounded_step=step),
+            disposition=span.disposition,
+            returned_result=action_result.model_dump(mode="json"),
+            step_id=span.step_id,
+            attempt=span.attempt,
+            command_seq_start=span.command_seq_start,
+            command_seq_end=span.command_seq_end,
+            interval_id=span.interval_id,
+            span_id=span.span_id,
+        )
+        spans[action["span_id"]] = span
+        action["executed_step_payload"] = executed
+        result = StepExecutionResult(
+            task_id=span.original_plan.contract.task_id,
+            step_id=step.step_id,
+            skill=step.skill.value,
+            attempt=1,
+            success=True,
+            error=None,
+            action_result=action_result,
+            duration_ms=action_result.duration_ms,
+            timestamp=datetime.fromisoformat(span.returned_result["finished_at"]),
+        )
+        receipt.update(
+            schema_version="native.full-horizon.execution.v1",
+            native_authority="UNAVAILABLE",
+            failure_message=None,
+            horizon_json=canonical(row["horizon"]).decode(),
+            executed_step_sha256=digest(executed),
+            controller_result_json=canonical(detached(result)).decode(),
+        )
+    monkeypatch.setattr(audit, "action_span", lambda record: spans[record["span_id"]])
+    if wrong_lift_hold_count:
+        with pytest.raises(ValueError, match="controller_lift_hold_incomplete"):
+            audit.horizons()
+    else:
+        audit.horizons()
+        assert audit.horizon_ok and audit.actions[-1]["terminal_step"] == 12960
 
 
 def test_release_full_transform_from_registered_place_tcp(eight_action_originals):

@@ -399,6 +399,9 @@ def _registration_case(monkeypatch, tmp_path):
 def test_physics_timeout_metadata_survives_original_plan_freezing(
     monkeypatch, tmp_path, builder_name
 ):
+    from cloud_edge_robot_arm.research.raw_episode_v3 import _owner_decode
+    from cloud_edge_robot_arm.vision.owner_registration import VisualOriginalPlan
+
     case = _registration_case(monkeypatch, tmp_path)
     original = getattr(case.module, builder_name)(
         **case.args,
@@ -427,6 +430,10 @@ def test_physics_timeout_metadata_survives_original_plan_freezing(
         assert original.requirements[step.step_id].expected_duration_s == terminal / 240
     assert contract.steps[3].timeout_ms == 8000
     assert contract.steps[6].timeout_ms == 1000
+    payload = original.to_payload()
+    decoded = _owner_decode(VisualOriginalPlan, payload)
+    assert decoded.to_payload() == payload
+    assert decoded.digest() == original.digest()
 
 
 @pytest.mark.parametrize(
