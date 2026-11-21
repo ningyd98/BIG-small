@@ -1,0 +1,97 @@
+# v10 Phase 5 再登记与首组启动预检计划
+
+制定模型 `gpt-6.2-astra` · 2026-11-22（Asia/Shanghai）
+
+研发分支 `research/harness-candidate-v10-phase2-20261121` · 基线 `becd1ab6a9cd221d6c7ef6760a561e26044e6ef2`
+
+用现有 Python CLI 生成可审查的发布登记，独立核算登记来源，使用真实发布工厂、operational clock 与 SQLite 完成隔离首组启动。停止点为 **QUEUED，零租约、零 attempt**。执行沿用既有计划实施流程，以下复选框表示实施前的任务。
+
+## 原始状态与假设
+
+- 规划时研发工作树 clean，HEAD 与本地上游均对应基线，本轮目录和本工作树的 experiments/results/phase9 尚未存在。当前工作是补充阶段登记和实测，未观察到新的产品故障。
+- Phase 3 软件测试 159 项通过，验证非零派发后的相对截止。Phase 4 的 70 项软件测试通过，原始 v9 的第一步 PRE=ALLOW、POST=STOP、原因 STEP_TIMEOUT，正式资格 0/9。既有扩展回归 52 项数据库身份夹具失败和 2 项 observer 失败已在 Phase 4 对比基线，当前范围不修复。
+- 风险来自目录和阶段混用。prepare_once 会排他写入传入协议的 claims；普通 --collect-once 调 execute_once 并 poll worker。使用独立登记普通副本，调用相同工厂及 prepare_once，既能实测排队，也保留原首组。源码未变的假设通过独立清单验证。
+
+本轮只增加登记和验证证据。生产代码、测试、配置、预算、原件无修改。遇新根因、范围扩大或计划外失败则保留原失败并暂停相关修复，由 gpt-6.2-astra 另行出计划。
+
+## 1. 复核输入和冻结记录
+
+- [ ] 核对当前 worktree 的分支、HEAD、工作/暂存区和本文输入清单。先前阶段交付均已提交。核对执行器使用共享 Python 3.12 虚拟环境，PYTHONPATH=src:.，通过 inspect.getfile 核实 collection、application、reader 指向本工作树。保留私有目录、协议文件与日志的实际位置和文件指纹。
+
+- [ ] 比对两份冻结 v9 登记与正式 inventory 的基线指纹。对确实存在的早期 v10 登记、历史输出和候选快照同样记录只读指纹或树清单。实验写入只可落到新目录。任何原件路径均不接收输出。重名时核对既有内容和来历，另建唯一隔离目录，保留原记录。
+
+## 2. 重新生成 v10，并独立复算来源
+
+- [ ] 在本轮全新 registration/ 用真实 CLI 生成权威登记。命令为 python scripts/collect_native_calibration.py --prepare-only --config configs/research/native_registered_single_teacher_p0_v10_20261121.yaml --output <本轮>/registration。该模式生成的实际 release 为 SINGLE_TEACHER_ASSIGNMENT_RELEASED。在另一个独立且未创建的私有目录再 prepare，比较 protocol.json 完整字节。公共登记目录始终只保留生成器原样写出的 protocol.json。
+
+- [ ] 严格 read_protocol(registration) 和 _check_protocol_sources 检查固定配方。独立对基线 Git tree 中 450 项 src/cloud_edge_robot_arm/**/*.py（含包根文件）、侧面 r593 配置、三个 XML、collect 脚本与 pyproject 共 456 项重新枚举，用 git cat-file blob 或 git show 的原始字节逐项和实际文件比对，拒绝漏项、多项和符号链接。source_generation 取排序紧凑 JSON 的 SHA256，同时核对 release_reference.source_generation；另核 teacher_release_config_sha256 和 v10 发布 YAML。记录协议 canonical 摘要及含末行 LF 的文件 SHA256、字节数，两种 SHA 分别与相应来源比较。
+
+- [ ] 核对 9 个 assignment ID 和 seed 11921001…11921009，唯一 RELEASED 为 native-p0-v10-20261121-0001，其余 8 个 PREASSIGNED_NOT_RUN。检查 released_assignments、settings、资格 UNKNOWN、max_attempts=1、1800 秒任务期限及预算。模型请求、载入、生成、paid、hardware 上限均为 0。teacher_acquisitions=1、physics_steps=12960、controller=8 是登记上限，本轮实际消费单列。
+
+- [ ] 在原登记上用 --verify --protocol <registration> --output <private>/registry-empty，断言 9 条 NOT_RUN、UNKNOWN、joint_bound_m=null。读取前后无 claims、DB 或运行原件。
+
+## 3. 首组启动预检和停止点
+
+- [ ] 用普通文件复制公共 protocol.json 到新的私有 registration 副本，证明相同 bytes/SHA 和不同 inode，隔离目录及运行根均无词法符号链接，且不在公共登记或历史树中。先让 NativeCollectionApplication.from_startup 对未释放组 0002 拒绝，确认没有 runtime 或 claims。另用独立副本篡改 source_sha（连带重算 generation）、截止、终步、第二个 release，预期 recipe/source 拒绝且无 claim/runtime。已有 release 测试可逐项举证。
+
+- [ ] 在单一专用进程，从真正的 NativeCollectionApplication.from_startup(copy, assignment_id=FIRST, output=fresh_private_runtime) 得到 app，再调用一次 app.prepare_once()。不替换这两个方法、仓储、时钟或 release 判断；直接停止于 QUEUED。禁止调用 execute_once、--collect-once、worker.poll_once、acquire_lease 或 worker body；可装 fail-fast 观察器记录这些边界方法的零调用。结束时 finally 关闭 _REGISTRY[app].owner，退出独立进程，私有队列不与其他 worker 共享；保留副本 claim 作为一次性证据。
+
+- [ ] 核对副本恰一份 claim、startup 和 DB 的 assignment、协议 canonical SHA、application_id、seed、schema、source_tree_hash 和单次上限，任务 deadline_ns=origin.lower_ns+1800×10^9。重新读取 SQLite 中唯一作业 QUEUED，仅创建和排队两条状态事件，无 lease、attempt 或 worker 执行产物。记录副本再次启动的 already claimed 错误且没有 retry 输出。原登记字节前后一致、无 claim。给出未调用 worker、运行目录内容与 SQLite 计数的交叉证据；无渲染/物理推进、控制器、硬件、模型或付费调用。
+
+## 4. 物理步与公开离线读回
+
+- [ ] 读取全部八个动作的相对窗口。依次 MOVE_ABOVE 1920/1920，APPROACH 1920/1920，GRASP 240/240，LIFT 1920/2040，MOVE_TO_REGION 2400/2400，PLACE 1920/1920，RELEASE 240/480，RETREAT 1920/1920（控制器截止/终步），网格 1/240 s，settle 120 加总为 12960。timeout_basis=physics_steps，wall_clock_metric=true，任务级时限照常使用。LIFT 运动后 120 步内建保持有证据，RELEASE 控制器返回后至少 240 步保持。
+
+- [ ] 重跑 tests/test_native_horizon_execution.py 的 v10 聚焦测试，审查在非零 dispatch 上代表动作含等号与 +1 的拒绝、保持证明、终帧 ±1、新终帧与 receipt 校验。使用该文件已有软件后端。重跑 release 测试的 v10 节点。记录真实节点数、退出码、持续时间，保留原失败。
+
+- [ ] 用 read_native_full_horizon_group(copy, assignment_id=FIRST, root=private_runtime) 和 reconstruct_native_full_horizon_registry 或 --verify 读取隔离 QUEUED 输出，首组缺完整 inventory/执行原件时保留失败原因、空得分和 UNKNOWN，其余 8 组 NOT_RUN；未释放组 group 入口拒绝。再次对未 claim 的权威登记验证 9 组 NOT_RUN。另跑 tests/test_native_registered_admission_replay.py 的 test_complete_registered_admission_replays_actual_shield、test_step_wall_clock_overrun_uses_registered_basis、test_v2_terminal_must_reuse_final_post，包含 v9/v10 对照。可扩增同文件相关负控。报告区分软件轨迹的 source/physics/geometry、completion RGB-D 及 outcome/lifecycle 夹具接缝，以及实际重算的 8 个动作、17 行准入、16 次 Shield 与 27 条 tracker 时钟。
+
+## 5. 交付、正式运行条件与验收
+
+- [ ] 保留本地运行日志/原始错误/测试节点、DB/claim/startup、软件回放原件及其哈希。只将本轮 plan.md、plan.json、registration/protocol.json、validation.public.json、step-report.public.md、stage-summary.public.md 按明确路径加入 Git（可在该范围内另附必要的脱敏复现证据）。发布前检查登记源路径均相对、无私有路径、凭据、raw、DB、模型权重或 SDK。验证 git diff --check 及暂存清单，复核输入、冻结指纹、正式登记目录，保存实测范围与未验证项。
+
+- [ ] 登记 pin 的是协议列明的源码和配方字节。新提交只增加本轮交付；保留基线完整 commit 与 source_generation，不把包含产物的未来 commit 写入其自身，提交后用 Git 树重新比对基线和交付 SHA 上的已登记文件。推送指定分支，核对 HEAD、上游与 git ls-remote 的完整 SHA，并在最终交付消息或本地交付回执记录。
+
+- [ ] 本轮验收为再登记、隔离启动到 QUEUED、边界与离线入口。正式运行次数必须为 0，v10 正式资格 UNKNOWN，冻结 v9 保持 0/9。正式启动另需用户授权、未 claim 的正确登记、严格 source/recipe 匹配、正式新输出根、真实 host 的 MuJoCo/渲染及相机/标记配置、原运行时资源/磁盘预算和时钟/数据库/worker/租约/急停前置就绪；执行前不得把本轮软件路径当成实机或物理验收。
+
+## 输入指纹
+
+独立源码枚举的基线为 456 项，source_generation 为 `186e76435e7dc470175190622e4f3658eaaad4298e6fab214e08110d0e9112b0`。源码清单用 JSON canonical 编码，发布配置的 SHA256 单列在登记。下列文件 SHA256 均来自规划时的实际字节，路径相对本工作树。
+
+| 输入 | SHA256 |
+| --- | --- |
+| `AGENTS.md` | `7f4f8b080b2f1e99b53d24aeebf62f51815315c69a40dc9223d2e974c3c40cdb` |
+| `.gitignore` | `fac19e7c3f949d06806f0b85b4e1b41fee8c38558ab94a80870231d3abd0ca30` |
+| `scripts/collect_native_calibration.py` | `e3473e3c65c8bec145b4f7c5c0f7a30edad45320155ddb97985465f37854255e` |
+| `pyproject.toml` | `034a85388f25f1aedfb856f1783e6d3c6a3413f00d4a1825b907fe3749399565` |
+| `configs/research/native_registered_single_teacher_p0_v10_20261121.yaml` | `2b893cbcd1b959703ceada3663433eebb975adbcf8278a522967f2ad12131cf8` |
+| `configs/research/native_operational_calibration_side_y_plus_75mm_r593.yaml` | `fa876ce35780fbf98f50aa493199b8e9020b347cd57575fe71ca3a06c117f4c7` |
+| `assets/robots/franka_panda/scene.xml` | `66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2` |
+| `assets/robots/franka_panda/scene_pose_marker_outboard_v3.xml` | `ddc34b13d8df403f3fdeeab94be75ca988541f2eac0a3e534704f68200c39a23` |
+| `assets/robots/franka_panda/scene_pose_marker_side_y_plus_75mm_r593.xml` | `1e95054dc74e1c8ff51042290450b5e01e7410dd653870c553f056892efca140` |
+| `src/cloud_edge_robot_arm/research/native_calibration_collection.py` | `67afea0fc818afbc388f548655bf204839fa0a13f4ae8301ac5fbff389dd80e6` |
+| `src/cloud_edge_robot_arm/research/native_collection_application.py` | `f1a5e2e555fb4bb2f231497754451f0e21cb5c2f3bb5303f965b7db84f562d2c` |
+| `src/cloud_edge_robot_arm/research/native_full_horizon_originals.py` | `f5534512f36eaa6ff1f702ea67c44148e02b207283a367ea683284f44a5dbd88` |
+| `src/cloud_edge_robot_arm/research/native_collection_grounding.py` | `720a999f2e7b349eca2adad055fd69eb31e634c013aa8dee3cf4c208ac188204` |
+| `src/cloud_edge_robot_arm/research/native_full_horizon_recorder.py` | `d3c775ae5828dd86265e2e46a40c2c99339a761cefa386c6616e146c97f27591` |
+| `src/cloud_edge_robot_arm/simulation/mujoco/native_horizon.py` | `d52d7a612544cbddde4a42ba0a2c1e827db2ed12d80f75b29f952e43cc5d38d3` |
+| `src/cloud_edge_robot_arm/simulation_runtime/worker.py` | `35844661596f08b704ee4b5a04a16c487f2d708e8283918e4353208e318b433e` |
+| `src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py` | `c8965744112b4f0d34eb958c21fd31091d2efd7b742c3371b235e23ba24f5a18` |
+| `src/cloud_edge_robot_arm/edge/safety/rules.py` | `0582a5345328f4a49ef18dcaa51474ff99f8da7759ffe7cfce0cbdd53a5a0115` |
+| `src/cloud_edge_robot_arm/vision/native_completion_horizon.py` | `7a0337c8a44e1d63188957a421dc10a49f4b80b47719d6e9d5a2d5e1382bf0a3` |
+| `src/cloud_edge_robot_arm/vision/native_completion.py` | `42528a56aa9edab01563d1e481bd06382e412f35f2e4c9e8f4783fe028ec6f75` |
+| `src/cloud_edge_robot_arm/vision/worker_owner.py` | `8128f8253e82deef5fab75fe5d24e79cd896c5588b9548b5ea4afe563731a21c` |
+| `tests/test_native_registered_teacher_release.py` | `985e4400996b2f269f34ae81c3b95da25d1114341bc3cf9bf2bca51dbc0cda21` |
+| `tests/test_native_horizon_execution.py` | `dd33ab30df0b42769e5d5ac78f51559bb6aff7c2f56ee2cab5f6b249e3142041` |
+| `tests/test_native_full_horizon_originals.py` | `6ae10964fe93386e411a7bb3d3f3224332c75a5541d3c496af32ea8538e9a295` |
+| `tests/test_native_registered_admission_replay.py` | `ceada96a5ede83e3b7a16740865a7c0e93a88cd7616bd635d76a759c9c2cb644` |
+| `tests/test_phase3_safety_shield.py` | `307db5d3534a1c9779a99242ef6f67b9439d334bdc11af495619fe8adf614f9e` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-20261121/stage-summary.public.md` | `f598f249adfaffaf78ae0a0b4d09c2505599abf7c0502bea4a0725b6d777a05a` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-20261121/validation.public.json` | `65607dd6c60f64b8c17b2611c71c5009a245957f8bbee011375112a6476eeae7` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-20261121/step-report.public.md` | `1eae3c3635a4dc971c30e04e8d5a04b6bf7b5be40e440ce53815948aa87addb9` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase4-20261121/stage-summary.public.md` | `b99d1485451e974f9b5f061ec8a2d95051e0cb8970aea4b0fafaf19250ab9b32` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase4-20261121/validation.public.json` | `40e2d6c69903038fdb8155656bad62ed75c5902fbbde1693bd5a36edb146c26c` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase4-20261121/step-report.public.md` | `5854b098336d2e295a604f766148a0791a6fa99c36d09257d72355fb68ad1ecc` |
+| `../harness-candidate-20261118/experiments/results/phase9/p0-first-teacher-20261119/v9-protocol/protocol.json` | `bee8ad0c30c927cba759269aa3e0a2e2bb25616e71fe390639fa762ed9d60c45` |
+| `../harness-candidate-20261118/experiments/results/phase9/p0-first-teacher-20261119/capture-detach-round/v9-protocol/protocol.json` | `6ac30e905b25b1bef8e137e00249affc0b1e87c97624a2a585b5dc33c9d6a40f` |
+| `../harness-candidate-20261118/experiments/results/phase9/p0-first-teacher-20261119/formal-v9-first-20261119/collection/originals/inventory.json` | `9e07118109e49852dadb8f34ede3254d975d0d97028fae1195a25579865e8849` |
