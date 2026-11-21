@@ -1,0 +1,85 @@
+# Phase 4 完整 v2 离线准入和 SafetyShield 回放计划
+
+制定模型 gpt-6.2-astra，2026-11-21。此计划供当前研发分支实施。
+
+## 问题与原始证据
+
+- 基线 c4f9d79c17341a3fe68871edceb7cf27229f8f42，研发分支 research/harness-candidate-v10-phase2-20261121。规划时该工作树干净，目标目录不存在。Phase 3 已完成 horizon 的运行端与严格读回修复。原证据见输入中的 Phase 3 步骤报告、阶段总结和验证清单。
+- 本轮软件 AST 探针从 _evaluate_registered_admission_v2 的 recorded=dict(...) 提取实际 22 个键，从 _Audit.admissions 提取 item 下标，对照该键集合执行查找。原始结果为 2350 KeyError('registered_pose_evaluated_at')，2366 KeyError('registered_pose_verdict')，2461 KeyError('marker')。这是字段探针，并非完整原件重跑。既有 reader 还期待 v1 决策、四个 supplemental、legacy verdict 及白名单。这些差异均来自同一个跨版本解码错误。
+- 现有 v8 partial 函数接受 1–17 行及末行 STOP，有独立时钟、像素、编译、回执、规则、语义重算；它重建每一行新 SafetyContext，要求当前类全字段，未向 builder 传 physics_step；不能直接代替完整 v9/v10 reader。完整 reader 先走 inventory/source/physics/operations/geometry/horizons；geometry.frames[aid] 没有 partial 所存 interval_id，应从原帧 metadata 的 frame.interval_id 获取。完整 grounding 要保留 policies 登记供 metrics 使用。
+- Phase 3 记录 tests/test_registered_collection_execution.py 基线 31 passed、33 failed，完全相同的节点/SQLite 身份异常已列入 validation.public.json。ordered_v8_context 在启动后把 app/live/worker.repository 换到另一份测试数据库，checkpoint_database 仍对应旧文件。独立于字段问题；只维护新正控需要的测试接线，不得放松生产数据库身份核验。
+- 固定合同显式完成条件 object_placed、placement_stable；collection_bootstrap_evidence 给 depth_error_bound_m=None，OpenCVTargetTracker 保留 UNKNOWN，collection_unknown_row_v2 拒绝显式异常。真实来源未支持的结束不得为了测试予以通过。软件正控和真实固定合同 STOP 分开报告。
+
+## 修改与前置边界
+
+- 复核 HEAD、分支、git status 与输入清单，使用真实当前工作树的 src 和共享 Python 3.12 虚拟环境，设置 PYTHONPATH=src:. 并检查 inspect.getfile 指向本工作树。测试写入隔离 tmp_path。只读阶段不打开仿真/渲染、硬件或生产数据库。
+- 生产修改限 native_full_horizon_originals.py 的完整 v2 准入、及从 v8 partial 提取的共同离线逻辑。按需在该文件提供只读归档来源选择；保留 v7/legacy 路径和 partial 零释放、STOP 前缀语义。若确有在线/离线可共用的纯条件/名义几何计算，可窄改 native_collection_grounding.py 及其调用入口，逐项证明线上规则与条件顺序不变。优先直接复用已有 registered_expected_conditions_v2、collection_unknown_row_v2、_v2_feedback 和 _v2_receipt。
+- 测试限既有 records/execution/full-horizon 夹具及一个聚焦回放测试模块；源码与回归证据用实际路径提交。新生产模块会改变完整 source_inventory 的键集合，优先在已有文件内实现。历史数据库、第三方警告、既有 mypy、执行器、Shield 判定、合同、任务预算、release、租约/急停和标记/相机接口均不在本轮修改范围。
+
+## 离线调度、原件与版本
+
+- 在 _Audit.admissions 最早处按精确协议选择完整 registered-v2(v9/v10)，旧分支保留；禁止由缺字段回退。独立 v8 public 函数仍只接受 v8 及原来 partial 范围。分离读取外围来源/初始化与共用的每行严格重建；不得让完整 reader 通过调用 partial public 函数或仅检查其 status 放行。可按需提取共享的行结构、receipt、判定和 Shield 纯函数；只有故意保持旧行为的协议分歧留在各入口。
+- 完整模式一定验证 8 PRE/8 POST/1 TERMINAL、8 个唯一完整授权顺序的 POST、8 个唯一一次 action span/回执，无中途 STOP、跳步或重复、10 个边界视图上限，2 个 B/E+8 grounding+17 admission 时钟、全部 capture-consumptions、真实 horizon 与 action join。每个 action 的 PRE/POST 与 self.actions 中 capture_acquisition_id/terminal_acquisition_id 严格相等；下步 PRE 复用前一步终帧的实际记录。注册 B/E 区分 compiler_reference_acquisition 与 active reference，重建原登记租约/编译冻结合同、实际 policy/binding、关联动作；原 bootstrap、clock、grounding、feedback、input/result 文件须在 inventory 并匹配路径/长度/哈希。
+- 拿实际 sources 校验历史能力。当前 read_protocol 默认校验全部当前 src，归档 tracker 的 pin_worker_source_inventory 重新哈希所有原路径。历史 raw 应用受信本地只读对应源码树，源字节按原 protocol.source_hashes 全量验，不加载或执行归档 Python。可为离线 group/registry 增加可选 source_root 参数并传入归档 tracker，在显式传入时用现有 read_protocol(current_sources=False) 重建固定配方和发布门再严格 pin，缺原源码时报来源不可复核。默认行为、online/startup 和 legacy 发布门保持。若复用当前来源要验证整清单真实匹配。禁止根据目录中的任意 Python、单个声称的散列或关闭 pin 选择版本。
+- 历史 SafetyContext（7e44e8657a2ec7f547ba87b6748173c7e4925b48）models.py SHA256 87ca98e33c2b636ea2e287157bd49dcdb9f9ad1d441173852ea2c0ef018bcf39，当前 9597cecf9ff02c1909f705353820901aaa4219b5f71083e89b082f11f1c2d135。已核对历史 app 当时未写 physics_step。按通过清单核验的 schema/source 选择确切字段投影，历史 v8/v9 可读取未出现该字段的归档；当前 v9 和 v10 必须为非 bool 的整数。v8 partial 当前测试 producer 的显式 null 仍维持历史测试接口；不得向 v10 传播，也不得给当前 v9 缺项补默认。历史输出、输入摘要仍按旧字节/JSON 精确比对。
+
+## 逐行重算和 SafetyShield
+
+- 回放 row/inputs/decision、feedback、shield_source、Shield 输入结果和回执使用严格键、JSON 类型、数据版本、源 generation、plan/hash 及 phase/step/signature。原捕获图像和物理状态绑定 TCP 与关节；feedback.json 使用 _v2_feedback 关联原 acquisition 引用、观察 ID/校验和、物理 S、完整状态及固定 scope；原 ground PRE feedback、执行 span 和返回值须对应同一任务/顺序。登记 tracker 在原 evaluate/finish UTC 重算 preview/registered_inputs 和 RGBD facts，复用同一 acquisition 的不可变观测对象；原 UTC/monotonic 前后包络、租约 epoch/任务 origin/deadline、5 秒严格新鲜度、最终发布边界均检查。未记录的运行中瞬间不做事后授权认证。
+- PRE 不带回执且 complete_horizon=false；POST/TERMINAL 用 _v2_receipt 绑定原 step/plan/command、dispatch/controller_return/terminal、回执唯一性、span、控制器嵌套结果、任务/attempt、原 acquisition、完整动作窗口及模拟网格。检查 PRE acquisition→EXECUTOR_ATTEMPT→POST 终帧的单调顺序，PRE admission finish ≤ executor begin ≤ callback start/finish ≤ controller timestamp ≤ end ≤ terminal acquisition/feedback ≤ admission start。区分 span 对应 EXECUTOR_ATTEMPT 与 HOLD padding，LIFT 和 RELEASE 保留 Phase 3 边界。
+- 用真正的 evaluate_registered_conditions_v2 及仅三项 supplemental（holding/released/safe_pose），逐一按 canonical 条件/来源复核 verdict，提取原 unknown 与严格 whitelist。PRE RELEASE 用已成功 PLACE、注册盒顶点（含 center_object_m 偏移）、区域内边界、高度 0.012 m 与 TCP 0.020 m 判名义位置，按 producer 的允许原因重写；显式要求始终保留。reasons、allowed、whitelist 顺序、unknown 顺序、semantic_effect_status、decision_kind、original_inputs_sha256、v2 schema、execution_admitted=false、native_qualification=UNKNOWN 均严格比对。只有全部检查成功才设置 decision_ok，并留存 unknown/policies。
+- Shield 读取实际 shield/config.json，核对固定 recipe、来源与有限历史 policy_hash，逐行验证 canonical input/result/grounding 路径、哈希、输出 input_sha256、error 与 error_type 均 null。PRE 按 producer builder 重建 contract/grounded step/state、scene_updated_at、wall_clock_now/telemetry UTC、task_started_at_mono/step_started_at/monotonic_now 有限且顺序有效，以原物理关节速度绝对值加 v_tcp/0.3 得到 PRE joint_velocities。POST 必须从同一步 PRE context 复制，原实现仅刷新 collision/estop、TCP、scene_updated_at、wall/telemetry/mono、joint_velocities（7 个绝对值）以及 connected/stopped/holding_object。holding_object_id 等未刷新字段按原 PRE 保留。允许 PRE/POST 两个 UTC 采样的实际先后顺序差异。永久保留原任务与步单调起点；对其余实际存在的时间包络做一致性核验，运行回放禁止使用当前 wall/monotonic 兜底。
+- v9 contract 无 PHYSICS_STEPS，STEP_TIMEOUT 按原 monotonic_now−step_started_at，当前 producer 同时记录绝对 frame S；历史 v9 无该字段按已验源版处理。v10 检测固定 contract.metadata、每步 horizon、非零 dispatch，PRE elapsed=0，POST elapsed=terminal−dispatch=registered terminal_steps。Task timeout 等其余规则均照原时钟。真实调用 pre_check/post_check，比较完整返回（含 evaluated_rules、触发、limits），分别对比存档 result 及 inputs.shield，禁止只比 allowed。
+- TERMINAL 只在 POST8 已逐项通过后处理；绑定、step、同一 acquisition/feedback、receipt 必须等于 POST8；shield_source 除 reused_from='POST' 之外逐字相同，保留输入/输出/grounding 全部 refs。复用 POST8 已验证结果，或针对同一 context 再离线计算并比对。不得推断第17次 Shield 调用，也不得要求 terminal 复用 POST 的整份 capture-consumption、tracker_clock、evaluation_at。TERMINAL 独立重新核其 tracker 时序、conditions、nominal/proprioception、payload 与 decision。
+
+## 红绿测试与夹具
+
+- [ ] 先在 c4f9d79c 的同一源码环境运行聚焦基线与最小软件 RED；保留原失败、耗时、测试节点、退出码及本地原始日志的哈希。若夹具先遇预期已知的 SQLite 错，只修新夹具关联的测试接线，将所用 repository 及 live.checkpoint_database=repository._teacher_checkpoint_database() 在同一启动路径取得，或直接使用单库；不 mock 掉 _teacher_checkpoint_read。区分夹具先决条件与真正 reader RED。
+- [ ] 以 tests/test_registered_collection_records.py 中 reseal、ordered_v8_context 的 source_recorder/nominal_scene/真实 v2 binding、live admission、冻结器为参考。为了在两种协议上走齐 17 行，首选保留固定原合同，在隔离的测试颜色 tracker 事实边界提供逐帧确定的 SOFTWARE_ONLY 事实包（写入端与独立读回端按 acquisition ID 从同一模拟传感器 fixture 重取，用真实 evaluate_registered_conditions_v2、白名单与 Shield 解算）。对显式完成条件有完整、可消费的输入；另外以实际 archived color tracker 的无深度证据重算同一条件，验证原固定合同 UNKNOWN→STOP、没有后续 TERMINAL。或采用独立测试原合同，单独产出可满足的显式完成条件，并标明 full-group source() 会拒绝该非固定合同。不得伪造冻结原件或将上述正控作为真实资格。
+- [ ] 正控通过生产 _Audit.admissions 的真实 dispatch，完整 file/manifest references、版本、决策、16个 Shield 调用、8个完整回执和17行顺序；仅在软件输入边界替换物理/颜色来源。使用 120 起的连续 H 时间线、B/E 两次相异采集同一 S；从 E 消费第一 PRE，以后使用上次终帧作为下一 PRE，最后 POST/TERMINAL 同 acquisition。可利用 Phase 3 eight_action_originals 的网格，独立填软件关节/TCP、对应 EXECUTOR_ATTEMPT 区间及事件。若采用模块化的 admissions 单元夹具，对不在夹具的先行 physics/geometry 审计要逐项披露；另加 group public 正确路由和错版拒绝覆盖。不得 mock admissions、整套 decision 函数、receipt decoder、shield result 或将相同输出当独立期望。
+- [ ] producer 夹具若复用旧 harness，需要显式传 v9/v10 固定 protocol/settings 到 build_collection_contract_v2，LIFT 真实格返回 S 差含 120 且 details.physics_steps 匹配、contact_hold_s=0.5，RELEASE 在控制窗口内结束并保留 240 终步尾段；软件反馈在 GRASP 后闭爪/持物、RELEASE 后松爪/无物。旧固定 +6、每步新帧、+120 跳格、只处理 GRASP 开闭、没有 physics_step、每期新建 Shield 起点，均不满足完整正控。用独立原 UTC 小增量表示每次采样，模拟时间 12960/240 与 UTC/单调计时独立。软件测试无需机械臂命令、图形后端或真实服务器。
+- [ ] 对 v9 当前绝对步（含非零 dispatch）、历史缺字段 v9、v10 相对步及准确边界各留正控；比较完整 Shield 输出，覆盖 PRE→POST GRASP/RELEASE 持物 ID 差异与 TERMINAL 没有新 Shield。可对离线 replay 使用固定旧 UTC、禁用条件/Shield 的现在兜底作为检验；改变原 v9 elapsed 令 STEP_TIMEOUT 拒绝以证明读取的是原时钟，v10 相同 wall-step 扰动在 task/scene/lease 仍有效时保持按物理 S。
+- [ ] 负控在 tmp_path 克隆的合成文件操作，缺必需 feedback_source、evaluation_at、registered_inputs、tracker_clock、shield time、receipt；潜入 v7 pose/marker、v1 admission、错 binding/feedback/receipt/version、v9/v10 source 类型交换、bool 当 S、将 v9 的绝对 S 写入 v10、缺当前 physics_step/缺历史所需字段。另测去行/重行/乱序、显式 UNKNOWN 冒充白名单、伪造 PRE RELEASE 例外、task/step 起点跨行动刷新、非当前 view/lease/回执、回放后篡改 result、TERMINAL 借他步/复制另一调用、失败 POST 后接 TERMINAL。对嵌套改变先传播 input→result.input_sha256→行中 refs→decision.original_inputs_sha256→受影响原件与 inventory.bytes/hash/count/inventory_sha256，必要时同步配套字段，断言完整性通过后仍因预期语义拒绝；再单独测试未重封的完整性拒绝。
+
+## 验证、记录和交付
+
+- [ ] 每个验收项保留预期 RED、实施路径、GREEN、测试节点及计数和范围。执行新测试、tests/test_native_full_horizon_originals.py、tests/test_native_collection_context_steps.py、tests/test_native_registered_teacher_release.py、tests/test_phase3_safety_shield.py、tests/test_native_horizon_execution.py、tests/test_native_completion_horizon_v1.py、tests/test_native_collection_grounding.py、tests/test_contract_timeout_metadata.py 及 Phase 3 validation.public.json 的剩余目标；运行 records 的 v7/legacy、v8 partial、重封负控和 execution 全组，对比节点及错误。基线正控若未能过 SQLite 应给出独立可运行的 v8 对照和当前完整数；新增失败需区别于已登记 33 项。禁止以 deselect 或整体 xfail 冒充通过。
+- [ ] 检查 git diff --check，变更 Python 的 py_compile/ruff，依据前期基线比较 mypy 的新增诊断；用 git diff/name/status 与哈希复核冻结原件、预算、release 和硬件/急停策略未变。记录本地原始日志与公开摘要之间的哈希关联，不随 Git 发送 SQLite/raw、凭据、SDK、模型权重、完整绝对路径或详细原件。编制 step-report.public.md、validation.public.json 和 stage-summary.public.md，说明 fixture 接缝、真实资格、历史来源覆盖与失败边界。
+- [ ] 依具体路径 git add / commit 后推送 origin 的 research/harness-candidate-v10-phase2-20261121。分别核对 HEAD、上游追踪分支与 git ls-remote 的分支 SHA 全等。开发验收为原记录版本、准入/Shield 精确重建及负控、兼容和交付；正式仿真次数 0，资格、物理效果、历史授权真实性不由此产生。如出现不同根因/扩大范围，停止相关修复、保留证据，由用户指定 gpt-6.2-astra 另起计划。
+
+## 输入文件与 SHA256
+
+| 仓库相对路径 | SHA256 |
+| --- | --- |
+| `src/cloud_edge_robot_arm/research/native_full_horizon_originals.py` | `89316d77934d97ed1ee61a3b868c173ecdd47aa32b2e3c0a15b534c27195b8e7` |
+| `src/cloud_edge_robot_arm/research/native_collection_application.py` | `f1a5e2e555fb4bb2f231497754451f0e21cb5c2f3bb5303f965b7db84f562d2c` |
+| `src/cloud_edge_robot_arm/research/native_full_horizon_recorder.py` | `d3c775ae5828dd86265e2e46a40c2c99339a761cefa386c6616e146c97f27591` |
+| `src/cloud_edge_robot_arm/research/native_collection_grounding.py` | `720a999f2e7b349eca2adad055fd69eb31e634c013aa8dee3cf4c208ac188204` |
+| `src/cloud_edge_robot_arm/research/native_calibration_collection.py` | `c0abbe8922cee0063208ff4b88cf4a0252bb5c5c667022a36fdb9221ea0485d1` |
+| `src/cloud_edge_robot_arm/research/native_archived_tracker.py` | `3baa9432abd489805d84fc89df0dce31a4dbf60dd7744b9842f8cc4a04d8e4d5` |
+| `src/cloud_edge_robot_arm/research/raw_episode_v3.py` | `5666443333cb88a72d103df574ccade4bdf0ad5fa9d659c9fb77cc6099aa28e3` |
+| `src/cloud_edge_robot_arm/edge/evidence/conditions.py` | `9583d8330ead52c68632c5ed63e8fb302044ca5b0ccbd8c5b5bf9cd064cbdddc` |
+| `src/cloud_edge_robot_arm/edge/safety/models.py` | `9597cecf9ff02c1909f705353820901aaa4219b5f71083e89b082f11f1c2d135` |
+| `src/cloud_edge_robot_arm/edge/safety/context_builder.py` | `4615404f4259210fca1b7218cc9e5a1dc683721f0218367083a957bf41396bed` |
+| `src/cloud_edge_robot_arm/edge/safety/shield.py` | `e2afac8c9f2e06270b9975562842d56177d2aa9ed05b833f0126f64951156cf9` |
+| `src/cloud_edge_robot_arm/edge/safety/rules.py` | `0582a5345328f4a49ef18dcaa51474ff99f8da7759ffe7cfce0cbdd53a5a0115` |
+| `src/cloud_edge_robot_arm/simulation/mujoco/native_horizon.py` | `d52d7a612544cbddde4a42ba0a2c1e827db2ed12d80f75b29f952e43cc5d38d3` |
+| `src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py` | `c8965744112b4f0d34eb958c21fd31091d2efd7b742c3371b235e23ba24f5a18` |
+| `src/cloud_edge_robot_arm/vision/worker_owner.py` | `8128f8253e82deef5fab75fe5d24e79cd896c5588b9548b5ea4afe563731a21c` |
+| `src/cloud_edge_robot_arm/vision/owner_registration.py` | `17ccc6ea0c6e3095e77a37880b4fcbc7448eef88ecf94813369e5daaff28a43a` |
+| `src/cloud_edge_robot_arm/vision/tracking.py` | `9c8cf00659dd3542d21f108df21a1880b3b540d07e9fd2fcd7ce020a1d6d876b` |
+| `src/cloud_edge_robot_arm/vision/native_completion_horizon.py` | `7a0337c8a44e1d63188957a421dc10a49f4b80b47719d6e9d5a2d5e1382bf0a3` |
+| `src/cloud_edge_robot_arm/contracts/models.py` | `d9b3888fca6bb46c62326c9bf5fd49cf4c646ce21cf29994315107bf41d79464` |
+| `tests/test_registered_collection_records.py` | `8e72ce8c58e839117606718442a3c2e4e0bbd7d9c38f24499acf1a3149b79750` |
+| `tests/test_registered_collection_execution.py` | `f949dfdf9bdfa245d2304d431641e7d24ff1eb35893cd5fb711c3b4a27928bb1` |
+| `tests/test_registered_grounding_preparation.py` | `d58c36e2bd0480fbdd174905cdc0776ce182d2b253b8b0b1b07283ef4fe13df4` |
+| `tests/test_native_full_horizon_originals.py` | `6ae10964fe93386e411a7bb3d3f3224332c75a5541d3c496af32ea8538e9a295` |
+| `tests/test_native_registered_teacher_release.py` | `23809502f7438d84810cc928e1ab368185e653dbd9f038f1a9355529034b10f6` |
+| `tests/test_native_collection_context_steps.py` | `67946761bd2ae96b84646bf7052335313f0c93e5d09314bbc6bdceca6f4cdba6` |
+| `tests/test_native_collection_authority.py` | `582898d9661d0a356b04b55381aebf13265568acd9f29a4e442168c3cf740e4f` |
+| `tests/test_phase3_safety_shield.py` | `307db5d3534a1c9779a99242ef6f67b9439d334bdc11af495619fe8adf614f9e` |
+| `configs/research/native_registered_single_teacher_p0_20261119.yaml` | `94dc78d497f3a5e2bbbedea5b6bfc4ae20f945203a1a83c8796bb46b47753fcf` |
+| `configs/research/native_registered_single_teacher_p0_v10_20261121.yaml` | `2b893cbcd1b959703ceada3663433eebb975adbcf8278a522967f2ad12131cf8` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-20261121/step-report.public.md` | `1eae3c3635a4dc971c30e04e8d5a04b6bf7b5be40e440ce53815948aa87addb9` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-20261121/stage-summary.public.md` | `f598f249adfaffaf78ae0a0b4d09c2505599abf7c0502bea4a0725b6d777a05a` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-20261121/validation.public.json` | `65607dd6c60f64b8c17b2611c71c5009a245957f8bbee011375112a6476eeae7` |

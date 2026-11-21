@@ -36,6 +36,116 @@ V10_FIRST = "native-p0-v10-20261121-0001"
 V10_SECOND = "native-p0-v10-20261121-0002"
 
 
+@pytest.fixture
+def archived_v9_protocol(tmp_path, monkeypatch):
+    """Build a historical-shaped source inventory without using private originals."""
+    import hashlib
+    import shutil
+
+    from cloud_edge_robot_arm.research import native_calibration_collection as collection
+
+    source_root = tmp_path / "archived-sources"
+    later_sources = {
+        "src/cloud_edge_robot_arm/research/native_action_timing.py",
+        "src/cloud_edge_robot_arm/research/native_checkpoint_diagnostic.py",
+    }
+    selected = set(collection._registered_teacher_protocol()["source_hashes"]) - later_sources
+    for name in selected:
+        target = source_root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, target)
+    (source_root / "scripts/collect_native_calibration.py").write_bytes(
+        b"# Software archive fixture\n"
+    )
+    (source_root / CONFIG.relative_to(ROOT)).write_bytes(CONFIG.read_bytes())
+    archived = {
+        name: hashlib.sha256((source_root / name).read_bytes()).hexdigest() for name in selected
+    }
+    with monkeypatch.context() as patch:
+        patch.setattr(collection, "source_inventory", lambda **_: archived)
+        protocol = collection._registered_teacher_protocol()
+    directory = tmp_path / "archived-protocol"
+    directory.mkdir()
+    save_exclusive(directory / "protocol.json", protocol)
+    return directory, source_root, protocol
+
+
+def test_archived_v9_group_and_registry_use_the_exact_source_tree(archived_v9_protocol, tmp_path):
+    directory, source_root, protocol = archived_v9_protocol
+    snapshot = (directory / "protocol.json").read_bytes()
+    group_root = tmp_path / "empty-originals"
+    group_root.mkdir()
+    with pytest.raises(ValueError, match="recipe/source"):
+        read_native_full_horizon_group(directory, assignment_id=FIRST, root=group_root)
+    with pytest.raises(ValueError, match="unreleased"):
+        read_native_full_horizon_group(
+            directory, assignment_id=SECOND, root=group_root, source_root=source_root
+        )
+    group = read_native_full_horizon_group(
+        directory, assignment_id=FIRST, root=group_root, source_root=source_root
+    )
+    assert (
+        group.assignment_id == FIRST and not group.source_complete and not group.execution_admitted
+    )
+    reports = []
+    registry = reconstruct_native_full_horizon_registry(
+        directory, roots={FIRST: group_root}, group_sink=reports.append, source_root=source_root
+    )
+    assert registry.assigned_group_count == 9 and registry.joint_bound_m is None
+    assert [r["assignment_id"] for r in reports if r.get("state") != "NOT_RUN"] == protocol[
+        "released_assignments"
+    ]
+    assert (directory / "protocol.json").read_bytes() == snapshot
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "script",
+        "new_python",
+        "fixed_asset",
+        "fixed_release",
+        "symlink",
+        "second_release",
+        "budget",
+        "source_sha",
+        "version",
+    ],
+)
+def test_archived_v9_rejects_source_or_registration_changes(archived_v9_protocol, tmp_path, change):
+    from cloud_edge_robot_arm.research import native_calibration_collection as collection
+
+    directory, source_root, protocol = archived_v9_protocol
+    if change == "script":
+        (source_root / "scripts/collect_native_calibration.py").write_bytes(b"# different bytes\n")
+    elif change == "new_python":
+        (source_root / "src/cloud_edge_robot_arm/extra.py").write_bytes(b"# extra source\n")
+    elif change == "fixed_asset":
+        (source_root / collection.BASE_ASSET).write_bytes(b"<mujoco />\n")
+    elif change == "fixed_release":
+        (source_root / CONFIG.relative_to(ROOT)).write_bytes(CONFIG.read_bytes() + b"\n")
+    elif change == "symlink":
+        alias = tmp_path / "root-alias"
+        alias.symlink_to(source_root, target_is_directory=True)
+        source_root = alias
+    elif change == "second_release":
+        protocol["released_assignments"].append(SECOND)
+        protocol["assignments"][1]["status"] = "RELEASED"
+    elif change == "budget":
+        protocol["authorized_actual_budget"]["teacher_acquisitions"] = 2
+    elif change == "source_sha":
+        protocol["source_hashes"]["pyproject.toml"] = "a" * 64
+        protocol["source_generation"] = digest(protocol["source_hashes"])
+    else:
+        protocol["schema_version"] = collection.REGISTERED_TEACHER_V10_SCHEMA
+    (directory / "protocol.json").unlink()
+    save_exclusive(directory / "protocol.json", protocol)
+    with pytest.raises(ValueError):
+        read_native_full_horizon_group(
+            directory, assignment_id=FIRST, root=tmp_path, source_root=source_root
+        )
+
+
 def test_v10_prepared_protocol_reaches_the_single_release_gate(tmp_path, monkeypatch):
     registration = tmp_path / "protocol"
     prepared = prepare_native_calibration(V10_CONFIG, output=registration)

@@ -1,0 +1,70 @@
+{
+  "round": "round-v10-phase4-lease-renewal-20261121",
+  "author_model": "gpt-6.2-astra",
+  "baseline_commit": "c4f9d79c17341a3fe68871edceb7cf27229f8f42",
+  "status": "PLAN_BEFORE_FIX",
+  "formal_simulation_runs": 0,
+  "repo_inputs_sha256": {
+    "src/cloud_edge_robot_arm/research/native_full_horizon_originals.py": "18a5396eed8f243a189c43868e29f397d88af49b10c94a9ebcde1cf23cff7ecc",
+    "src/cloud_edge_robot_arm/research/native_collection_application.py": "f1a5e2e555fb4bb2f231497754451f0e21cb5c2f3bb5303f965b7db84f562d2c",
+    "src/cloud_edge_robot_arm/research/native_collection_grounding.py": "720a999f2e7b349eca2adad055fd69eb31e634c013aa8dee3cf4c208ac188204",
+    "src/cloud_edge_robot_arm/vision/worker_owner.py": "8128f8253e82deef5fab75fe5d24e79cd896c5588b9548b5ea4afe563731a21c",
+    "src/cloud_edge_robot_arm/vision/owner_registration.py": "17ccc6ea0c6e3095e77a37880b4fcbc7448eef88ecf94813369e5daaff28a43a",
+    "src/cloud_edge_robot_arm/simulation_runtime/worker.py": "35844661596f08b704ee4b5a04a16c487f2d708e8283918e4353208e318b433e",
+    "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py": "c8965744112b4f0d34eb958c21fd31091d2efd7b742c3371b235e23ba24f5a18",
+    "src/cloud_edge_robot_arm/vision/raw_recorder_v3.py": "6efa16f1b5497780ded501c7cc756f8e731098c41e835f49b9badee0b98e059a",
+    "tests/test_native_registered_admission_replay.py": "fc9d2534ab0c31d5dc2ff5cebd4b272267ef21bb1c0b9f26edb9e2d4c90ccf37",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase4-20261121/plan.json": "cb6a56762978d0b554df45caa0ca4ddc8e487d5beab71617bcbe82fbd6dca308",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase4-clock-domains-20261121/plan.json": "e8a5df634b37ceb48c7f64f54caf0a77643332a2481a8bf21be2b845f27d211b"
+  },
+  "software_evidence": {
+    "v90 软件样本 / registration-timeline.json": {
+      "sha256": "5a129ade6e609438cc176d6ea03cf702476e119a5c10629924ce3d1b3ece0081",
+      "bytes": 3169
+    },
+    "v90 软件样本 / registered-tracker-bootstrap.json": {
+      "sha256": "dc0c3cefb097f825706b62998253b70dbdf0046083ad5102fe07d66bdc47b63f",
+      "bytes": 1157
+    },
+    "v90 软件样本 / tracker-clock/dispatch.json": {
+      "sha256": "b3052bf1855969a5c487e7343b910d4a601e92aac5888a24781c9aa66d6e41be",
+      "bytes": 2666
+    },
+    "v90 软件样本 / original-plan.json": {
+      "sha256": "e1ae8fda628e4357839b1a92323842ca7113db781a9647e9b59a76bf60151af5",
+      "bytes": 578232
+    },
+    "v100 软件样本 / registration-timeline.json": {
+      "sha256": "bb14adaddd79aeafe90cbb3c552e34816da9ca3f42ec3ab43af9d277fce63e0f",
+      "bytes": 3169
+    },
+    "v100 软件样本 / registered-tracker-bootstrap.json": {
+      "sha256": "dc0c3cefb097f825706b62998253b70dbdf0046083ad5102fe07d66bdc47b63f",
+      "bytes": 1157
+    },
+    "v100 软件样本 / tracker-clock/dispatch.json": {
+      "sha256": "b3052bf1855969a5c487e7343b910d4a601e92aac5888a24781c9aa66d6e41be",
+      "bytes": 2666
+    },
+    "v100 软件样本 / original-plan.json": {
+      "sha256": "08a644db5cae19166067cbf4e6da806d460ba262bd57132b0b3126cfde970624",
+      "bytes": 590975
+    }
+  },
+  "sections": {
+    "原始事实与根因": [
+      "作者 gpt-6.2-astra，2026-11-21。主轮基线 c4f9d79c17341a3fe68871edceb7cf27229f8f42。完整回放代码与软件夹具仍在集成，规划时已对列出的输入取 SHA256。独立记录保存已开始的时钟域修复计划与 RED 的原始字节。",
+      "生产应用先取 registration lease，用它编译 original 并完成 validate_registration_handoff(checked_at)。原合同 deadline 由 issued_at 与登记 task_timeout_s 得出。BOOTSTRAP_E 在 checked_at 后记录自身前后两次消费与 owner；完成 E 后才创建 registered tracker。随后写出的 registration_lease_source 仍是先前已登记的那个对象。该文件未记录 tracker 初始化末端的独立 lease observation。",
+      "worker 的独立心跳线程在同一 lease_id 上执行 heartbeat_lease。常规 UTC 模式在事务内只对尚有效且未释放、未取消、owner 相符的租约更新 expires_at/heartbeat_at。原有 job_id/run_id/worker_id/lease_id/attempt/acquired_at 六元组保持，expires_at 随心跳可变。旧登记快照的 expires_at 只约束当时注册与 handoff.checked_at；不为后来的 tracker 末端提供当前租约观察。当前 _Audit.registered_bootstrap_v2 错把 bootstrap.finished_at 与该旧上限再次比较。",
+      "实测软件探针使用两种协议的既有 17 行夹具、真实冻结合同及 B/E 像素对象。在内存将 timeline.lease 和 bootstrap.registration_lease_source 的同一旧期限设为 checked_at + 1µs。真实 validate_registration_handoff 与 _verify_registered_original_v2 对两版均通过；后续 E lease 同 epoch、仍未到期。注册 tracker finish 比旧期限晚 10µs，同时早于 effective_deadline 与 frame capture + 5s。当前注册 bootstrap 方法两版均抛 ValueError(\"registered bootstrap outside dispatch chronology\")。探针模拟两次来源快照，未启动真实数据库心跳或正式仿真。"
+    ],
+    "实施、测试与范围": [
+      "限定修改 _Audit.registered_bootstrap_v2 中的单个时间链，保留 dispatch_finished 不为空及 dispatch_finished ≤ started_at ≤ finished_at，移除与 timeline.lease.expires_at 的再次比较。原 timeline/registration snapshot 整体相等、B/E acquisition 和区分、handoff 时旧租约仍有效、原 compiler 身份/时间、source_generation 均须保持。registered_preview_v2 已独立要求 reference.captured_at ≤ started ≤ finished < min(original.effective_deadline_at, capture+5s)，应继续从完整入口覆盖。",
+      "保留 _Audit.tracker_clock 对 E、grounding、admission 的 before/after 快照原 epoch/owner、各自 observed_at/expires_at、工作起点和期限的检查，以及 registered_grounding_v2 的 lease/原 checkpoint/final/valid_until 来源约束。禁止用稍后一次快照为超时 handoff 补证，也不可假定所有未来调用都使用旧的 expires_at。归档材料支持的是来源与计算一致性，未为注册 tracker 结束瞬间另采租约的原件保持这一事实。",
+      "RED/GREEN 正控在 SOFTWARE_ONLY 测试传感/租约夹具里构造同一 epoch 的两个快照，保持所有 producer/reader 准入与 Shield 规则真实。B/登记/checked_at 用短到期，提前在尚有效时模拟心跳后，E 和第一步 grounding 消费使用续期时限；原 registration_lease_source 仍保存旧 expiry。受控时钟的实测相对 issued_at 的 µs 值为注册 8、checked_at 11、E.start 13、E.finish 15、tracker.start 17、tracker.finish 22；可将旧 expires_at 定在 checked_at 之后且早于 tracker.finish。由独立断言确认旧 expiry、原 task/5s 不等式、同 epoch 和实际两种 expires_at，而非仅比预期返回布尔值。若在私有临时副本重封负控，更新受影响的引用/文件长度/清单哈希；永久冻结原件只读。",
+      "负控至少包括 (1) 换 E 或 grounding 的 lease_id/attempt/acquired_at，完整读回应拒绝 crossed original lease；(2) 旧登记 expiry 等于 handoff.checked_at，两份登记来源一致，仍应由 validate_registration_handoff 拒绝；(3) 有效同 epoch 续期，tracker.finish 恰好等于 dispatch.capture+5s 或 original.effective_deadline，仍须被严格边界拒绝。后者可在独立 registered_preview_v2 初始化测试中验证，避免被更早的下一步顺序错误掩盖。运行主轮 v9/v10 完整回放、重封及时间域偏移回归，分别记录 RED/GREEN 和原件哈希。",
+      "Shield 来源已使用原 MONOTONIC 数值、worker task 原点、同一步的 PRE 起点和 UTC 包络重算每项 SafetyShield 结果。RawRecorder 的 MONOTONIC 与 Shield 的 Python monotonic 通常共享底层时钟；精确绑定两者（含 ns/浮点边界、归档描述与平台语义）可形成独立的协同重封检测设计。该额外关系不参与本次旧租约误拒或先前 OC1/Raw 两域误比。此轮不改 Shield 程序、回放规则或接口；不声称已验证这种加强关系，也不以本轮能力证明真实过去授权。",
+      "执行前重新核对相关函数、文件哈希及并行时钟域修改，保留其原比较域测试。使用当前工作树、隔离临时目录和共享解释器；在主轮步骤及阶段摘要中分开列出两项修复和各自验证。实际仿真运行数 0；release、租约发放与撤销、急停、硬件、预算、原始研究资格均维持。独立新根因另开 Astra 计划。"
+    ]
+  }
+}

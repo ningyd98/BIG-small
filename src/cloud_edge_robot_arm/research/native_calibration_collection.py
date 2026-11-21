@@ -194,20 +194,31 @@ def _collection_policy(
 def source_inventory(
     *, marker_family_id: str | None = None, protocol_schema: str | None = None
 ) -> dict[str, str]:
+    return _source_inventory_at(
+        ROOT, marker_family_id=marker_family_id, protocol_schema=protocol_schema
+    )
+
+
+def _source_inventory_at(
+    root: Path,
+    *,
+    marker_family_id: str | None,
+    protocol_schema: str | None,
+) -> dict[str, str]:
     family = marker_family(LEGACY_FAMILY if marker_family_id is None else marker_family_id)
     policy = _collection_policy(marker_family_id, protocol_schema)
-    paths = sorted((ROOT / "src/cloud_edge_robot_arm").rglob("*.py"))
+    paths = sorted((root / "src/cloud_edge_robot_arm").rglob("*.py"))
     paths += [
-        ROOT / (policy.config if policy is not None else CONFIG),
-        ROOT / BASE_ASSET,
-        ROOT / family.asset_path,
-        ROOT / "scripts/collect_native_calibration.py",
-        ROOT / "pyproject.toml",
+        root / (policy.config if policy is not None else CONFIG),
+        root / BASE_ASSET,
+        root / family.asset_path,
+        root / "scripts/collect_native_calibration.py",
+        root / "pyproject.toml",
     ]
     if policy is not None:
-        paths.append(ROOT / MARKED_ASSET)
+        paths.append(root / MARKED_ASSET)
     return {
-        str(p.relative_to(ROOT)): hashlib.sha256(regular(p).read_bytes()).hexdigest() for p in paths
+        str(p.relative_to(root)): hashlib.sha256(regular(p).read_bytes()).hexdigest() for p in paths
     }
 
 
@@ -282,7 +293,12 @@ def _registered_settings(
     return expected
 
 
-def _protocol(config: Path, *, historical_sources: dict[str, str] | None = None) -> dict[str, Any]:
+def _protocol(
+    config: Path,
+    *,
+    historical_sources: dict[str, str] | None = None,
+    archived_source_root: Path | None = None,
+) -> dict[str, Any]:
     from cloud_edge_robot_arm.research.native_collection_grounding import (
         geometry_registration,
         release_reference_registration,
@@ -305,9 +321,23 @@ def _protocol(config: Path, *, historical_sources: dict[str, str] | None = None)
     ):
         raise ValueError("fixed registered collection policy required")
     geometry = geometry_registration(marker_family_id=family_id)
-    sources = source_inventory(
-        marker_family_id=family_id, protocol_schema=settings["schema_version"]
-    )
+    if archived_source_root is None:
+        sources = source_inventory(
+            marker_family_id=family_id, protocol_schema=settings["schema_version"]
+        )
+    else:
+        if historical_sources is not None:
+            raise ValueError("archived tree inventory cannot be overridden")
+        sources = _source_inventory_at(
+            archived_source_root,
+            marker_family_id=family_id,
+            protocol_schema=settings["schema_version"],
+        )
+        for name, sha in sources.items():
+            if name.startswith("src/") or name == "scripts/collect_native_calibration.py":
+                continue
+            if hashlib.sha256(regular(ROOT / name).read_bytes()).hexdigest() != sha:
+                raise ValueError("archived fixed configuration or asset bytes changed: " + name)
     if historical_sources is not None:
         if (
             not isinstance(historical_sources, dict)
@@ -615,10 +645,15 @@ def read_protocol(path: Path, *, current_sources: bool = True) -> dict[str, Any]
     return protocol
 
 
-def _registered_collection_protocol(historical_sources=None):
+def _registered_collection_protocol(
+    historical_sources: dict[str, str] | None = None,
+    *,
+    archived_source_root: Path | None = None,
+) -> dict[str, Any]:
     base = _protocol(
         ROOT / _PREPARE_POLICIES[SIDE_PREPARE_ONLY_FAMILY].config,
         historical_sources=historical_sources,
+        archived_source_root=archived_source_root,
     )
     base.update(
         schema_version=REGISTERED_COLLECTION_SCHEMA,
@@ -654,13 +689,19 @@ def _registered_collection_protocol(historical_sources=None):
     return base
 
 
-def _registered_collection_protocol_v2(historical_sources=None):
+def _registered_collection_protocol_v2(
+    historical_sources: dict[str, str] | None = None,
+    *,
+    archived_source_root: Path | None = None,
+) -> dict[str, Any]:
     """版本分离的遮挡实验接口；实际任务和额度保持零释放。"""
     from cloud_edge_robot_arm.research.native_collection_grounding import (
         registered_nominal_region_policy_v1,
     )
 
-    base = _registered_collection_protocol(historical_sources)
+    base = _registered_collection_protocol(
+        historical_sources, archived_source_root=archived_source_root
+    )
     base.update(
         schema_version=REGISTERED_OCCLUSION_SCHEMA,
         collection_policy_id="registered-model-collection-v2",
@@ -695,13 +736,23 @@ def _registered_teacher_settings(path: Path) -> dict[str, Any]:
 
 
 def _registered_teacher_protocol(
-    historical_sources: dict[str, str] | None = None, *, release: dict[str, Any] | None = None
+    historical_sources: dict[str, str] | None = None,
+    *,
+    release: dict[str, Any] | None = None,
+    archived_source_root: Path | None = None,
 ) -> dict[str, Any]:
     """Keep the reviewed v8 execution recipe and open only this new teacher assignment."""
     fixed = _registered_teacher_settings(ROOT / _REGISTERED_TEACHER_CONFIG)
     if release is not None and release != fixed:
         raise ValueError("registered teacher release settings changed")
-    protocol = _registered_collection_protocol_v2(historical_sources)
+    if archived_source_root is not None:
+        _registered_teacher_settings(archived_source_root / _REGISTERED_TEACHER_CONFIG)
+        source_tree = archived_source_root / "src/cloud_edge_robot_arm"
+        if not source_tree.is_dir() or any(p.is_symlink() for p in source_tree.rglob("*")):
+            raise ValueError("regular archived Python source tree required")
+    protocol = _registered_collection_protocol_v2(
+        historical_sources, archived_source_root=archived_source_root
+    )
     release_id = fixed["release_id"]
     first = fixed["released_assignment"]
     assignments = []

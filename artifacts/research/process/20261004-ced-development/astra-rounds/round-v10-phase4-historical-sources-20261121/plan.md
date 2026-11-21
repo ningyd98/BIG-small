@@ -1,0 +1,54 @@
+# Phase 4 补充计划：冻结 v9 登记与归档源码核验
+
+制定模型 gpt-6.2-astra，2026-11-21。
+
+## 范围与原始失败
+
+- 基线 c4f9d79c17341a3fe68871edceb7cf27229f8f42。此次输入含主轮未提交的 _read_full_horizon_protocol 与 source_root 传递；以输入清单的文件哈希为准。主轮其他工作可同时开展，实施前重新比对该 helper，复核独立更改后再合并。补充计划目录事先不存在。
+- 首组和采集分离轮的两个冻结协议各有独立的只读源码快照。两份登记均为 78294 字节，各自归档包含 448 个 Python 文件和 6 个固定路径文件，独立枚举、逐一 SHA256 并 pin_worker_source_inventory 后与各自 source_hashes 完全相等。交叉使用这两组来源可构成错误来源负控。软件探针仅让当前已加载的 v9 生成器消费独立枚举到的源树摘要，得到与两份登记完全相等的 canonical 协议。未导入或执行归档 Python。
+- 本轮显式入口 _read_full_horizon_protocol(directory, archive_root) 对上述两组均报 ValueError('registered family source inventory incomplete or mismatched')；read_protocol(current_sources=False) 同样报错；默认 read_protocol 对两组均报 ValueError('registered teacher recipe/source/single-release identity changed')。当前 inventory 有 456 项，新增 native_action_timing.py 与 native_checkpoint_diagnostic.py；尾部 CLI 从归档的 b701a0da… 变为 e3473e3c…。基线失败已复现于源码读取层，未尝试仿真或真实执行。
+- Phase 3 临时复现样本的协议是 78556 字节、9f9efb61…，其 current_sources=False 读回成功。真正首组冻结登记是 bee8ad0c…；其匹配快照在同轮的 v9-source，采集分离轮匹配快照在该独立轮次的 v9-source。公开仅列相对源码路径、大小和摘要。
+
+## 实现步骤
+
+- [ ] 先在新增归档回放聚焦测试或 tests/test_native_registered_teacher_release.py 建 RED。用临时完整来源树建独立软件样本；登记预期由测试独立枚举，固定 v9 配方由当前可信 builder 生成。临时树去掉两项确知为后加的 Python 文件，CLI 换为明确标识的软件字节；固定 XML/YAML、pyproject 保留真实固定字节。可在测试独立准备输入时注入该完整清单，但执行被测 reader 时撤销注入。两组本地真正冻结配对额外作只读验证；CI 无需持有这些私有文件。
+- [ ] 优先复用 source_inventory 既有枚举方式，加私有/可选根（缺省沿用 ROOT）。既有路径集合包含 src/cloud_edge_robot_arm 下所有 *.py，加侧面协议基础 YAML、基准 XML、标记 XML、侧面 XML、pyproject.toml 及 CLI；用 regular/现有 pin 检查无词法符号链接、完整文件哈希。根只由显式调用者供给，协议内的路径和自报键列表不能决定候选文件集合。不要切 cwd、改全局 ROOT、执行或导入源树代码、把未经验证的 historical_sources 作为 current_sources。
+- [ ] 将根参数以 keyword-only 方式传给私有 _registered_teacher_protocol → _registered_collection_protocol_v2 → _registered_collection_protocol → _protocol 的 source_inventory 入口，或等价复用已有固定 recipe builder。归档 v9 显式路径用完全独立算出的来源清单，从当前已审核的代码生成原 schema、动作窗口/预算、region_policy、release_reference、assignments 和 release gate，再与 load_json 读到的整份登记做 canonical 严格相等比较。拒绝未匹配清单、错版、两份来源交叉或重复 JSON key。不得重写 protocol/原件或合并新旧键集合。
+- [ ] 验证替代源树内所需固定配置与资产贴合已有不可变常量（侧面基础 YAML、三个 XML、v9 release YAML SHA256 94dc78d497f3a5e2bbbedea5b6bfc4ae20f945203a1a83c8796bb46b47753fcf）；v9 release YAML 独立校验，保留原 source_hashes 的 454 项。pyproject 在两个冻结来源与当前相同，用已有可信 bytes/hash 守住现行 non-source 语义，仅 CLI 的历史字节在显式来源树中重新计算并由独立完整比对确认。归档协议不能将更改的固定资产/配置与伪原件一起重封后放行。
+- [ ] 将这一分支仅接到 _read_full_horizon_protocol 的显式 source_root + 登记 schema v9，保留无根 read_protocol 的现行全部语义，显式 v10 使用主轮已有核验，v7/v8/legacy 仍拒绝进入归档 teacher 入口。对 group/registry 的 source_root 参数逐层传递，并保持 _Audit 已 pin 的 tracker 源根。read_protocol 对各版的默认和 current_sources=False、startup/claims、释放门、CLI 均保持原有行为。无需迁移其他历史协议、改写实际预算或新增通用来源信任库。
+
+## 验证与成果界限
+
+- [ ] 正控覆盖可信根独立清单重建、显式 group/registry 的 released/unreleased 调度以及既有同构 v9/v10 来源路径。原协议 bytes、原 source_generation、所有 source_hashes、完整 fixed recipe 必须相等；可证 registry 仍只有原允许的一组。故意交换两份旧 v9 配对、删一项/多一项清单、修改归档 CLI/源码字节、错根、符号链接、更改来源自报 SHA、重封 release 第二组、放大预算、篡改固定 XML 或 YAML 后均应拒绝。版本错误和无显式根的旧登记仍分别按原门处理。
+- [ ] 运行 tests/test_native_registered_teacher_release.py、主轮完整 registered admission replay 测试、现有 historical/current source 验证及 v8/v10 release 负控，核对 py_compile、ruff、git diff --check。不改变 33 项既有 SQLite 的基线处置。验证两组来源树时可用归档目录的相邻协议，输入日志留本地，核对前后 SHA。
+- [ ] 发现新的 schema 或与固定配方本身的独立差异，再开 Astra 计划。本轮交付只认证来源与固定协议的一致性；历史真实运行若只留部分记录，仍应由完整 reader 独立拒绝不完整行/状态。正式仿真次数为 0，不改变准入权限、研究资格、冻结原件或真实预算。将步骤证据汇入主轮公开摘要，提交后核对本地、上游和远端 SHA，相对路径与安全摘要随代码提交。
+
+## 冻结来源配对
+
+| 冻结登记 | 协议 SHA256 | 来源 generation | 核验项数 |
+| --- | --- | --- | --- |
+| 首组冻结 v9 登记 | `bee8ad0c30c927cba759269aa3e0a2e2bb25616e71fe390639fa762ed9d60c45` | `71f74248334d70a6c0ddad4909681d0d6c6ef3c02299c3186b8a602b39a4e7aa` | 454 |
+| 采集分离轮冻结 v9 登记 | `6ac30e905b25b1bef8e137e00249affc0b1e87c97624a2a585b5dc33c9d6a40f` | `e853c904a1e1d69cd69422663b257550d5839188227d9a28090614d0c6d491e0` | 454 |
+
+## 输入指纹
+
+| 仓库相对路径或本地证据标题 | SHA256 |
+| --- | --- |
+| `src/cloud_edge_robot_arm/research/native_calibration_collection.py` | `c0abbe8922cee0063208ff4b88cf4a0252bb5c5c667022a36fdb9221ea0485d1` |
+| `src/cloud_edge_robot_arm/research/native_full_horizon_originals.py` | `52ba1193983efed67ec40b85d4c3883a9c147faba7b538add9ae3c100546d23b` |
+| `src/cloud_edge_robot_arm/research/native_collection_grounding.py` | `720a999f2e7b349eca2adad055fd69eb31e634c013aa8dee3cf4c208ac188204` |
+| `src/cloud_edge_robot_arm/research/native_archived_tracker.py` | `3baa9432abd489805d84fc89df0dce31a4dbf60dd7744b9842f8cc4a04d8e4d5` |
+| `src/cloud_edge_robot_arm/vision/worker_owner.py` | `8128f8253e82deef5fab75fe5d24e79cd896c5588b9548b5ea4afe563731a21c` |
+| `configs/research/native_operational_calibration_side_y_plus_75mm_r593.yaml` | `fa876ce35780fbf98f50aa493199b8e9020b347cd57575fe71ca3a06c117f4c7` |
+| `configs/research/native_registered_single_teacher_p0_20261119.yaml` | `94dc78d497f3a5e2bbbedea5b6bfc4ae20f945203a1a83c8796bb46b47753fcf` |
+| `configs/research/native_registered_single_teacher_p0_v10_20261121.yaml` | `2b893cbcd1b959703ceada3663433eebb975adbcf8278a522967f2ad12131cf8` |
+| `scripts/collect_native_calibration.py` | `e3473e3c65c8bec145b4f7c5c0f7a30edad45320155ddb97985465f37854255e` |
+| `pyproject.toml` | `034a85388f25f1aedfb856f1783e6d3c6a3413f00d4a1825b907fe3749399565` |
+| `tests/test_native_registered_teacher_release.py` | `23809502f7438d84810cc928e1ab368185e653dbd9f038f1a9355529034b10f6` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase4-20261121/plan.json` | `cb6a56762978d0b554df45caa0ca4ddc8e487d5beab71617bcbe82fbd6dca308` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase3-20261121/validation.public.json` | `65607dd6c60f64b8c17b2611c71c5009a245957f8bbee011375112a6476eeae7` |
+| Phase 3 差异探针（418 字节） | `4226bb87cd56e135bf770029bac3715eb12ceaa6dba0a705bb3779e5ebce1276` |
+| Phase 3 原件读回摘要（435 字节） | `5e5e68c329513eafd076ece31e70d606064c6c858e981567286cfc58dc02dabf` |
+| Phase 2 来源兼容夹具（78556 字节） | `9f9efb610dde7a1a0941709b1e9cb6d88d69d98b6bff353ef9026a097ea3abb2` |
+| 首组冻结 v9 登记（78294 字节） | `bee8ad0c30c927cba759269aa3e0a2e2bb25616e71fe390639fa762ed9d60c45` |
+| 采集分离轮冻结 v9 登记（78294 字节） | `6ac30e905b25b1bef8e137e00249affc0b1e87c97624a2a585b5dc33c9d6a40f` |

@@ -1,0 +1,51 @@
+{
+  "round": "round-v10-phase4-clock-domains-20261121",
+  "author_model": "gpt-6.2-astra",
+  "status": "PLAN_BEFORE_FIX",
+  "baseline_commit": "c4f9d79c17341a3fe68871edceb7cf27229f8f42",
+  "inputs_sha256": {
+    "src/cloud_edge_robot_arm/research/native_full_horizon_originals.py": "18a5396eed8f243a189c43868e29f397d88af49b10c94a9ebcde1cf23cff7ecc",
+    "src/cloud_edge_robot_arm/research/native_collection_application.py": "f1a5e2e555fb4bb2f231497754451f0e21cb5c2f3bb5303f965b7db84f562d2c",
+    "src/cloud_edge_robot_arm/vision/raw_recorder_v3.py": "6efa16f1b5497780ded501c7cc756f8e731098c41e835f49b9badee0b98e059a",
+    "src/cloud_edge_robot_arm/research/raw_episode_v3.py": "5666443333cb88a72d103df574ccade4bdf0ad5fa9d659c9fb77cc6099aa28e3",
+    "src/cloud_edge_robot_arm/research/operational_time_v1.py": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b",
+    "src/cloud_edge_robot_arm/vision/operational_windows.py": "1d4a55e578d35f56247439348cef31aca48b2aaf38d04968c1b45766369dda5e",
+    "tests/test_native_registered_admission_replay.py": "343ee81ed155771558e79d233235a7622b6549beea0740cab7cab9bf4dc8a802",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase4-20261121/plan.json": "cb6a56762978d0b554df45caa0ca4ddc8e487d5beab71617bcbe82fbd6dca308"
+  },
+  "planning_probe": {
+    "raw_MONOTONIC_ns": [
+      100,
+      120,
+      130,
+      140,
+      150
+    ],
+    "OC1_BOOTTIME_ns_unshifted": [
+      110,
+      160
+    ],
+    "OC1_offset_ns": 1000000000,
+    "unshifted_predicate": true,
+    "shifted_predicate": false,
+    "shifted_raw_order": true,
+    "shifted_OC1_order": true,
+    "expression_source": "acquisition['end'][3] <= pre['tracker_clock']['consumption_after']['consumed']['upper_ns'] <= attempt['start'][1] <= attempt['end'][3] <= terminal['start'][1] <= terminal['end'][3] <= item['capture']['consumed']['lower_ns']"
+  },
+  "sections": {
+    "来源与复现": [
+      "制定模型 gpt-6.2-astra。主轮开发基线为 c4f9d79c17341a3fe68871edceb7cf27229f8f42。取证时回放 reader 和测试夹具均包含主轮进行中的改动，输入以列出的文件散列为准。补充目录原先不存在。",
+      "VisualRawRecorderV3._clock_pair 先采样 time.monotonic_ns()，再采 UTC，最后再次采样 time.monotonic_ns()。Raw interval 数组 [sequence, mono_before_ns, utc_at, mono_after_ns] 的第 1/3 个零基索引为该时钟计数。OC1 的生产者使用 Linux clock_gettime_ns(CLOCK_BOOTTIME)，_consume_capture 将 owner 生成的 capture/consumed bracket 及 live_owner 记录下来。两个计数域均有自己的顺序，协议未记录用于换算的偏移或共同起点。",
+      "以 AST 取得当前 admission_receipt_v2 在 monotonic order 错误消息前的实际比较表达式，用相同 raw 与 UTC 顺序、OC1 整域平移分别求值。零偏移得到 True，+1,000,000,000 ns 得到 False；raw 与 OC1 各自前进仍为 True。独立变异 raw terminal start 为 125 会使 raw 内部顺序为 False，单独使 OC1 POST 消费早于 PRE 消费则 OC1 顺序为 False。此探针仅执行算术比较，未运行正式仿真。",
+      "完整软件正控原来在 SoftwareTraceRecorder.bracket 中调用 clock_boundary 后直接复制其 tick，并把同一 tick 用于 raw interval。这个假设掩盖了实物来源可具有不同计数基线的情况。v8 partial.receipt_for 已独立在 raw 域中比较 pre acquisition、executor、terminal acquisition，其 OC1 时序由 partial clock 另行检查。"
+    ],
+    "实施和验证": [
+      "先保留原 RED。在现有软件 recorder 的 bracket() 生成所有 OC1 lower_ns/upper_ns 时统一加固定明显偏移（如 10**12 ns），让 origin、deadline、owner.current、capture/consumption/event 使用同一 OC1 偏移；raw interval、UTC、worker_origin 单调起点、Shield.step_started_at/monotonic_now 保持原值。现有 v9 与 v10 两个完整 17 行正控均应因目标比较失败。可将明显偏移设为新的默认夹具值，保留其他测试对相等边界的效果。",
+      "在 _Audit.admission_receipt_v2 的成功 POST 分支拆分域。raw MONOTONIC 单独校验 pre acquisition.end[3] ≤ attempt.start[1] ≤ attempt.end[3] ≤ terminal acquisition.start[1] ≤ terminal.end[3]。保留 RawV3 原 descriptor 及各 pair 内的时间序和类型验证。OC1 单独校验 PRE admission tracker_clock.consumption_after.consumed.upper_ns ≤ 当前终帧 item.capture.capture.lower_ns；终帧 capture.upper_ns ≤ POST item.capture.consumed.lower_ns、相同域、TTL、deadline 及对应 operational event 的检查复用现有 consumption。可在同一 OC1 比较中明确列出全部端点。按 domain 严格一致校验，避免推断跨域换算或重新采样机器时钟。",
+      "保持原 UTC 顺序 PRE tracker finish→executor/callback/controller return→终帧 capture/feedback，保留 tracker 自己的 UTC enclosure、step/grid/id/租约/HOLD/receipt joins。TERMINAL 复用已验证 POST8 的回执。对 Shield 上记录的 Python monotonic 与同来源 worker task origin 的检查不变。生产范围只限完整 v2 receipt 的错误谓词，不改核算、协议、归档或 v8 partial。",
+      "新增两个单域负控保证各自独立拒绝。raw 负控只将 terminal.start[1] 设到 attempt.end[3] 之前，且 start/end pair 内顺序与 UTC 仍合法；OC1 负控只把终帧 capture bracket 调至该步 PRE.after 消费之前，保留 POST consume 的 TTL 和 UTC，校验实际 capture 与 event 一致。若在完整档案测试中使用后者，应同步重封复制的事件、消费与引用，或用既有合法片段直接调用 admission_receipt_v2 以隔离该条谓词；以明确理由断言失败。补测合法端点相等；已有完整回放即覆盖关联的 8 个 POST 和 TERMINAL 重用。",
+      "运行 tests/test_native_registered_admission_replay.py 及既有 raw 时钟/回执、Phase 3 horizon、v9/v10 回归，保留 RED/GREEN 节点、计数、错误原因与本地原始日志哈希。源码静态检查与公开提交推送沿用主轮。验证环境为当前工作树的虚拟环境和测试临时目录。新指标与权限均不引入；实际仿真次数为 0，冻结证据、释放门、预算保留。若出现独立根因再另定计划。"
+    ]
+  },
+  "formal_simulation_runs": 0
+}

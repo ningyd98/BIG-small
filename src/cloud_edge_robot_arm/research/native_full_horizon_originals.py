@@ -15,7 +15,7 @@ import math
 import struct
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -25,10 +25,14 @@ import numpy as np
 from cloud_edge_robot_arm.contracts import ExecutionCheckpoint, RobotState, TaskStep
 from cloud_edge_robot_arm.edge.evidence.conditions import (
     ConditionSpec,
+    ConditionVerdict,
     OnlineEvidenceSnapshot,
     evaluate_conditions,
+    evaluate_registered_conditions_v2,
 )
 from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+from cloud_edge_robot_arm.edge.safety.models import SafetyContext
+from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
 from cloud_edge_robot_arm.research.native_archived_tracker import (
     _ArchivedTargetTracker,
     _validated_utc,
@@ -38,6 +42,8 @@ from cloud_edge_robot_arm.research.native_calibration_collection import (
     REGISTERED_TEACHER_SCHEMA,
     REGISTERED_TEACHER_V10_SCHEMA,
     REGISTERED_V2_STEP_SCHEMAS,
+    ROOT,
+    _registered_teacher_protocol,
     canonical,
     detached,
     digest,
@@ -49,6 +55,8 @@ from cloud_edge_robot_arm.research.native_collection_grounding import (
     collection_bootstrap_evidence,
     collection_grounding_inputs,
     collection_unknown_row,
+    collection_unknown_row_v2,
+    registered_expected_conditions_v2,
     release_reference_registration,
     validate_camera,
     validate_registration_handoff,
@@ -59,6 +67,13 @@ from cloud_edge_robot_arm.research.native_completion_calibration import (
     CompletionCalibrationDiagnosticsV2,
     CompletionGroupAssignmentV2,
     joint_completion_calibration_v2,
+)
+from cloud_edge_robot_arm.research.native_full_horizon_recorder import (
+    _v2_exact,
+    _v2_feedback,
+    _v2_receipt,
+    _v2_reference,
+    _v2_utc,
 )
 from cloud_edge_robot_arm.research.native_geometry_calibration import (
     full_rigid_geometry_errors,
@@ -87,13 +102,50 @@ from cloud_edge_robot_arm.vision.native_completion import completion_metric_v2
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
 from cloud_edge_robot_arm.vision.owner_registration import (
     DeterministicGroundingPolicy,
+    RegisteredCollectionStepBindingV2,
+    RegisteredGroundingFrameInputsV2,
     StepGroundingBinding,
     VisualOriginalPlan,
+    _registered_preparation_deadline,
     _resolved_parameters,
     bind_step_grounding,
 )
 from cloud_edge_robot_arm.vision.pose_markers import detect_pose_marker
-from cloud_edge_robot_arm.vision.worker_owner import grounded_worker_effect_conditions
+from cloud_edge_robot_arm.vision.worker_owner import (
+    WorkerLeaseObservation,
+    grounded_worker_effect_conditions,
+)
+
+_V2_ADMISSION_INPUT_FIELDS = frozenset(
+    {
+        "phase",
+        "skill",
+        "step",
+        "conditions",
+        "verdicts",
+        "supplemental",
+        "facts",
+        "robot_state",
+        "shield",
+        "shield_source",
+        "capture",
+        "tracker_clock",
+        "source_generation",
+        "original_plan_sha256",
+        "nominal_collection_position_check",
+        "complete_horizon",
+        "receipt",
+        "grounding",
+        "feedback_source",
+        "evaluation_at",
+        "registered_preview",
+        "registered_inputs",
+    }
+)
+_SAFETY_MODELS_SOURCE = "src/cloud_edge_robot_arm/edge/safety/models.py"
+_PRE_PHYSICS_STEP_SAFETY_MODELS_SHA256 = (
+    "87ca98e33c2b636ea2e287157bd49dcdb9f9ad1d441173852ea2c0ef018bcf39"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -549,8 +601,16 @@ def _bracket(value: dict[str, Any], domain: Any, deadline: int) -> None:
 
 
 class _Audit:
-    def __init__(self, protocol: dict[str, Any], assignment: dict[str, Any], root: Path) -> None:
+    def __init__(
+        self,
+        protocol: dict[str, Any],
+        assignment: dict[str, Any],
+        root: Path,
+        *,
+        source_root: Path = ROOT,
+    ) -> None:
         self.protocol, self.assignment, self.root = protocol, assignment, root
+        self.source_root = source_root
         self.directory = root / "originals"
         self.reasons: list[str] = []
         self.raw: dict[str, Any] = {}
@@ -1351,6 +1411,9 @@ class _Audit:
             raise ValueError("original reference must be a string-keyed JSON object")
         return value
 
+    def file_reference(self, path: str) -> dict[str, str]:
+        return dict(path=path, sha256=self.manifest["files"][path]["sha256"])
+
     def consumption(self, row: dict[str, Any]) -> None:
         capture, current = row["capture"], row["consumed"]
         _bracket(capture, self.domain, self.deadline)
@@ -1694,7 +1757,50 @@ class _Audit:
             e["acquisition"]["acquisition_id"],
             "first admission used pre-registration frame",
         )
+        if self.registered_v2:
+            self.registered_bootstrap_v2(timeline, before)
         return bootstraps[1]
+
+    def registered_bootstrap_v2(
+        self,
+        timeline: dict[str, Any],
+        compiler_reference: RGBDObservation,
+    ) -> None:
+        bootstrap = self.reference(self.file_reference("registered-tracker-bootstrap.json"))
+        _v2_exact(
+            bootstrap,
+            {
+                "schema_version",
+                "acquisition",
+                "compiler_reference_acquisition",
+                "registration_lease_source",
+                "started_at",
+                "finished_at",
+                "source_generation",
+            },
+        )
+        _same(
+            bootstrap["compiler_reference_acquisition"],
+            timeline["bootstrap"]["acquisition"],
+            "registered compiler reference differs",
+        )
+        _same(
+            bootstrap["registration_lease_source"], timeline["lease"], "registration lease differs"
+        )
+        dispatch_finished = self.tracker_clock_end_utc
+        _require(
+            dispatch_finished is not None
+            and dispatch_finished
+            <= _v2_utc(bootstrap["started_at"])
+            <= _v2_utc(bootstrap["finished_at"]),
+            "registered bootstrap outside dispatch chronology",
+        )
+        _verify_registered_original_v2(
+            self.original,
+            self.protocol["actions"],
+            compiler_reference,
+            _registered_lease_from_payload(timeline["lease"]),
+        )
 
     def registered_preview(self, payload, observation, state):
         """重算原时间的像素/模型计算；不证明过去授权或当前freshness。"""
@@ -1769,7 +1875,6 @@ class _Audit:
         from cloud_edge_robot_arm.research.native_archived_tracker import (
             _ArchivedRegisteredCollectionTrackerV2,
         )
-        from cloud_edge_robot_arm.research.native_calibration_collection import ROOT
         from cloud_edge_robot_arm.vision.owner_registration import RegisteredGroundingFrameInputsV2
 
         if self.registered_tracker is None:
@@ -1808,7 +1913,7 @@ class _Audit:
             self.registered_tracker = _ArchivedRegisteredCollectionTrackerV2(
                 reference,
                 self.scope,
-                source_root=ROOT,
+                source_root=self.source_root,
                 source_hashes=self.original.source_hashes,
                 initialized_at=finished,
                 nominal_policy=self.protocol["region_policy"],
@@ -2093,6 +2198,12 @@ class _Audit:
         return grounded_worker_effect_conditions(self.original, binding)
 
     def admissions(self) -> None:
+        if self.protocol.get("schema_version") in (
+            REGISTERED_TEACHER_SCHEMA,
+            REGISTERED_TEACHER_V10_SCHEMA,
+        ):
+            self.admissions_v2()
+            return
         from cloud_edge_robot_arm.edge.safety.models import SafetyContext
         from cloud_edge_robot_arm.vision.execution import research_safety_shield
         from cloud_edge_robot_arm.vision.tracking import _CONDITIONS
@@ -2417,20 +2528,6 @@ class _Audit:
                     sources["reused_from"] == "POST", "terminal must retain actual POST invocation"
                 )
             context = SafetyContext.model_validate(source["context"])
-            if self.protocol["schema_version"] == REGISTERED_TEACHER_V10_SCHEMA:
-                _same(
-                    context.contract.metadata,
-                    {"timeout_basis": "PHYSICS_STEPS"},
-                    "v10 Shield timeout basis differs",
-                )
-                receipt = self.raw["horizons"][index]
-                elapsed = self.frames[aid]["step"] - receipt["dispatch_step"]
-                terminal_steps = self.protocol["actions"][index]["horizon"]["terminal_steps"]
-                expected_elapsed = 0 if phase == "PRE" else terminal_steps
-                _same(elapsed, expected_elapsed, "v10 Shield frame outside its action boundary")
-                _same(
-                    source["context"]["physics_step"], elapsed, "v10 Shield physics count differs"
-                )
             _same(
                 context.parameters, step.parameters, "Shield checked different command parameters"
             )
@@ -2525,6 +2622,609 @@ class _Audit:
             len(self.tracker_clock_keys) == 27, "complete original tracker clock inventory required"
         )
         self.decision_ok = True
+
+    def admissions_v2(self) -> None:
+        from cloud_edge_robot_arm.vision.execution import research_safety_shield
+
+        rows = self.raw["decisions"]
+        _require(type(rows) is list and len(rows) == 17, "complete v2 admission inventory required")
+        _require(self.horizon_ok and len(self.actions) == 8, "complete v2 action horizons required")
+        tracker, _ = self.registration_bootstraps()
+        shield = research_safety_shield(self.protocol["settings"]["task_timeout_s"])
+        config = self.reference(self.file_reference("shield/config.json"))
+        _same(
+            {k: v for k, v in config.items() if k != "policy_hash"},
+            _shield_recipe(shield, self.protocol["source_generation"]),
+            "v2 Shield recipe differs",
+        )
+        _require(
+            config["policy_hash"] in _legacy_shield_hashes(config), "v2 Shield policy hash invalid"
+        )
+
+        previous_context = None
+        previous_step = None
+        for n, row in enumerate(rows):
+            index = min(n // 2, 7)
+            phase = "TERMINAL" if n == 16 else "PRE" if n % 2 == 0 else "POST"
+            _v2_exact(row, {"inputs", "decision", "decision_kind", "semantic_effect_status"})
+            item = _v2_exact(row["inputs"], _V2_ADMISSION_INPUT_FIELDS)
+            _same(
+                row["decision"]["schema_version"],
+                "teacher.registered.collection.admission.v2",
+                "v2 admission version differs",
+            )
+            _same(item["phase"], phase, "v2 admission phase order differs")
+            _same(
+                item["source_generation"],
+                self.protocol["source_generation"],
+                "v2 admission source differs",
+            )
+            _same(
+                item["original_plan_sha256"],
+                self.original.digest(),
+                "v2 admission original differs",
+            )
+            step = TaskStep.model_validate(item["step"])
+            binding = self.grounding_binding(item["grounding"])
+            action = self.actions[index]
+            _same(item["step"], binding.grounded_step, "v2 admission grounded step differs")
+            _same(
+                binding.to_payload(),
+                self.raw["actions"][index]["grounding"],
+                "v2 admission action binding differs",
+            )
+            _same(step.step_id, action["step_id"], "v2 admission step order differs")
+            _same(item["skill"], action["skill"], "v2 admission skill order differs")
+            _same(
+                step.timeout_ms,
+                self.protocol["actions"][index]["original_timeout_ms"],
+                "v2 admission step timeout differs",
+            )
+
+            aid = action["capture_acquisition_id" if phase == "PRE" else "terminal_acquisition_id"]
+            clock = item["tracker_clock"]
+            _same(item["capture"], clock["consumption_before"], "v2 admission capture differs")
+            _same(item["capture"]["acquisition_id"], aid, "v2 admission action frame differs")
+            if phase == "PRE" and index:
+                _same(
+                    aid,
+                    self.actions[index - 1]["terminal_acquisition_id"],
+                    "v2 PRE did not reuse the previous terminal frame",
+                )
+            obs, metadata, physical = self.frame(aid)
+            _same(
+                self.frames[aid]["role"],
+                "REGISTERED_ACTION_BOUNDARY",
+                "v2 admission frame role differs",
+            )
+            state = RobotState.model_validate(item["robot_state"])
+            _same(item["robot_state"], state, "v2 admission feedback fields differ")
+            _same(
+                [state.tcp_pose.x, state.tcp_pose.y, state.tcp_pose.z],
+                physical["tcp_position_m"],
+                "v2 admission TCP differs from original physics",
+            )
+            feedback = self.reference(self.file_reference(f"frames/{aid}/feedback.json"))
+            _v2_feedback(
+                feedback,
+                observation=obs,
+                acquisition=clock["acquisition"],
+                physics_step=self.frames[aid]["step"],
+                robot_state=item["robot_state"],
+            )
+            _same(item["feedback_source"], feedback, "v2 admission feedback source differs")
+
+            sources = item["shield_source"]
+            ground_ref = self.file_reference(f"grounding/step-{index + 1}.json")
+            _same(sources["grounding"], ground_ref, "v2 admission grounding reference differs")
+            ground = self.reference(ground_ref)
+            if phase == "PRE":
+                self.admission_grounding_v2(ground, item, obs, state, step, binding, index)
+
+            started, when, finished = (
+                _v2_utc(t)
+                for t in (
+                    clock["started_at"],
+                    item["evaluation_at"],
+                    clock["finished_at"],
+                )
+            )
+            preview = item["registered_preview"]
+            evaluated = self.tracker_clock(
+                clock, obs, purpose="ADMISSION_" + phase, index=index, step_id=step.step_id
+            )
+            until = min(
+                _registered_preparation_deadline(
+                    self.original, original_step_id=step.step_id, observation=obs
+                ),
+                _v2_utc(clock["consumption_after"]["live_owner"]["lease"]["expires_at"]),
+            )
+            _require(
+                _v2_utc(feedback["observed_at"])
+                <= started
+                <= _v2_utc(preview["track"]["evaluated_at"])
+                <= _v2_utc(preview["evaluated_at"])
+                <= evaluated
+                <= when
+                <= finished
+                < until,
+                "v2 admission evaluation enclosure differs",
+            )
+            inputs = self.registered_preview_v2(preview, obs, state)
+            _same(inputs, item["registered_inputs"], "v2 admission registered inputs differ")
+            facts = tracker.facts_at(obs, state, evaluated_at=evaluated)
+            _same(facts, item["facts"], "v2 admission colour facts differ")
+
+            self.admission_receipt_v2(item, index, step, metadata, obs.captured_at)
+            if phase == "TERMINAL":
+                # A separate admission evaluates the last view using the real POST invocation.
+                post = rows[15]["inputs"]
+                for key in ("receipt", "feedback_source", "shield"):
+                    _same(item[key], post[key], "v2 TERMINAL differs from final POST " + key)
+                _same(
+                    sources,
+                    dict(post["shield_source"], reused_from="POST"),
+                    "v2 TERMINAL Shield reuse differs",
+                )
+            else:
+                previous_context = self.admission_shield_v2(
+                    shield,
+                    item,
+                    index,
+                    step,
+                    state,
+                    obs,
+                    physical,
+                    ground,
+                    previous_context,
+                )
+
+            unknowns = self.admission_conditions_v2(
+                row,
+                step,
+                binding,
+                obs,
+                state,
+                facts,
+                inputs,
+                tracker,
+                previous_step,
+            )
+            self.unknown.update(unknowns)
+            if phase == "POST":
+                previous_step = step
+
+        for row in self.read("capture-consumptions.json"):
+            self.consumption(row)
+        _require(len(self.tracker_clock_keys) == 27, "complete v2 tracker clock inventory required")
+        self.decision_ok = True
+
+    def admission_grounding_v2(
+        self,
+        ground: dict[str, Any],
+        item: dict[str, Any],
+        obs: RGBDObservation,
+        state: RobotState,
+        step: TaskStep,
+        binding: RegisteredCollectionStepBindingV2,
+        index: int,
+    ) -> None:
+        _same(
+            ground["acquisition"],
+            item["tracker_clock"]["acquisition"],
+            "v2 grounding acquisition differs",
+        )
+        _same(
+            ground["original_plan_sha256"], self.original.digest(), "v2 grounding original differs"
+        )
+        _same(ground["identity"], self.original.identity.to_payload(), "v2 grounding owner differs")
+        _same(
+            ground["source_generation"],
+            self.protocol["source_generation"],
+            "v2 grounding source differs",
+        )
+        _same(ground["index"], index, "v2 grounding order differs")
+        _same(ground["step_id"], step.step_id, "v2 grounding step differs")
+        _same(ground["observation_id"], obs.observation_id, "v2 grounding view differs")
+        _same(ground["checksum_sha256"], obs.checksum_sha256, "v2 grounding pixels differ")
+        _same(ground["binding"], binding.to_payload(), "v2 grounding binding source differs")
+        _same(ground["online"]["robot_state"], state, "v2 grounding and PRE feedback differ")
+        clock = ground["tracker_clock"]
+        _same(clock["acquisition"], ground["acquisition"], "v2 grounding clock frame differs")
+        _require(
+            _v2_utc(item["feedback_source"]["observed_at"])
+            <= _v2_utc(clock["started_at"])
+            <= _v2_utc(ground["registered_preview"]["track"]["evaluated_at"])
+            <= _v2_utc(ground["registered_preview"]["evaluated_at"])
+            == _v2_utc(clock["evaluated_at"])
+            <= _v2_utc(ground["final_validation_at"])
+            == _v2_utc(clock["finished_at"]),
+            "v2 grounding evaluation enclosure differs",
+        )
+        self.registered_grounding_v2(ground, obs, state, step, binding, index)
+
+    def admission_receipt_v2(
+        self,
+        item: dict[str, Any],
+        index: int,
+        step: TaskStep,
+        metadata: dict[str, Any],
+        captured_at: datetime,
+    ) -> None:
+        phase = item["phase"]
+        receipt = item["receipt"]
+        _same(item["complete_horizon"], phase != "PRE", "v2 admission completion flag differs")
+        if phase == "PRE":
+            _require(receipt is None, "v2 PRE receipt forbidden")
+            return
+        action = self.raw["actions"][index]
+        controller = _v2_receipt(
+            receipt,
+            self.protocol["actions"][index],
+            task_id=self.original.contract.task_id,
+            step=step,
+        )
+        _same(
+            receipt, self.raw["horizons"][index], "v2 admission receipt differs from action horizon"
+        )
+        _same(receipt["step_id"], step.step_id, "v2 receipt step differs")
+        _same(
+            receipt["executed_step_sha256"],
+            digest(item["step"]),
+            "v2 receipt executed step differs",
+        )
+        _same(
+            receipt["terminal_acquisition_id"],
+            item["capture"]["acquisition_id"],
+            "v2 receipt capture differs",
+        )
+        _same(receipt["terminal_step"], item["capture"]["step"], "v2 receipt terminal step differs")
+        if phase == "TERMINAL":
+            return  # The previous POST verified the same receipt's physical and clock joins.
+        pre = self.raw["decisions"][2 * index]["inputs"]
+        _same(receipt["dispatch_step"], pre["capture"]["step"], "v2 receipt dispatch frame differs")
+        pre_frame = self.read(self.raw["frame_sources"][pre["capture"]["acquisition_id"]])
+        acquisition = self.intervals[pre_frame["frame"]["interval_id"]]
+        attempt = self.intervals[action["interval_id"]]
+        terminal = self.intervals[metadata["frame"]["interval_id"]]
+        _same(
+            [acquisition["kind"], attempt["kind"], terminal["kind"]],
+            ["ACQUISITION", "EXECUTOR_ATTEMPT", "ACQUISITION"],
+            "v2 receipt interval kind differs",
+        )
+        _same(attempt["disposition"], "COMPLETE", "v2 receipt executor did not complete")
+        _same(
+            action["returned_result"],
+            controller["action_result"],
+            "v2 receipt controller result differs",
+        )
+        _require(
+            acquisition["end"][3]
+            <= attempt["start"][1]
+            <= attempt["end"][3]
+            <= terminal["start"][1]
+            <= terminal["end"][3],
+            "v2 receipt raw monotonic order differs",
+        )
+        # Raw intervals sample CLOCK_MONOTONIC. OC1 brackets use CLOCK_BOOTTIME.
+        capture = item["capture"]
+        _require(
+            pre["tracker_clock"]["consumption_after"]["consumed"]["upper_ns"]
+            <= capture["capture"]["lower_ns"]
+            <= capture["capture"]["upper_ns"]
+            <= capture["consumed"]["lower_ns"],
+            "v2 receipt operational clock order differs",
+        )
+        result = controller["action_result"]
+        _require(
+            _v2_utc(pre["tracker_clock"]["finished_at"])
+            <= _v2_utc(attempt["start"][2])
+            <= _v2_utc(result["started_at"])
+            <= _v2_utc(result["finished_at"])
+            <= _v2_utc(controller["timestamp"])
+            <= _v2_utc(attempt["end"][2])
+            <= _v2_utc(terminal["start"][2])
+            <= captured_at
+            <= _v2_utc(terminal["end"][2])
+            <= _v2_utc(item["feedback_source"]["observed_at"]),
+            "v2 receipt executor/callback/terminal UTC order differs",
+        )
+
+    def admission_shield_v2(
+        self,
+        shield: SafetyShield,
+        item: dict[str, Any],
+        index: int,
+        step: TaskStep,
+        state: RobotState,
+        obs: RGBDObservation,
+        physical: dict[str, Any],
+        ground: dict[str, Any],
+        previous: SafetyContext | None,
+    ) -> SafetyContext:
+        phase = item["phase"]
+        sources = item["shield_source"]
+        _v2_exact(sources, {"input", "result", "grounding"})
+        for reference in sources.values():
+            _v2_reference(reference)
+        path = f"shield/step-{index + 1}-{phase.lower()}"
+        for name in ("input", "result"):
+            _same(
+                sources[name],
+                self.file_reference(f"{path}-{name}.json"),
+                "v2 Shield invocation path differs",
+            )
+        source = self.reference(sources["input"])
+        output = self.reference(sources["result"])
+        method = phase.lower() + "_check"
+        raw = source["context"]
+        _same(
+            source,
+            dict(
+                method=method,
+                index=index,
+                step_id=step.step_id,
+                context=raw,
+                config=self.file_reference("shield/config.json"),
+                source_generation=self.protocol["source_generation"],
+                acquisition=item["tracker_clock"]["acquisition"],
+                grounding=sources["grounding"],
+            ),
+            "v2 Shield input source differs",
+        )
+        context = SafetyContext.model_validate(raw)
+
+        v10 = self.protocol["schema_version"] == REGISTERED_TEACHER_V10_SCHEMA
+        historical = not v10 and (
+            self.protocol["source_hashes"].get(_SAFETY_MODELS_SOURCE)
+            == _PRE_PHYSICS_STEP_SAFETY_MODELS_SHA256
+        )
+        physics_step = None if historical else physical["physics_step"]
+        if v10:
+            registered = self.protocol["actions"][index]["horizon"]
+            physics_step = physical["physics_step"] - self.actions[index]["dispatch_step"]
+            _same(
+                physics_step,
+                0 if phase == "PRE" else registered["terminal_steps"],
+                "v10 Shield action window differs",
+            )
+            _same(step.metadata, {"horizon": registered}, "v10 Shield horizon differs")
+
+        task_origin = item["capture"]["live_owner"]["task_origin"][1]
+        _same(raw["task_started_at_mono"], task_origin, "v2 Shield task clock origin differs")
+        task_start, step_start, now = (
+            raw[k] for k in ("task_started_at_mono", "step_started_at", "monotonic_now")
+        )
+        _require(
+            all(type(t) in (int, float) and math.isfinite(t) for t in (task_start, step_start, now))
+            and 0 <= task_start <= step_start <= now,
+            "v2 Shield monotonic clock enclosure differs",
+        )
+        earliest = _v2_utc(item["feedback_source"]["observed_at"])
+        if phase == "PRE":
+            earliest = _v2_utc(ground["final_validation_at"])
+        for key in ("wall_clock_now", "telemetry_timestamp"):
+            _require(
+                earliest <= _v2_utc(raw[key]) <= _v2_utc(item["tracker_clock"]["started_at"]),
+                "v2 Shield UTC clock enclosure differs",
+            )
+
+        joint_velocities = [abs(v) for v in physical["joint_velocities_rad_s"]]
+        previous_now = previous.monotonic_now if previous is not None else None
+        if phase == "PRE":
+            _require(
+                previous is None or previous_now is not None and previous_now <= step_start,
+                "v2 Shield step clock reversed",
+            )
+            contract = self.original.contract
+            executed = contract.model_copy(
+                update={
+                    "steps": [step if s.step_id == step.step_id else s for s in contract.steps],
+                },
+                deep=True,
+            )
+            _same(
+                executed.metadata,
+                {"timeout_basis": "PHYSICS_STEPS"} if v10 else None,
+                "v2 Shield contract timeout basis differs",
+            )
+            _same(executed, ground["executed_contract"], "v2 Shield grounded contract differs")
+            velocity = float(step.parameters.get("tcp_velocity", 0.0))
+            expected = shield.context_builder.build(
+                contract=executed,
+                step=step,
+                robot_state=state,
+                scene_version=executed.scene_version,
+                resolved_parameters=dict(step.parameters),
+                scene_updated_at=obs.captured_at,
+                telemetry_timestamp=context.telemetry_timestamp,
+                wall_clock_now=context.wall_clock_now,
+                task_started_at_mono=task_start,
+                step_started_at_mono=step_start,
+                monotonic_now=now,
+                physics_step=physics_step,
+                requested_velocity=velocity,
+                requested_acceleration=float(step.parameters.get("acceleration", 0.0)),
+                requested_joint_velocities=[*joint_velocities, velocity / 0.3],
+            )
+        else:
+            if previous is None or previous_now is None or previous_now > now:
+                raise ValueError("v2 Shield POST clock reversed")
+            expected = previous.model_copy(
+                update=dict(
+                    robot_collision_detected=state.collision_detected,
+                    robot_estop_engaged=state.estop_engaged,
+                    tcp_x=state.tcp_pose.x,
+                    tcp_y=state.tcp_pose.y,
+                    tcp_z=state.tcp_pose.z,
+                    scene_updated_at=obs.captured_at,
+                    telemetry_timestamp=context.telemetry_timestamp,
+                    wall_clock_now=context.wall_clock_now,
+                    monotonic_now=now,
+                    physics_step=physics_step,
+                    joint_velocities=joint_velocities,
+                    robot_connected=state.connected,
+                    robot_stopped=state.stopped,
+                    holding_object=state.holding_object_id is not None,
+                )
+            )
+        expected_context = expected.model_dump(mode="json")
+        if historical:
+            del expected_context["physics_step"]
+        _same(raw, expected_context, "v2 Shield context differs from original action and feedback")
+        result = detached(getattr(shield, method)(expected))
+        _same(
+            output,
+            dict(
+                input_sha256=sources["input"]["sha256"], result=result, error_type=None, error=None
+            ),
+            "v2 Shield output replay differs",
+        )
+        _same(item["shield"], result, "v2 admission Shield result differs")
+        return expected
+
+    def admission_conditions_v2(
+        self,
+        row: dict[str, Any],
+        step: TaskStep,
+        binding: RegisteredCollectionStepBindingV2,
+        obs: RGBDObservation,
+        state: RobotState,
+        facts: dict[str, Any],
+        inputs: RegisteredGroundingFrameInputsV2 | None,
+        tracker: _ArchivedTargetTracker,
+        previous_step: TaskStep | None,
+    ) -> list[str]:
+        item = row["inputs"]
+        phase = item["phase"]
+        conditions = registered_expected_conditions_v2(self.original, binding, phase)
+        _same(item["conditions"], conditions, "v2 admission original condition or origin differs")
+        snapshot = OnlineEvidenceSnapshot(obs, state, facts, 1, 1, self.original.digest())
+        when = _v2_utc(item["evaluation_at"])
+        verdicts = evaluate_registered_conditions_v2(
+            conditions, snapshot, grounding_inputs=inputs, now=when
+        )
+        supplemental = evaluate_conditions(
+            [
+                ConditionSpec("gripper_holding", "object"),
+                ConditionSpec("gripper_released", "object"),
+                ConditionSpec("robot_in_safe_pose", "object", {"minimum_safe_height": 0.0}),
+            ],
+            snapshot,
+            now=when,
+        )
+        status = {v.condition_name: v.status.value for v in (*verdicts, *supplemental)}
+        proof = inputs.to_payload()["region_evidence"] if inputs is not None else None
+        nominal = (
+            phase == "PRE"
+            and step.skill.value == "RELEASE"
+            and previous_step is not None
+            and previous_step.skill.value == "PLACE"
+            and inputs is not None
+            and _nominal_registered_release_v2(
+                self.registered_tracker, inputs, state, previous_step
+            )
+        )
+        reasons = []
+        if (
+            proof is None
+            or proof["status"] not in {"FULL_NOMINAL", "PARTIAL_REGISTERED_NOMINAL"}
+            or proof["nominal_policy"] != self.protocol["region_policy"]
+        ):
+            reasons.append("current_nominal_registered_region_unavailable")
+        shield = item["shield"]
+        if (
+            not state.connected
+            or state.estop_engaged
+            or state.collision_detected
+            or not shield["allowed"]
+            or shield["limited_parameters"]
+            and shield["limited_parameters"] != step.parameters
+        ):
+            reasons.append("common_proprioception_or_shield_gate")
+        if phase == "TERMINAL" and (
+            status["gripper_released"] != "PASS" or status["robot_in_safe_pose"] != "PASS"
+        ):
+            reasons.append("terminal_proprioception_unconfirmed")
+
+        unknowns, whitelist = [], []
+        for i, (condition, verdict) in enumerate(zip(conditions, verdicts, strict=True)):
+            if verdict.status.value == "PASS":
+                continue
+            if (
+                verdict.status.value == "UNKNOWN"
+                and nominal
+                and condition.name == "object_inside_target_region"
+                and condition.tolerances.get("requirement_origin") == "DEFAULT_PRECONDITION"
+                and status["gripper_holding"] == "PASS"
+                and _nominal_release_unknown(
+                    verdict,
+                    facts.get(condition.name, {}),
+                    obs,
+                    self.original.contract.task_target.object_id,
+                )
+            ):
+                verdict = replace(verdict, reasons=("registered_nominal_inside_only",))
+                verdicts[i] = verdict
+            unknowns.append(condition.name)
+            allowed_row = collection_unknown_row_v2(
+                original=self.original,
+                phase=phase,
+                step=step,
+                condition=condition,
+                verdict=detached(verdict),
+                proof=proof,
+                feedback=state,
+                receipt=item["receipt"],
+                nominal_release=nominal,
+                facts=facts,
+                holding=status["gripper_holding"] == "PASS",
+                tcp_reached=status.get("tcp_at_resolved_target") == "PASS",
+                full_horizon=item["complete_horizon"],
+                released=status["gripper_released"] == "PASS",
+                tracker_has_no_held=True,
+                depth_bound_missing=tracker.depth_error_bound_m is None,
+            )
+            if allowed_row is None:
+                reasons.append("condition_not_admitted:" + condition.name)
+            else:
+                whitelist.append(allowed_row)
+
+        _same(item["verdicts"], verdicts, "v2 admission verdict replay differs")
+        _same(item["supplemental"], supplemental, "v2 admission feedback predicates differ")
+        _same(
+            item["nominal_collection_position_check"],
+            nominal,
+            "v2 admission nominal release differs",
+        )
+        _same(
+            row["decision"],
+            dict(
+                phase=phase,
+                step_id=step.step_id,
+                allowed=not reasons,
+                retained_unknown_conditions=unknowns,
+                whitelist_rows=whitelist,
+                reasons=reasons,
+                original_inputs_sha256=digest(item),
+                schema_version="teacher.registered.collection.admission.v2",
+                execution_admitted=False,
+                native_qualification="UNKNOWN",
+            ),
+            "v2 admission decision replay differs",
+        )
+        _same(
+            row["decision_kind"],
+            "STOP" if reasons else "CONTINUE_EXPERIMENT",
+            "v2 admission decision kind differs",
+        )
+        _same(
+            row["semantic_effect_status"],
+            "UNKNOWN" if unknowns else "PASS",
+            "v2 admission effect status differs",
+        )
+        _require(not reasons, "recorded v2 collection stopped: " + ",".join(reasons))
+        return unknowns
 
     def physical_outcome(self) -> None:
         from cloud_edge_robot_arm.simulation.mujoco.backend import PhysicsStepObservation
@@ -2651,6 +3351,92 @@ class _Audit:
             )
 
 
+def _verify_registered_original_v2(
+    original: VisualOriginalPlan,
+    actions: list[dict[str, Any]],
+    observation: RGBDObservation,
+    lease: WorkerLeaseObservation,
+) -> None:
+    from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    from cloud_edge_robot_arm.vision.worker_owner import compile_worker_original_plan_v2
+
+    rebuilt = compile_worker_original_plan_v2(
+        lease_source=lease,
+        identity=original.identity,
+        contract=original.contract,
+        observation=observation,
+        proposal_hash=original.proposal_hash,
+        role_bundle_hash=original.role_bundle_hash,
+        source_hashes=original.source_hashes,
+        registered_at=original.registered_at,
+        task_deadline_at=original.task_deadline_at,
+        verification_deadline_at=original.verification_deadline_at,
+    )
+    requirements = {
+        step.step_id: replace(
+            rebuilt.requirements[step.step_id],
+            expected_duration_s=row["horizon"]["total_steps"] / 240,
+        )
+        for step, row in zip(rebuilt.contract.steps, actions, strict=True)
+    }
+    rebuilt = freeze_original_visual_plan(
+        **{**rebuilt.freeze_inputs(), "requirements": requirements}
+    )
+    _same(original.to_payload(), rebuilt.to_payload(), "v2 compiler/original requirements differ")
+
+
+def _nominal_registered_release_v2(
+    tracker: Any,
+    inputs: RegisteredGroundingFrameInputsV2,
+    state: RobotState,
+    place_step: TaskStep,
+) -> bool:
+    p = inputs.to_payload()
+    region = tracker._region_tracker.destination
+    cube = next(b for b in tracker._primitives.to_payload()["boxes"] if b["name"] == "object_geom")
+    half = np.asarray(cube["half_extent_m"])
+    center = np.asarray(p["object_center_world_m"])
+    rotation = np.asarray(p["rotation_object_to_world"]).reshape(3, 3)
+    vertices = np.asarray(list(itertools.product((-1, 1), repeat=3))) * half
+    vertices = (vertices + np.asarray(cube["center_object_m"])) @ rotation.T + center
+    inside = all(
+        vertices[:, i].min() >= region["inner_min"][i]
+        and vertices[:, i].max() <= region["inner_max"][i]
+        for i in (0, 1)
+    )
+    height = abs(center[2] - p["destination_world_m"][2] - half[2])
+    pose = place_step.parameters["target_pose"]
+    tcp = math.dist(
+        (state.tcp_pose.x, state.tcp_pose.y, state.tcp_pose.z), [pose[k] for k in "xyz"]
+    )
+    return bool(inside and height <= 0.012 and tcp <= 0.020)
+
+
+def _nominal_release_unknown(
+    verdict: ConditionVerdict,
+    fact: Mapping[str, Any],
+    observation: RGBDObservation,
+    object_id: str,
+) -> bool:
+    return tuple(verdict.reasons) in {
+        ("visual_fact_not_boolean",),
+        ("visual_fact_missing_or_untrusted_source",),
+    } or (
+        tuple(verdict.reasons) == ("target_identity_uncertain",)
+        and fact.get("source") == "rgbd_estimate"
+        and fact.get("observation_id") == observation.observation_id
+        and fact.get("observation_sha256") == observation.checksum_sha256
+        and fact.get("target_id") == object_id
+        and fact.get("identity_confirmed") is False
+        and tuple(fact.get("reasons", ()))
+        in {
+            ("target_missing",),
+            ("target_extent_missing",),
+            ("target_extent_changed_or_partially_occluded",),
+        }
+    )
+
+
 def _shield_recipe(shield: Any, generation: str) -> dict[str, Any]:
     config = shield.config
     hard = config.hard_limits.model_dump(mode="json")
@@ -2727,10 +3513,34 @@ def _contact_reference(geometry: dict[str, Any], state: dict[str, Any]) -> list[
     return [float(value) for value in center + rotation @ offset]
 
 
+def _read_full_horizon_protocol(protocol: Path, source_root: Path | None) -> dict[str, Any]:
+    if source_root is None:
+        return read_protocol(protocol)
+    from cloud_edge_robot_arm.vision.worker_owner import pin_worker_source_inventory
+
+    original = load_json(protocol / "protocol.json")
+    if isinstance(original, dict) and original.get("schema_version") == REGISTERED_TEACHER_SCHEMA:
+        expected = _registered_teacher_protocol(archived_source_root=source_root)
+        _same(
+            original, expected, "archived v9 teacher recipe/source/single-release identity changed"
+        )
+        registration = original
+    else:
+        registration = read_protocol(protocol, current_sources=False)
+    _require(
+        registration["schema_version"]
+        in (REGISTERED_TEACHER_SCHEMA, REGISTERED_TEACHER_V10_SCHEMA),
+        "archived source root requires a registered teacher protocol",
+    )
+    pin_worker_source_inventory(source_root, registration["source_hashes"])
+    return registration
+
+
 def read_native_full_horizon_group(
-    protocol: Path, *, assignment_id: str, root: Path
+    protocol: Path, *, assignment_id: str, root: Path, source_root: Path | None = None
 ) -> FullHorizonGroupDiagnostics:
-    registration = read_protocol(protocol)
+    """Reconstruct a group using current or explicitly pinned archived source bytes."""
+    registration = _read_full_horizon_protocol(protocol, source_root)
     if registration["schema_version"] in {
         "native.calibration.operational.v7",
         "native.calibration.operational.v8",
@@ -2748,7 +3558,12 @@ def read_native_full_horizon_group(
             and assignment_id in registration["released_assignments"],
             "unreleased registered teacher assignment",
         )
-    audit = _Audit(registration, assigned[0], Path(root))
+    audit = _Audit(
+        registration,
+        assigned[0],
+        Path(root),
+        source_root=Path(source_root) if source_root is not None else ROOT,
+    )
     source_failures = False
     phases = (
         "inventory",
@@ -2807,9 +3622,13 @@ def read_native_full_horizon_group(
 
 
 def reconstruct_native_full_horizon_registry(
-    protocol: Path, *, roots: Mapping[str, Path], group_sink: Any = None
+    protocol: Path,
+    *,
+    roots: Mapping[str, Path],
+    group_sink: Any = None,
+    source_root: Path | None = None,
 ) -> CompletionCalibrationDiagnosticsV2:
-    registration = read_protocol(protocol)
+    registration = _read_full_horizon_protocol(protocol, source_root)
     if registration["schema_version"] in {
         "native.calibration.operational.v7",
         "native.calibration.operational.v8",
@@ -2827,7 +3646,12 @@ def reconstruct_native_full_horizon_registry(
     for assigned in registration["assignments"]:
         group_id = assigned["assignment_id"]
         report = (
-            read_native_full_horizon_group(protocol, assignment_id=group_id, root=roots[group_id])
+            read_native_full_horizon_group(
+                protocol,
+                assignment_id=group_id,
+                root=roots[group_id],
+                **({"source_root": source_root} if source_root is not None else {}),
+            )
             if group_id in roots
             else None
         )
