@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from copy import deepcopy
 from pathlib import Path
 
@@ -37,7 +39,7 @@ V10_SECOND = "native-p0-v10-20261121-0002"
 
 
 @pytest.fixture
-def archived_v9_protocol(tmp_path, monkeypatch):
+def archived_teacher_protocol(request, tmp_path, monkeypatch):
     """Build a historical-shaped source inventory without using private originals."""
     import hashlib
     import shutil
@@ -49,7 +51,12 @@ def archived_v9_protocol(tmp_path, monkeypatch):
         "src/cloud_edge_robot_arm/research/native_action_timing.py",
         "src/cloud_edge_robot_arm/research/native_checkpoint_diagnostic.py",
     }
-    selected = set(collection._registered_teacher_protocol()["source_hashes"]) - later_sources
+    config, builder = (
+        (V10_CONFIG, collection._registered_teacher_v10_protocol)
+        if request.param == "v10"
+        else (CONFIG, collection._registered_teacher_protocol)
+    )
+    selected = set(builder()["source_hashes"]) - later_sources
     for name in selected:
         target = source_root / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -57,39 +64,41 @@ def archived_v9_protocol(tmp_path, monkeypatch):
     (source_root / "scripts/collect_native_calibration.py").write_bytes(
         b"# Software archive fixture\n"
     )
-    (source_root / CONFIG.relative_to(ROOT)).write_bytes(CONFIG.read_bytes())
+    (source_root / config.relative_to(ROOT)).write_bytes(config.read_bytes())
     archived = {
         name: hashlib.sha256((source_root / name).read_bytes()).hexdigest() for name in selected
     }
     with monkeypatch.context() as patch:
         patch.setattr(collection, "source_inventory", lambda **_: archived)
-        protocol = collection._registered_teacher_protocol()
+        protocol = builder()
     directory = tmp_path / "archived-protocol"
     directory.mkdir()
     save_exclusive(directory / "protocol.json", protocol)
     return directory, source_root, protocol
 
 
-def test_archived_v9_group_and_registry_use_the_exact_source_tree(archived_v9_protocol, tmp_path):
-    directory, source_root, protocol = archived_v9_protocol
+@pytest.mark.parametrize("archived_teacher_protocol", ["v9", "v10"], indirect=True)
+def test_archived_group_and_registry_use_the_exact_source_tree(archived_teacher_protocol, tmp_path):
+    directory, source_root, protocol = archived_teacher_protocol
+    first, second = [a["assignment_id"] for a in protocol["assignments"][:2]]
     snapshot = (directory / "protocol.json").read_bytes()
     group_root = tmp_path / "empty-originals"
     group_root.mkdir()
     with pytest.raises(ValueError, match="recipe/source"):
-        read_native_full_horizon_group(directory, assignment_id=FIRST, root=group_root)
+        read_native_full_horizon_group(directory, assignment_id=first, root=group_root)
     with pytest.raises(ValueError, match="unreleased"):
         read_native_full_horizon_group(
-            directory, assignment_id=SECOND, root=group_root, source_root=source_root
+            directory, assignment_id=second, root=group_root, source_root=source_root
         )
     group = read_native_full_horizon_group(
-        directory, assignment_id=FIRST, root=group_root, source_root=source_root
+        directory, assignment_id=first, root=group_root, source_root=source_root
     )
     assert (
-        group.assignment_id == FIRST and not group.source_complete and not group.execution_admitted
+        group.assignment_id == first and not group.source_complete and not group.execution_admitted
     )
     reports = []
     registry = reconstruct_native_full_horizon_registry(
-        directory, roots={FIRST: group_root}, group_sink=reports.append, source_root=source_root
+        directory, roots={first: group_root}, group_sink=reports.append, source_root=source_root
     )
     assert registry.assigned_group_count == 9 and registry.joint_bound_m is None
     assert [r["assignment_id"] for r in reports if r.get("state") != "NOT_RUN"] == protocol[
@@ -98,10 +107,38 @@ def test_archived_v9_group_and_registry_use_the_exact_source_tree(archived_v9_pr
     assert (directory / "protocol.json").read_bytes() == snapshot
 
 
+@pytest.mark.parametrize("archived_teacher_protocol", ["v9", "v10"], indirect=True)
+def test_cli_uses_archived_teacher_source_for_verify_only(archived_teacher_protocol, tmp_path):
+    directory, source_root, protocol = archived_teacher_protocol
+    out = tmp_path / "readback"
+    cli = [sys.executable, str(ROOT / "scripts/collect_native_calibration.py")]
+    options = ["--source-root", str(source_root), "--output", str(out)]
+    refused = subprocess.run(
+        [*cli, "--prepare-only", "--config", str(V10_CONFIG), *options],
+        text=True, capture_output=True,
+    )
+    assert refused.returncode == 2
+    assert "--source-root requires --verify" in refused.stderr
+    assert not out.exists()
+    verified = subprocess.run(
+        [*cli, "--verify", "--protocol", str(directory), *options],
+        text=True, capture_output=True,
+    )
+    assert verified.returncode == 0, verified.stderr
+    assert load_json(out / "groups.json") == [
+        {"assignment_id": row["assignment_id"], "state": "NOT_RUN"}
+        for row in protocol["assignments"]
+    ]
+    assert not (directory / "claims").exists()
+
+
+@pytest.mark.parametrize("archived_teacher_protocol", ["v9", "v10"], indirect=True)
 @pytest.mark.parametrize(
     "change",
     [
         "script",
+        "missing_python",
+        "nested_symlink",
         "new_python",
         "fixed_asset",
         "fixed_release",
@@ -112,24 +149,33 @@ def test_archived_v9_group_and_registry_use_the_exact_source_tree(archived_v9_pr
         "version",
     ],
 )
-def test_archived_v9_rejects_source_or_registration_changes(archived_v9_protocol, tmp_path, change):
+def test_archived_teacher_rejects_drift(archived_teacher_protocol, tmp_path, change):
     from cloud_edge_robot_arm.research import native_calibration_collection as collection
 
-    directory, source_root, protocol = archived_v9_protocol
-    if change == "script":
+    directory, source_root, protocol = archived_teacher_protocol
+    is_v10 = protocol["schema_version"] == collection.REGISTERED_TEACHER_V10_SCHEMA
+    config = V10_CONFIG if is_v10 else CONFIG
+    first = protocol["assignments"][0]["assignment_id"]
+    if change == "missing_python":
+        (source_root / "src/cloud_edge_robot_arm/research/native_collection_grounding.py").unlink()
+    elif change == "nested_symlink":
+        (source_root / "src/cloud_edge_robot_arm/extra").symlink_to(
+            tmp_path, target_is_directory=True
+        )
+    elif change == "script":
         (source_root / "scripts/collect_native_calibration.py").write_bytes(b"# different bytes\n")
     elif change == "new_python":
         (source_root / "src/cloud_edge_robot_arm/extra.py").write_bytes(b"# extra source\n")
     elif change == "fixed_asset":
         (source_root / collection.BASE_ASSET).write_bytes(b"<mujoco />\n")
     elif change == "fixed_release":
-        (source_root / CONFIG.relative_to(ROOT)).write_bytes(CONFIG.read_bytes() + b"\n")
+        (source_root / config.relative_to(ROOT)).write_bytes(config.read_bytes() + b"\n")
     elif change == "symlink":
         alias = tmp_path / "root-alias"
         alias.symlink_to(source_root, target_is_directory=True)
         source_root = alias
     elif change == "second_release":
-        protocol["released_assignments"].append(SECOND)
+        protocol["released_assignments"].append(protocol["assignments"][1]["assignment_id"])
         protocol["assignments"][1]["status"] = "RELEASED"
     elif change == "budget":
         protocol["authorized_actual_budget"]["teacher_acquisitions"] = 2
@@ -137,12 +183,16 @@ def test_archived_v9_rejects_source_or_registration_changes(archived_v9_protocol
         protocol["source_hashes"]["pyproject.toml"] = "a" * 64
         protocol["source_generation"] = digest(protocol["source_hashes"])
     else:
-        protocol["schema_version"] = collection.REGISTERED_TEACHER_V10_SCHEMA
+        protocol["schema_version"] = (
+            collection.REGISTERED_TEACHER_SCHEMA
+            if is_v10
+            else collection.REGISTERED_TEACHER_V10_SCHEMA
+        )
     (directory / "protocol.json").unlink()
     save_exclusive(directory / "protocol.json", protocol)
     with pytest.raises(ValueError):
         read_native_full_horizon_group(
-            directory, assignment_id=FIRST, root=tmp_path, source_root=source_root
+            directory, assignment_id=first, root=tmp_path, source_root=source_root
         )
 
 

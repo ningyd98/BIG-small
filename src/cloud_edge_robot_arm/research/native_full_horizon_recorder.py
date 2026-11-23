@@ -591,6 +591,7 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
 
     @timed_call("recorder_boundary")
     def _on_boundary(self, event: BackendOperationBoundary) -> None:
+        self._require_open()
         row: dict[str, Any] | None = None
         try:
             if event.kind == "CONTROL" and event.phase == "END" and event.error_type is None:
@@ -723,8 +724,9 @@ class NativeFullHorizonRecorder(VisualRawRecorderV3):
         self.horizons.append(asdict(receipt))
 
     @contextmanager
-    def purpose(self, kind: str) -> Any:
-        with super().purpose("HOLD" if kind == "FULL_HORIZON_HOLD" else kind) as interval:
+    def purpose(self, kind: str, *, require_interval: bool = False) -> Any:
+        raw_kind = "HOLD" if kind == "FULL_HORIZON_HOLD" else kind
+        with super().purpose(raw_kind, require_interval=require_interval) as interval:
             if kind == "FULL_HORIZON_HOLD":
                 self.hold_mappings.append(
                     dict(

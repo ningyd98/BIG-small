@@ -6,6 +6,7 @@ The operational origin is created before enqueue; legacy UTC lease vetoes remain
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import os
@@ -655,12 +656,13 @@ def _job_basis(job: Any) -> bytes:
 
 
 def _remember(live: _Live, phase: str, error: BaseException, *, secondary: bool = False) -> None:
+    has_primary = any(row["role"] == "PRIMARY" for row in live.failures)
     live.failures.append(
         dict(
             phase=phase,
             error_type=type(error).__name__,
             error=_error(error),
-            role="SECONDARY" if secondary or live.failures else "PRIMARY",
+            role="SECONDARY" if secondary or has_primary else "PRIMARY",
         )
     )
 
@@ -906,46 +908,69 @@ def _collection_guard(
     *,
     diagnostic: _CheckpointDiagnostic | None = None,
 ) -> Any:
-    """Put the real guard's exit, including its STOP, inside a real purpose."""
-    guard = live.backend.enforce_execution_guard(callback, event_limit=event_limit)
+    """Attach the recorder to the first guard close, including closes inside the sampler."""
+
+    @contextmanager
+    def termination_scope(primary: BaseException | None) -> Any:
+        try:
+            purpose = live.recorder.purpose("TERMINATION", require_interval=True)
+            purpose.__enter__()
+        except BaseException as error:
+            _remember(live, "termination_entry", error, secondary=primary is not None)
+            raise
+        cause: tuple[Any, Any, Any] = (None, None, None)
+        try:
+            yield
+        except BaseException:
+            cause = sys.exc_info()
+            raise
+        finally:
+            try:
+                purpose.__exit__(*cause)
+            except BaseException as error:
+                _remember(live, "termination_exit", error, secondary=cause[1] is not None)
+                raise
+
+    guard = live.backend.enforce_execution_guard(
+        callback, event_limit=event_limit, termination_scope=termination_scope
+    )
     guard.__enter__()
     live.progress["guard_entered"] = True
-    primary = None
-    original_exc: tuple[Any, Any, Any] = (None, None, None)
+    cause: tuple[Any, Any, Any] = (None, None, None)
     try:
         yield
-    except BaseException as error:
-        primary = error
-        original_exc = sys.exc_info()
-    purpose = None
-    entered = False
-    try:
-        purpose = live.recorder.purpose("TERMINATION")
-        purpose.__enter__()
-        entered = True
-    except BaseException as error:
-        _remember(live, "termination_entry", error, secondary=primary is not None)
-        primary = primary or error
-    try:
-        guard.__exit__(*original_exc)
-        live.progress["guard_exited"] = True
-        if diagnostic is not None:
-            diagnostic.guard_exit_monotonic_ns = time.monotonic_ns()
-    except BaseException as error:
-        _remember(live, "guard_exit", error, secondary=primary is not None)
-        primary = primary or error
+    except BaseException:
+        cause = sys.exc_info()
+        raise
     finally:
-        if entered:
-            try:
-                assert purpose is not None
-                purpose.__exit__(*original_exc)
-            except BaseException as error:
-                _remember(live, "termination_exit", error, secondary=primary is not None)
-                primary = primary or error
-    if primary is not None:
-        raise primary.with_traceback(
-            original_exc[2] if primary is original_exc[1] else primary.__traceback__
-        )
+        try:
+            guard.__exit__(*cause)
+        except BaseException as error:
+            _remember(live, "guard_exit", error, secondary=cause[1] is not None)
+            if cause[1] is None:
+                raise
+        finally:
+            if live.backend.guard_stop_settled:
+                live.progress["guard_exited"] = True
+                if diagnostic is not None:
+                    diagnostic.guard_exit_monotonic_ns = time.monotonic_ns()
+            else:
+                live.progress["guard_stop_pending"] = True
+
+
+def _settle_body_guard(live: _Live, primary: BaseException | None) -> BaseException | None:
+    if live.progress.get("guard_entered"):
+        try:
+            live.backend.finish_guard_stop()
+        except BaseException as error:
+            _remember(live, "guard_teardown", error, secondary=primary is not None)
+            primary = primary or error
+        if live.backend.guard_stop_settled:
+            live.progress["guard_exited"] = True
+            live.progress.pop("guard_stop_pending", None)
+        else:
+            live.progress["guard_stop_pending"] = True
+    return primary
 
 
 def _close_body_resources(
@@ -955,6 +980,9 @@ def _close_body_resources(
     diagnostic: _CheckpointDiagnostic | None = None,
     action_timing: ActionTiming | None = None,
 ) -> BaseException | None:
+    primary = _settle_body_guard(live, primary)
+    if live.progress.get("guard_stop_pending"):
+        return primary
     recorder = live.recorder
     operations: list[tuple[str, Any]] = []
     if live.progress.get("recorder_entered"):
@@ -989,6 +1017,8 @@ def _close_body_resources(
     if live.progress.get("backend_initialization_attempted"):
         operations.append(("backend_shutdown", live.backend.shutdown))
     for phase, operation in operations:
+        if live.progress.get(phase + "_completed"):
+            continue
         live.progress[phase + "_attempted"] = True
         try:
             operation()
@@ -1333,7 +1363,11 @@ class NativeCollectionApplication:
                 _remember(live, "missing_body", missing_body_error, secondary=primary is not None)
                 primary = primary or missing_body_error
             try:
-                if live.owner is not None:
+                if live.progress.get("guard_stop_pending"):
+                    primary = _close_body_resources(
+                        live, primary, diagnostic=live.diagnostic, action_timing=live.action_timing
+                    )
+                if live.owner is not None and not live.progress.get("guard_stop_pending"):
                     closure["attempted"] = True
                     live.owner.close()
                     closure["completed"] = True
@@ -1341,7 +1375,7 @@ class NativeCollectionApplication:
                 _remember(live, "owner_close", error, secondary=primary is not None)
                 primary = primary or error
             finally:
-                live.closed = True
+                live.closed = not live.progress.get("guard_stop_pending", False)
         body = dict(live.result or {})
         links: dict[str, Any] = {}
         for name in ("collection-body-result.json", "originals/inventory.json"):
@@ -1373,6 +1407,10 @@ class NativeCollectionApplication:
             qualified_group_score=None,
             final_lifecycle_receipt=True,
             **(
+                {"cleanup_status": "PENDING_OWNER_GUARD_STOP"}
+                if live.progress.get("guard_stop_pending") else {}
+            ),
+            **(
                 live.diagnostic.result_fields(prefix_complete=len(live.completed) == 1)
                 if live.diagnostic is not None else {}
             ),
@@ -1388,9 +1426,66 @@ class NativeCollectionApplication:
                 final_receipt_persisted=False,
             )
             primary = primary or error
+        if live.progress.get("guard_stop_pending"):
+            if primary is None:
+                primary = RuntimeError("collection guard cleanup is still pending")
+            BaseException.__setattr__(
+                primary, "finish_pending_cleanup", self.finish_pending_cleanup
+            )
+            BaseException.add_note(
+                primary, "Collection cleanup is pending. Call this exception's "
+                "finish_pending_cleanup() on the original owner thread to complete it."
+            )
+            if threading.current_thread() is threading.main_thread():
+                atexit.register(self._finish_cleanup_at_exit)
         if primary is not None:
             raise primary
         return dict(live.result)
+
+    def _finish_cleanup_at_exit(self) -> None:
+        try:
+            self.finish_pending_cleanup()
+        except BaseException as error:
+            print(f"Collection cleanup at process exit: {type(error).__name__}: {error}",
+                  file=sys.stderr)
+
+    def finish_pending_cleanup(self) -> dict[str, Any]:
+        """Finish a deferred brake on its actual owner, then release the collection resources."""
+        live = _live(self)
+        if not live.executed or not live.progress.get("guard_stop_pending"):
+            raise RuntimeError("collection has no deferred guard cleanup")
+        error = _settle_body_guard(live, None)
+        if live.progress.get("guard_stop_pending"):
+            assert error is not None
+            raise error
+        steps = render_accounting = None
+        try:
+            steps = live.backend.total_physics_steps
+            render_accounting = live.recorder.render_accounting
+        except BaseException as counter_error:
+            _remember(live, "counter_snapshot", counter_error, secondary=error is not None)
+            error = error or counter_error
+        error = _close_body_resources(
+            live, error, diagnostic=live.diagnostic, action_timing=live.action_timing
+        )
+        closure = dict(attempted=True, completed=False)
+        try:
+            live.owner.close()
+            closure["completed"] = True
+        except BaseException as close_error:
+            _remember(live, "owner_close", close_error, secondary=error is not None)
+            error = error or close_error
+        finally:
+            live.closed = True
+            atexit.unregister(self._finish_cleanup_at_exit)
+        result = dict(
+            progress=dict(live.progress), owner_closure=closure, physics_steps=steps,
+            render_accounting=render_accounting, failures=list(live.failures),
+        )
+        save_exclusive(live.output / "collection-cleanup-result.json", result)
+        if error is not None:
+            raise error
+        return result
 
     @timed_call("owner_check")
     def check_active(self) -> dict[str, Any]:
@@ -2960,13 +3055,18 @@ class NativeCollectionApplication:
                 recorder.record_failure(phase, error)
         finally:
             mark_timing("action_exit")
-            if diagnostic is not None and diagnostic.whole_action and recorder is not None:
+            primary = _settle_body_guard(live, primary)
+            guard_pending = live.progress.get("guard_stop_pending", False)
+            if (
+                not guard_pending and diagnostic is not None
+                and diagnostic.whole_action and recorder is not None
+            ):
                 if recorder.horizons:
                     diagnostic.full_horizon = recorder.horizons[-1]
                 for row in recorder.decisions:
                     if row["inputs"]["phase"] == "POST":
                         diagnostic.post_admission_allowed = row["decision"]["allowed"]
-            if live.progress.get("backend_initialized"):
+            if not guard_pending and live.progress.get("backend_initialized"):
                 try:
                     physics_steps = live.backend.total_physics_steps
                     render_accounting = recorder.render_accounting if recorder is not None else None
@@ -2994,10 +3094,11 @@ class NativeCollectionApplication:
                 physics_steps = render_passes = 0
             if diagnostic is not None:
                 diagnostic.final_physics_step = physics_steps
-            primary = _close_body_resources(
-                live, primary, diagnostic=diagnostic, action_timing=live.action_timing
-            )
-            if diagnostic is not None:
+            if not guard_pending:
+                primary = _close_body_resources(
+                    live, primary, diagnostic=diagnostic, action_timing=live.action_timing
+                )
+            if not guard_pending and diagnostic is not None:
                 diagnostic.body_cleanup_finished_monotonic_ns = time.monotonic_ns()
             live.result = dict(
                 status="COLLECTION_PARTIAL"
@@ -3027,7 +3128,7 @@ class NativeCollectionApplication:
                     else "UNAVAILABLE"
                 ),
                 count_provenance="BEFORE_SHUTDOWN"
-                if live.progress.get("backend_initialized")
+                if not guard_pending and live.progress.get("backend_initialized")
                 else "UNAVAILABLE"
                 if live.progress.get("backend_initialization_attempted")
                 else "NOT_STARTED",

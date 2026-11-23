@@ -1,7 +1,11 @@
 """Continuous feedback acts inside real MuJoCo motion, with bounded commands."""
 
-from contextlib import nullcontext
+from contextlib import closing, nullcontext
+from datetime import UTC, datetime
 from math import sqrt
+from threading import Event, Thread, get_ident
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -295,13 +299,25 @@ def test_lift_hold_base_exception_stops_and_propagates(backend, lift_hold_case, 
 
 
 @pytest.mark.parametrize("code", ["GRASP_LOST", "CLEARANCE_PATH_VIOLATION"])
-def test_lift_hold_guard_failure_keeps_domain_code(backend, lift_hold_case, code):
+@pytest.mark.parametrize("fail_hold", [False, True], ids=["hold-ok", "hold-failed"])
+def test_lift_hold_guard_failure_keeps_domain_code(backend, lift_hold_case, code, fail_hold,
+                                                  monkeypatch):
     robot, path, options = lift_hold_case
     _, _, session_type = api()
     session = session_type(lambda value: value, vertical_clearance=path)
     start = backend.total_physics_steps
     fault_step = None
     error = MotionGuardViolation(code, "hold guard rejected measured state")
+    hold_error = OSError("dedicated hold failed")
+    actual_hold = backend.hold_current_joints
+    attempts = []
+
+    def hold():
+        if fault_step is not None:
+            attempts.append(backend.total_physics_steps)
+            if fail_hold and len(attempts) == 1:
+                raise hold_error
+        return actual_hold()
 
     def fail_in_hold(snapshot):
         nonlocal fault_step
@@ -309,11 +325,354 @@ def test_lift_hold_guard_failure_keeps_domain_code(backend, lift_hold_case, code
             fault_step = snapshot.physics_step
             raise error
 
+    monkeypatch.setattr(backend, "hold_current_joints", hold)
     with backend.observe_physics_steps(fail_in_hold), robot.visual_servo(session):
         action = robot.lift(**options)
     assert fault_step is not None
-    _assert_lift_hold_stopped(backend, fault_step, estop=False)
+    assert attempts == [fault_step] * (2 if fail_hold else 1)
+    _assert_lift_hold_stopped(backend, fault_step, estop=fail_hold)
     _assert_lift_hold_failure(action, error, fault_step - start, session, code)
+    assert action.details["held_steps"] == 1
+    if fail_hold:
+        assert action.details["hold_error"] == str(hold_error)
+    else:
+        assert "hold_error" not in action.details
+
+
+@pytest.fixture
+def recorded_lift(tmp_path, monkeypatch):
+    from cloud_edge_robot_arm.research.native_collection_grounding import geometry_registration
+    from tests.native_collection_source_graph import (
+        install_original_shape_camera,
+        install_software_reset_engine,
+    )
+    from tests.test_native_collection_authority import source_recorder
+
+    recorder, backend, capture, owner, _ = source_recorder(tmp_path)
+    with closing(owner), capture, recorder:
+        install_software_reset_engine(backend)
+        install_original_shape_camera(backend, geometry_registration())
+        robot = recorder.executor._robot
+        robot._holding_object_id = "software-object"
+        monkeypatch.setattr(backend, "get_tcp_pose", lambda: Pose(x=0.45, y=0, z=0.05))
+        monkeypatch.setattr(robot, "_grasp_contacts", lambda: {"left": 1, "right": 1})
+        moved = robot._result("LIFT", True, robot._snapshot(), datetime.now(UTC), 0)
+        monkeypatch.setattr(robot, "_move", lambda *args, **kwargs: moved)
+        backend._pending_joint_targets.append((1, np.ones(7)))
+        backend._data.ctrl[0] = 0.75
+        yield robot, SimpleNamespace(recorder=recorder, backend=backend, failures=[], progress={})
+
+
+@pytest.fixture
+def recorded_lift_hold(recorded_lift):
+    from cloud_edge_robot_arm.research.native_collection_application import _collection_guard
+
+    robot, live = recorded_lift
+    with _collection_guard(live, lambda checkpoint: None, 1024):
+        yield robot, live.backend, live.recorder
+
+
+@pytest.mark.parametrize(("primary", "fail_write"), [
+    (MotionGuardViolation("GRASP_LOST", "measured grasp lost"), False),
+    (MotionGuardViolation("CLEARANCE_PATH_VIOLATION", "measured clearance lost"), True),
+    (ValueError("feedback unavailable"), True),
+    (_CancelLift("caller cancelled"), True),
+], ids=["lost-and-braked", "clearance-and-brake-fault", "feedback-and-brake-fault",
+        "cancel-and-brake-fault"])
+def test_lift_hold_retains_primary_and_records_brake_result(recorded_lift_hold, monkeypatch,
+                                                          primary, fail_write):
+    robot, backend, recorder = recorded_lift_hold
+    domain = isinstance(primary, MotionGuardViolation)
+    hold_error = OSError("dedicated hold write failed")
+    stop_error = ArithmeticError("brake control write failed")
+    actual_hold = backend.hold_current_joints
+    actual_write = backend._apply_control
+    hold_attempts, write_attempts = [], []
+
+    def fail_guard():
+        raise primary
+
+    def hold():
+        hold_attempts.append(backend.total_physics_steps)
+        if domain and len(hold_attempts) == 1:
+            raise hold_error
+        return actual_hold()
+
+    def write():
+        write_attempts.append(backend.total_physics_steps)
+        if fail_write and len(write_attempts) == 1:
+            raise stop_error
+        return actual_write()
+
+    monkeypatch.setattr(robot, "_motion_guard", lambda *args: fail_guard)
+    monkeypatch.setattr(backend, "hold_current_joints", hold)
+    monkeypatch.setattr(backend, "_apply_control", write)
+    with patch.object(
+        backend, "stop_after_failure", wraps=backend.stop_after_failure
+    ) as attributed:
+        if isinstance(primary, Exception):
+            action = robot.lift(height_m=0.1)
+            code = primary.code if domain else "LIFT_HOLD_FAILED"
+            _assert_lift_hold_failure(action, primary, 0, None, code)
+            for details in (action.details, action.error.details):
+                assert details["held_steps"] == 0
+                if domain:
+                    assert details["hold_error_phase"] == "hold_current_joints"
+                    assert details["hold_error_type"] == type(hold_error).__name__
+                    assert details["hold_error"] == str(hold_error)
+                else:
+                    assert "hold_error" not in details
+                if fail_write:
+                    assert details["stop_error_phase"] == "emergency_stop"
+                    assert details["stop_error_type"] == type(stop_error).__name__
+                    assert details["stop_error"] == str(stop_error)
+                else:
+                    assert "stop_error" not in details
+        else:
+            with pytest.raises(_CancelLift) as caught:
+                robot.lift(height_m=0.1)
+            assert caught.value is primary and caught.traceback[-1].name == "fail_guard"
+            assert f"emergency_stop {type(stop_error).__name__}: {stop_error}" in primary.__notes__
+    attributed.assert_called_once_with(primary)
+    assert hold_attempts == [0] * (2 if domain else 1) and write_attempts == [0]
+    assert backend.estop_engaged and not backend._pending_joint_targets
+    assert backend._data.ctrl[0] == (0.75 if fail_write else 0.0)
+    terminal, = [row for row in backend.execution_guard_events if row["kind"] == "FAILURE"]
+    assert (terminal["phase"], terminal["error_type"], terminal["error"]) == (
+        "controller", type(primary).__name__, str(primary)
+    )
+    if fail_write:
+        assert terminal["stop_error"] == str(stop_error)
+        backend.emergency_stop()
+    backend.emergency_stop()
+    assert write_attempts == ([0, 0] if fail_write else [0])
+    assert backend._data.ctrl[0] == 0.0 and backend.total_physics_steps == 0
+    intervals = [row for row in recorder._intervals if row["kind"] == "TERMINATION"]
+    assert [r["disposition"] for r in intervals] == (
+        ["ABORTED", "COMPLETE"] if fail_write else ["ABORTED"]
+    )
+    commands = [(r["command_payload"]["type"], r["parent_interval_id"]) for r in recorder._commands]
+    assert commands == [
+        (kind, interval["interval_id"])
+        for interval in intervals for kind in ("hold_current_joints", "emergency_stop")
+    ]
+
+
+@pytest.mark.parametrize(("source", "fail_writes"), [
+    ("controller", 0), ("observer", 0), ("observer", 1), ("observer", 2),
+])
+def test_lift_hold_command_parents_after_completed_step(recorded_lift, monkeypatch, source,
+                                                       fail_writes):
+    from cloud_edge_robot_arm.research.native_collection_application import _collection_guard
+
+    robot, live = recorded_lift
+    backend, recorder = live.backend, live.recorder
+    primary = MotionGuardViolation("GRASP_LOST", "domain fault at first completed step")
+    write_errors = [OSError(f"brake write {n} failed") for n in range(1, fail_writes + 1)]
+    backend._target_positions[0] = 0.05
+    actual_write = backend._apply_control
+    writes = []
+
+    def write():
+        if backend.estop_engaged:
+            writes.append(float(backend._data.ctrl[0]))
+            if len(writes) <= len(write_errors):
+                raise write_errors[len(writes) - 1]
+        return actual_write()
+
+    def guard():
+        if source == "controller" and backend.total_physics_steps == 1:
+            raise primary
+
+    def observe(snapshot):
+        if source == "observer":
+            assert snapshot.physics_step == 1
+            raise primary
+
+    monkeypatch.setattr(backend, "_apply_control", write)
+    monkeypatch.setattr(robot, "_motion_guard", lambda *_: guard)
+    with backend.observe_physics_steps(observe), _collection_guard(live, lambda _: None, 1024):
+        with recorder.purpose("HOLD") as ordinary_hold:
+            action = robot.lift(height_m=0.1)
+        _assert_lift_hold_failure(action, primary, 1, None, primary.code)
+        assert action.details["held_steps"] == 1 and "hold_error" not in action.details
+        assert backend.estop_engaged is (source == "observer")
+        if source == "observer":
+            assert len(writes) == (1 if fail_writes == 0 else 2)
+            assert backend._data.ctrl[0] == (0.05 if fail_writes == 2 else 0.0)
+            if write_errors:
+                for details in (action.details, action.error.details):
+                    assert details["stop_error_phase"] == "emergency_stop"
+                    assert details["stop_error_type"] == type(write_errors[-1]).__name__
+                    assert details["stop_error"] == str(write_errors[-1])
+            if fail_writes == 2:
+                backend.emergency_stop()
+
+    assert backend.total_physics_steps == 1 and backend.estop_engaged
+    assert backend._data.ctrl[0] == 0.0 and not backend._pending_joint_targets
+    assert writes == [0.05] * (fail_writes + 1)
+    failures = [row for row in backend.execution_guard_events if row["kind"] == "FAILURE"]
+    assert [row["stop_error"] for row in failures if "stop_error" in row] == [
+        str(error) for error in write_errors
+    ]
+    intervals = [row for row in recorder._intervals if row["kind"] == "TERMINATION"]
+    if source == "controller":
+        assert not failures and [row["disposition"] for row in intervals] == ["COMPLETE"]
+    else:
+        assert failures[0]["phase"] == "backend" and failures[0]["error"] == str(primary)
+        assert len(intervals) == fail_writes + 1 and intervals[0]["disposition"] == "ABORTED"
+    expected = [("hold_current_joints", ordinary_hold)] if source == "controller" else []
+    for row in intervals:
+        expected.extend((kind, row["interval_id"]) for kind in ("hold_current_joints",
+                                                               "emergency_stop"))
+    assert [(row["command_payload"]["type"], row["parent_interval_id"])
+            for row in recorder._commands] == expected
+
+
+@pytest.mark.parametrize("source", ["controller", "observer"])
+def test_lift_hold_real_physics_observer_and_post_step_guard(backend, lift_hold_case, monkeypatch,
+                                                           source):
+    robot, _, options = lift_hold_case
+    error = MotionGuardViolation("CLEARANCE_PATH_VIOLATION", "first hold step out of path")
+    actual_move, actual_guard = robot._move, robot._motion_guard
+    hold_start = None
+    start = backend.total_physics_steps
+
+    def move(*args, **kwargs):
+        nonlocal hold_start
+        result = actual_move(*args, **kwargs)
+        assert result.success, result.error_code
+        hold_start = backend.total_physics_steps
+        return result
+
+    def motion_guard(*args):
+        guard = actual_guard(*args)
+
+        def checked():
+            guard()
+            if source == "controller" and hold_start is not None:
+                if backend.total_physics_steps > hold_start:
+                    raise error
+
+        return checked
+
+    def observe(snapshot):
+        if source == "observer" and hold_start is not None:
+            assert snapshot.physics_step == hold_start + 1
+            raise error
+
+    monkeypatch.setattr(robot, "_move", move)
+    monkeypatch.setattr(robot, "_motion_guard", motion_guard)
+    with (backend.observe_physics_steps(observe),
+          backend.enforce_execution_guard(lambda _: None, event_limit=500000,
+                                          termination_scope=lambda cause: nullcontext())):
+        action = robot.lift(**options)
+    assert hold_start is not None and backend.total_physics_steps == hold_start + 1
+    assert action.details["held_steps"] == 1
+    _assert_lift_hold_failure(action, error, hold_start + 1 - start, None, error.code)
+    at_fault = [row["type"] for row in backend.command_records if row["physics_step"] > hold_start]
+    ordinary = ["hold_current_joints"] if source == "controller" else []
+    assert at_fault == [*ordinary, "hold_current_joints", "emergency_stop"]
+    _assert_lift_hold_stopped(backend, hold_start + 1, estop=True)
+
+
+def test_lift_hold_during_active_brake_preserves_cause_without_overlapping_hold(recorded_lift_hold,
+                                                                               monkeypatch):
+    robot, backend, _ = recorded_lift_hold
+    primary = MotionGuardViolation("GRASP_LOST", "lost while another caller brakes")
+    actual_hold = backend.hold_current_joints
+    entered, release = Event(), Event()
+    attempts, writer_errors = [], []
+    owner = get_ident()
+
+    def hold():
+        attempts.append(get_ident())
+        if get_ident() != owner:
+            entered.set()
+            assert release.wait(5)
+        return actual_hold()
+
+    def fail_guard():
+        raise primary
+
+    def stop():
+        try:
+            backend.emergency_stop()
+        except RuntimeError as error:
+            writer_errors.append(error)
+
+    monkeypatch.setattr(backend, "hold_current_joints", hold)
+    monkeypatch.setattr(robot, "_motion_guard", lambda *_: fail_guard)
+    writer = Thread(target=stop, daemon=True)
+    writer.start()
+    try:
+        assert entered.wait(5)
+        action = robot.lift(height_m=0.1)
+        _assert_lift_hold_failure(action, primary, 0, None, primary.code)
+        assert "in progress" in action.details["stop_error"]
+        assert attempts == [writer.ident] and not backend.estop_engaged
+    finally:
+        release.set()
+        writer.join(5)
+    assert not writer.is_alive() and backend.total_physics_steps == 0
+    assert backend.estop_engaged and backend._data.ctrl[0] == 0.0
+    assert len(writer_errors) == 1 and "owner thread" in str(writer_errors[0])
+
+
+def test_lift_hold_excludes_overlapping_stop_during_ordinary_protection(recorded_lift,
+                                                                      monkeypatch):
+    from cloud_edge_robot_arm.research.native_collection_application import _collection_guard
+
+    robot, live = recorded_lift
+    backend = live.backend
+    primary = MotionGuardViolation("GRASP_LOST", "lost before a competing stop")
+    actual_hold = backend.hold_current_joints
+    entered, attempted = Event(), Event()
+    hold_threads, stop_errors = [], []
+    owner = get_ident()
+
+    def hold():
+        hold_threads.append(get_ident())
+        if len(hold_threads) == 1:
+            entered.set()
+            assert attempted.wait(5)
+        return actual_hold()
+
+    def fail_guard():
+        raise primary
+
+    def contender():
+        try:
+            assert entered.wait(5)
+            backend.emergency_stop()
+        except BaseException as error:
+            stop_errors.append(error)
+        finally:
+            attempted.set()
+
+    monkeypatch.setattr(robot, "_motion_guard", lambda *_: fail_guard)
+    monkeypatch.setattr(backend, "hold_current_joints", hold)
+    with _collection_guard(live, lambda _: None, 1024):
+        thread = Thread(target=contender, daemon=True)
+        thread.start()
+        try:
+            with live.recorder.purpose("HOLD") as ordinary:
+                action = robot.lift(height_m=0.1)
+        finally:
+            thread.join(5)
+        assert not thread.is_alive() and hold_threads == [owner]
+        _assert_lift_hold_failure(action, primary, 0, None, primary.code)
+        assert len(stop_errors) == 1 and "in progress" in str(stop_errors[0])
+        assert not backend.estop_engaged
+    assert backend.estop_engaged and backend.total_physics_steps == 0
+    term, = [r for r in live.recorder._intervals if r["kind"] == "TERMINATION"]
+    assert (term["disposition"], hold_threads) == ("COMPLETE", [owner, owner])
+    commands = [(row["command_payload"]["type"], row["parent_interval_id"])
+                for row in live.recorder._commands]
+    assert commands == [
+        ("hold_current_joints", ordinary), ("hold_current_joints", term["interval_id"]),
+        ("emergency_stop", term["interval_id"]),
+    ]
 
 
 @pytest.mark.parametrize("visual", [False, True])

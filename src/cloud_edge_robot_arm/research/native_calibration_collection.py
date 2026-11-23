@@ -328,6 +328,9 @@ def _protocol(
     else:
         if historical_sources is not None:
             raise ValueError("archived tree inventory cannot be overridden")
+        source_tree = archived_source_root / "src/cloud_edge_robot_arm"
+        if not source_tree.is_dir() or any(p.is_symlink() for p in source_tree.rglob("*")):
+            raise ValueError("regular archived Python source tree required")
         sources = _source_inventory_at(
             archived_source_root,
             marker_family_id=family_id,
@@ -747,9 +750,6 @@ def _registered_teacher_protocol(
         raise ValueError("registered teacher release settings changed")
     if archived_source_root is not None:
         _registered_teacher_settings(archived_source_root / _REGISTERED_TEACHER_CONFIG)
-        source_tree = archived_source_root / "src/cloud_edge_robot_arm"
-        if not source_tree.is_dir() or any(p.is_symlink() for p in source_tree.rglob("*")):
-            raise ValueError("regular archived Python source tree required")
     protocol = _registered_collection_protocol_v2(
         historical_sources, archived_source_root=archived_source_root
     )
@@ -816,13 +816,20 @@ def _registered_teacher_v10_settings(path: Path) -> dict[str, Any]:
 
 
 def _registered_teacher_v10_protocol(
-    historical_sources: dict[str, str] | None = None, *, release: dict[str, Any] | None = None
+    historical_sources: dict[str, str] | None = None,
+    *,
+    release: dict[str, Any] | None = None,
+    archived_source_root: Path | None = None,
 ) -> dict[str, Any]:
     """V10: Physics-step timeout for simulation teacher."""
     fixed = _registered_teacher_v10_settings(ROOT / _REGISTERED_TEACHER_V10_CONFIG)
     if release is not None and release != fixed:
         raise ValueError("registered teacher v10 release settings changed")
-    protocol = _registered_collection_protocol_v2(historical_sources)
+    if archived_source_root is not None:
+        _registered_teacher_v10_settings(archived_source_root / _REGISTERED_TEACHER_V10_CONFIG)
+    protocol = _registered_collection_protocol_v2(
+        historical_sources, archived_source_root=archived_source_root
+    )
     # Use v2 horizons with physics-step timeout
     protocol["actions"] = action_horizons(use_v2=True)
 
@@ -989,12 +996,15 @@ def collect_native_calibration_once(
     ).execute_once()
 
 
-def verify_native_calibration_collection(protocol: Path, *, output: Path) -> dict[str, Any]:
+def verify_native_calibration_collection(
+    protocol: Path, *, output: Path, source_root: Path | None = None
+) -> dict[str, Any]:
     from cloud_edge_robot_arm.research.native_full_horizon_originals import (
+        _read_full_horizon_protocol,
         reconstruct_native_full_horizon_registry,
     )
 
-    data = read_protocol(protocol, current_sources=False)
+    data = _read_full_horizon_protocol(protocol, source_root)
     if data["schema_version"] == REGISTERED_COLLECTION_SCHEMA:
         raise ValueError("registered collection has no released full-horizon groups")
     if data["schema_version"] == REGISTERED_PREPARATION_SCHEMA:
@@ -1008,7 +1018,7 @@ def verify_native_calibration_collection(protocol: Path, *, output: Path) -> dic
             roots[row["assignment_id"]] = Path(load_json(claim)["output"])
     groups: list[dict[str, Any]] = []
     diagnostics = reconstruct_native_full_horizon_registry(
-        protocol, roots=roots, group_sink=groups.append
+        protocol, roots=roots, group_sink=groups.append, source_root=source_root
     )
     destination = fresh_directory(output)
     save_exclusive(destination / "diagnostics.json", asdict(diagnostics))

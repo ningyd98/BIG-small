@@ -6,7 +6,7 @@ import hashlib
 import math
 import threading
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from functools import wraps
@@ -51,6 +51,7 @@ _TABLE_SUPPORT_GEOMS = frozenset(
 # Keep a 1 mm command margin inside the compliant 40 mm slide limit so arm
 # motion does not drive an open finger beyond its unchanged physical limit.
 GRIPPER_OPEN_TARGET_M = 0.039
+_GUARD_FINISH_TIMEOUT_S = 2.0
 
 
 def _classify_contact_pair(geom1: str, geom2: str) -> tuple[bool, bool]:
@@ -227,6 +228,9 @@ class ExecutionGuardBoundaryV1:
     operation_id: int | None
 
 
+_GuardTerminationScope = Callable[[BaseException | None], AbstractContextManager[Any]]
+
+
 def _guarded_step(function: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(function)
     def guarded(self: MuJoCoPhysicsBackend, *args: Any, **kwargs: Any) -> Any:
@@ -335,6 +339,17 @@ class MuJoCoPhysicsBackend:
         self._operation_observer_failures: list[Mapping[str, Any]] = []
         self._operation_observer_overhead_ns = 0
         self._execution_guard: Callable[[ExecutionGuardBoundaryV1], None] | None = None
+        self._guard_termination_scope: _GuardTerminationScope | None = None
+        self._guard_brake_state: Literal[
+            "UNBOUND", "READY", "BRAKING", "INCOMPLETE", "COMPLETE"
+        ] = "UNBOUND"
+        self._guard_close_lock = threading.Condition()
+        self._guard_writer: tuple[int, int] | None = None
+        self._guard_writer_generation = 0
+        self._guard_pending_error: BaseException | None = None
+        self._guard_last_stop_error: BaseException | None = None
+        self._guard_context_ended = False
+        self._guard_last_error: BaseException | None = None
         self._execution_guard_used = False
         self._execution_guard_closed = False
         self._execution_guard_thread: int | None = None
@@ -355,7 +370,11 @@ class MuJoCoPhysicsBackend:
 
     @contextmanager
     def enforce_execution_guard(
-        self, callback: Callable[[ExecutionGuardBoundaryV1], None], *, event_limit: int = 1024
+        self,
+        callback: Callable[[ExecutionGuardBoundaryV1], None],
+        *,
+        event_limit: int = 1024,
+        termination_scope: _GuardTerminationScope | None = None,
     ) -> Iterator[None]:
         """Install one synchronous guard for this backend's final execution session."""
         self._require_not_in_observer_callback()
@@ -368,19 +387,53 @@ class MuJoCoPhysicsBackend:
             raise ValueError("reset episode and callable execution guard required")
         if getattr(callback, "bound_backend", self) is not self:
             raise RuntimeError("execution guard belongs to another backend")
+        if termination_scope is not None and not callable(termination_scope):
+            raise TypeError("guard termination scope must be callable")
         self._execution_guard_used = True
         self._execution_guard_event_limit = event_limit
         self._execution_guard_thread = threading.get_ident()
         self._execution_guard = callback
+        self._guard_termination_scope = termination_scope
+        if termination_scope is not None:
+            self._guard_brake_state = "READY"
         try:
             yield
         except BaseException as error:
-            self._close_execution_guard(error)
+            try:
+                self.finish_guard_stop(error)
+            except BaseException as cleanup_error:
+                BaseException.add_note(
+                    error, "guard teardown: " + _operation_error_text(cleanup_error)
+                )
             raise
         else:
-            self._close_execution_guard(None)
+            self.finish_guard_stop()
         finally:
-            self._execution_guard = None
+            with self._guard_close_lock:
+                self._guard_context_ended = True
+                if self.guard_stop_settled:
+                    self._execution_guard = None
+                    self._guard_last_error = None
+
+    @property
+    def guard_stop_settled(self) -> bool:
+        """The bound brake and its source callbacks have finished for this episode."""
+        with self._guard_close_lock:
+            return (
+                self._guard_brake_state in {"UNBOUND", "COMPLETE"} and self._guard_writer is None
+            )
+
+    def finish_guard_stop(self, cause: BaseException | None = None) -> None:
+        """Join any bound writer, or perform one real brake before releasing its resources."""
+        if self._execution_guard_used:
+            with self._guard_close_lock:
+                if self._guard_writer is None:
+                    self._require_not_in_observer_callback()
+            stop_error = self._close_execution_guard(cause, phase="body", finishing=True)
+            if cause is None and not self.guard_stop_settled:
+                if stop_error is not None:
+                    raise stop_error
+                raise RuntimeError("guard emergency stop is still incomplete during teardown")
 
     @contextmanager
     def capture_each_physics_step(self, *, max_captures: int) -> Iterator[None]:
@@ -463,32 +516,165 @@ class MuJoCoPhysicsBackend:
             row["snapshot_error"] = _operation_error_text(snapshot_error)
         return row
 
-    def _close_execution_guard(self, primary: BaseException | None) -> None:
-        if self._execution_guard_closed:
-            return
-        self._execution_guard_closed = True
-        row = (
-            self._guard_failure_record(primary)
-            if primary is not None
-            else {"kind": "CLOSED", "physics_step": self._total_physics_steps}
-        )
+    def _append_guard_closure(self, row: dict[str, Any]) -> None:
         if len(self._execution_guard_events) < self._execution_guard_event_limit:
             self._execution_guard_events.append(row)
         else:
-            self._execution_guard_events[-1]["closure"] = row
+            tail = self._execution_guard_events[-1]
+            if "closure" not in tail:
+                tail["closure"] = row
+            else:
+                # Retain the first terminal and subsequent fault even at the ledger limit.
+                nested = tail["closure"]
+                nested.setdefault("subsequent_failure", row)
+                nested["subsequent_failure_count"] = nested.get("subsequent_failure_count", 0) + 1
+
+    def _claim_guard_writer_locked(self) -> tuple[int, int]:
+        assert self._guard_writer is None
+        self._guard_writer_generation += 1
+        self._guard_writer = (threading.get_ident(), self._guard_writer_generation)
+        return self._guard_writer
+
+    def _release_guard_writer_locked(self, writer: tuple[int, int]) -> None:
+        assert self._guard_writer == writer
+        self._guard_writer = None
+        self._guard_close_lock.notify_all()
+
+    def _close_execution_guard(
+        self, primary: BaseException | None, *, phase: str = "backend", explicit: bool = False,
+        finishing: bool = False,
+    ) -> BaseException | None:
+        with self._guard_close_lock:
+            bound = self._guard_brake_state != "UNBOUND"
+            if self._guard_writer is not None and finishing:
+                if self._guard_writer[0] == threading.get_ident() or not (
+                    self._guard_close_lock.wait_for(
+                        lambda: self._guard_writer is None, timeout=_GUARD_FINISH_TIMEOUT_S
+                    )
+                ):
+                    raise RuntimeError("guard emergency stop is still in progress during teardown")
+            if self._guard_writer is not None:
+                busy = RuntimeError("guard emergency stop is already in progress")
+                if explicit and primary is None:
+                    raise busy
+                # A dedicated protective hold has reserved the writer. Its owner will brake
+                # for the first failing backend operation as soon as that hold returns.
+                if self._guard_brake_state == "READY" and self._guard_pending_error is None:
+                    self._guard_pending_error = primary
+                return busy
+            first = not self._execution_guard_closed
+            if first and self._guard_pending_error is not None:
+                primary, phase = self._guard_pending_error, "backend"
+                self._guard_pending_error = None
+            start_brake = first or (
+                (explicit or finishing) and self._guard_brake_state == "INCOMPLETE"
+            )
+            later_fault = (
+                not start_brake and bound and not self._guard_context_ended and primary is not None
+                and phase in {"body", "controller"} and primary is not self._guard_last_error
+            )
+            if not start_brake and not later_fault:
+                return None
+            writer = self._claim_guard_writer_locked() if bound else None
+            if start_brake:
+                self._execution_guard_closed = True
+                if bound:
+                    self._guard_brake_state = "BRAKING"
+            if bound and primary is not None:
+                self._guard_last_error = primary
+            row: dict[str, Any] = {"kind": "CLOSING", "physics_step": self._total_physics_steps}
+            if first or later_fault:
+                self._append_guard_closure(row)
+        # Exception text and physical snapshots may themselves invoke callbacks.
+        if primary is not None:
+            row.update(self._guard_failure_record(primary))
+            if bound:
+                row["phase"] = phase
+        if later_fault:
+            with self._guard_close_lock:
+                assert writer is not None
+                self._release_guard_writer_locked(writer)
+            return None
+        failure = primary
+        stop_error = None
+
+        def remember_error(phase: str, error: BaseException) -> None:
+            nonlocal failure
+            if failure is None:
+                failure = error
+                if bound:
+                    row.update(self._guard_failure_record(error), phase=phase)
+                    with self._guard_close_lock:
+                        self._guard_last_error = error
+            row[phase + "_error_type"] = type(error).__name__
+            row[phase + "_error"] = _operation_error_text(error)
+
+        scope = ExitStack()
+        if self._guard_termination_scope is not None:
+            try:
+                self._in_execution_guard_callback = True
+                scope.enter_context(self._guard_termination_scope(primary))
+            except BaseException as error:
+                remember_error("termination_entry", error)
+            finally:
+                self._in_execution_guard_callback = False
+        self._guard_stop_context.held = False
+        self._guard_stop_context.control_written = False
         try:
-            self.emergency_stop()
-        except BaseException as stop_error:
-            row["stop_error_type"] = type(stop_error).__name__
-            row["stop_error"] = _operation_error_text(stop_error)
-            if primary is None:
-                raise
+            if explicit:
+                self._perform_emergency_stop()
+            else:
+                self._guard_stop_context.enter_stop = True
+                self.emergency_stop()
+        except BaseException as error:
+            stop_error = error
+            remember_error("stop", error)
+        finally:
+            self._guard_stop_context.enter_stop = False
+        braked = self._guard_stop_context.held and self._guard_stop_context.control_written
+        if bound and not braked and stop_error is None:
+            stop_error = RuntimeError("guard brake did not complete its hold and control write")
+            remember_error("stop", stop_error)
+        if self._guard_termination_scope is not None:
+            try:
+                self._in_execution_guard_callback = True
+                if failure is None:
+                    scope.__exit__(None, None, None)
+                else:
+                    scope.__exit__(type(failure), failure, failure.__traceback__)
+            except BaseException as error:
+                remember_error("termination_exit", error)
+            finally:
+                self._in_execution_guard_callback = False
+        with self._guard_close_lock:
+            if bound:
+                self._guard_last_stop_error = stop_error
+                if braked:
+                    self._guard_brake_state = "COMPLETE"
+                    self._guard_termination_scope = None
+                    if self._guard_context_ended:
+                        self._execution_guard = None
+                        self._guard_last_error = None
+                else:
+                    self._guard_brake_state = "INCOMPLETE"
+            if row["kind"] == "CLOSING":
+                row["kind"] = "CLOSED"
+            if not first and failure is not None:
+                self._append_guard_closure(row)
+            if writer is not None:
+                self._release_guard_writer_locked(writer)
+        if primary is None and failure is not None:
+            raise failure
+        return stop_error
 
     @timed_call("guard")
     def _check_execution_guard(self, kind: str, phase: str) -> None:
         if not self._execution_guard_used:
             return
-        if self._execution_guard_closed or self._execution_guard is None:
+        if (
+            self._execution_guard_closed or self._guard_pending_error is not None
+            or self._execution_guard is None
+        ):
             raise RuntimeError("execution guard session is closed")
         if threading.get_ident() != self._execution_guard_thread:
             raise RuntimeError("execution guard belongs to another thread")
@@ -725,6 +911,10 @@ class MuJoCoPhysicsBackend:
         return deepcopy(self._command_records)
 
     @property
+    def next_command_sequence(self) -> int:
+        return len(self._command_records) + 1
+
+    @property
     def model_parameter_evidence(self) -> dict[str, object]:
         physics_dt_s = self._config.physics_dt_s if self._config is not None else 0.0
         return {
@@ -933,9 +1123,14 @@ class MuJoCoPhysicsBackend:
         self._last_contacts = self._read_contacts()
 
     def shutdown(self) -> None:
-        self._require_not_in_observer_callback()
-        if self._execution_guard_used:
-            self._close_execution_guard(None)
+        if self._guard_brake_state != "UNBOUND":
+            if self._data is None:
+                return
+            if threading.get_ident() != self._execution_guard_thread:
+                raise RuntimeError("guarded backend shutdown requires the owner thread")
+        else:
+            self._require_not_in_observer_callback()
+        self.finish_guard_stop()
         self._step_observer = None
         self._actuator_observer = None
         if self._camera is not None:
@@ -1246,15 +1441,65 @@ class MuJoCoPhysicsBackend:
 
     def emergency_stop(self) -> None:
         self._require_not_in_observer_callback()
+        if self._guard_brake_state != "UNBOUND":
+            if not getattr(self._guard_stop_context, "enter_stop", False):
+                self._close_execution_guard(None, explicit=True)
+                return
+            # Grant only the guard's own call. A public recursion during physical I/O is busy.
+            self._guard_stop_context.enter_stop = False
+        self._perform_emergency_stop()
+
+    def stop_after_failure(self, cause: BaseException) -> BaseException | None:
+        """Brake for a known controller failure without replacing its result or traceback."""
+        self._require_not_in_observer_callback()
+        if self._guard_brake_state != "UNBOUND":
+            return self._close_execution_guard(cause, phase="controller", explicit=True)
+        try:
+            self.emergency_stop()
+        except BaseException as stop_error:
+            return stop_error
+        return None
+
+    def protect_motion_guard_failure(
+        self, cause: BaseException,
+    ) -> tuple[BaseException | None, BaseException | None]:
+        """Apply the dedicated motion hold only while an open episode still needs it."""
+        with self._guard_close_lock:
+            state = self._guard_brake_state
+            if self._guard_writer is not None:
+                return None, RuntimeError("guard emergency stop is already in progress")
+            if state == "COMPLETE":
+                return None, None
+            writer = self._claim_guard_writer_locked() if state == "READY" else None
+            prior_stop_error = self._guard_last_stop_error
+        if state == "INCOMPLETE":
+            return None, self.stop_after_failure(cause) or prior_stop_error
+        hold_error = None
+        try:
+            self.hold_current_joints()
+        except BaseException as error:
+            hold_error = error
+        finally:
+            if writer is not None:
+                with self._guard_close_lock:
+                    pending = self._guard_pending_error
+                    self._release_guard_writer_locked(writer)
+                if pending is not None:
+                    self._close_execution_guard(pending)
+        if hold_error is not None:
+            return hold_error, self.stop_after_failure(cause)
+        return None, None
+
+    def _perform_emergency_stop(self) -> None:
         if self._execution_guard_used:
             self._execution_guard_closed = True
         self.hold_current_joints()
         if self._operation_observer is not None:
             self._emergency_stop_observed()
-            return
-        self._estop_engaged = True
-        self._record_command("emergency_stop", accepted=True, reason="")
-        self._apply_stop_control()
+        else:
+            self._estop_engaged = True
+            self._record_command("emergency_stop", accepted=True, reason="")
+            self._apply_stop_control()
 
     def _apply_stop_control(self) -> None:
         """Exempt only this thread's internal CONTROL call, never commands or physics."""
@@ -1286,6 +1531,8 @@ class MuJoCoPhysicsBackend:
             target_positions_rad=self._target_positions.tolist(),
             applied_target_positions_rad=self._target_positions.tolist(),
         )
+        if self._guard_brake_state == "BRAKING":
+            self._guard_stop_context.held = True
 
     def inject_fault(self, fault: PhysicalFault) -> None:
         self._require_not_in_observer_callback()
@@ -1441,6 +1688,8 @@ class MuJoCoPhysicsBackend:
             self._model.actuator_ctrlrange[:7, 0],
             self._model.actuator_ctrlrange[:7, 1],
         )
+        if getattr(self._guard_stop_context, "control_active", False):
+            self._guard_stop_context.control_written = True
 
     def _apply_target_motion(self) -> None:
         if self._target_motion is None:

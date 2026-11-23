@@ -36,7 +36,12 @@ def main() -> None:
     parser.add_argument("--prepared", type=Path)
     parser.add_argument("--repository", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--source-root", type=Path, help="pinned teacher source archive for --verify"
+    )
     args = parser.parse_args()
+    if args.source_root is not None and not args.verify:
+        parser.error("--source-root requires --verify")
     whole_action = args.register_whole_action_diagnostic or args.run_whole_action_diagnostic
     if whole_action or args.register_checkpoint_diagnostic or args.run_checkpoint_diagnostic:
         from cloud_edge_robot_arm.research.native_checkpoint_diagnostic import (
@@ -185,7 +190,9 @@ def main() -> None:
         else:
             if args.assignment_id is not None:
                 parser.error("verify retains all preassigned groups in its denominator")
-            result = verify_native_calibration_collection(args.protocol, output=args.output)
+            result = verify_native_calibration_collection(
+                args.protocol, output=args.output, source_root=args.source_root
+            )
     print(json.dumps(result, sort_keys=True, allow_nan=False))
     if result.get("status") == "COLLECTION_PARTIAL":
         raise SystemExit(1)

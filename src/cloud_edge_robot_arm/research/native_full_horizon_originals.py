@@ -44,6 +44,7 @@ from cloud_edge_robot_arm.research.native_calibration_collection import (
     REGISTERED_V2_STEP_SCHEMAS,
     ROOT,
     _registered_teacher_protocol,
+    _registered_teacher_v10_protocol,
     canonical,
     detached,
     digest,
@@ -1014,10 +1015,20 @@ class _Audit:
             _bracket(row["current"], self.domain, self.deadline)
             _same(row["lease_id"], self.identity.owner_identity.lease_id, "guard crossed lease")
         guards = self.raw["guard_events"]
+        checkpoint_fields = {
+            "kind", "phase", "episode_id", "physics_step", "operation_id", "sequence", "outcome",
+        }
+        # A later CLOSED cannot erase an earlier failure or a closure nested at the event cap.
         _require(
             guards
-            and guards[-1]["kind"] == "CLOSED"
-            and not any("error" in r or "stop_error" in r for r in guards),
+            and guards[-1] == {"kind": "CLOSED", "physics_step": self.raw["total_physics_steps"]}
+            and all(
+                isinstance(row, dict)
+                and row.keys() == checkpoint_fields
+                and row["outcome"] == "ALLOWED"
+                and row["kind"] not in {"FAILURE", "CLOSED"}
+                for row in guards[:-1]
+            ),
             "source guard failed or did not close",
         )
         validate_native_source_effect_graph(
@@ -3519,21 +3530,16 @@ def _read_full_horizon_protocol(protocol: Path, source_root: Path | None) -> dic
     from cloud_edge_robot_arm.vision.worker_owner import pin_worker_source_inventory
 
     original = load_json(protocol / "protocol.json")
-    if isinstance(original, dict) and original.get("schema_version") == REGISTERED_TEACHER_SCHEMA:
+    schema = original.get("schema_version") if isinstance(original, dict) else None
+    if schema == REGISTERED_TEACHER_SCHEMA:
         expected = _registered_teacher_protocol(archived_source_root=source_root)
-        _same(
-            original, expected, "archived v9 teacher recipe/source/single-release identity changed"
-        )
-        registration = original
+    elif schema == REGISTERED_TEACHER_V10_SCHEMA:
+        expected = _registered_teacher_v10_protocol(archived_source_root=source_root)
     else:
-        registration = read_protocol(protocol, current_sources=False)
-    _require(
-        registration["schema_version"]
-        in (REGISTERED_TEACHER_SCHEMA, REGISTERED_TEACHER_V10_SCHEMA),
-        "archived source root requires a registered teacher protocol",
-    )
-    pin_worker_source_inventory(source_root, registration["source_hashes"])
-    return registration
+        raise ValueError("archived source root requires a registered teacher protocol")
+    _same(original, expected, "archived teacher recipe/source/single-release identity changed")
+    pin_worker_source_inventory(source_root, expected["source_hashes"])
+    return expected
 
 
 def read_native_full_horizon_group(

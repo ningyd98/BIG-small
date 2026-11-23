@@ -10,7 +10,10 @@ from datetime import UTC, datetime
 from cloud_edge_robot_arm.contracts import ActionResult, Pose, RobotState
 from cloud_edge_robot_arm.edge.robot_adapter import build_action_result
 from cloud_edge_robot_arm.simulation.models import GripperCommand
-from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+from cloud_edge_robot_arm.simulation.mujoco.backend import (
+    MuJoCoPhysicsBackend,
+    _operation_error_text,
+)
 from cloud_edge_robot_arm.simulation.mujoco.motion_controller import (
     MotionTarget,
     MuJoCoMotionController,
@@ -211,33 +214,46 @@ class MuJoCoSkillRobot:
                         next_visual += visual_steps
             tcp_lift_m = self._backend.get_tcp_pose().z - current.z
         except BaseException as error:
-            if isinstance(error, MotionGuardViolation):
-                self._backend.hold_current_joints()
-                code = error.code
+            domain_code = error.code if isinstance(error, MotionGuardViolation) else None
+            if domain_code is not None:
+                hold_error, stop_error = self._backend.protect_motion_guard_failure(error)
             else:
-                # Stop before reading state or constructing the failure result.
-                self._backend.emergency_stop()
-                code = "LIFT_HOLD_FAILED"
-            reason = str(error)
+                hold_error = None
+                stop_error = self._backend.stop_after_failure(error)
+            reason = _operation_error_text(error)
+            cleanup: dict[str, object] = {}
+            for field, phase, secondary in (
+                ("hold", "hold_current_joints", hold_error),
+                ("stop", "emergency_stop", stop_error),
+            ):
+                if secondary is not None:
+                    name = type(secondary).__name__
+                    message = _operation_error_text(secondary)
+                    BaseException.add_note(error, f"{phase} {name}: {message}")
+                    cleanup[f"{field}_error_phase"] = phase
+                    cleanup[f"{field}_error_type"] = name
+                    cleanup[f"{field}_error"] = message
             if session is not None:
                 session.terminal_reason = f"{type(error).__name__}:{reason}"
             if not isinstance(error, Exception):
                 raise
+            # A step's observer can raise after physics advances but before step() returns.
+            held_steps = self._backend.total_physics_steps - hold_start
             details: dict[str, object] = {
                 **{key: value for key, value in action.details.items() if key != "physics_steps"},
                 "failure_phase": "LIFT_HOLD",
+                "held_steps": held_steps,
                 "reason": reason,
                 "exception_type": type(error).__name__,
+                **cleanup,
             }
             if session is not None:
                 details["visual_servo"] = {
                     "feedback_count": len(session.records),
                     "terminal_reason": session.terminal_reason,
                 }
-            # An observation callback can fail after physics has already advanced.
-            steps = int(action.details["physics_steps"]) + (
-                self._backend.total_physics_steps - hold_start
-            )
+            steps = int(action.details["physics_steps"]) + held_steps
+            code = domain_code if domain_code is not None else "LIFT_HOLD_FAILED"
             return self._result(
                 "LIFT", False, action.state_before, action.started_at, steps, code, details=details,
             )

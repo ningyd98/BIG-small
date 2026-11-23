@@ -155,6 +155,7 @@ class VisualRawRecorderV3:
         self._purpose_stack: list[str] = []
         self._purpose_allocations: list[str] = []
         self._action_stack: list[str] = []
+        self._interrupted_action_ends: dict[str, int] = {}
         self._physics: list[dict[str, Any]] = []
         self._commands: list[dict[str, Any]] = []
         self._actions: list[dict[str, Any]] = []
@@ -434,7 +435,7 @@ class VisualRawRecorderV3:
         )
 
     @contextmanager
-    def purpose(self, kind: str) -> Iterator[str]:
+    def purpose(self, kind: str, *, require_interval: bool = False) -> Iterator[str]:
         self._require_open()
         if kind not in _PURPOSES:
             raise ValueError(
@@ -450,7 +451,15 @@ class VisualRawRecorderV3:
             )
         except BaseException as audit_error:
             self._audit_failures.append(_error(audit_error))
+            if require_interval:
+                raise
         self._purpose_stack.append(interval_id)
+        interrupted = self._action_stack if kind == "TERMINATION" else []
+        if interrupted:
+            # STOP belongs to this purpose even while its controller is unwinding.
+            for span in interrupted:
+                self._interrupted_action_ends[span] = self.backend.next_command_sequence
+            self._action_stack = []
         error = None
         try:
             yield interval_id
@@ -458,12 +467,16 @@ class VisualRawRecorderV3:
             error = _error(operation_error)
             raise
         finally:
+            if interrupted:
+                self._action_stack = interrupted
             self._purpose_stack.pop()
             try:
                 if row is not None:
                     self._close_interval(row, error)
             except BaseException as audit_error:
                 self._audit_failures.append(_error(audit_error))
+                if require_interval:
+                    raise
 
     def _on_boundary(self, event: BackendOperationBoundary) -> None:
         if event.kind == "RESET":
@@ -740,7 +753,7 @@ class VisualRawRecorderV3:
             )
         except BaseException as audit_error:
             self._audit_failures.append(_error(audit_error))
-        command_start = len(self.backend.command_records) + 1
+        command_start = self.backend.next_command_sequence
         self._purpose_stack.append(interval_id)
         self._action_stack.append(span_id)
         if self._last_online_id is not None:
@@ -778,9 +791,12 @@ class VisualRawRecorderV3:
                     self._audit_failures.append(_error(audit_error))
             try:
                 action_result = result.action_result if result is not None else None
+                command_end = self._interrupted_action_ends.pop(
+                    span_id, self.backend.next_command_sequence
+                )
                 changed = (
                     self.backend.total_physics_steps != start_step
-                    or len(self.backend.command_records) + 1 != command_start
+                    or command_end != command_start
                 )
                 disposition = (
                     "PARTIAL"
@@ -808,7 +824,7 @@ class VisualRawRecorderV3:
                         grounding=grounding,
                         interval_id=interval_id,
                         command_seq_start=command_start,
-                        command_seq_end=len(self.backend.command_records) + 1,
+                        command_seq_end=command_end,
                         returned_result=action_result.model_dump(mode="json")
                         if action_result is not None
                         else None,
