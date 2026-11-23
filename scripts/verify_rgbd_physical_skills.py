@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from contextlib import ExitStack, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import mujoco
 
@@ -20,6 +21,10 @@ from cloud_edge_robot_arm.simulation.mujoco.motion_controller import (
     MuJoCoMotionController,
 )
 from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+
+if TYPE_CHECKING:
+    from scripts.graduation.dynamic_physics import CanonicalAudit
+
 
 ASSET = Path("assets/robots/franka_panda/scene.xml")
 SOURCE_FILES = (
@@ -64,26 +69,34 @@ def _snapshot(backend: MuJoCoPhysicsBackend, stage: str) -> dict[str, Any]:
     }
 
 
-def _positive() -> dict[str, Any]:
+def _positive(audit: CanonicalAudit | None = None) -> dict[str, Any]:
     backend = _backend()
     robot = MuJoCoSkillRobot(backend)
     trace: list[dict[str, Any]] = [_snapshot(backend, "reset")]
+    observers = ExitStack()
     try:
+        if audit is not None:
+            observers.enter_context(audit.observe(backend))
+
+        def span(stage: str):
+            return nullcontext() if audit is None else audit.stage(backend, stage)
+
         def execute(stage: str, action: Any) -> None:
-            result = action()
-            row = _snapshot(backend, stage)
-            row["action"] = {
-                "success": result.success,
-                "error_code": result.error_code,
-                "duration_ms": result.duration_ms,
-                "physics_steps": result.details.get("physics_steps"),
-                "max_load_compensation_rad": result.details.get(
-                    "max_load_compensation_rad"
-                ),
-            }
-            trace.append(row)
-            if not result.success:
-                raise AssertionError(f"{stage}: {result.error_code}")
+            with span(stage):
+                result = action()
+                row = _snapshot(backend, stage)
+                row["action"] = {
+                    "success": result.success,
+                    "error_code": result.error_code,
+                    "duration_ms": result.duration_ms,
+                    "physics_steps": result.details.get("physics_steps"),
+                    "max_load_compensation_rad": result.details.get(
+                        "max_load_compensation_rad"
+                    ),
+                }
+                trace.append(row)
+                if not result.success:
+                    raise AssertionError(f"{stage}: {result.error_code}")
 
         # These are explicit, offline fixed-fixture TCP targets. No online
         # skill reads the object's true position or the target-region body.
@@ -104,8 +117,9 @@ def _positive() -> dict[str, Any]:
         # Settle the real grasp before lateral transport. The skill's own
         # 0.5 s bilateral-contact check remains unchanged; this is an
         # explicit additional dwell in the positive acceptance protocol.
-        backend.step(steps=120)
-        trace.append(_snapshot(backend, "post_lift_dwell_0_5_s"))
+        with span("post_lift_dwell_0_5_s"):
+            backend.step(steps=120)
+            trace.append(_snapshot(backend, "post_lift_dwell_0_5_s"))
         execute(
             "move_to_region",
             lambda: robot.move_to_region(
@@ -123,8 +137,9 @@ def _positive() -> dict[str, Any]:
             ),
         )
         execute("release", lambda: robot.release(timeout_ms=1000))
-        backend.step(steps=240)
-        trace.append(_snapshot(backend, "stable_1_s_after_release"))
+        with span("stable_1_s_after_release"):
+            backend.step(steps=240)
+            trace.append(_snapshot(backend, "stable_1_s_after_release"))
 
         start_z = trace[0]["object_xyz_m"][2]
         hold = next(row for row in trace if row["stage"] == "lift_and_hold_0_5_s")
@@ -148,6 +163,7 @@ def _positive() -> dict[str, Any]:
     except AssertionError as exc:
         return {"passed": False, "trace": trace, "failure_reason": str(exc)}
     finally:
+        observers.close()
         backend.shutdown()
 
 
@@ -286,14 +302,24 @@ def _empty_hand_place() -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--audit-dir", type=Path, help="registered, read-only physics audit")
     arguments = parser.parse_args()
+    audit = None
+    if arguments.audit_dir is not None:
+        from scripts.graduation.dynamic_physics import CanonicalAudit
+
+        audit = CanonicalAudit(arguments.audit_dir)
+    actions = {
+        "positive_pick_place": lambda: _positive(audit),
+        "grasp_without_contact": _no_contact,
+        "unreachable_target": _unreachable,
+        "timed_out_motion_holds": _timed_out_motion,
+        "emergency_stop": _stopped,
+        "empty_hand_place": _empty_hand_place,
+    }
     cases = {
-        "positive_pick_place": _positive(),
-        "grasp_without_contact": _no_contact(),
-        "unreachable_target": _unreachable(),
-        "timed_out_motion_holds": _timed_out_motion(),
-        "emergency_stop": _stopped(),
-        "empty_hand_place": _empty_hand_place(),
+        name: action() if audit is None else audit.run_case(name, action)
+        for name, action in actions.items()
     }
     payload = {
         "generated_at": datetime.now(UTC).isoformat(),
