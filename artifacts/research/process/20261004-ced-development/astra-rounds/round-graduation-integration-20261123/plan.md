@@ -1,0 +1,125 @@
+# 毕业设计系统、论文与研究证据集成实施计划
+
+gpt-6.2-astra，2026年11月23日。研发基线 `6416a6cc4b1b087c17cf1c738b202e8f28421e2a`。实施按项目Astra规则与 executing-plans 执行。
+
+现行七章课题、可安装系统、研究软件/物理证据及冻结停止记录尚未汇合；正式资格的测量依据不足。
+
+## 原始证据与待验证假设
+
+- 分支下可定位的原始学业材料为实名修订开题报告、配套申请表及后续七章方案。在仓库与本机文档目录文件名中未定位单独的《任务书》。不以旧模板代替学院文件，不自行认定专利署名、授权、培养条件或毕业通过。
+- 旧论文源为12章、作者待填、中英摘要只引用540条历史验证（466 runtime 与74环境阻塞），部分章节直接排印统计字典；构建脚本会写 docs/thesis 和 thesis 的固定路径。旧成果保留日期、样本与运行层级。
+- 11月18日 Harness 组件固定场景修后2/2，计首败2/3，新开发位姿1/4完整、2/4物理。7次预登记有6次实际云请求、26次Molmo生成，4,034 tokens，账单未知。11月19–20日另20组，组件5/20，独立物理5/20；原包装3/20，遮挡压力0/5，第18位姿实际越限。两次单独复测不可加入分母。
+- 阶段6冻结 v10 1次567.965秒、6240步、4动作、8准入，3个POST放行。LIFT POST安全盾允许但 lifted 和 stable 均UNKNOWN。冻结11109帧及另外8组NOT_RUN。阶段7恢复v9的3373帧和原STEP_TIMEOUT。v10 LIFT 2041步位，156/43/1839/3步分别有0/1/2/3个颜色候选，单候选无一过完整轮廓；末帧两个9px候选。两种标记模式名义升高约84.8–84.9mm，独立物理抽样85.217mm。登记缺测量误差上界、采样间运动界。
+- 颜色片段关联、标记姿态、离线独立物理事实是不同量。开发冻结登记和单帧不转移旧claim。旧数据库与claim SHA为09fab63b235ab3317f27b2528aea724015629863fff287496cb45430d23f4b1a和6599b24b95016ddddf0ad8df47c3a96d64b13b7eb6fc7abba06809b756ccdee7。正式组0/9合格，B0 selection NOT_RUN；六池3260个组已重建，历史协议机会0、恢复证明1/200，核对当期来源并保留时点。
+- Phase7专项466通过；完整软件候选7133通过、373失败、99夹具错误、31跳过；全仓候选与最后记录器修订的覆盖并非同一源码。
+- 受控视角、高度、偏航与有效深度可改变标记观测率和目标测量误差，须从独立开发格逐项实测。
+- 局部受控误差与软件正反例可支持工程说明；跨步运动界、未验证资格、B0及三机制正式收益依赖新独立证据。
+
+## 原研究验收指标
+
+- G0 已发生阶段100%可溯、泄露/伪成功/跨组重复0；不可用BLOCKED、未发生NOT_EXECUTED。
+- G1 有效定位三维物体顶心P90≤10mm、另报覆盖，独立静态抓放≥90%；在线效果与独立物理同时通过，抬升≥50mm持续≥0.5s、释放后稳定≥1s。
+- B0 0.5/1/2/5秒周期，专用120组selection，静态≥90%、整体≥80%、安全违规≤1%；B1固定阈值、B2规则AUTO、B3基础门控、B4完整剩余重规划、B5均匀采样。
+- G2 请求均值减少≥30%、成功率差单侧95%下界>−3百分点、安全违规率差单侧95%上界≤+1百分点。G2a应用字节减少≥25%与含失败惩罚耗时P95减少≥15%分判。
+- G3 比B3误放行减少≥50%且绝对≤2%，有效安全机会误拒≤5%，UNKNOWN单列。G4 200正式故障恢复≥80%、比B4含惩罚恢复耗时中位数减少≥30%、完成的不可重复动作重提0。G5训练/域外评估可选。
+- 冻结 INITIAL/METHOD/FINAL，另120基础、120功效先导，正式N从每方法600/1200/1800/2400选择；12层，按场景聚类、条件分层配对bootstrap≥10000、95%区间、Holm、α=.05、power=.8。Tcap=clip(ceil(P99_B0成功耗时×2/10)×10,120,600)s，Rcap=60s。
+
+## 真实运行前置、修改范围和准入边界
+
+- 开发运行使用独立输出与身份，留存所有失败。允许局部真实MuJoCo/EGL模拟传感测量，独立开发位姿、初始高度和公开相机设置；零教师、零任务模型/外部API、零真机。研究控制器、安全盾、已选云gpt-6.1-sol、端侧OpenCV及资产保持，规则/成本边缘与研究模型选型分述。初始高度覆盖不是在线设置物体状态或机械臂实际抬升。
+- 采集前冻结位姿全表、编号、seed、场景/资产/标定/代码SHA、重建工具与本轮本机可用磁盘/依赖清单，原注册资产、本机MuJoCo/EGL/OpenCV/NumPy/PIL可用；真实采集丢帧/不支持构型保留分母。原件只读；正式数据库若需读仅对冷副本用immutable，禁止在原目录生成WAL/SHM。
+- B/C预期RED仅为缺新入口/数据和点名的合成负控。预先登记的检测拒绝、不可估计误差和正式证据仍空是允许观测，不能反复调阈值直到留出通过。若要新增连续运动界、改变在线观测来源、参数或控制器，留存原始失败后先新Astra计划及独立再验证。
+- 新正式采集需要未用 release/assignment 独立身份、实际登记源码与几何/运动/后置前提、用户明确一次额度/运行范围并再次复核，原claim永久消费。其余8组、真实B0及功效/正式批、付费云、训练及实物不由“一口气”自动开放。学院认定需本人/学院有凭据的要求和成果文件。
+
+## 实施与验证
+
+### A 基线与研究验收对照
+
+- [ ] 先在实施前重算全部输入SHA（sparse用受钉基线git blob或同内容文件），保存原失败证据引用。以G0/G1/G2/G2a/G3/G4/G5、B0–B5和三次冻结逐行登记目标、实测层级、来源分子/分母、正式可判状态、尚缺条件，交付轮内 requirements-evidence.public.json 或等价可复算表。更新 docs/project_status.md 顶部当期入口，保留旧时点。
+- [ ] 矩阵逐条核对原开题和研究设计；正式首组、H0及历史540记录不同身份；断言0/9无资格、8未运行、已消费1。
+
+### B 多位姿、高度、视角的独立开发标定
+
+- [ ] 新增 scripts/graduation/ 下开发采集/盲读评分CLI与相应 tests/test_graduation_*；先在本轮目录封存 allocation.public.json。6个开发摆放分组（独立场景、每组独立命名空间；三组探索、三组只评一次）：相对默认物体XY偏移(m)及yaw(rad)依次(-.03,-.025,-.20),(0,0,0),(.03,.025,.20)；留出(-.025,.025,.15),(.025,-.025,-.15),(.01,.015,.30)。每组从默认物体中心Z加0/.05/.085m三档重置；测试三个预置顶视视角：正式相机(.35,0,1.4)原轴向，另两相机(.30,-.08,1.35)、(.40,.08,1.35)，统一看向固定工作台(.45,0,.04)。相机位置由开发公开API设置，禁止按真值追踪。每格独立reset，按同一1/240s步长于0、1、2、4、8、12步采六帧。总54格324帧；高度为初始静态/自由落体夹具，不是抓取或保持。来源、seed、角度、次序预先哈希，不读正式分配作训练；若真实step0相机缓存需零物理步显式采集，用真实步号和图像/外参证明。
+- [ ] 采集使用登记的320×240资产/r593与原OpenCV算法。A进程/阶段仅凭RGB-D、注册几何输出OBSERVED/UNKNOWN和理由；冻结像素与估计摘要后，B阶段才按同物理步把独立物理物体顶心/物体中心与旋转对齐计分，严分marker中心、物体中心、G1顶部中心。按开发/留出、视角、高度报告有效率/误差P50/P90/最大值/相邻间隔；留出按独立位姿为抽样单位，3组不能支持高置信推广。零识别格保留，缺标记不填0。固定配对机位比较并确定实测改进或无改进。估计值和观测外推分别标注；不能得出连续速度或置信界时输出null。
+
+### C 深度误差与LIFT归因
+
+- [ ] 沿用B探索组默认位姿默认视角首个读出的观测作为固定输入；如该原帧无SUBPIX目标则记录不可计算，并用Phase7已封存的开发单帧开展另标明来源的敏感性验证。对全有效深度施加−10/−5/0/+5/+10mm光轴偏置；另设整帧深度无效负控。RGB、相机标定、无效像素保持可核；派生帧独立身份、重新计算掩码/校验和，保持正式原件字节。两角点模式，12机会，记录真实分母、失败理由与三维位移。将标记名义升高、实测开发误差、可认证下界与物理运动界分栏。
+- [ ] 验证0偏置与原始检测数值一致、负控无可用位姿、非零偏置输出有限或明确拒绝。构造确定性合成测试检出错误符号/单位及真值进入估计阶段。以B/C实测说明在哪些相机/高度可观测及是否足以进入另轮连续运动证据设计。保留正式两项UNKNOWN。
+
+### D 风险、通信成本、恢复幂等的软件对照
+
+- [ ] 复用到仓实际 risk_replay.replay_diagnostic_candidates、CostLedger、visual_dependencies 及现有恢复/效果保护入口。预列软件用例：原有独立train/calibration/selection/test数值夹具，校准不足/域外或真值字段负控；成本含真实本地序列化payload的成功、已发超时、未发取消、重报、冲突；记录次数、字节、费用未知。相同图和故障比较局部后缀和 full_remaining（仓库接口可用时），覆盖完成释放、故障重复、滚动版本和耗尽预算，报告改写步数、已完成不可重复动作重提交及明确拒绝原因。用小型可复算脚本/测试保存每个输入和经产品调用得出的输出，历时分软件调用时间和模拟字段。
+- [ ] 运行原 risk_replay、cost_ledger、rgbd_risk_calibration、visual_local_repair、native_effect_graph、phase6_recovery_replanning 专项及新增测试；明确各用例输入/输出、实际执行或阻塞；两遍脱离临时路径复算结果。G2/B0、G3/G4性能和真实云成本不授予。
+
+### E 现行wheel离线验收
+
+- [ ] 从含README、pyproject、包内资源的基线树构建wheel并留SHA；在工作树外新venv中清除PYTHONPATH和凭据，以可溯源本地依赖或已有离线wheelhouse安装，记录pip check、包路径、是否系统依赖共享。调用bigsmall-harness --help/--version/validate/doctor/prepare --source-checkout <source> --output <fresh>/evidence；验证prepare=0模型及物理动作，独立读回，拒绝重复目录、篡改冷副本。必要的打包产物、依赖和私有用例保存在本机。
+- [ ] 附测试 tests/test_embodied_harness.py 输出；实际安装和命令执行须有退出码/版本/SHA。开发机继承依赖与清洁安装据实分别记录。
+
+### F 七章论文、读者可读版本与核验
+
+- [ ] 按开题约定的七章写成独立日期版稿件，中英文摘要、题名、方法细节、系统图、研究问题/指标/比较、真实实测分母与全表、失败分析、可复现入口、限制和参考文献。以 docs/thesis/graduation-20261123/ 为七章手稿目录，以独立输出目录承接可复现构建入口产生的PDF、可编辑DOCX和证据表（允许独立构建器或历史脚本独立profile）；增加离线复现实测演示入口，展示本轮真实开发标定和Harness证据读回；以工程与实验读者为对象。保留原12章和旧指标，避免旧构建器在原目录覆盖；可在隔离副本使用旧检查器的适配项。第三、四、五章对应B/C及D的可复算对照，第六章按历史/当前开发/正式分层；第七章明确缺口与先后顺序。源材料独立支持的身份可填，学校表格审批情况不推断。
+- [ ] 所有引用对应已读来源，在本地证据可通达的交付目录复验链接；PDF提取中文、章节目录/书目/表格、页面图像检查，DOCX如交付也逐页渲染，核对关键分母和公式、主要指标未达状态。定义当前可交付为研究阶段论文稿。
+
+### G 集成审计与下一轮
+
+- [ ] 可并行B、D、E、F基础稿，A先行、C依赖B输入、F最终与G在数值核验后收口。轮内存 step-report.public.md、stage-summary.public.md、精简验证JSON，列代码/资源SHA、命令、退出码、时间、环境、RED/GREEN、实物/仿真/软件证据。每个独立验证交付按明确路径提交并推研发分支，复核本地/上游/远端三SHA；检查仅公开派生、文件大小/嵌套目录/凭据路径。
+- [ ] 在新输出独立验证行数、分组、来源哈希、冻结记录及研究界限。未知新根因/修复扩面按AGENTS重开Astra轮，独立线继续。正式新名额即使单独批准也先按新独立注册与前置复核的新Astra轮行动，本轮不预占。
+
+## 已核对输入
+
+表内相对路径均为钉住基线的Git对象；AGENTS为会话生效的主工作区文件。JSON另附字节数。
+
+| 输入 | SHA256 |
+| --- | --- |
+| `output/doc/20261021-proposal-revision/开题报告-2501220176 宁业栋_修改版.doc` | `4fe39c32f990be2adc2789fba08c2600382c8a03247f9fef66ae6dc982288ccd` |
+| `output/doc/20261021-proposal-revision/.build/final-doc-text.txt` | `88d44bee7a53c6160d04544447e0dc305906b7eda5ed40b35e056c268c35962f` |
+| `output/doc/20261024-opening-application/开题申请_含系统架构图_计划至202704.docx` | `ae87dbffc7d3a1cd2623051c4cc03d220bfe3e1301de7b75ae8c73d54058e987` |
+| `docs/开题报告_集成电路工程_20261024.md` | `183c7e64aca750a3f9f4626e29721e4676dd69ebc12c81e02a6d822f915c726c` |
+| `docs/superpowers/specs/2026-10-04-cloud-edge-device-research-design.md` | `dae788ab850288de1a524de37e21391e1e026b62375eaf06c798b8c87d49e0c1` |
+| `docs/superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md` | `f42eac090def66ea17c76a6edb9f4c0cdc1cc6b9a881b2269bc7e84b3ff94392` |
+| `docs/superpowers/plans/2026-11-08-proposal-roborsi-development-update.md` | `bd6033d4787ab1e2c938db43974639a1e16af734bffaa522453226ea460a1a89` |
+| `docs/superpowers/plans/2026-11-18-real-model-harness.md` | `13bc81ba3c9f3e3d3ea1890c42b45c1294dcb9e21d758ffc32d9dd8be7402082` |
+| `docs/project_status.md` | `6842f86a4e777d033b3298df3073b18053778e07b3fa9b50a82b1334890979d1` |
+| `docs/harness.md` | `db0d9add3aeb1651bf8b20d9da1082d1fe97383ac7fbc4a47e7084733067a459` |
+| `artifacts/research/process/20261118-real-model-harness/report.md` | `b443a28630fe96554e62323347bf336f81a633442f98242ce3c20a28f586ae9b` |
+| `artifacts/research/process/20261118-real-model-harness/final-package-verification.json` | `074c2242f76e9dd1c80c93ff8de84e4f062d5944b3531e0ce9101bec15bec0d6` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/b0/step-report.md` | `005247e63e60225c739d297b8c842fa3175af1776e39ebcd2b24240581713cdd` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/phase-summary.md` | `90c143125204437fe5075cf289cc1ec8fb463d87578af7da0300bc12d2635697` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase6-20261122/stage-summary.public.md` | `1f155213d785a1f79adba5beee4c1835e6dae65669a46fe362f6e1981a885961` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase6-20261122/validation.public.json` | `54e19d2ff3f0127e878c572b409ff3d5d5f63fb4ed5e37d1750e3134ed37c113` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase7-20261123/stage-summary.public.md` | `37b44d703d43c769042b2cb844987a461026977a664993d3c445d5a3c57b0ae3` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase7-20261123/step-report.public.md` | `812a829e4f1658b621843a96c8efcd2905ef10cfc1b0912749fe1d3b06e5b1f4` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase7-20261123/vision.public.json` | `08ac6b27227c3c7b88a21b91697b171c2468fb1db88b6eeac500373058f08ab2` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase7-20261123/validation.public.json` | `b0b931a66e21d58cae79900b2f32ec5820ae7f7f656c7eb8113b6921911db5c3` |
+| `thesis/main.tex` | `e792d9bfbd5f7d407c26fd968ce5ec5f090566a77fecaece3e08c5dee919b2aa` |
+| `thesis/chapters/09_results.tex` | `629e47faccd15c91213203c15194e3c4c541ba4bbb847c8a9a3416991a5afb55` |
+| `thesis/generated/thesis_metrics.json` | `68eb60c016311910e98c979f05bf8699a51588bfc587264d6b0f02c57b8e3d0f` |
+| `docs/thesis/manuscript/manifest.json` | `d257090eee0733311d89c09438a9adecf2a8435d37a56723542764bc9a7a9da9` |
+| `thesis/references.bib` | `eb74a7e3bb9daccb8d31ddb9f01b5c6b251541995cb4737b8b9f498e51498ad1` |
+| `scripts/build_thesis.py` | `d22cd6655f990651beb4f73001fe794e7bb6ffffee2663f4f8276adb892005fa` |
+| `scripts/check_thesis_build.py` | `baaafae825287bccff62d75b3983babba6c66896eee2ef14559a6629b9be327f` |
+| `scripts/check_thesis_claims.py` | `94fa01f666599191f429d13ecdb47e3a0bf2eeca839007d7111ad793667ba522` |
+| `pyproject.toml` | `034a85388f25f1aedfb856f1783e6d3c6a3413f00d4a1825b907fe3749399565` |
+| `tests/test_embodied_harness.py` | `1c98c5613c37dfb4d15bfc44f2d7fce2240b60b4ab85d1cc357769f2ecb4bff6` |
+| `configs/research/native_registered_single_teacher_p0_v10_20261121.yaml` | `2b893cbcd1b959703ceada3663433eebb975adbcf8278a522967f2ad12131cf8` |
+| `scripts/phase7/check_development_frame.py` | `e693bbfc2b6f4dfa180d5b0b68c720260da6c9a0c6a0ed97f9129a2c2b3bc71d` |
+| `scripts/phase7/offline_vision_attribution.py` | `b82d0dfd219a0f0fab3dbf95c602887b2e3bdb06b080995872b7f72efc3c7e28` |
+| `src/cloud_edge_robot_arm/simulation/models.py` | `2199dacce74d62ae8d434110eef466d0136898005c9559581568873f74d7606e` |
+| `src/cloud_edge_robot_arm/simulation/mujoco/backend.py` | `4d6dd9e0b92efab1b3895aa66473cb739e46558b3b47260caeec114a638f7bf4` |
+| `src/cloud_edge_robot_arm/vision/observations.py` | `ba4084710e44ad6dfa4b1e94ab94a3e645e09839f600f5bc18628acb23fb60fc` |
+| `src/cloud_edge_robot_arm/vision/pose_markers.py` | `acd89f0044fa7df44c1384692eef55c61d6280377a36e20e2649336669dff139` |
+| `src/cloud_edge_robot_arm/vision/native_calibration.py` | `c6b7cec347258b3144d226484465d835b0927ffaadb4c7e50b28a07f85aed430` |
+| `src/cloud_edge_robot_arm/research/native_geometry_calibration.py` | `84d287c423c8de6eaafa09987445a59d74f81307cccbd5cb6a0c023b65018843` |
+| `src/cloud_edge_robot_arm/research/risk_replay.py` | `8ae4a65fd8fcef5dac4f9f302ae3f8abf107598b54eb810442a7527c72c24dc0` |
+| `src/cloud_edge_robot_arm/research/cost_ledger.py` | `64a92563c79f0ae04c07eec974213d28676518a062c08ccfde349afba840edd9` |
+| `tests/test_research_risk_replay.py` | `19aaf82f416bdd1d27bad665ab17f838aec143130c29c90c14c9ccff149ee042` |
+| `tests/test_research_cost_ledger.py` | `9c5d78e8c048aa07f659a7d13f148ff8f6f2edbdfb2f338f586f4b2d83f37dc7` |
+| `tests/test_rgbd_risk_calibration.py` | `310346c81fdcb535804cdcc04f654260a68e98cf876657cfb3674115b1a26167` |
+| `tests/test_visual_local_repair.py` | `fff04dc7372b8bd81303cfb9bd680bca8e8392f6809ab861612af4b8bbfff951` |
+| `tests/test_native_effect_graph.py` | `b90ee0da66c6b67ba97bde6b8d83d7cd909802969d42429aa1f739d04d90929c` |
+| `tests/test_phase6_recovery_replanning.py` | `031185d1308f5887780ccd93303911bb60acc1be39fc98c20823cbb9f5270fe3` |
+| `tests/test_phase7_frozen_vision.py` | `827af386e7a90fed1819fa555a1c415b3a55ff88f6360262d2ee851f967942bd` |
+| `/home/ningyd/文档/ChatGPT/BIGsmall/AGENTS.md` | `afa2f8c3211c5f294c4e9c117bc8ee76506e10087160627100bc11b2c396beec` |
