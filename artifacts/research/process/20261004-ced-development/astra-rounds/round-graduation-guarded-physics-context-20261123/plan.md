@@ -1,0 +1,71 @@
+# 开发动作的物理步安全上下文补轮
+
+gpt-6.2-astra / 2026-11-23 / bdb8bd415bc94cb431b4229c625eed13e82a1c48
+
+真实无派发夹具完成注册观察与三项PRE，开发适配器遗漏PHYSICS_STEPS契约的动作相对步，原Shield拒绝。r2尚无联合运行登记或动作。
+
+## 原始证据与根因
+
+- 失败回执fb7142528f3c4c3c249d69e980479d07938c461e3092ad32a45bf9002924cc63；完整无派发结果0a2e6816d6eeace76e67915d4d49d60382fb12d70fd1f498e44b114c98e44bed。registered_object_pose_available、gripper_open、registered_region_model_available三项PASS，STEP_TIMEOUT规则实际返回REJECT/PHYSICS_STEP_INVALID。软件夹具派发0、已公开r2分配0、实例0。
+- GuardedClockEpisode.admission→r1.Episode.admission→GuardedClockEpisode.check_shield→r1.Episode.check_shield，其SafetyContextBuilder.build默认physics_step=None。原规则只接受精确非负int、校验与技能和timeout_ms对应的v2 horizon整表；超过terminal_steps才超时。普通墙钟合同是另一条分支。
+- 生产native_collection_application先读绝对pre_physics_step，v10 PRE传0，执行后确认receipt.dispatch_step等于该原点且receipt.terminal_step等于当前步，再用terminal−dispatch作POST。native_horizon另外校验dt、控制器返回界限及内建保持，最后到精确注册终点。开发组件自己使用SkillExecutor和额外反馈Shield，未取得该正式会话和完整终点资格。
+
+声明使用PHYSICS_STEPS的开发契约与开发端Shield调用/计数契约不一致。根因位于上下文适配；更换输入类型或模拟绝对步、延时或放宽规则均不能恢复正确时基。
+
+### 1 锁定原件和修改范围
+
+- [ ] 先核对输入、当前r2仍无alloc/instance、r1已消费且Git归档不变。只改未签r2 scripts/graduation/guarded_clock.py、test_graduation_guarded_clock.py，必要时同代评分脚本仅新增对物理上下文证据的独立读取，并新增本轮结果。旧dynamic_vision.py及产品src/旧登记/原失败不动。保留失败全文、软件夹具和修前源快照在独立私有目录，不以新输出覆盖。
+
+### 2 逐个动作绑定相对时钟
+
+- [ ] 在r2每个动作的首个PRE、任何动作派发或动作反馈之前，绑定本次step_id、skill、episode、binding/原契约版本、绝对起点和同一步/同ID的当前注册观察。以同一后端total_physics_steps为唯一实际来源，type精确int非负；PRE开始至实际进入controller派发不得跨物理步、任务或绑定，必须验证真实派发步等于原点。将PRE=0、反馈=当前绝对步−本动作派发原点、POST=真实终点−原点传SafetyContextBuilder.build(physics_step=...)。FEEDBACK仍用pre_check，不改变原条件、速度、clearance/holding、墙钟、lease、TTL、任务deadline。每一次上下文保留绝对与相对计数、阶段及采集ID，返回独立记录或拒绝原因；跨任务/错阶段/非整数/负值/重置/逆序/未派发反馈或POST均fail closed。同一首次反馈可为0；其后用真实步递增，不能按图像数或旧动作原点推算。每动作独立释放/更换绑定，异常时禁止借用下一个动作。
+
+### 3 控制返回、保持与终点
+
+- [ ] 核定r2使用组件SkillExecutor.execute_attempt与StepExecutionResult（error_code为属性，action_result.details是原控制器回执）。保留实际后端计数的dispatch、return、dwell及末步；调用同版registered_teacher_horizon_v2与controller_window_error_v2核对controller返回及详情，不在每个反馈点把terminal_steps误当controller_deadline。LIFT内建120步保持和contact_hold_s实证对应；其控制器运动预算与总终点独立（1920/2040）。RELEASE控制返回须留下原240步尾部（240/480）。对照全部8个原horizon，其他阶段按各自原数据读出。额外8步网格dwell及安全检查使用同一原点；先检查预定推进不越原终点或上限，跨段不得截断后继续或复位起点。组件早返回/短端点按实际写入，不能将其报为正式full-horizon；不为贴合统计添加等待、不省原有保持/接触要求；如既有开发额外dwell会跨越窗口则保留原因、停止。不能将术语“到达PRE/调用executor”作为真实物理动作成功。
+
+### 4 非派发正反验证及适配预检
+
+- [ ] 先保留旧真实夹具RED。修后同一生产源和新鲜真实开发RGB-D/软件owner再次完成三项条件，真实pre_check在0相对步按规则返回STEP_TIME_OK，各项其他Shield结果原样保留；若出现独立拒绝按真实来源分类。用独立软件夹具调用真实pre_check/post_check/各反馈上下文，无r2身份无技能派发：非零绝对起点如120/2040、两个连续技能重新归零、反馈0/8/后续、终点差和端点+1，测试错误/缺失/负/布尔计数、错receipt/任务/绑定、未开始、坏horizon、真实原校验拒绝及墙钟/lease/TTL保持。LIFT内建尾段正确/缺失，RELEASE尾段不足、提前返回与越界分别用真实controller_window_error_v2核验。复跑原test_native_registered_admission_replay.py相关节点及r2/r1专项，逐条核对实际进入的路径。额外无派发探针用真实OpenCVServoFeedback构造器、参考与一次新RGB-D update、MotionTarget数据与VerticalClearancePath仅对合法垂直LIFT/RETREAT适用；核1cm初始标记绑定、原100ms帧龄/采样上限、首个同一步新ID及后续正步，保留拒绝不调设置。用SkillRegistry.definition_for(...).validate验证实际编译参数与6种视觉/2种无伺服技能分流，区分executor进入与真实handler/控制命令；不调用真实动作以冒充预检。未覆盖的时延/移动反馈仍标未验证。
+
+### 5 签发及一次实测复验
+
+- [ ] 轮前计划已分配未消费的 graduation-dev-guarded-clock-r2-20261123/r593-guarded，seed 23110201；不新申请第三个身份。确认旧档核验结果、无同名运行、最新代码、测试、两个Astra计划文件及修前后哈希、456项产品源、MuJoCo/EGL/空间和零派发专项后，在父计划的新私有根独占签发；登记显式绑定本补轮双计划及最终源SHA和全部软件结果，再独立读回后运行一次。保持原1/240s、原60分钟/16000绝对步边界、八技能范围、零重试/外呼/正式claim/硬件；原生拒绝、反馈拒绝、过时与中止均留范围。输出两遍独立读回的时钟和值、抬升/释放窗口、实际证据、步骤报告、汇入阶段总结与Git三SHA。若原资格层真正拒绝，记录具体条件。程序或证据绑定的新故障须另开Astra，不能写成研究门槛。
+
+## 验收边界
+
+software verification要求真实源PRE+Shield计数链及边界证据成立。真实开发运行单独记录。该工具复用部分注册组件/规则，绝不授予正式native权限；冻结首组UNKNOWN与另外8组NOT_RUN保持原验收口径。
+
+## 输入指纹
+
+| 文件 | SHA256 |
+| --- | --- |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/plan.md` | `4d29fbcb29de54a36c6ead59b91c561e9a86a869ea915b13f83856897fd593a4` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/plan.json` | `29abdf1f14f20ac8c9b3de6df9241fb9641def256f60fc4dce0c1de627b9038d` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-dynamic-qualification-20261123/allocation-vision.public.json` | `2db14d49d4fb6715828511d511c82c6153a320a920a233a1d4654ede31ea2cd8` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-dynamic-qualification-20261123/vision.public.json` | `11e0400a0a10787f130fc8b63668e2835f4f2e807c6412346ed4fc837263ad25` |
+| `/home/ningyd/文档/ChatGPT/BIGsmall/cache/local-verification/round-graduation-guarded-clock-20261123.z5eyfnzy/guarded-clock-r2/shield-preflight-failure.json` | `fb7142528f3c4c3c249d69e980479d07938c461e3092ad32a45bf9002924cc63` |
+| `/home/ningyd/文档/ChatGPT/BIGsmall/cache/local-verification/round-graduation-guarded-clock-20261123.z5eyfnzy/guarded-clock-r2/new-software-fixtures/test_first_grounding_reuses_ha0/real-pre-no-dispatch.json` | `0a2e6816d6eeace76e67915d4d49d60382fb12d70fd1f498e44b114c98e44bed` |
+| `/home/ningyd/文档/ChatGPT/BIGsmall/cache/local-verification/round-graduation-guarded-clock-20261123.z5eyfnzy/guarded-clock-r2/archive-check.json` | `3dcad20402c811ac234d40fe59b3c9a7f7d46949e20f40d44c5455d7230814f5` |
+| `/home/ningyd/文档/ChatGPT/BIGsmall/cache/local-verification/round-graduation-guarded-clock-20261123.z5eyfnzy/guarded-clock-r2/expected-old-schedule-red.log` | `783ff9a9d902061405fd3472df061badefe552d6fba54a6f196732cb9137300e` |
+| `/home/ningyd/文档/ChatGPT/BIGsmall/cache/local-verification/round-graduation-guarded-clock-20261123.z5eyfnzy/guarded-clock-r2/clock-fixtures.log` | `6d246e74e56d789d9dbec14bced7812051ba1400da5c8e54105db8e1a20f3702` |
+| `scripts/graduation/dynamic_vision.py` | `f706592a26b5d05f591c052d4d25104608110656e578b96759ad750f0b956064` |
+| `scripts/graduation/guarded_clock.py` | `623e4d5b6da9f4f9d052de4f98d788cb29ae420fbdc0204d3b10d39a456c8d6f` |
+| `scripts/graduation/guarded_clock_score.py` | `3d905e3be58cf3ef9646c55069fba1bfb131baf1c5d36aeb6f849f4464aada64` |
+| `src/cloud_edge_robot_arm/edge/safety/context_builder.py` | `4615404f4259210fca1b7218cc9e5a1dc683721f0218367083a957bf41396bed` |
+| `src/cloud_edge_robot_arm/edge/safety/rules.py` | `0582a5345328f4a49ef18dcaa51474ff99f8da7759ffe7cfce0cbdd53a5a0115` |
+| `src/cloud_edge_robot_arm/research/native_collection_application.py` | `f878b74e43f1315df3fdf6385c0d7199fe4e7ca1cd60776ccf2c413e1e61bfb5` |
+| `tests/test_graduation_guarded_clock.py` | `ed00b5ebfbe1a4dce4c3df6a4b4070af5eda657f841653f0f44e655be126c81c` |
+| `src/cloud_edge_robot_arm/edge/safety/shield.py` | `e2afac8c9f2e06270b9975562842d56177d2aa9ed05b833f0126f64951156cf9` |
+| `src/cloud_edge_robot_arm/edge/safety/models.py` | `9597cecf9ff02c1909f705353820901aaa4219b5f71083e89b082f11f1c2d135` |
+| `src/cloud_edge_robot_arm/edge/safety/clearance.py` | `5511752d24cffff055635046d2a7ca9d454ab4ba09e2039a6f03426d64cd6f52` |
+| `src/cloud_edge_robot_arm/research/native_collection_grounding.py` | `720a999f2e7b349eca2adad055fd69eb31e634c013aa8dee3cf4c208ac188204` |
+| `src/cloud_edge_robot_arm/vision/native_completion_horizon.py` | `7a0337c8a44e1d63188957a421dc10a49f4b80b47719d6e9d5a2d5e1382bf0a3` |
+| `src/cloud_edge_robot_arm/simulation/mujoco/native_horizon.py` | `d52d7a612544cbddde4a42ba0a2c1e827db2ed12d80f75b29f952e43cc5d38d3` |
+| `src/cloud_edge_robot_arm/simulation/mujoco/visual_servo.py` | `71218ee666b8b90772cc9e3a03bab93c45c57d3ae6017c8ec734e9dd3fb13ff8` |
+| `src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py` | `fb2b5179d76cdc438c67f6447e450b495eba569bfbfefad4d38bb299ff82820c` |
+| `src/cloud_edge_robot_arm/vision/servo.py` | `5532047540e1ae2871031a0df24e12fa533c52f2c355681d80858b6af6f297e2` |
+| `src/cloud_edge_robot_arm/edge/runtime/skill_executor.py` | `d0ecfd4a5616b5404524554224280376e3f2dc56670417ce05e35c82aa648bc2` |
+| `src/cloud_edge_robot_arm/edge/runtime/skill_registry.py` | `2cd6c6db8170778d19ecf46fc16f827df9f1809b919c1574b570349d3774df92` |
+| `tests/test_native_registered_admission_replay.py` | `ceada96a5ede83e3b7a16740865a7c0e93a88cd7616bd635d76a759c9c2cb644` |
+| `tests/test_graduation_dynamic_vision.py` | `ad897df4391bec226aac0103e18c717b95eb33cf0ffbf35ca14eb1ebf9a5f119` |
