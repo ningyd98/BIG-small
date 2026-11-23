@@ -5,11 +5,14 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import unicodedata
 from pathlib import Path
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
@@ -140,7 +143,7 @@ def cover_and_contents(doc, headings):
     return [anchor.insert_paragraph_before(h + "\t0", toc) for h in headings]
 
 
-def layout_tables(doc):
+def layout_tables(doc, *, technical_appendix: bool = False):
     references = new_style(doc, "Thesis references", SERIF, 10, INK)
     fmt = references.paragraph_format
     fmt.line_spacing, fmt.space_after = Pt(15), Pt(4)
@@ -183,8 +186,18 @@ def layout_tables(doc):
                         run.font.size = Pt(9.0)
                         if i == 0:
                             run.bold = True
+    in_appendix = False
     for para in doc.paragraphs:
         following = para._p.getnext()
+        if para.style.name == "Heading 1":
+            in_appendix = para.text.startswith("附录")
+        if (
+            technical_appendix
+            and in_appendix
+            and para.style.name in {"Body Text", "First Paragraph"}
+        ):
+            # Long command-line options and paths create large gaps in justified Chinese text.
+            para.alignment = WD_ALIGN_PARAGRAPH.LEFT
         if para.style.name == "Heading 2" and para.text.startswith("1.3 "):
             # Present the three research questions and the chapter guide together.
             para.paragraph_format.page_break_before = True
@@ -204,7 +217,7 @@ def normalized(s: str) -> str:
     return "".join(unicodedata.normalize("NFKC", s).split()).replace("\u200b", "")
 
 
-def convert(soffice: str, docx: Path, folder: Path, profile: Path) -> Path:
+def convert(soffice: str, docx: Path, folder: Path, profile: Path, fmt: str = "pdf") -> Path:
     folder.mkdir(exist_ok=True)
     subprocess.run(
         [
@@ -212,7 +225,7 @@ def convert(soffice: str, docx: Path, folder: Path, profile: Path) -> Path:
             "-env:UserInstallation=" + profile.as_uri(),
             "--headless",
             "--convert-to",
-            "pdf",
+            fmt,
             "--outdir",
             folder,
             docx,
@@ -221,10 +234,71 @@ def convert(soffice: str, docx: Path, folder: Path, profile: Path) -> Path:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
-    pdf = folder / docx.with_suffix(".pdf").name
-    if not pdf.is_file():
-        raise RuntimeError("LibreOffice produced no PDF")
-    return pdf
+    exported = folder / docx.with_suffix("." + fmt).name
+    if not exported.is_file():
+        raise RuntimeError(f"LibreOffice produced no {fmt.upper()}")
+    return exported
+
+
+def physical_page_count(pdf: Path) -> int:
+    leaves = subprocess.check_output(["mutool", "show", pdf, "pages"], text=True)
+    numbers = [int(n) for n in re.findall(r"(?m)^page (\d+) = \d+ \d+ R$", leaves)]
+    info = subprocess.check_output(["pdfinfo", pdf], text=True, env={**os.environ, "LC_ALL": "C"})
+    pages = re.search(r"(?m)^Pages:\s+(\d+)$", info)
+    if not numbers or not pages or numbers != list(range(1, int(pages[1]) + 1)):
+        raise ValueError("MuPDF page leaves and Poppler page count disagree.")
+    return len(numbers)
+
+
+def set_word_statistics(word: Path, values: dict[str, int]) -> None:
+    name = "docProps/app.xml"
+    with tempfile.TemporaryDirectory(dir=word.parent) as folder:
+        staged = Path(folder) / word.name
+        with ZipFile(word) as original, ZipFile(staged, "w") as updated:
+            properties = original.read(name)
+            root = ElementTree.fromstring(properties)
+            for tag, value in values.items():
+                node = root.find(f"{{*}}{tag}")
+                if node is None:
+                    raise ValueError(f"Missing {tag} in Pandoc's extended properties.")
+                old = f"<{tag}>{node.text}</{tag}>".encode()
+                if properties.count(old) != 1:
+                    raise ValueError(f"Expected one {tag} statistic in the Word template.")
+                properties = properties.replace(old, f"<{tag}>{value}</{tag}>".encode(), 1)
+            for item in original.infolist():
+                data = properties if item.filename == name else original.read(item)
+                updated.writestr(item, data)
+            updated.comment = original.comment
+        staged.replace(word)
+
+
+def refresh_statistics(soffice: str, word: Path, pdf: Path, tmp: Path, proof: Path | None) -> None:
+    odt = convert(soffice, word, tmp / "odt", tmp / "profile", "odt")
+    with ZipFile(odt) as archive:
+        node = ElementTree.fromstring(archive.read("meta.xml")).find(".//{*}document-statistic")
+    if node is None:
+        raise ValueError("LibreOffice supplied no document statistics.")
+    stats = {key.rsplit("}", 1)[-1]: int(value) for key, value in node.attrib.items()}
+    values = {
+        "Pages": physical_page_count(pdf),
+        "Words": stats["word-count"],
+        "Characters": stats["non-whitespace-character-count"],
+        "CharactersWithSpaces": stats["character-count"],
+    }
+    if proof:
+        proof.mkdir(parents=True, exist_ok=False)
+        for src, name in [(word, "before.docx"), (pdf, "before.pdf"), (odt, "layout.odt")]:
+            shutil.copyfile(src, proof / name)
+        (proof / "statistics.json").write_text(
+            json.dumps({"odt": stats, "word": values}, indent=2) + "\n"
+        )
+    set_word_statistics(word, values)
+    final = convert(soffice, word, tmp / "final", tmp / "profile")
+    if physical_page_count(final) != values["Pages"] or subprocess.check_output(
+        ["pdftotext", "-layout", final, "-"]
+    ) != subprocess.check_output(["pdftotext", "-layout", pdf, "-"]):
+        raise ValueError("Correcting the Word properties changed the printed pages.")
+    shutil.copyfile(final, pdf)
 
 
 def chapter_pages(pdf, headings):
@@ -250,11 +324,17 @@ def chapter_pages(pdf, headings):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--manuscript", type=Path, help="typeset a separate manuscript edition")
+    parser.add_argument(
+        "--statistics-proof", type=Path, help="new directory for pre-update Word, PDF and ODT"
+    )
     parser.add_argument(
         "--plot-python", default=sys.executable, help="Python with matplotlib and Noto CJK fonts"
     )
     parser.add_argument("--soffice", default="soffice")
     args = parser.parse_args()
+    if args.statistics_proof and args.manuscript is None:
+        parser.error("--statistics-proof requires --manuscript")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="graduation-manuscript-") as scratch:
@@ -263,7 +343,7 @@ def main():
         subprocess.run(
             [args.plot_python, ROOT / "scripts/graduation/figures.py", tmp], check=True, env=env
         )
-        content = MANUSCRIPT.read_text()
+        content = (args.manuscript or MANUSCRIPT).read_text()
         study = (
             ROOT
             / "artifacts/research/process/20261004-ced-development/astra-rounds"
@@ -315,7 +395,7 @@ def main():
         doc.core_properties.subject = "集成电路工程 · 云边端协同控制"
         margins_and_fonts(doc)
         entries = cover_and_contents(doc, headings)
-        layout_tables(doc)
+        layout_tables(doc, technical_appendix=args.manuscript is not None)
         word = output / (FILE + ".docx")
         draft = tmp / word.name
         doc.save(draft)
@@ -327,6 +407,8 @@ def main():
         pdf = convert(args.soffice, word, output, tmp / "profile")
         if chapter_pages(pdf, headings) != numbers:
             raise ValueError("table of contents changed pagination")
+        if args.manuscript is not None:
+            refresh_statistics(args.soffice, word, pdf, tmp, args.statistics_proof)
         print(pdf, word)
 
 

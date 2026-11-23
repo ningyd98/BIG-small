@@ -1,0 +1,1897 @@
+{
+  "schema": "graduation.manuscript.provenance.v1",
+  "edition_source_sha256": "cd9a196aa67ba9e906c86957159b345aeeb0c188745a708dfecdc50384eb3de0",
+  "fact_index_source_references_checked": 77,
+  "distinct_source_sha256": 68,
+  "measurement_scope": "Existing sealed records and analytic derivations only. Contributor chapter counts precede final copyediting. The reviewed submission counts are in length.public.json.",
+  "contributor_fact_indexes": {
+    "ch12": {
+      "scope": "仅论文第一、二章。无新增实测试次、结果数字或控制派发。新增 16,128,000 是有明确假设的布局推算。",
+      "chapters": [
+        {
+          "chapter": 1,
+          "frozen_net_han": 1384,
+          "expanded_net_han": 3768,
+          "section_net_han": [
+            929,
+            1329,
+            1167,
+            343
+          ],
+          "sha256": "55b76718e97ce4d5829b70de27fee10ec63ffde1def30bcefbcaaecc4b080cc3"
+        },
+        {
+          "chapter": 2,
+          "frozen_net_han": 1592,
+          "expanded_net_han": 4730,
+          "section_net_han": [
+            794,
+            967,
+            765,
+            753,
+            719,
+            732
+          ],
+          "sha256": "68b81af79ce85fb3820be87f3634ac8a0b6e756b20587f7b45fa4b9cd74b427d"
+        }
+      ],
+      "figure_token": "{{figure:architecture}}",
+      "frozen_caption_table_sha256": "6917076c0ba2d0ef791d8b15f399919827a5b6f6b1e92cf6929cfe8082c0480d",
+      "empirical_numeric_additions": [],
+      "sources": [
+        {
+          "claim": "任务评价阈值和复位参照",
+          "source": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-dynamic-qualification-20261123/allocation-physics.public.json",
+          "keys": {
+            "analysis.criteria.lift_m": 0.05,
+            "analysis.criteria.hold_s": 0.5,
+            "analysis.criteria.placed_stable_s": 1.0,
+            "analysis.evaluator_reference": "reset step 0"
+          },
+          "unit": "分别为米、秒、秒。一试次的评价定义，不是成功总数。"
+        },
+        {
+          "claim": "帧布局、视觉周期和关节更新节奏",
+          "source": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/vision.public.json",
+          "keys": {
+            "capture_grid.rgbd": [
+              320,
+              240
+            ],
+            "capture_grid.dt": [
+              1,
+              240
+            ],
+            "capture_grid.servo.vision_period_s": 0.03333333333333333
+          },
+          "code": [
+            "src/cloud_edge_robot_arm/vision/observations.py::observation_from_sensor_frame；RGB 字节数宽×高×3，原始深度 float32 宽×高×4",
+            "src/cloud_edge_robot_arm/simulation/config.py::SimulatorConfig.control_dt_s = 0.02",
+            "src/cloud_edge_robot_arm/simulation/mujoco/visual_servo.py::control_steps = round(control_dt_s/physics_dt_s) 与 vision_steps = ceil(vision_period_s/physics_dt_s)"
+          ],
+          "derivation": "每次完整交付 320×240×(3+4)=537600 字节；8/5 积分步给出每模拟秒 30/48 次。当每次视觉更新完整交付上述载荷给一个消费者，537600×30=16128000 字节/模拟秒。未计掩码、协议、复制及压缩，也无网络或实机带宽实测。"
+        },
+        {
+          "claim": "开发任务的单试次预算及暂停仿真的重新采集",
+          "source": "src/cloud_edge_robot_arm/research/sol_molmo_single_episode.py",
+          "keys": {
+            "budget.model_loads": 1,
+            "budget.local_generations": 4,
+            "budget.cloud_requests": 1,
+            "budget.repairs": 0,
+            "budget.retries": 0
+          },
+          "locators": {
+            "budget": "scene_assignment",
+            "paused_refresh": "_plan"
+          },
+          "line_anchors": {
+            "budget": 99,
+            "paused_refresh": 273
+          }
+        },
+        {
+          "claim": "首场景角色、执行权、同服务在途限制、视觉与真值隔离",
+          "sources": [
+            "src/cloud_edge_robot_arm/harness/s01-component.json",
+            "configs/research/ced_roles.yaml",
+            "src/cloud_edge_robot_arm/vision/request_control.py",
+            "docs/superpowers/specs/2026-10-04-cloud-edge-device-research-design.md"
+          ],
+          "locators": "s01-component.json 的 cloud_model、perception_model、edge_provider；ced_roles.yaml 的 edge.policy；request_control 的每资源独立信号量；研究设计第 2、3、4、6 节。云模型身份以现行角色文件与实际回执为准。"
+        },
+        {
+          "claim": "独立安装与准备回读",
+          "source": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/installation.public.json",
+          "keys": {
+            "clean_venv": true,
+            "system_site_packages": false,
+            "network_index": false,
+            "stage": "PREPARED",
+            "physical_success": null
+          },
+          "scope": "单独的软件安装试验。"
+        }
+      ],
+      "literature": [
+        {
+          "id": 1,
+          "url": "https://goldberg.berkeley.edu/pubs/T-ASE-Cloud-RA-Survey-Paper-Final-2015.pdf",
+          "location": "摘要与第一节，云端数据、计算、共享轨迹和网络条件"
+        },
+        {
+          "id": 2,
+          "url": "https://www.weisongshi.org/papers/shi16-edge-computing.pdf",
+          "location": "摘要与第二节，响应时间、带宽与端侧资源"
+        },
+        {
+          "id": 3,
+          "url": "https://www.roboticsproceedings.org/rss15/p63.pdf",
+          "location": "Offloading Policy Architecture 与 Synthetic Input Stream Experiments。序贯卸载、预算和可缓存的相邻输入预测"
+        },
+        {
+          "id": 4,
+          "url": "https://arxiv.org/html/2204.01691",
+          "location": "第 3 节 Problem Statement 与算法 1，两类分数和预训练技能"
+        },
+        {
+          "id": 5,
+          "url": "https://proceedings.mlr.press/v205/huang23c/huang23c.pdf",
+          "location": "摘要、图 1 与正文反馈机制。成功检测、场景描述和交互反馈作为语言输入"
+        },
+        {
+          "id": 6,
+          "url": "https://proceedings.mlr.press/v229/ren23a/ren23a.pdf",
+          "location": "第 2、3.1、3.3 节与 Limitations and future work。独立同分布场景，序列级校准，语义已落地及低层执行假设"
+        },
+        {
+          "id": 7,
+          "url": "https://raw.githubusercontent.com/OpenSenseNova/SenseNova-RoboRSI/9e7e7ad17b8957a5b8a530b8f4a0bbc11bb00555/README.md",
+          "location": "固定版本 Overview 与 Core capabilities"
+        },
+        {
+          "id": 8,
+          "url": "https://roboti.us/lab/papers/TodorovIROS12.pdf",
+          "location": "摘要与仿真引擎部分，接触与受约束动力学"
+        }
+      ],
+      "source_sha256": {
+        "docs/thesis/graduation-20261123/manuscript.md": "715a3b777167503619a82ff26cda27eac39e1a7a27cbbce3b1520353e80abaff",
+        "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-dynamic-qualification-20261123/allocation-physics.public.json": "f9a4e29a755a468e9787d57c58e6264f24d7f6f656955eda1e69e7087163937f",
+        "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/vision.public.json": "817fac4582458b67e3e7c57e14c1eab51b10934851d8c2b2ed075704b6718fa0",
+        "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/installation.public.json": "ad24d12a8b28886b3ef9a044ed640d98a865639b86cbb95ff5e5acc8cd26c3d0",
+        "src/cloud_edge_robot_arm/harness/s01-component.json": "7dfb58819d886464955ec70afc1be2a7cf487a2d7a367921758c879bc419120e",
+        "src/cloud_edge_robot_arm/research/sol_molmo_single_episode.py": "e4ecc81c3af2f7570575ba8f76f1f135f86d083a07154ec9294ebd44592ace85",
+        "src/cloud_edge_robot_arm/vision/observations.py": "ba4084710e44ad6dfa4b1e94ab94a3e645e09839f600f5bc18628acb23fb60fc",
+        "src/cloud_edge_robot_arm/simulation/config.py": "ece5dba5a710f63ba46bc99260ae768cec07c2773e7e0687bd2f55a4758f1d7b",
+        "src/cloud_edge_robot_arm/simulation/mujoco/visual_servo.py": "71218ee666b8b90772cc9e3a03bab93c45c57d3ae6017c8ec734e9dd3fb13ff8",
+        "src/cloud_edge_robot_arm/vision/request_control.py": "3a849a2785f3634b140853daee2071a02331312c7d1cc82c9e5c23b1fdd767d3",
+        "docs/superpowers/specs/2026-10-04-cloud-edge-device-research-design.md": "dae788ab850288de1a524de37e21391e1e026b62375eaf06c798b8c87d49e0c1",
+        "configs/research/ced_roles.yaml": "a8c21a58b28d7850e5d577027409e4e1db18be659219f33c2ed029fc06479e47"
+      }
+    },
+    "ch34": {
+      "schema": "graduation.manuscript.chapters3-4.evidence.v1",
+      "scope": "Manuscript revision and read-only recomputation from frozen records. No model calls, simulation or hardware operations. Local source pointers identify private primary rows without including the raw package.",
+      "path_bases": {
+        "research_checkout": "research/harness-candidate-v10-phase2-20261121 worktree",
+        "project_checkout": "original BIGsmall checkout containing cache/local-verification"
+      },
+      "chapters": {
+        "3": {
+          "net_body_han": 5348,
+          "section_count": 5,
+          "figure_tokens": [
+            "{{figure:views}}",
+            "{{figure:perception}}"
+          ],
+          "sha256": "b489491b731ae7639fc5e45d14496c5777b597ff65d5b94aab32ad5048cd1e61"
+        },
+        "4": {
+          "net_body_han": 4716,
+          "section_count": 5,
+          "figure_tokens": [],
+          "sha256": "80cf14a3b2cf07d3f63c15c4bb2828aa01ad6f0077630f285a6c18c8d522d798"
+        }
+      },
+      "sources": {
+        "allocation": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/allocation.public.json",
+          "sha256": "617c6dae6ca503cecc676d32f5da2f4fb4565c0c2cd298c2d45529cdf20245b7",
+          "kind": "public_evidence"
+        },
+        "perception": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/perception.public.json",
+          "sha256": "87c5edefe0c57ace3182f7bb1e222ecff81a109d7e66c7ac5d3bdc7ea87b199c",
+          "kind": "public_evidence"
+        },
+        "decisions": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/decisions.public.json",
+          "sha256": "98d26e1b4a0fd01ffb197b2548341268905422c91c24adfd13c1f822712a8a58",
+          "kind": "public_evidence"
+        },
+        "r2_lost": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/marker-loss.public.json",
+          "sha256": "30189bb02f92e1bc6d2794d32a5fb77154b536efb2d6cd892253ad58c71ed223",
+          "kind": "public_evidence"
+        },
+        "r2": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/vision.public.json",
+          "sha256": "817fac4582458b67e3e7c57e14c1eab51b10934851d8c2b2ed075704b6718fa0",
+          "kind": "public_evidence"
+        },
+        "v6": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase6-20261122/validation.public.json",
+          "sha256": "54e19d2ff3f0127e878c572b409ff3d5d5f63fb4ed5e37d1750e3134ed37c113",
+          "kind": "public_evidence"
+        },
+        "v7": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase7-20261123/vision.public.json",
+          "sha256": "08ac6b27227c3c7b88a21b91697b171c2468fb1db88b6eeac500373058f08ab2",
+          "kind": "public_evidence"
+        },
+        "paired_rows": {
+          "base": "project_checkout",
+          "path": "cache/local-verification/round-graduation-integration-20261123.5bGCKn9h/perception/paired-residuals.json",
+          "sha256": "06083aecc8ced9b64076a4ccd56aeeb9bc3435a4da68eded5ee8e4cc4a45aa87",
+          "kind": "local_only_original"
+        },
+        "blind_pixels": {
+          "base": "project_checkout",
+          "path": "cache/local-verification/round-graduation-integration-20261123.5bGCKn9h/perception/estimates/decisions.json",
+          "sha256": "4a3a9fa1ab3e7b6185e636be32eadef5d45a8df0ac85da2978ec9bdc0d66f3bc",
+          "kind": "local_only_original"
+        },
+        "bias": {
+          "base": "project_checkout",
+          "path": "cache/local-verification/round-graduation-integration-20261123.5bGCKn9h/perception/sensitivity/summary.json",
+          "sha256": "654d36a36e077a73a5690d84229442d52207222aa3db4f817293fbf7a7af9132",
+          "kind": "local_only_original"
+        },
+        "probe": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/b0/nominal-role-probe.json",
+          "sha256": "2ae06742e77e67195f02e0d426bea245b89dafd22562fe00e5efb46e5e513ad1",
+          "kind": "public_evidence"
+        },
+        "selection": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/b0/prerequisite-readback.json",
+          "sha256": "c0029f637e40779ef4f5b66113108f3d11a5e05acf962f399fa2f97c81e8520f",
+          "kind": "public_evidence"
+        },
+        "old_pilot": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-t8-foundation/pilot-v2-audit.json",
+          "sha256": "68c7a66d2857a775ad584bcbe018788da954bc2e56ad10e8ec403007bc56c3ab",
+          "kind": "public_evidence"
+        },
+        "old_pilot_period": {
+          "base": "research_checkout",
+          "path": "artifacts/research/process/20261004-t8-foundation/pilot-v2/summary.json",
+          "sha256": "a89907a59d62a7011341965822c1d5767c89af1eba9a1d6803f3ccc8d183df7b",
+          "kind": "public_evidence"
+        },
+        "teacher_partial": {
+          "base": "research_checkout",
+          "path": "experiments/results/phase-v10-formal-20261122/originals/partial-originals.json",
+          "sha256": "f2e34e4ceffe24714a57044d7387007f1581af25935ff0199eb82982d0586b93",
+          "kind": "local_only_original"
+        },
+        "raw_risk_inputs": {
+          "base": "project_checkout",
+          "path": "cache/local-verification/round-graduation-integration-20261123.5bGCKn9h/decisions/final-a/risk-complete-input.json",
+          "sha256": "c1495c4af3e6f2a6c34c5fb2dc7b9e75f4d5d9dc9676533a922d1b17aa26b155",
+          "kind": "local_only_original"
+        },
+        "raw_risk": {
+          "base": "project_checkout",
+          "path": "cache/local-verification/round-graduation-integration-20261123.5bGCKn9h/decisions/final-a/risk-complete-result.json",
+          "sha256": "3b2209fde2d0220e388baee8a0abae6c4350bf440196c79fb5e395c640e50998",
+          "kind": "local_only_original"
+        },
+        "low_scores": {
+          "base": "project_checkout",
+          "path": "cache/local-verification/round-graduation-integration-20261123.5bGCKn9h/decisions/final-a/policy-low_transfer_cost-trace.json",
+          "sha256": "fa86d017e014f9a10835605dd89cf0aa71a64cf35659cb29c0b81f297750d7bb",
+          "kind": "local_only_original"
+        },
+        "high_scores": {
+          "base": "project_checkout",
+          "path": "cache/local-verification/round-graduation-integration-20261123.5bGCKn9h/decisions/final-a/policy-high_transfer_cost-trace.json",
+          "sha256": "f1a940322f2b4ec7964477eef4bc7bcedd14436433838756a6e390b917907c6c",
+          "kind": "local_only_original"
+        },
+        "payload_request": {
+          "base": "project_checkout",
+          "path": "cache/local-verification/round-graduation-integration-20261123.5bGCKn9h/decisions/final-a/payloads/success-request.json",
+          "sha256": "32e4e04421d1e07a2545130be93596c246589c6350bb959174086b1d8cbb8498",
+          "kind": "local_only_original"
+        },
+        "payload_reply": {
+          "base": "project_checkout",
+          "path": "cache/local-verification/round-graduation-integration-20261123.5bGCKn9h/decisions/final-a/payloads/success-response.json",
+          "sha256": "4e8b66a7c5fd493df6a7af3c1d08cb44cd58c402121330fafa2d3f6af6d47c4a",
+          "kind": "local_only_original"
+        },
+        "payload_timeout": {
+          "base": "project_checkout",
+          "path": "cache/local-verification/round-graduation-integration-20261123.5bGCKn9h/decisions/final-a/payloads/timeout-request.json",
+          "sha256": "526ac3fa81a52aecef91bee2a9145a5107e025dbc32965e1d760dc8dd51c4b9a",
+          "kind": "local_only_original"
+        },
+        "obs": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/vision/observations.py",
+          "sha256": "ba4084710e44ad6dfa4b1e94ab94a3e645e09839f600f5bc18628acb23fb60fc",
+          "kind": "implementation"
+        },
+        "marker": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/vision/pose_markers.py",
+          "sha256": "acd89f0044fa7df44c1384692eef55c61d6280377a36e20e2649336669dff139",
+          "kind": "implementation"
+        },
+        "pose": {
+          "base": "research_checkout",
+          "path": "scripts/phase7/frozen_vision.py",
+          "sha256": "60572a96891b02956fbfb07ed3e3f74d9f49c739ee9e72055ab842e2abdd2260",
+          "kind": "implementation"
+        },
+        "metric": {
+          "base": "research_checkout",
+          "path": "scripts/graduation/perception_score.py",
+          "sha256": "9675c7e4ef3ba74bcef21187ed8e101c682484a0de91a539509340dfd71fe819",
+          "kind": "implementation"
+        },
+        "measure": {
+          "base": "research_checkout",
+          "path": "scripts/graduation/perception_pixels.py",
+          "sha256": "66fc067f423d02271526f6d184c8e245e85ec8c965fd914c73c64a423acd1999",
+          "kind": "implementation"
+        },
+        "conditions": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/edge/evidence/conditions.py",
+          "sha256": "9583d8330ead52c68632c5ed63e8fb302044ca5b0ccbd8c5b5bf9cd064cbdddc",
+          "kind": "implementation"
+        },
+        "tracking": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/vision/tracking.py",
+          "sha256": "9c8cf00659dd3542d21f108df21a1880b3b540d07e9fd2fcd7ce020a1d6d876b",
+          "kind": "implementation"
+        },
+        "validator": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/edge/evidence/validator.py",
+          "sha256": "cb71ee7c8e05bdb751b34ce6be17c0c7fa29d7cd20fa557b240592d426552674",
+          "kind": "implementation"
+        },
+        "risk_replay": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/research/risk_replay.py",
+          "sha256": "8ae4a65fd8fcef5dac4f9f302ae3f8abf107598b54eb810442a7527c72c24dc0",
+          "kind": "implementation"
+        },
+        "risk_features": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/vision/risk/features.py",
+          "sha256": "a345c378ee62225570d8bc3090c6ffdd4f57166a7a4f02830b172eb9db2b52d8",
+          "kind": "implementation"
+        },
+        "risk_cal": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/vision/risk/calibration.py",
+          "sha256": "e12971386d1e0252d960d41f600d6c37578a23047063f2433933dcf8fce4e8e6",
+          "kind": "implementation"
+        },
+        "candidate": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/auto_mode/candidates.py",
+          "sha256": "8a1ef0901d18e7abe141eab8449fc446d2aaba2213fffaa5e9a7880278088b0b",
+          "kind": "implementation"
+        },
+        "policy": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/auto_mode/joint_policy.py",
+          "sha256": "1a374e130652fb0c6e48b8ced7f8f8934e0d27db80b9b01f242185bd9be6870c",
+          "kind": "implementation"
+        },
+        "judge": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/auto_mode/judgment.py",
+          "sha256": "65afa84388fd54b27b08344d2033548f38c8698fa192ca00415c957e2f11e8a2",
+          "kind": "implementation"
+        },
+        "ledger": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/research/cost_ledger.py",
+          "sha256": "64a92563c79f0ae04c07eec974213d28676518a062c08ccfde349afba840edd9",
+          "kind": "implementation"
+        },
+        "periods": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/research/pilot.py",
+          "sha256": "74f13e8decc791fcf05076ef5686a5cb83151b9dbad75c122f20f438f3f6bb3b",
+          "kind": "implementation"
+        },
+        "supervision": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/research/supervision.py",
+          "sha256": "3ecbba7f2f881f7a8560926172238f5a6ba79ce9077e55cdc26a55a8e7028e9f",
+          "kind": "implementation"
+        },
+        "mode": {
+          "base": "research_checkout",
+          "path": "src/cloud_edge_robot_arm/auto_mode/selector.py",
+          "sha256": "c95d816ddbe8110dbd2ddca4800ca879d762f21a095cf3b55c4fb4c557b82a21",
+          "kind": "implementation"
+        }
+      },
+      "facts": [
+        {
+          "id": "3.1a",
+          "scope": "analytical derivation",
+          "statement": "反投影、图像裁剪后主点修正、横向位置误差的一阶项。",
+          "units": "u,v,f,c 像素；z 和三维坐标为米",
+          "denominator_or_application_unit": "同帧像素和光轴深度，内外参已绑定。",
+          "evidence": [
+            {
+              "source": "obs",
+              "symbols_or_literal_keys": [
+                "def world_point",
+                "def crop",
+                "def validate_pair"
+              ]
+            },
+            {
+              "source": "allocation",
+              "json_pointers": [
+                "/geometry/camera/intrinsics",
+                "/views/axial/optical_to_world",
+                "/views/left/optical_to_world",
+                "/views/right/optical_to_world"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "X=(u-cx)z/fx，固定内参时微分 dX=(z/fx)du+((u-cx)/fx)dz。大位移、跨越轮廓或参数变化不满足小扰动假设。"
+        },
+        {
+          "id": "3.2a",
+          "scope": "registered measurement rules",
+          "statement": "r593 印刷边长 75 mm、ID 7、最短 8 px、五处 3×3 有效窗、30% 边长及 2 mm 平面一致性检查。",
+          "units": "米换毫米、像素、无量纲比例",
+          "denominator_or_application_unit": "每个登记标记、每幅有效 RGB-D 观测。阈值用于实现一致性检查。",
+          "evidence": [
+            {
+              "source": "v7",
+              "json_pointers": [
+                "/r593/thresholds"
+              ]
+            },
+            {
+              "source": "marker",
+              "symbols_or_literal_keys": [
+                "detect_pose_marker",
+                "_decode_subpix_rejected_candidates",
+                "world[4]",
+                "center_residual"
+              ]
+            },
+            {
+              "source": "pose",
+              "symbols_or_literal_keys": [
+                "def object_pose"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "3.2b",
+          "scope": "registered geometry and analytical derivation",
+          "statement": "物体坐标的标记中心 (0,100,35.05) mm；顶心 (0,0,35) mm；纵轴相隔 100 mm。",
+          "units": "原文件 m，正文 mm；角度以 rad 计",
+          "denominator_or_application_unit": "r593 单一登记刚体，不是推断总体。",
+          "evidence": [
+            {
+              "source": "allocation",
+              "json_pointers": [
+                "/geometry/marker_to_object",
+                "/geometry/object_half_extent_m"
+              ]
+            },
+            {
+              "source": "pose",
+              "symbols_or_literal_keys": [
+                "def object_pose"
+              ]
+            },
+            {
+              "source": "measure",
+              "symbols_or_literal_keys": [
+                "object_top_center_world_m"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "登记矩阵按行展开，平移取下标 3、7、11。顶心为半高方向；顶心=t+Rr。两种方向相差 θ 时，安装无误差的旋转项不超过 2|r|sin(θ/2)，为圆弦长；杠杆与旋转轴正交时等号成立；小角度近似需用弧度。"
+        },
+        {
+          "id": "3.3a",
+          "scope": "registered development grid",
+          "statement": "六摆放、三高度、三视角、每格六个采样步，54 格、324 分配帧、54 个步零帧、648 个物理步，另有 54 个末端自动采集帧未纳入。",
+          "units": "摆放、格、帧、物理步；位置 m；初始上移正文 mm",
+          "denominator_or_application_unit": "六个独立摆放（探索三、留出三）；不同视角单独复位和噪声实现，同一摆放的帧相关。",
+          "evidence": [
+            {
+              "source": "allocation",
+              "json_pointers": [
+                "/analysis/group_counts",
+                "/cells/0/steps",
+                "/views/axial/position_m",
+                "/views/left/position_m",
+                "/views/right/position_m",
+                "/views/left/look_at_m",
+                "/views/right/look_at_m"
+              ]
+            },
+            {
+              "source": "perception",
+              "json_pointers": [
+                "/capture/cells",
+                "/capture/allocated",
+                "/capture/captured",
+                "/capture/zero_step_frames",
+                "/capture/actual_physics_steps",
+                "/capture/implicit_end_of_scope_acquisitions"
+              ]
+            },
+            {
+              "source": "allocation",
+              "array_selection": "cells[].initial_height_offset_m and cells[].seed"
+            }
+          ]
+        },
+        {
+          "id": "3.3b",
+          "scope": "measured on frozen blind placement grid",
+          "statement": "留出 P4、P5、P6 各分配 54 帧，有效数 54、54、51；条件顶心三维 P90 依次 7.527、4.851、7.398 mm。",
+          "units": "原始误差 m，正文乘 1000 得 mm；覆盖计帧",
+          "denominator_or_application_unit": "每个分母 54 帧，条件分位数各用 54、54、51 个有效观察。独立单位为三个不同摆放。",
+          "evidence": [
+            {
+              "source": "perception",
+              "json_pointers": [
+                "/by_placement_and_mode/7/group",
+                "/by_placement_and_mode/7/mode",
+                "/by_placement_and_mode/7/allocated",
+                "/by_placement_and_mode/7/observed",
+                "/by_placement_and_mode/7/errors/object_top_center_3d_m/p90",
+                "/by_placement_and_mode/9/group",
+                "/by_placement_and_mode/9/mode",
+                "/by_placement_and_mode/9/allocated",
+                "/by_placement_and_mode/9/observed",
+                "/by_placement_and_mode/9/errors/object_top_center_3d_m/p90",
+                "/by_placement_and_mode/11/group",
+                "/by_placement_and_mode/11/mode",
+                "/by_placement_and_mode/11/allocated",
+                "/by_placement_and_mode/11/observed",
+                "/by_placement_and_mode/11/errors/object_top_center_3d_m/p90"
+              ]
+            },
+            {
+              "source": "paired_rows",
+              "array_selection": "rows filtered by split=holdout, mode=SUBPIX, group=P4/P5/P6; count all, then require status=OBSERVED and take metrics.object_top_center_3d_m"
+            }
+          ],
+          "calculation_and_assumptions": "已从原始配对残差复算；线性样本分位数，先分摆放、再在每个摆放中取 P90。"
+        },
+        {
+          "id": "3.3c",
+          "scope": "measured within paired conditions",
+          "statement": "偏视 A 与顶视留出配对 54 个，共同有效 51 个，只在顶视可估 3 个；共同有效位置的误差差中位数 −1.559 mm。",
+          "units": "每对顶心三维误差相减，单位 mm",
+          "denominator_or_application_unit": "分配 54 对，差的中位数仅 51 个共同有效对；三个留出摆放。",
+          "evidence": [
+            {
+              "source": "perception",
+              "json_pointers": [
+                "/paired_view_comparisons/2/split",
+                "/paired_view_comparisons/2/view",
+                "/paired_view_comparisons/2/paired_allocations",
+                "/paired_view_comparisons/2/common",
+                "/paired_view_comparisons/2/axial_only",
+                "/paired_view_comparisons/2/median_paired_alternative_minus_axial_mm"
+              ]
+            },
+            {
+              "source": "paired_rows",
+              "array_selection": "rows[split=holdout, mode=SUBPIX]; join on group, initial_height_offset_m, step; matched left/axial, status both OBSERVED; metrics.object_top_center_3d_m"
+            }
+          ],
+          "calculation_and_assumptions": "分别复位并有各自噪声；逐对偏视减顶视取中位数。"
+        },
+        {
+          "id": "3.3d",
+          "scope": "measured conditional percentiles",
+          "statement": "159 个有效留出估计，沿采样射线的平面深度误差、标记中心和顶心误差 P90 分别为 0.689、1.648、6.869 mm。",
+          "units": "原文件 m，正文 mm",
+          "denominator_or_application_unit": "三个留出摆放，162 分配帧，159 个有效估计。",
+          "evidence": [
+            {
+              "source": "perception",
+              "json_pointers": [
+                "/by_split_and_mode/3/allocated",
+                "/by_split_and_mode/3/observed",
+                "/by_split_and_mode/3/errors/marker_depth_at_same_ray_abs_m/p90",
+                "/by_split_and_mode/3/errors/marker_center_3d_m/p90",
+                "/by_split_and_mode/3/errors/object_top_center_3d_m/p90"
+              ]
+            },
+            {
+              "source": "paired_rows",
+              "array_selection": "rows[mode=SUBPIX,split=holdout,status=OBSERVED].metrics"
+            },
+            {
+              "source": "metric",
+              "symbols_or_literal_keys": [
+                "def metrics",
+                "true_ray_z"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "交点的光轴坐标 z=(n·(marker−origin))/(n·ray)，ray 的相机光轴分量为 1；分母不得接近零。后两项用各自世界坐标的欧氏距离。三个边际 P90 不能相加作为点误差上界。"
+        },
+        {
+          "id": "3.3e",
+          "scope": "derived single-frame depth perturbation",
+          "statement": "P2 步零轴向同帧 5 个有符号偏置与全深度无效，两个模式共 12 项。10 有估计；给定 ±5/±10 mm 后位移约 5.023/10.047 mm；SUBPIX +10 mm 的 Δx、Δy、Δz 为 0.754、0.748、−9.990 mm。",
+          "units": "输入 mm；原变化记录 m，结果 mm",
+          "denominator_or_application_unit": "一个探索帧，每种角点模式同原解成对比较；两个无深度负控单列。",
+          "evidence": [
+            {
+              "source": "perception",
+              "json_pointers": [
+                "/sensitivity/source_binding",
+                "/sensitivity/allocated",
+                "/sensitivity/observed",
+                "/sensitivity/unavailable"
+              ]
+            },
+            {
+              "source": "bias",
+              "json_pointers": [
+                "/cases/9/bias_mm",
+                "/cases/9/mode",
+                "/cases/9/top_center_delta_world_xyz_m",
+                "/cases/9/top_center_delta_3d_m"
+              ]
+            },
+            {
+              "source": "bias",
+              "array_selection": "cases[].{bias_mm,mode,status,top_center_delta_3d_m}"
+            },
+            {
+              "source": "measure",
+              "symbols_or_literal_keys": [
+                "biased_observation"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "对同一 RGB 与有效支持仅改光轴深度，逐模式对照原解；没有由此评估传感器误差分布。"
+        },
+        {
+          "id": "3.3f",
+          "scope": "post-run diagnosis of three sealed observations",
+          "statement": "上方移动的 3 张图来自 2 个物理时刻。两种模式均由解码到漏检，白边靠前回波增多；印刷区没有相应变化。无独立遮挡标签。",
+          "units": "物理步、图像、像素；原诊断有符号深度 mm",
+          "denominator_or_application_unit": "同一 r2 实例，步 840 反馈、步 848 反馈和终止；后两帧同物理步。原件每帧白边 136/印刷区 225 像素。",
+          "evidence": [
+            {
+              "source": "r2_lost",
+              "json_pointers": [
+                "/method",
+                "/segmentation_or_independent_occluder_labels",
+                "/frames/0/step",
+                "/frames/0/role",
+                "/frames/0/observation_sha256",
+                "/frames/0/detectors",
+                "/frames/0/regions/white_quiet_zone/nearer_than_reference_by_mm/20",
+                "/frames/0/regions/printed_tag/nearer_than_reference_by_mm/5",
+                "/frames/1/step",
+                "/frames/1/role",
+                "/frames/1/observation_sha256",
+                "/frames/1/detectors",
+                "/frames/1/regions/white_quiet_zone/nearer_than_reference_by_mm/20",
+                "/frames/1/regions/printed_tag/nearer_than_reference_by_mm/5",
+                "/frames/2/step",
+                "/frames/2/role",
+                "/frames/2/observation_sha256",
+                "/frames/2/detectors",
+                "/frames/2/regions/white_quiet_zone/nearer_than_reference_by_mm/20",
+                "/frames/2/regions/printed_tag/nearer_than_reference_by_mm/5"
+              ]
+            },
+            {
+              "source": "r2",
+              "json_pointers": [
+                "/stop/skill",
+                "/stop/phase"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "预报平面光轴深度减原图深度；正差表示在前。白边超过 20 mm 为 13/26/26 像素；印刷区超过 5 mm 均为零。比较用于提出假设。"
+        },
+        {
+          "id": "3.4",
+          "scope": "software fixtures and analytical derivation",
+          "statement": "0.1 s 帧龄、2 mm 位置界、20 mm/s 速度界、10 mm 容差；时长 0.2/0.4 s 导致完成界 8/12 mm；缺运动界未知。B3 三项有效。",
+          "units": "m、m/s、s；正文示例转成 mm 和 mm/s",
+          "denominator_or_application_unit": "三项软件对照，无独立正式动作标签。",
+          "evidence": [
+            {
+              "source": "decisions",
+              "json_pointers": [
+                "/completion_gate/0/case",
+                "/completion_gate/0/fixture_frame_age_s",
+                "/completion_gate/0/fixture_duration_s",
+                "/completion_gate/0/fixture_error_m",
+                "/completion_gate/0/fixture_motion_m_s",
+                "/completion_gate/0/tolerance_m",
+                "/completion_gate/0/joint",
+                "/completion_gate/0/b3",
+                "/completion_gate/1/case",
+                "/completion_gate/1/fixture_frame_age_s",
+                "/completion_gate/1/fixture_duration_s",
+                "/completion_gate/1/fixture_error_m",
+                "/completion_gate/1/fixture_motion_m_s",
+                "/completion_gate/1/tolerance_m",
+                "/completion_gate/1/joint",
+                "/completion_gate/1/b3",
+                "/completion_gate/2/case",
+                "/completion_gate/2/fixture_frame_age_s",
+                "/completion_gate/2/fixture_duration_s",
+                "/completion_gate/2/fixture_error_m",
+                "/completion_gate/2/fixture_motion_m_s",
+                "/completion_gate/2/tolerance_m",
+                "/completion_gate/2/joint",
+                "/completion_gate/2/b3"
+              ]
+            },
+            {
+              "source": "validator",
+              "symbols_or_literal_keys": [
+                "def validate_evidence",
+                "def validate_b3"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "E=e+v(a+d)，在 v>0 时 a≤(ε−e)/v−d，仍须满足原始 TTL。时间、速度基准一致且速度界与误差界在整段有效。"
+        },
+        {
+          "id": "3.5",
+          "scope": "original v10 teacher and analytical limitation",
+          "statement": "TCP 距离 15.397 mm（容差 20 mm），夹持反馈通过；末帧颜色两块各 9 px；端点名义升高 84.8～84.9 mm，物理中心升高 85.217 mm。升高和稳定条件未知。",
+          "units": "m 换 mm；像素、秒",
+          "denominator_or_application_unit": "v10 正式首组 LIFT POST 一次；两种标记模式作用于同一对采样端点。",
+          "evidence": [
+            {
+              "source": "teacher_partial",
+              "json_pointers": [
+                "/decisions/7/inputs/verdicts/0/status",
+                "/decisions/7/inputs/verdicts/1/measured_values/tcp_distance_m",
+                "/decisions/7/inputs/verdicts/1/measured_values/max_distance_m"
+              ]
+            },
+            {
+              "source": "v6",
+              "json_pointers": [
+                "/lift_diagnosis/online/components_bbox_and_area_px",
+                "/lift_diagnosis/offline_physics_samples/object_center_height_delta_m",
+                "/lift_diagnosis/online/unknown_condition_verdicts"
+              ]
+            },
+            {
+              "source": "v7",
+              "json_pointers": [
+                "/lift/nominal_endpoint_center_height_change_m",
+                "/lift/physical_facts/object_lifted",
+                "/lift/physical_facts/object_stable"
+              ]
+            },
+            {
+              "source": "tracking",
+              "symbols_or_literal_keys": [
+                "lift >= 0.05",
+                "envelope, window, 0.5",
+                "def _physical_stability_unknown"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "升幅下界为名义差减两端高度误差界之和。若相邻两个采样下界分别为 b0、b1，在相同坐标且整个 Δt 内 |dh/dt|≤v 时，持续高度下界可取 min(b0,b1)−vΔt/2。这个推导未在旧试次得到所需连续运动界。"
+        },
+        {
+          "id": "4.1",
+          "scope": "original service probe",
+          "statement": "一首发、三热请求；四次发送成功，零重试，供应商输入加输出合计 3,073 token。",
+          "units": "逻辑请求、供应商 token",
+          "denominator_or_application_unit": "独立角色探针四个请求；无物理动作分母。",
+          "evidence": [
+            {
+              "source": "probe",
+              "json_pointers": [
+                "/actual_paid_cloud_requests",
+                "/retry_requests",
+                "/supplier_usage_totals",
+                "/physical_acceptance",
+                "/b0_selection_runs_started",
+                "/rows/0/phase",
+                "/rows/0/ledger_status",
+                "/rows/1/phase",
+                "/rows/1/ledger_status",
+                "/rows/2/phase",
+                "/rows/2/ledger_status",
+                "/rows/3/phase",
+                "/rows/3/ledger_status"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "4.2",
+          "scope": "registered selection and distinct historical pilot",
+          "statement": "B0 的 0.5/1/2/5 s 周期按静态成功≥90%、整体≥80%、违规≤1%先筛选。120 个配对组共 480 个未执行槽。旧 2 s 单周期 5/120。",
+          "units": "秒、成功或违规比例、组、槽",
+          "denominator_or_application_unit": "每候选周期 120 组，40 个静态、120 个整体和违规分母。旧 2 s 先导是另批 120 个已分配组。",
+          "evidence": [
+            {
+              "source": "periods",
+              "symbols_or_literal_keys": [
+                "BUDGET_SELECTION_RULE",
+                "B0_PERIODS",
+                "minimum_nominal_success",
+                "maximum_safety_violation",
+                "fixed_period_order"
+              ]
+            },
+            {
+              "source": "selection",
+              "json_pointers": [
+                "/pilot_cli_consumption/selection-after/case_status_counts/NOT_EXECUTED",
+                "/pilot_cli_consumption/selection-after/selected_period_s"
+              ]
+            },
+            {
+              "source": "old_pilot_period",
+              "json_pointers": [
+                "/b0_period_s"
+              ]
+            },
+            {
+              "source": "old_pilot",
+              "json_pointers": [
+                "/summary/assigned",
+                "/summary/succeeded"
+              ]
+            },
+            {
+              "source": "supervision",
+              "symbols_or_literal_keys": [
+                "class PeriodicSupervision",
+                "def poll"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "4.3a",
+          "scope": "risk software replay, not formal action calibration",
+          "statement": "32 数值观测，8/18/4/2 分割，18 校准观测分 9 组。q=0.9 时 9、8 组的秩均为 9；8 组无有限界。另有出支持负控及在线真值字段拒绝。",
+          "units": "观测数、组数、无量纲覆盖概率与秩",
+          "denominator_or_application_unit": "训练8、校准18、选择4、测试2；校准独立单位9组，负控8组。",
+          "evidence": [
+            {
+              "source": "decisions",
+              "json_pointers": [
+                "/risk/complete/counts/allocated_observations",
+                "/risk/complete/split_allocations",
+                "/risk/complete/calibration_groups",
+                "/risk/eight_calibration_groups/calibration_groups",
+                "/risk/eight_calibration_groups/status",
+                "/risk/outside_support/status",
+                "/risk/truth_in_online_features/status"
+              ]
+            },
+            {
+              "source": "raw_risk_inputs",
+              "json_pointers": [
+                "/candidates/0/settings/coverage"
+              ]
+            },
+            {
+              "source": "raw_risk",
+              "json_pointers": [
+                "/candidate_results/0/calibration/geometry_scope",
+                "/candidate_results/0/calibration/bound_scope"
+              ]
+            },
+            {
+              "source": "risk_replay",
+              "symbols_or_literal_keys": [
+                "def _bound",
+                "def _prediction"
+              ]
+            },
+            {
+              "source": "risk_features",
+              "symbols_or_literal_keys": [
+                "def extract_risk_features"
+              ]
+            },
+            {
+              "source": "risk_cal",
+              "symbols_or_literal_keys": [
+                "def isotonic_fit"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "每组最大有效残差，k=ceil((m+1)q)，缺标签保留缺失；未来分组解释要求采集条件可交换。"
+        },
+        {
+          "id": "4.3b",
+          "scope": "risk software replay, task-level labels",
+          "statement": "两候选在四个选择输入都输出 0.5；选择和两条留出样本的 Brier 均为 0.25；两候选缺动作反馈重建。",
+          "units": "概率、概率平方的平均",
+          "denominator_or_application_unit": "每候选的选择分母4，测试分母2；两个参数候选作用于同一数值夹具。",
+          "evidence": [
+            {
+              "source": "decisions",
+              "json_pointers": [
+                "/risk/complete/candidates/0/selection_probabilities",
+                "/risk/complete/candidates/0/selection_brier",
+                "/risk/complete/candidates/0/test_brier",
+                "/risk/complete/candidates/0/reasons",
+                "/risk/complete/candidates/1/selection_probabilities",
+                "/risk/complete/candidates/1/selection_brier",
+                "/risk/complete/candidates/1/test_brier",
+                "/risk/complete/candidates/1/reasons"
+              ]
+            },
+            {
+              "source": "raw_risk",
+              "json_pointers": [
+                "/candidate_results/0/selection_results/0/failure_probability_by_action",
+                "/candidate_results/0/test_results/0/failure_probability"
+              ]
+            },
+            {
+              "source": "risk_replay",
+              "symbols_or_literal_keys": [
+                "minimum_brier_then_parameters_hash"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "对 0 或 1 标签，(0.5−y)²=0.25；同分时由参数哈希决定软件记录的候选。没有观测到的替代动作不提供反事实标签。"
+        },
+        {
+          "id": "4.4a",
+          "scope": "software-only decision and arithmetic",
+          "statement": "继续/云请求失败概率为 0.09/0.01，失败损失10，各时间权重1，1 次既有逻辑发送。推理0.2、切换0.05 s，网络从0.1增至5.1 s。继续0.90、云端0.45或5.45。两项均无新增请求；缺正式准入项停止。",
+          "units": "概率、s、单位时间的损失权重、任意一致的损失单位；非货币",
+          "denominator_or_application_unit": "两个共享状态与参数的数值案例，各自账本分母1；另有一条独立未准入负控。",
+          "evidence": [
+            {
+              "source": "decisions",
+              "json_pointers": [
+                "/policy/2/case",
+                "/policy/2/action",
+                "/policy/2/fixture_ledger",
+                "/policy/2/fixture_probabilities",
+                "/policy/2/weights",
+                "/policy/2/model_request_delta",
+                "/policy/3/case",
+                "/policy/3/action",
+                "/policy/3/fixture_ledger",
+                "/policy/3/fixture_probabilities",
+                "/policy/3/weights",
+                "/policy/3/model_request_delta",
+                "/policy/4/disposition",
+                "/policy/4/action",
+                "/external_model_requests"
+              ]
+            },
+            {
+              "source": "low_scores",
+              "json_pointers": [
+                "/estimates/0",
+                "/estimates/3",
+                "/judgment/rule_scores"
+              ]
+            },
+            {
+              "source": "high_scores",
+              "json_pointers": [
+                "/estimates/0",
+                "/estimates/3",
+                "/judgment/rule_scores"
+              ]
+            },
+            {
+              "source": "policy",
+              "symbols_or_literal_keys": [
+                "def estimate_action_costs",
+                "def score_actions"
+              ]
+            },
+            {
+              "source": "judge",
+              "symbols_or_literal_keys": [
+                "class CostDecisionJudge"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "继续 0.09×10=0.9。云端 0.01×10+0.2+网络+0.05，两个输入分别得到0.45、5.45。先限定合法候选，再在有定义的分值上比较。"
+        },
+        {
+          "id": "4.4b",
+          "scope": "measured serialized bytes, software event statuses",
+          "statement": "成功请求/回复/已发超时正文 46/28/48 B。五次登记后累计字节序列 74,122,122,122,122；逻辑已发最终2。未发送取消、原样重报和冲突分别处理。",
+          "units": "UTF-8 应用字节，逻辑已发请求；货币未知",
+          "denominator_or_application_unit": "三个本地落盘载荷，五个软件登记操作，含两个唯一已发送尝试。",
+          "evidence": [
+            {
+              "source": "decisions",
+              "json_pointers": [
+                "/cost/payloads",
+                "/cost/billing",
+                "/cost/physical_network_requests",
+                "/cost/ledger/summary/cloud_model_requests",
+                "/cost/ledger/summary/application_bytes",
+                "/cost/events/0/case",
+                "/cost/events/0/bytes_after",
+                "/cost/events/0/sent_attempts_after",
+                "/cost/events/1/case",
+                "/cost/events/1/bytes_after",
+                "/cost/events/1/sent_attempts_after",
+                "/cost/events/2/case",
+                "/cost/events/2/bytes_after",
+                "/cost/events/2/sent_attempts_after",
+                "/cost/events/3/case",
+                "/cost/events/3/bytes_after",
+                "/cost/events/3/sent_attempts_after",
+                "/cost/events/4/case",
+                "/cost/events/4/bytes_after",
+                "/cost/events/4/sent_attempts_after"
+              ]
+            },
+            {
+              "source": "payload_request",
+              "raw_bytes": 46
+            },
+            {
+              "source": "payload_reply",
+              "raw_bytes": 28
+            },
+            {
+              "source": "payload_timeout",
+              "raw_bytes": 48
+            },
+            {
+              "source": "ledger",
+              "symbols_or_literal_keys": [
+                "def record_request",
+                "def snapshot"
+              ]
+            }
+          ],
+          "calculation_and_assumptions": "按已发送身份计次，已发超时仍入账。相同已完成记录原样回放不新增；不同终态冲突拒绝。默认已有0 B回包是该超时夹具的实际输入。"
+        },
+        {
+          "id": "4.5",
+          "scope": "code contracts and interpretation",
+          "statement": "异步返回按当前版本、任务、候选与到期时刻复查；普通切换发生于技能边界，急停独立。",
+          "units": "状态、时刻、版本、请求尝试",
+          "denominator_or_application_unit": "每个候选与其依赖的当前事件；不是额外运行的实测率。",
+          "evidence": [
+            {
+              "source": "candidate",
+              "symbols_or_literal_keys": [
+                "def build_candidates",
+                "def fresh_cloud_input"
+              ]
+            },
+            {
+              "source": "validator",
+              "symbols_or_literal_keys": [
+                "def validate_decision_commit"
+              ]
+            },
+            {
+              "source": "mode",
+              "symbols_or_literal_keys": [
+                "atomic_step_active",
+                "min_dwell_seconds",
+                "switch_cooldown_seconds"
+              ]
+            },
+            {
+              "source": "policy",
+              "symbols_or_literal_keys": [
+                "def _envelope_expiry"
+              ]
+            },
+            {
+              "source": "ledger",
+              "symbols_or_literal_keys": [
+                "IN_FLIGHT",
+                "conflicting request cost with the same attempt ID"
+              ]
+            }
+          ]
+        }
+      ],
+      "independent_recomputations": {
+        "grouped_observed_P90_mm": [
+          [
+            54,
+            54,
+            7.527
+          ],
+          [
+            54,
+            54,
+            4.851
+          ],
+          [
+            54,
+            51,
+            7.398
+          ]
+        ],
+        "paired_median_delta_mm": -1.559,
+        "conditional_rays_and_centres_P90_mm": [
+          0.689,
+          1.648,
+          6.869
+        ],
+        "three_frames_step_role_mode_quiet20_print5": [
+          [
+            840,
+            "MOVE_ABOVE/feedback",
+            "OBSERVED",
+            13,
+            0
+          ],
+          [
+            848,
+            "MOVE_ABOVE/feedback",
+            "UNKNOWN",
+            26,
+            0
+          ],
+          [
+            848,
+            "terminal",
+            "UNKNOWN",
+            26,
+            0
+          ]
+        ],
+        "payload_lengths_bytes": [
+          46,
+          28,
+          48
+        ],
+        "source_hashes_checked_against_length_plan": 7
+      }
+    },
+    "ch56": {
+      "schema": "manuscript-length.chapters-5-6.evidence.v1",
+      "chapters": {
+        "5": {
+          "body_han": 4377,
+          "draft_sha256": "6b2d075f959abe5cacbd107f65ef5dee9081ddb426e09ca4b5c60c715fcbecd8"
+        },
+        "6": {
+          "body_han": 7462,
+          "draft_sha256": "74f9228d9c4951ba3d913db94697f3ac794c3b2b3b51fec89ce67792f00b70d1"
+        }
+      },
+      "sources": {
+        "plan": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-manuscript-length-20261123/plan.json",
+          "sha256": "957d366442b98e4ca290ba0d931c6ecb7dd4006ba03d7c0aaddd4a8f7ff65a41"
+        },
+        "decisions": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/decisions.public.json",
+          "sha256": "98d26e1b4a0fd01ffb197b2548341268905422c91c24adfd13c1f822712a8a58"
+        },
+        "perception": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/perception.public.json",
+          "sha256": "87c5edefe0c57ace3182f7bb1e222ecff81a109d7e66c7ac5d3bdc7ea87b199c"
+        },
+        "installation": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/installation.public.json",
+          "sha256": "ad24d12a8b28886b3ef9a044ed640d98a865639b86cbb95ff5e5acc8cd26c3d0"
+        },
+        "graduation_validation": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/validation.public.json",
+          "sha256": "a2f711963f915fd5589f171c092be4c9b1bb8cfe2e4e3fe4e1d4dbd8a6d202a0"
+        },
+        "final_delta": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/final-delta.public.json",
+          "sha256": "4b084ed3f6d1949356ae8063ecad36f7a6dd78fdc31c525107621de2900de08e"
+        },
+        "fresh20": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-hard-limit-prefix-resume-20261120/final-batch-summary.json",
+          "sha256": "fa9da2498ea14cee38773528db2ae8d4bce52fb0a61c8371a1ebdfd446ebc510"
+        },
+        "fixed": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-dynamic-qualification-20261123/physics.public.json",
+          "sha256": "0cf71541253c36086e0bc5c5482f3d31d4c58d0a610471d0ecdef7a51f973e06"
+        },
+        "r1": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-dynamic-qualification-20261123/vision.public.json",
+          "sha256": "11e0400a0a10787f130fc8b63668e2835f4f2e807c6412346ed4fc837263ad25"
+        },
+        "r2": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/verification.public.json",
+          "sha256": "fb98daf6f08b6320b6303407d18cc27faeb6325521bc98e2bc01e2f698a35936"
+        },
+        "marker_loss": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/marker-loss.public.json",
+          "sha256": "30189bb02f92e1bc6d2794d32a5fb77154b536efb2d6cd892253ad58c71ed223"
+        },
+        "v9": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-first-actual-v9-teacher-20261119/result.json",
+          "sha256": "86360656e31297b928f27cf10c86fb18ea9deaee247615f87e882d2ea5011d11"
+        },
+        "v10": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase6-20261122/validation.public.json",
+          "sha256": "54e19d2ff3f0127e878c572b409ff3d5d5f63fb4ed5e37d1750e3134ed37c113"
+        },
+        "v10_readback": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase7-20261123/vision.public.json",
+          "sha256": "08ac6b27227c3c7b88a21b91697b171c2468fb1db88b6eeac500373058f08ab2"
+        },
+        "worker_stop": {
+          "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase7-20261123/validation.public.json",
+          "sha256": "b0b931a66e21d58cae79900b2f32ec5820ae7f7f656c7eb8113b6921911db5c3"
+        },
+        "dependencies": {
+          "path": "src/cloud_edge_robot_arm/cloud/replanning/visual_dependencies.py",
+          "sha256": "0353ef7e41e7ac70e5e3daec6abe0938679a7a0c3d14c9ac2375b59c8152ec3c"
+        },
+        "build_repair": {
+          "path": "src/cloud_edge_robot_arm/cloud/replanning/visual_repair.py",
+          "sha256": "9efb6fc7fc8e3cceafcfe42b8b96e89c4ccdfc116f8126e70e52840732a526a7"
+        },
+        "apply_repair": {
+          "path": "src/cloud_edge_robot_arm/cloud/replanning/apply_service.py",
+          "sha256": "b81ba3e947af390fbf86003187bdbaac328cebfc06998bbd279ebd8b7facf81d"
+        },
+        "budget_router": {
+          "path": "src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+          "sha256": "9e38a56ba3c4cfe80b8cb17f9deb39917b342c3b7658ea3c88c2f1c31ce37a12"
+        },
+        "restart_test": {
+          "path": "tests/test_replan_activation.py",
+          "sha256": "3fd5563ecc3902bfa73e53c635eece1ef439f670aac6e5d14fc3b5018abf59c9"
+        },
+        "servo": {
+          "path": "docs/research/continuous-visual-servo.md",
+          "sha256": "a14a23aded3740c72f48f9956a9c52c1c18b3047f94f92165c1f627e52dac5ec"
+        },
+        "harness": {
+          "path": "docs/harness.md",
+          "sha256": "db0d9add3aeb1651bf8b20d9da1082d1fe97383ac7fbc4a47e7084733067a459"
+        },
+        "design": {
+          "path": "docs/superpowers/specs/2026-10-04-cloud-edge-device-research-design.md",
+          "sha256": "dae788ab850288de1a524de37e21391e1e026b62375eaf06c798b8c87d49e0c1"
+        },
+        "power": {
+          "path": "src/cloud_edge_robot_arm/research/power.py",
+          "sha256": "b765d7f20cee58379f6c039469b6951f94e304cb429e8fbf0d9d1d912fa38292"
+        },
+        "gate": {
+          "path": "src/cloud_edge_robot_arm/edge/evidence/opportunities.py",
+          "sha256": "9f1b22719c7ddf6443a75a0fa10dc5c11acf9f85e5c79cc7b103fe3c42272dd4"
+        }
+      },
+      "claims": [
+        {
+          "section": "5.1–5.2",
+          "scope": "实现及推论",
+          "claim": "失效先传播再筛待办，缺失真实图边无法靠拓扑检查发现。生成后及发布时均复核输入、时效、替换窗口与前置条件。",
+          "source_keys": [
+            "dependencies:find_repair_window",
+            "build_repair:_inputs_valid,build_visual_repair",
+            "decisions:repair.paired"
+          ],
+          "unit": "计划步骤、依赖边",
+          "denominator": "实现论证；软件配对共用同一输入，不估计实物收益"
+        },
+        {
+          "section": "5.2–5.3",
+          "scope": "实现及软件验证",
+          "claim": "已确认失败可推进信息状态，硬故障和截止优先停止。激活后恢复回包超时保留版本，启动见证需另行返回。",
+          "source_keys": [
+            "budget_router:route_verification",
+            "apply_repair:ReplanApplyService.apply,confirm_execution_started",
+            "restart_test:test_resume_timeout_preserves_activated_version_and_restart_never_replays",
+            "decisions:repair.paired,retry_budget"
+          ],
+          "unit": "同一修复身份、任务配额",
+          "denominator": "软件验证含独立SQLite重启和替身网关，实际启动回执为空"
+        },
+        {
+          "section": "5.4–5.5",
+          "scope": "开发组件与冻结正式轨迹的工程核验",
+          "claim": "区分目标指令、机器人反馈、物体效果；失接触在下一命令前保持；同一步位的多次采集须按原采集身份关联判据。",
+          "source_keys": [
+            "servo:连续参考、接触与控制交接",
+            "worker_stop:development_worker_e2e,overlapping_brake_worker_e2e,foreign_control_failed_worker_owner_took_over",
+            "v10_readback:lift.step_selection,lift.step_interval_including_all_same_step_acquisitions"
+          ],
+          "unit": "动作、实际采集、物理步",
+          "denominator": "冻结轨迹与开发制动诊断分列"
+        },
+        {
+          "section": "5.5–5.6",
+          "scope": "复核方法与软件发行",
+          "claim": "同一分配槽可并列包装退出和原分项重估；wheel、显式源码、路径锁及终态身份有各自可核来源。",
+          "source_keys": [
+            "fresh20:development_fresh.original_strict_score_state,development_fresh.component_complete",
+            "installation:wheel,selected_inputs_at_wheel_revision,checks",
+            "harness:H0 契约与首场景清单、显式 MuJoCo 组件诊断"
+          ],
+          "unit": "分配槽、单个安装包、单个控制运行",
+          "denominator": "补充读回不新增试次"
+        },
+        {
+          "section": "6.1",
+          "scope": "开发盲评方法",
+          "claim": "角点模式复用同一像素，视角配对按摆放/高度/步位且深度噪声抽取不同。",
+          "source_keys": [
+            "perception:interpretation.pairing,unit,paired_view_comparisons"
+          ],
+          "unit": "帧、摆放",
+          "denominator": "独立单位为摆放；探索3组、留出3组"
+        },
+        {
+          "section": "6.2",
+          "scope": "预注册设计（尚未实施正式比较）",
+          "claim": "零真实差设定下，由配对成功与违规的不一致率选择满足双项条件功效的样本量。",
+          "source_keys": [
+            "power:choose_formal_n,_discordance,_conditional_power",
+            "design:T8前置与统计设计"
+          ],
+          "unit": "配对基础场景",
+          "denominator": "独立120组功效先导的设计要求，不能视为本次完成数"
+        },
+        {
+          "section": "6.3",
+          "scope": "固定TCP开发正控及两个独立图像诊断",
+          "claim": "全轨迹最长稳定段与预先规定的动作窗口不同；图像入口在较早阶段终止。",
+          "source_keys": [
+            "fixed:stage_receipts,windows.lift,windows.release,independent_outcome",
+            "r1:stop,windows",
+            "r2:real_action,full_windows"
+          ],
+          "unit": "物理步（端点样本）与秒",
+          "denominator": "固定目标1次，抬升121/121、释放241/241；r1和r2各1个独立实例，两窗口实际样本各0，均为未运行"
+        },
+        {
+          "section": "6.4",
+          "scope": "同版新位姿开发批次的条件描述",
+          "claim": "发过云请求的位姿14个，每个位姿1次，其中5个完整且独立物理成功、9个随后失败；对照未发请求组不可宣称节省。",
+          "source_keys": [
+            "fresh20:trials[].cohort,cloud_requests,component_completed,independent_physical_success",
+            "fresh20:development_fresh.costs,development_fresh.physical_success,development_fresh.assigned"
+          ],
+          "unit": "云请求/开发位姿",
+          "denominator": "20个FRESH_INDEPENDENT位姿；有请求14个，无请求6个，固定重复另列"
+        },
+        {
+          "section": "6.5",
+          "scope": "冻结正式v9首组计时的读回",
+          "claim": "后置墙钟332.829 s，原限额8 s。",
+          "source_keys": [
+            "v9:post_wall_ms,post_limit_ms,post_only_reject_rule",
+            "v10:original_admission_cross_checks"
+          ],
+          "unit": "秒，原始值为毫秒除以1000",
+          "denominator": "v9首组MOVE_ABOVE一次POST；分开描述v10物理步协议"
+        },
+        {
+          "section": "6.5",
+          "scope": "冻结正式v10首组的离线诊断",
+          "claim": "接触保持段峰值34.844 mm/s，末半秒段峰值5.278 mm/s。",
+          "source_keys": [
+            "v10:lift_diagnosis.offline_physics_samples.windows.controller_contact_hold",
+            "v10:lift_diagnosis.offline_physics_samples.windows.last_half_second"
+          ],
+          "unit": "mm/s，原始m/s乘1000",
+          "denominator": "同一抬升轨迹，每窗121个端点样本；不增加正式独立组，合格0/9"
+        },
+        {
+          "section": "6.5",
+          "scope": "正式固定机会统计定义",
+          "claim": "有效标签判无效进入误拒，未知另记。没有方法外的独立标签时，停止无法归入真警或虚警。",
+          "source_keys": [
+            "gate:summarize_gate_replay",
+            "design:T8a固定机会与恢复资格"
+          ],
+          "unit": "固定动作机会、可恢复故障场景",
+          "denominator": "各方法共用固定机会；历史正式机会不足，未估计率"
+        },
+        {
+          "section": "6.7",
+          "scope": "r2诊断的可证伪假设",
+          "claim": "白边近前景遮挡是假设。终止步反馈/终止图物理状态相同；需在匹配投影大小、视角、光照并具独立遮挡标签的帧上检验。",
+          "source_keys": [
+            "marker_loss:frames,physical_state_time,method,segmentation_or_independent_occluder_labels"
+          ],
+          "unit": "封存图像、物理步",
+          "denominator": "r2同一实例的3张图、2个步位；无独立遮挡物标签"
+        },
+        {
+          "section": "6.8",
+          "scope": "最终改动范围软件验证及后续排版版本复验",
+          "claim": "最终改动范围221项通过；随后选出的155项通过且与前次逐项同名同状态。",
+          "source_keys": [
+            "graduation_validation:final_changed_area_tests",
+            "final_delta:counts,identical_155_node_names_and_statuses_verified,scope,explicit_official_group_invocations"
+          ],
+          "unit": "软件测试节点",
+          "denominator": "221个改动范围节点与155个所选复验节点分别计；不能相加或外推全仓通过"
+        }
+      ]
+    }
+  },
+  "independent_readthrough": {
+    "schema": "graduation.manuscript-length.editorial-review.v1",
+    "type": "independent editorial and evidence review of Markdown",
+    "reviewed_on_local_date": "2026-11-24",
+    "source": "docs/thesis/graduation-20261123/expanded/manuscript.md",
+    "reviewed_final_sha256": "cd9a196aa67ba9e906c86957159b345aeeb0c188745a708dfecdc50384eb3de0",
+    "old_short_manuscript_sha256": "715a3b777167503619a82ff26cda27eac39e1a7a27cbbce3b1520353e80abaff",
+    "scope": "全文七章、摘要和英文摘要、14项文献、七个表题(含附表)和四个图占位。与冻结回执、协议、指定实现和三个章节事实索引交叉。只读审核，无新模型请求、教师、仿真、硬件运行或版式更改。",
+    "manuscript_modified_by_reviewer": false,
+    "facts_indexes": {
+      "ch12-facts.json": {
+        "sha256": "ef50773fcbe3ee9ea0c7bf7b5fca2745779c38d280402ddb209b9f2e97fa5f3c",
+        "top_level_keys": [
+          "scope",
+          "chapters",
+          "figure_token",
+          "frozen_caption_table_sha256",
+          "empirical_numeric_additions",
+          "sources",
+          "literature",
+          "source_sha256"
+        ]
+      },
+      "ch34-facts.json": {
+        "sha256": "a019c68c165592a9cafba418297d1aa0b9aedbf6bf144caf39c0e0d610907aa0",
+        "top_level_keys": [
+          "schema",
+          "scope",
+          "path_bases",
+          "chapters",
+          "sources",
+          "facts",
+          "independent_recomputations"
+        ]
+      },
+      "ch56-facts.json": {
+        "sha256": "7c76468e733c46131501c541213e1df5757c05776c90d81b0967c457264159a6",
+        "top_level_keys": [
+          "schema",
+          "chapters",
+          "sources",
+          "claims"
+        ]
+      }
+    },
+    "primary_sources": {
+      "poses20": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-hard-limit-prefix-resume-20261120/final-batch-summary.json",
+        "sha256": "fa9da2498ea14cee38773528db2ae8d4bce52fb0a61c8371a1ebdfd446ebc510"
+      },
+      "perception": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/perception.public.json",
+        "sha256": "87c5edefe0c57ace3182f7bb1e222ecff81a109d7e66c7ac5d3bdc7ea87b199c"
+      },
+      "canonical": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-dynamic-qualification-20261123/physics.public.json",
+        "sha256": "0cf71541253c36086e0bc5c5482f3d31d4c58d0a610471d0ecdef7a51f973e06"
+      },
+      "r1": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-dynamic-qualification-20261123/vision.public.json",
+        "sha256": "11e0400a0a10787f130fc8b63668e2835f4f2e807c6412346ed4fc837263ad25"
+      },
+      "r2": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/vision.public.json",
+        "sha256": "817fac4582458b67e3e7c57e14c1eab51b10934851d8c2b2ed075704b6718fa0"
+      },
+      "marker_loss": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/marker-loss.public.json",
+        "sha256": "30189bb02f92e1bc6d2794d32a5fb77154b536efb2d6cd892253ad58c71ed223"
+      },
+      "v9": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-first-actual-v9-teacher-20261119/result.json",
+        "sha256": "86360656e31297b928f27cf10c86fb18ea9deaee247615f87e882d2ea5011d11"
+      },
+      "v10": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase6-20261122/validation.public.json",
+        "sha256": "54e19d2ff3f0127e878c572b409ff3d5d5f63fb4ed5e37d1750e3134ed37c113"
+      },
+      "v10_frames": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase7-20261123/vision.public.json",
+        "sha256": "08ac6b27227c3c7b88a21b91697b171c2468fb1db88b6eeac500373058f08ab2"
+      },
+      "decisions": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/decisions.public.json",
+        "sha256": "98d26e1b4a0fd01ffb197b2548341268905422c91c24adfd13c1f822712a8a58"
+      },
+      "fullregression": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/full-validation.public.json",
+        "sha256": "e961a68051964f60c399e64dc59f3d5356498ccd935ea9950c553cc8c0a604c5"
+      },
+      "softwaredelta": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/final-delta.public.json",
+        "sha256": "4b084ed3f6d1949356ae8063ecad36f7a6dd78fdc31c525107621de2900de08e"
+      },
+      "protocol": {
+        "path": "docs/plan.md",
+        "sha256": "1570b5d3e8240b1cf0049776a3540d0671f8e30bdd659ef031654b288204bb82"
+      },
+      "rejection": {
+        "path": "src/cloud_edge_robot_arm/edge/evidence/opportunities.py",
+        "sha256": "9f1b22719c7ddf6443a75a0fa10dc5c11acf9f85e5c79cc7b103fe3c42272dd4"
+      },
+      "marker_asset": {
+        "path": "assets/robots/franka_panda/scene_pose_marker_side_y_plus_75mm_r593.xml",
+        "sha256": "1e95054dc74e1c8ff51042290450b5e01e7410dd653870c553f056892efca140"
+      },
+      "decoder": {
+        "path": "src/cloud_edge_robot_arm/vision/pose_markers.py",
+        "sha256": "acd89f0044fa7df44c1384692eef55c61d6280377a36e20e2649336669dff139"
+      },
+      "compression": {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round-p1-development-readiness-20261119/phase-summary.md",
+        "sha256": "90c143125204437fe5075cf289cc1ec8fb463d87578af7da0300bc12d2635697"
+      }
+    },
+    "findings": [
+      {
+        "id": "F1",
+        "line": 171,
+        "severity": "clarify_geometry",
+        "status": "resolved_and_reread",
+        "previous": "机械臂、标记所在侧面与放置区域的相对位置随视角改变",
+        "cause": "三视角改变投影。r593标记基底侧向伸出且近乎平行于顶面，不能描述成贴在垂直侧面。",
+        "observed_final": "机械臂、侧向伸出的标记和放置区域在画面中的投影随视角改变。比较三种机位时，应分别测量标记是否成功解码，以及解码后顶心的定位误差。",
+        "sources": [
+          "marker_asset:geom pose_marker_outboard_v3_quiet",
+          "manuscript:167,171,183"
+        ]
+      }
+    ],
+    "conclusions_by_chapter": [
+      "第一章从遮挡和计划延迟提出三个可证伪问题。方法文献说明下一步可用了什么构件，未将他人的统计或模拟行为写成本机实测。",
+      "第二章为时钟和接口提供实际交付粒度。537600乘30等于16128000字节，明确是单消费者每模拟秒传送未压缩像素的条件推算。硬件功耗、物理时延、吞吐均未冒称实测。",
+      "第三章报告光轴与斜距、方向误差杠杆、相同射线、训练探索与留出摆放及有效帧条件。P4/P5/P6共三姿态，无帧数冒充独立样本。G3给定数值用例与真实机会统计分列。",
+      "第四章区分周期机会、模型发送和采纳，区分角色探针与实际任务。0.70来自20个开发位姿，不作为相对B0节省。风险回放给定概率、标签和预算，未声称有动作反事实。",
+      "第五章以依赖传播、持久检查点和SQLite激活解释局部修复。1/2对2/2是两个未完成步骤的改写比例。替身网关和真实物理开始回执分别陈述，没有推出恢复用时或G4收益。",
+      "第六章从同源批次分别报告候选、全分配分母和开发/正式时钟。控制窗口、在线证据与独立判分并列。固定TCP、图像r1/r2、v9/v10及提前停止后的调用暴露分别核实。",
+      "第七章把研究成熟度、当前可验证结果、所需配对与板级测量分开。遮挡归因以待检假设处理，独立闭环、正式NOT_ACCEPTED、实机NOT_STARTED均保留。"
+    ],
+    "critical_checks": {
+      "geometric_holdout": {
+        "lines": [
+          183,
+          185,
+          187,
+          379,
+          392,
+          524
+        ],
+        "source_keys": [
+          "perception:by_placement_and_mode,by_split_and_mode,paired_view_comparisons,capture"
+        ],
+        "holdout_group_n": 3,
+        "allocated_frames": 162,
+        "valid_frames": 159,
+        "valid_by_placement": [
+          54,
+          54,
+          51
+        ],
+        "p90_mm_by_placement": [
+          7.527,
+          4.851,
+          7.398
+        ],
+        "same_left_and_axial_pairs": 51,
+        "acquisition_n": 324,
+        "optional_end_acquisitions_not_scored": 54
+      },
+      "development_20_vs_cloud_and_B0": {
+        "lines": [
+          237,
+          239,
+          367,
+          369,
+          375,
+          398,
+          449,
+          451,
+          453,
+          455,
+          528
+        ],
+        "source_keys": [
+          "poses20:development_fresh,costs,fixed_pose_repeats,trials",
+          "protocol:G0-G4"
+        ],
+        "fresh": [
+          20,
+          5,
+          14,
+          68
+        ],
+        "fresh_units": [
+          "assigned",
+          "completed and independent physical successes",
+          "remote sent",
+          "local generations"
+        ],
+        "two_additional_repeats_separate": true,
+        "all_22_remote_local": [
+          16,
+          76
+        ],
+        "old_2s_baseline_development_successes": 5,
+        "old_2s_baseline_n": 120,
+        "four_cycle_software_slots_not_run": 480,
+        "qualified_B0": false,
+        "recovery_effect_available": false
+      },
+      "positive_fixed_target": {
+        "lines": [
+          412,
+          427,
+          429,
+          431,
+          522,
+          628
+        ],
+        "source_keys": [
+          "canonical:windows,independent_outcome,cases"
+        ],
+        "physics_steps": 5013,
+        "samples": 5014,
+        "lift_step_window": [
+          2584,
+          2704,
+          121,
+          121
+        ],
+        "release_step_window": [
+          4773,
+          5013,
+          241,
+          241
+        ],
+        "units": [
+          "first step",
+          "last step",
+          "allocated states",
+          "jointly passing states"
+        ]
+      },
+      "image_driven_r1_r2": {
+        "lines": [
+          433,
+          435,
+          437,
+          439,
+          441,
+          443,
+          445,
+          522
+        ],
+        "source_keys": [
+          "r1:stop,controller_dispatches",
+          "r2:control,whole,feedback_only,completed_posts,windows",
+          "marker_loss:frames,segmentation_or_independent_occluder_labels"
+        ],
+        "r1": "GROUNDING at repeated physical time, no PRE/Shield dispatch",
+        "r2": [
+          "3 PRE conditions and research Shield allow",
+          "120..848=728 steps",
+          "146 accepted joint targets",
+          "91/92 feedback estimates and 91 allowed feedback checks",
+          "95/97 all-frame estimates",
+          "no POST, seven later stages NOT_RUN"
+        ],
+        "occlusion_confirmed_as_unique_cause": false
+      },
+      "formal_clock_and_separate_windows": {
+        "lines": [
+          461,
+          470,
+          472,
+          474,
+          476,
+          478,
+          486
+        ],
+        "source_keys": [
+          "v9:post_wall_ms,post_limit_ms",
+          "v10:collection,formal_process,lift_diagnosis.offline_physics_samples.windows",
+          "v10_frames:lift.color_multiplicity_step_ranges"
+        ],
+        "v9_post_wall_s": 332.829,
+        "v9_post_wall_limit_s": 8,
+        "v10_first_group": [
+          "one attempt",
+          "6240 physical steps",
+          "11109 frames",
+          "8 other groups NOT_RUN",
+          "0/9 qualified UNKNOWN for attempted group"
+        ],
+        "v10_lift_two_offline_half_seconds": [
+          [
+            5035,
+            5155,
+            121,
+            34.844
+          ],
+          [
+            6120,
+            6240,
+            121,
+            5.278
+          ]
+        ],
+        "online_lift_and_stability": "UNKNOWN; offline speeds are not a current bound",
+        "v10_color_counts": [
+          156,
+          43,
+          1839,
+          3
+        ]
+      },
+      "percentages": {
+        "audited_lines": [
+          163,
+          239,
+          361,
+          367,
+          371,
+          398,
+          449,
+          480,
+          488
+        ],
+        "recomputed_20_pose_success_percent": 25,
+        "wilson95_percent": [
+          11.19,
+          46.87
+        ],
+        "description": "30%标记边长是一项实现阈值。B0、G1/G2/G2a/G3/G4/G5、网络设定、划分及置信水平标为方案；25%及Wilson采用5/20；24.28%～24.87%和0.99%为242帧、四块离线PNG测量。未把它们换算成研究收益。"
+      },
+      "recovery_and_test_denominators": {
+        "lines": [
+          289,
+          301,
+          305,
+          369,
+          480,
+          482,
+          508,
+          510,
+          512,
+          530
+        ],
+        "source_keys": [
+          "decisions:repair,retry_budget",
+          "protocol:G3,G4",
+          "rejection:summarize_gate_replay",
+          "fullregression,softwaredelta"
+        ],
+        "stated_repair_pairs": [
+          "1/2 local",
+          "2/2 full remainder"
+        ],
+        "formal_eligible_fault_pool": 200,
+        "legacy_proofs": "1/200 in earlier preparation, zero matching in current bound pool",
+        "software_separate": [
+          7682,
+          226,
+          221,
+          155
+        ]
+      },
+      "bibliography": {
+        "body_references": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14
+        ],
+        "reference_list_byte_identical_to_frozen": true,
+        "two_abstracts_byte_identical_to_frozen": true,
+        "primary_literature_spot_checks": [
+          {
+            "id": 3,
+            "url": "https://www.roboticsproceedings.org/rss15/p63.pdf",
+            "location": "Action space Eq. 2 and Face-detection scenario. Cached current/past predictions and frame-level video inputs."
+          },
+          {
+            "id": 6,
+            "url": "https://proceedings.mlr.press/v229/ren23a/ren23a.pdf",
+            "location": "KnownNo context, calibration and planning assumptions."
+          }
+        ]
+      },
+      "duplication": {
+        "normalization": "NFKC then Chinese ideographs, ASCII letters and digits; lowercase; prose lines only, headings/table figures excluded; independent descriptive scan",
+        "paragraphs": 187,
+        "paragraph_pairs": 17391,
+        "identical_prose_paragraph_groups": 0,
+        "repeated_normalized_sentences_at_least_18_chars_across_paragraphs": 0,
+        "shared_24_char_substrings_across_prose_paragraphs": 0,
+        "max_5gram_Jaccard": 0.048701,
+        "highest_pair_lines": [
+          189,
+          379
+        ],
+        "human_judgment": "最高相似段分别解释几何误差组成和同一留出组的两种角点模式，必要数字重复且论点不同。其他复述服务于方法、实验和限制，无整段套写或篇幅性重复。"
+      }
+    },
+    "unresolved_must_fix": [],
+    "scope_limits": "核验本项目已归档的实测、方法和统计表述。没有重新运行任务，也没有对学位、外审、专利状态、正式研究验收、真实板级结果或最终导出页面作本轮独立认定。",
+    "revision_trace": [
+      {
+        "sha256": "6363ae031456ff7deb561204c8ea85444f152337dbb5fe15d65b1fcae237536d",
+        "state": "首次合并审阅稿，发现171行几何表述"
+      },
+      {
+        "sha256": "0be6fc5bed3402abe15db77efdceac538b6c10dce8fae580cd87e69aff376674",
+        "state": "读回171行已修正"
+      },
+      {
+        "sha256": "cd9a196aa67ba9e906c86957159b345aeeb0c188745a708dfecdc50384eb3de0",
+        "state": "最终压缩1.4与2.6章末四段后重新核对；留出、正式计数和其他数值不变",
+        "line_numbers": [
+          65,
+          67,
+          141,
+          143
+        ]
+      }
+    ]
+  }
+}

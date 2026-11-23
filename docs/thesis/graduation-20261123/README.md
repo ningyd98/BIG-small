@@ -1,10 +1,11 @@
 # 毕业设计交付与离线演示
 
-题目为《面向边缘智能场景的小型机械臂云边协同控制系统的设计》。本版对应 2026 年 11 月 23 日的工程与研究记录，可从同一次试验的代码、身份和文件摘要复核论文中的数字。
+题目为《面向边缘智能场景的小型机械臂云边协同控制系统的设计》。11 月 24 日的论文长稿共 38 页，七章叙述正文有 33,326 个汉字，整份 Word 有 37,259 个可印汉字。正文计数剔除标题、图表、代码、摘要、书目及附录。Word 的中英文合计字数为 42,499。实验记录截至 11 月 23 日，各章附同一次试验的来源与复算依据。[逐章字数及印本文字核验](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-manuscript-length-20261123/length.public.json)
 
 | 交付 | 用途 |
 | --- | --- |
-| [论文 PDF](../../../artifacts/thesis_report/graduation-20261123/云边协同机械臂毕业设计.pdf) · [可编辑 Word](../../../artifacts/thesis_report/graduation-20261123/云边协同机械臂毕业设计.docx) · [七章稿源](manuscript.md) | 阅读方法、误差分析、实验分母与研究限制 |
+| [论文长稿 PDF](../../../artifacts/thesis_report/graduation-20261123-expanded/云边协同机械臂毕业设计.pdf) · [可编辑 Word](../../../artifacts/thesis_report/graduation-20261123-expanded/云边协同机械臂毕业设计.docx) · [七章稿源](expanded/manuscript.md) | 阅读坐标与误差推导、控制过程、成本与恢复对照、实验分母及失败分析 |
+| [11 月 23 日简稿 PDF](../../../artifacts/thesis_report/graduation-20261123/云边协同机械臂毕业设计.pdf) · [原 Word](../../../artifacts/thesis_report/graduation-20261123/云边协同机械臂毕业设计.docx) · [原稿源](manuscript.md) | 复核原 26 页阶段交付的文本与指纹 |
 | [可编辑答辩演示](../../../artifacts/thesis_report/graduation-20261123/云边协同机械臂答辩.pptx) | 投影片与逐页讲者备注，列出可以现场核对的数据出处 |
 | [抓放开发实例回放](../../../artifacts/thesis_report/graduation-20261123/抓放开发实例回放.gif) · [逐帧来源](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-pickplace-playback-20261123/playback.public.json) | 从历史开发位姿 01 的原始相机选出 107 张画面，沿九个动作查看。抓取与释放的过程无伺服画面，对应位置标有采样间隔。该批独立物理成功 5/20。 |
 | [验收指标与证据矩阵](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/requirements-evidence.public.json) | G0–G5、B0–B5 以及 INITIAL、METHOD、FINAL 的目标、实测范围和前置证据 |
@@ -44,10 +45,11 @@ PYTHONPATH=src:. "$PROJECT_PY" -m scripts.graduation.demo \
 
 ## 重建论文与核对原件
 
-论文从本目录的 Markdown、公开标定图像与数据表生成。构建解释器需要 python-docx，绘图解释器需要 Matplotlib。主机需能调用 Pandoc、LibreOffice、pdftotext，并具有 Noto Serif CJK SC 和 Noto Sans CJK SC 字体。目录页码在 PDF 首次排版后写回 Word，第二遍导出复核所有章节起始页。
+论文从七章稿源、公开标定图像与数据表生成。构建解释器需要 python-docx，绘图解释器需要 Matplotlib。主机需能调用 Pandoc、LibreOffice、MuPDF 的 mutool，以及 Poppler 的 pdftotext 和 pdfinfo，并具有 Noto Serif CJK SC 和 Noto Sans CJK SC 字体。目录页码在 PDF 首次排版后写回 Word。长稿从同稿的 LibreOffice 统计读出字词与字符数，从实际 PDF 读出页数，更新 Word 文件属性后重新导出。
 
 ```bash
 "$DOCUMENT_PY" scripts/graduation/build_manuscript.py \
+  --manuscript docs/thesis/graduation-20261123/expanded/manuscript.md \
   --plot-python "$PROJECT_PY" --soffice "$SOFFICE" --output "$DOCUMENT_OUT"
 ```
 
