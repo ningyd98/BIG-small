@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ROUNDS = Path("artifacts/research/process/20261004-ced-development/astra-rounds")
 ROUND = ROUNDS / "round-graduation-integration-20261123"
+DYNAMIC = ROUNDS / "round-graduation-dynamic-qualification-20261123"
 MATRIX = ROUND / "requirements-evidence.public.json"
 SOURCES = {
     "proposal": "docs/开题报告_集成电路工程_20261024.md",
@@ -22,6 +23,11 @@ SOURCES = {
     "perception": ROUND / "perception.public.json",
     "decisions": ROUND / "decisions.public.json",
     "installation": ROUND / "installation.public.json",
+    "fixed_physics": DYNAMIC / "physics.public.json",
+    "first_guarded_development": DYNAMIC / "vision.public.json",
+    "guarded_r2": ROUNDS / "round-graduation-guarded-clock-20261123/vision.public.json",
+    "archived_playback": ROUNDS
+    / "round-graduation-pickplace-playback-20261123/playback.public.json",
 }
 
 
@@ -59,6 +65,9 @@ def matrix(root: Path) -> dict:
     )
     top = held["errors"]["object_top_center_3d_m"]
     dec, installation = data["decisions"], data["installation"]
+    physical, guarded = data["fixed_physics"], data["first_guarded_development"]
+    guarded_r2 = data["guarded_r2"]
+    playback = data["archived_playback"]
     if (
         len(views) != 3
         or sum(v["allocated"] for v in views) != 162
@@ -68,6 +77,10 @@ def matrix(root: Path) -> dict:
         or dec["formal_trials"]
         or dec["external_model_requests"]
         or dec["physical_executions"]
+        or physical["formal_claims"]
+        or guarded["formal_claims"]
+        or guarded_r2["formal_claims"]
+        or guarded_r2["id"] == guarded["id"]
     ):
         raise ValueError("held-out allocation or decision scope changed")
     ledger = dec["cost"]["ledger"]["summary"]
@@ -96,6 +109,35 @@ def matrix(root: Path) -> dict:
         "held_out_conditional_p90_mm": 1000 * top["p90"],
         "held_out_maximum_mm": 1000 * top["max"],
         "held_out_views": views,
+        "fixed_tcp_development": {
+            "independent_outcome": physical["independent_outcome"]["status"],
+            "physics_samples": physical["samples"],
+            "cases": physical["case_count"],
+            "lift_window_passing_samples": physical["windows"]["lift"]["passed_samples"],
+            "release_window_passing_samples": physical["windows"]["release"]["passed_samples"],
+        },
+        "first_guarded_development": {
+            "id": guarded["id"],
+            "stop": guarded["stop"]["reason"],
+            "last_step": guarded["last_step"],
+            "controller_dispatches": guarded["controller_dispatches"],
+        },
+        "guarded_r2_development": {
+            "id": guarded_r2["id"],
+            "physics_samples": guarded_r2["physics_samples"],
+            "frames": guarded_r2["explicit_frames"],
+            "joint_target_commands": guarded_r2["accepted_joint_target_commands"],
+            "shield": guarded_r2["research_shield"],
+            "last_step": guarded_r2["last_step"],
+            "stop": guarded_r2["stop"]["reason"],
+            "servo_reason": guarded_r2["stages"][0]["servo_terminal_reason"],
+        },
+        "archived_camera_example": {
+            "trial": playback["trial"],
+            "camera_frames": playback["camera_frames"],
+            "gap_cards": playback["gap_cards"],
+            "physically_audited_samples": playback["physical_outcome"]["evidence_samples"],
+        },
         "software_repair": repaired,
         "fixture_application_bytes": ledger["application_bytes"],
         "fixture_sent_requests": ledger["model_requests"],
@@ -130,7 +172,14 @@ def matrix(root: Path) -> dict:
             "开发格的条件误差与覆盖见 held_out_views，20 个历史开发位姿的独立物理成功 5 次。"
             "正式首组 LIFT 两项 UNKNOWN。",
             "动作参考系、有效误差和采样间运动界，合格独立教师与抓放",
-            ["component", "perception", "teacher"],
+            [
+                "component",
+                "perception",
+                "teacher",
+                "fixed_physics",
+                "guarded_r2",
+                "archived_playback",
+            ],
         ),
         row(
             "G2",
@@ -216,7 +265,7 @@ def matrix(root: Path) -> dict:
     }
 
 
-def live_demo(destination: Path, cli: str, calibration: Path | None) -> None:
+def live_demo(destination: Path, cli: str, calibration: Path | None, physics: Path | None) -> None:
     """Use fresh outputs for all replay work and read the published receipts as immutable inputs."""
     destination = destination.resolve()
     destination.mkdir(parents=True, exist_ok=False)
@@ -266,6 +315,32 @@ def live_demo(destination: Path, cli: str, calibration: Path | None) -> None:
         )
         if regenerated.read_bytes() != published.read_bytes():
             raise ValueError("independent vision score differs from the published calibration")
+    if physics:
+        published = ROOT / SOURCES["fixed_physics"]
+        receipt = json.loads(published.read_bytes())
+        output = destination / "physics"
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "scripts.graduation.dynamic_physics",
+                "score",
+                "--private",
+                physics.resolve(strict=True),
+                "--allocation",
+                ROOT / DYNAMIC / "allocation-physics.public.json",
+                "--allocation-sha256",
+                receipt["allocation_sha256"],
+                "--seal-sha256",
+                receipt["capture_seal_sha256"],
+                "--output",
+                output,
+            ],
+            cwd=ROOT,
+            check=True,
+        )
+        if (output / "physics.public.json").read_bytes() != published.read_bytes():
+            raise ValueError("independent physics score differs from the published result")
     episode = destination / "episode"
     for name, command in [
         ("prepare", [cli, "prepare", "--source-checkout", ROOT, "--output", episode]),
@@ -281,6 +356,7 @@ def live_demo(destination: Path, cli: str, calibration: Path | None) -> None:
             {
                 "decision_bytes_match": True,
                 "calibration_bytes_match": True if calibration else None,
+                "physics_bytes_match": True if physics else None,
                 "new_prepared_episode_verified": True,
                 "model_calls": 0,
             },
@@ -304,9 +380,12 @@ def main():
         type=Path,
         help="local sealed sensor run for independent scoring with --output",
     )
+    parser.add_argument(
+        "--physics", type=Path, help="sealed fixed-TCP physics directory to score with --output"
+    )
     args = parser.parse_args()
-    if args.calibration and not args.output:
-        parser.error("--calibration requires --output")
+    if (args.calibration or args.physics) and not args.output:
+        parser.error("--calibration and --physics require --output")
     out = matrix(ROOT)
     if args.write_matrix:
         args.write_matrix.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
@@ -316,7 +395,7 @@ def main():
     if args.episode:
         subprocess.run([args.cli, "evidence", str(args.episode.resolve())], check=True)
     if args.output:
-        live_demo(args.output, args.cli, args.calibration)
+        live_demo(args.output, args.cli, args.calibration, args.physics)
 
 
 if __name__ == "__main__":
