@@ -1,5 +1,17 @@
 # 项目状态
 
+## 2026-11-23 毕业设计工程与研究进展
+
+面向边缘智能场景的小型机械臂云边协同系统已提供可安装的 Harness、可复算的演示、七章论文和答辩稿。离线安装在新的 Python 环境内通过配置、准备和原件读回，篡改一个字节和重复使用输出目录均触发拒绝。[毕业设计与运行入口](thesis/graduation-20261123/README.md)
+
+本轮在 MuJoCo 中完成 6 个开发摆放、54 个独立重置、324 帧 RGB-D 采集。三组留出摆放的 SUBPIX 顶心估计有效 159/162，条件三维误差 P90 为 6.869 mm，最大为 10.991 mm。软件对照中，同一故障下局部修复改写 1 个待执行步骤，完整剩余重规划改写 2 个，两条路径重启后重放都没有新增网关调用。[视觉盲评](../artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/perception.public.json) · [决策与恢复对照](../artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/decisions.public.json)
+
+固定 TCP 的开发抓放在 5,013 个物理步完成。独立读回保留全部 5,014 个状态，抬升后半秒和释放后一秒两个规定窗口分别有 121/121 和 241/241 个采样满足条件，另有五个保护反例通过。全仓软件选择的 7,682 项中，首轮 7,235 通过、366 失败、50 错误、31 跳过；相对历史新出现的五项失败在同源码串行复验时均通过。[物理正反例](../artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-dynamic-qualification-20261123/physics.public.json) · [回归范围和逐批次结果](../artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/full-validation.public.json)
+
+原 v10 正式首组的 LIFT 后置判定保留为 UNKNOWN，余下八组未运行。历史同版 20 个新开发位姿独立物理成功 5 次。正式 B0 筛选及其后的对比试验仍待满足资格前置。[正式首组记录](../artifacts/research/process/20261004-ced-development/astra-rounds/round-v10-phase6-20261122/validation.public.json) · [各项指标的验收状态](../artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-integration-20261123/requirements-evidence.public.json)
+
+新的 r593 开发实例通过首动作的真实条件检查和 SafetyShield，在第 120 至 848 步完成 728 步运动。第 840 步仍能识别标记 ID 7，第 848 步的反馈和终止图像均无法识别它。伺服回报拒绝，安全停止成功，后续七个动作未派发。[r2 逐步、图像与控制回执](../artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-guarded-clock-20261123/vision.public.json)
+
 ## 2026-11-21 教师状态检查修复与复测
 
 同一开发位姿 `11920067` 的首动作从 **150.403 秒降至 128.739 秒**，少用 **21.665 秒（14.4%）**。修复的是单次检查内重复的作业查询、冻结协议解析和同一 worker 的只读建连。动作窗内的 31,238 次活动检查全部保留，检查本身及其 SQLite 读取由 78.719 秒降至 50.771 秒。软件负控验证了取消、租约到期及急停仍在原检查点拒绝。 [修复与实测](../artifacts/research/process/20261004-ced-development/astra-rounds/round-p0-teacher-active-checks-20261121/step-report.md)
