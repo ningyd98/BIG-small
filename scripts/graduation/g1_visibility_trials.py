@@ -145,28 +145,55 @@ def template(repo, lock):
     first = next(row for row in table["cases"] if row["arm"] == "dual")
     previous = pinned(old / first["allocation_file"], first["allocation_sha256"])
     old_geometry = previous["geometry"]
-    geometry = dual.runtime.geometry_registration(marker_family_id=first["family"])
-    descriptors = [g["development_dual"] for g in (old_geometry, geometry)]
-    variable = {"development_sources_sha256", "development_source_generation"}
-    require(
-        {k: v for k, v in old_geometry.items() if k != "development_dual"}
-        == {k: v for k, v in geometry.items() if k != "development_dual"}
-        and {k: v for k, v in descriptors[0].items() if k not in variable}
-        == {k: v for k, v in descriptors[1].items() if k not in variable}
-        and first["asset_sha256"] == geometry["pose_marker"]["marked_asset_sha256"]
-        and previous["case"]["visual_stages_in_order"] == STAGES
-        and geometry["camera"]["calibration_version"] == "f33940579c533afe",
-        "physical geometry, camera, eight-stage intent or asset drift",
-    )
+    radial = lock.get("radial_assembly")
+    active_family = radial["family"] if radial else first["family"]
+    geometry = dual.runtime.geometry_registration(marker_family_id=active_family)
     baseline = pinned(
         old / previous["catalog"]["private_filename"], previous["catalog"]["archived_json_sha256"]
     )
     names = set(baseline) | set(lock["additional_files_sha256"])
     full = {name: lock["runtime_files_sha256"][name] for name in sorted(names)}
-    require(
-        all(full.get(k) == v for k, v in descriptors[1]["development_sources_sha256"].items()),
-        "runtime source catalog does not bind the active observer",
-    )
+    if radial:
+        from scripts.graduation import g1_dual_asset_v2 as low
+        from scripts.graduation import g1_visibility_mount_runtime as mount
+
+        require(
+            first["family"] == old_geometry["marker_family"] == low.FAMILY
+            and first["physical_object_mass_kg"] == low.BODY_MASS_KG
+            and first["asset_sha256"]
+            == old_geometry["pose_marker"]["marked_asset_sha256"]
+            == low.ASSET_SHA
+            and first["asset_path"] == old_geometry["asset_path"] == low.ASSET_PATH
+            and sha(ROOT / low.ASSET_PATH) == low.ASSET_SHA
+            and previous["case"]["visual_stages_in_order"] == STAGES,
+            "foreign historical method template",
+        )
+        require(radial == mount.spec_for(radial["offset_mm"]), "wrong bound radial manifest")
+        mount.verify_geometry(old_geometry, geometry, radial, full)
+        first = {
+            **first,
+            "family": radial["family"],
+            "asset_path": radial["asset_path"],
+            "asset_sha256": radial["asset_sha256"],
+            "physical_object_mass_kg": radial["body_mass_kg"],
+        }
+    else:
+        descriptors = [g["development_dual"] for g in (old_geometry, geometry)]
+        variable = {"development_sources_sha256", "development_source_generation"}
+        require(
+            {k: v for k, v in old_geometry.items() if k != "development_dual"}
+            == {k: v for k, v in geometry.items() if k != "development_dual"}
+            and {k: v for k, v in descriptors[0].items() if k not in variable}
+            == {k: v for k, v in descriptors[1].items() if k not in variable}
+            and first["asset_sha256"] == geometry["pose_marker"]["marked_asset_sha256"]
+            and previous["case"]["visual_stages_in_order"] == STAGES
+            and geometry["camera"]["calibration_version"] == "f33940579c533afe",
+            "physical geometry, camera, eight-stage intent or asset drift",
+        )
+        require(
+            all(full.get(k) == v for k, v in descriptors[1]["development_sources_sha256"].items()),
+            "runtime source catalog does not bind the active observer",
+        )
     return first, {**previous, "geometry": geometry}, full
 
 
@@ -210,7 +237,9 @@ def diagnostic_case(scene, kind, seed):
 
     from cloud_edge_robot_arm.vision.worker_owner import _identity_string
 
-    require(kind in {"positive", "full-occlusion"}, "foreign diagnostic condition")
+    require(
+        kind in {"positive", "only-7", "only-8", "full-occlusion"}, "foreign diagnostic condition"
+    )
     visual = scene + "/" + kind
     ids = identities(visual)
     release = "g1-visibility-preflight-20261124"
@@ -307,7 +336,9 @@ def diagnostic_owner_software(directory, scene, full, generation):
     return sha(directory / "readback.json")
 
 
-def occlusion_control(directory, kind, registration, full, pose, generation, scene):
+def occlusion_control(
+    directory, kind, registration, full, pose, generation, scene, *, radial_checks=False
+):
     """Acquire fresh zero-step packets for the registered target and first hold sample."""
     import base64
     import io
@@ -340,10 +371,12 @@ def occlusion_control(directory, kind, registration, full, pose, generation, sce
     owner = runtime.Owner(directory, allocation, sha(directory / "allocation.json"))
     backend = runtime.MuJoCoPhysicsBackend()
     packets, timings, detail = {}, {}, {}
+    view = kind if kind in ("only-7", "only-8") else "both"
+    expected_ids = probe.EXPECTED[view]
 
     def acquire(label):
         start = time.perf_counter()
-        obs = probe.capture(backend, "both", segmented=False)
+        obs = probe.capture(backend, view, segmented=False)
         packets[label] = obs
         timings[label] = {
             "physics_step": backend.total_physics_steps,
@@ -550,17 +583,21 @@ def occlusion_control(directory, kind, registration, full, pose, generation, sce
             unaltered_source=all(unchanged_fields.values()),
             base_visible=(
                 base_measured["usable"]
-                and raw_markers["observed_ids"] == raw_markers["usable_ids"] == [7, 8]
-                and raw_markers["selected_id"] == 7
-                and 0 <= base_measured["target_disagreement_m"] <= 0.01
+                and raw_markers["observed_ids"] == raw_markers["usable_ids"] == expected_ids
+                and raw_markers["selected_id"] == expected_ids[0]
+                and (
+                    base_measured["target_disagreement_m"] is None
+                    if len(expected_ids) == 1
+                    else 0 <= base_measured["target_disagreement_m"] <= 0.01
+                )
             ),
         )
-        if kind == "positive":
+        if kind != "full-occlusion":
             target_frame = assigned[2] if assigned is not None else {}
             checks.update(
                 positive_measurement=measured["usable"]
-                and measured["usable_ids"] == [7, 8]
-                and measured["selected_id"] == 7,
+                and measured["usable_ids"] == expected_ids
+                and measured["selected_id"] == expected_ids[0],
                 registered=(
                     target_refusal is None
                     and target_frame.get("observation_id") == current.frame_id
@@ -637,6 +674,21 @@ def occlusion_control(directory, kind, registration, full, pose, generation, sce
             + " diagnostic checks failed: "
             + ", ".join(k for k, passed in checks.items() if not passed),
         )
+        if radial_checks and kind == "positive":
+            from scripts.graduation.g1_visibility_mount_runtime import negative_controls
+
+            negative_controls(
+                directory / "negative-controls",
+                backend,
+                registration,
+                full,
+                owner,
+                original,
+                state,
+                color,
+                grounding,
+                endpoint,
+            )
         complete = True
     except BaseException:
         write(directory / "interrupt.json", {"traceback": traceback.format_exc()})
@@ -662,6 +714,10 @@ def preflight(repo, private, generation, lock):
     from scripts.graduation import g1_dual_trials as dual
     from scripts.graduation import g1_formal_trials as formal
 
+    if lock.get("radial_assembly"):
+        from scripts.graduation.g1_visibility_mount_runtime import radial_preflight
+
+        return radial_preflight(repo, private, generation, lock)
     first, old, full = template(repo, lock)
     geometry = old["geometry"]
     registration = dual.NativeGeometryRegistration(geometry)
@@ -1364,7 +1420,8 @@ def parser():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--repo", type=Path, default=ROOT)
     commands = cli.add_subparsers(dest="command", required=True)
-    commands.add_parser("prepare")
+    prepare = commands.add_parser("prepare")
+    prepare.add_argument("--radial-mm", type=int, choices=(0, 15, 30), default=0)
     for cmd in (
         "preflight",
         "issue-training",
@@ -1404,7 +1461,7 @@ def main():
     repo = args.repo.resolve()
     _, private = build.context(repo)
     if args.command == "prepare":
-        print(build.prepare(repo))
+        print(build.prepare(repo, args.radial_mm))
         return
     # Resolve caller-provided files before switching into the isolated source tree.
     for key in ("gate", "selection", "training_score"):

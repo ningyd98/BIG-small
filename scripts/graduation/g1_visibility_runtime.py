@@ -203,9 +203,11 @@ def verify_build(private, generation):
     return tree, lock
 
 
-def prepare(repo):
+def prepare(repo, radial_mm=0):
     plan, private = context(repo)
     check_history(repo, plan)
+    if radial_mm:
+        return prepare_radial(repo, private, radial_mm)
     parent = repo / PARENT / "runtime-source"
     old = pinned(
         parent / "runtime-build.json",
@@ -232,6 +234,65 @@ def prepare(repo):
         scorer_files_sha256={k: effective[k] for k in (*SCORERS, RUNNER)},
         additional_files_sha256={k: effective[k] for k in additions},
     )
+    return install_build(private, parent, changes | additions, lock)
+
+
+def prepare_radial(repo, private, offset):
+    from scripts.graduation import (
+        g1_visibility_mount_runtime as mount,
+    )
+    from scripts.graduation import (
+        g1_visibility_radial as fixture,
+    )
+
+    parent, prior = verify_build(private, mount.PARENT_GENERATION)
+    mount.checked_plan(repo, parent)
+    spec = mount.spec_for(offset)
+    name = spec["asset_path"]
+    source = fixture.build_xml((parent / mount.V2_XML).read_bytes(), offset)
+    require(
+        source == (repo / name).read_bytes()
+        and hashlib.sha256(source).hexdigest() == spec["asset_sha256"],
+        "registered radial asset bytes disagree",
+    )
+    require(
+        all(sha(repo / file) == h for file, h in prior["detector_files_sha256"].items()),
+        "radial-only build requires the released detector source",
+    )
+    changes = {
+        ASSET: mount.provider_bytes((parent / ASSET).read_bytes(), offset),
+        mount.READER: mount.reader_bytes((parent / mount.READER).read_bytes()),
+        BUILDER: (repo / BUILDER).read_bytes(),
+        RUNNER: (repo / RUNNER).read_bytes(),
+    }
+    additions = {
+        name: source,
+        mount.HELPER: (repo / mount.HELPER).read_bytes(),
+        mount.ADAPTER: (repo / mount.ADAPTER).read_bytes(),
+    }
+    files = prior["runtime_files_sha256"]
+    require(not (set(additions) & set(files)), "radial sources shadow their mechanical parent")
+    effective = {
+        **files,
+        **{k: hashlib.sha256(v).hexdigest() for k, v in (changes | additions).items()},
+    }
+    lock = {
+        **prior,
+        "parent_runtime_build_sha256": mount.PARENT_GENERATION,
+        "radial_assembly": spec,
+        "radial_plan_sha256": mount.PLAN_SHA,
+        "runtime_files_sha256": effective,
+        "source_changes": {k: {"before": files[k], "after": effective[k]} for k in changes},
+        "additional_files_sha256": {
+            k: effective[k] for k in set(prior["additional_files_sha256"]) | set(additions)
+        },
+        "scorer_files_sha256": {k: effective[k] for k in prior["scorer_files_sha256"]},
+    }
+    return install_build(private, parent, changes | additions, lock)
+
+
+def install_build(private, parent, updated, lock):
+    effective = lock["runtime_files_sha256"]
     builds = private / "builds"
     builds.mkdir(parents=True, exist_ok=True)
     require(builds.resolve() == builds, "invalid build storage")
@@ -246,8 +307,8 @@ def prepare(repo):
             for name in effective:
                 destination = tree / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                if name in changes or name in additions:
-                    destination.write_bytes((changes | additions)[name])
+                if name in updated:
+                    destination.write_bytes(updated[name])
                 else:
                     shutil.copyfile(parent / name, destination)
             parent_build.check_tree(tree, effective)
