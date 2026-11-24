@@ -1,0 +1,68 @@
+# G1 零步保持探针的技能语义修复计划
+
+模型 `gpt-6.2-astra`，Git 基线 `9869fb486bf54ebb6f2243ad7a3c8a4bb0ceb1cd`，失败构建 `f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397`。
+
+## 原始现场失败
+
+第一臂成功取得 owner、复位、零步采得 4 张不同实际 RGB-D 并形成初始 MOVE_ABOVE 登记目标。stderr 记录 positive hold=visual servo hold endpoint changed, registered target=None；末尾 None 表示 registered_target 的 error 为空，不代表其返回值为空。失败发生在正控断言，遮挡臂尚未执行。冻结 servo.update 先校验新帧并测抓取点，MOVE_ABOVE/APPROACH 按抓取点差更新终点；monitor_hold 要求 MotionTarget 精确保持。skill_robot.lift 的生产调用仅在实际动作通过、进入带接触守卫的保持循环后使用该接口。
+
+## 范围与靶定义
+
+仅允许修改 scripts/graduation/g1_visibility_trials.py 的诊断探针、证据与断言，及 tests/test_graduation_g1_visibility_trials.py 的相应回归。保留冻结生产代码、门限和真实准入。普通 MOVE_ABOVE 独立使用实际 registered_step_v2、实际 lease 和最新 RGB-D，作为跟踪/目标证据；如检验其 servo 更新，独立使用 MOVE_ABOVE provider.update，记录真实修订量。禁止将其结果投给 monitor_hold。保持探针独立使用原 OpenCVServoFeedback(skill="LIFT")、实际 bootstrap、reference、marker family、校准和新 current。固定诊断位置取本次 reset 后实际读取的 get_state().tcp_pose 的有限 xyz，位置使用同一 Pose，姿态沿用生产 _DOWNWARD，记录来源与数值。在 monitor_hold 的回调中保留 provider.update 的真实返回位置与原四元数。独立测试对象应在当次 current 采集前初始化，避免为增加诊断导致旧帧过期。
+
+## 软件验证先行
+
+用四个原包在封存的采样时钟或独立软件 fixture 下演示普通跟踪允许目标修订，LIFT 仍读取、验证当帧且控制目标与初值精确相同。覆盖普通跟踪误接 hold 的原 RED、可见正例、遮挡、过期/身份负控。软件时钟须标记且仅在测试域使用，原封存包的内容和采集时间保持可复核。构建新 generation，以前轮真实 SQLite/场景绑定检查及既有 trials、vision、replay、dual observer、formal trials 回归为设备前置。
+
+## 原生拒绝归因
+
+每次在断言前写入已取得的原始包、帧与 SHA、两个 provider/注册目标的值或原生错误、检测明细、hold 终止原因、命令差和步数。负控保留可见 base 与仅全 RGB 遮挡的派生包，校验深度/相机/源步/时钟身份与原规则一致。按冻结源码的具体执行阶段和结构化证据归因：当前帧无已登记码、无可用抓取几何，真实 LIFT provider/monitor 因该视觉源无效而拒绝；原注册链可在颜色边界、标记或注册几何层首拒，应记录原语句/原因和像素证据。要求无注册目标、无反馈通过，控制器恰一条 accepted hold_current_joints，零运动派发和零物理步。有效正控须先证实同结构可通过，原身份/时钟/校准、过期、超时、源步冲突、终点变化或其他异常均不得计遮挡成功。若原因不能证实就记录未放行，不以任意异常/泛匹配算通过。
+
+## 现场运行前提及验收
+
+复核全部输入 SHA、历史 919 原件和旧账本、独占 EGL、320×240 顶视 f33940579c533afe、16 GiB 与原环境；仅在新目录用正常 preflight 入口重做 positive/full-occlusion 两臂，每臂独立 owner + reset，历史低位装配 preregistered-0 (0.45,0,0.035) m、yaw 0、seed 24113040。现场传感器新采，零物理步；登记目标与当前包一致、两个规定的码满足原质量/分歧判据，按原观察器的选择规则核验，保留真实 ID、几何和拟合差异。保持正控须 LIFT provider 同一 frame_id/checksum、精确固定 MotionTarget、成功一次 HOLD、无动作命令。负控按前项归因。存实际采样时间、延时和每个检查状态，除保护保持外运动命令为零。
+
+## 验收边界
+
+这是复位状态下真实运行的零步视觉保持接口诊断，只给出现场传感器、登记目标、固定位置反馈与失标停止的证据。没有 LIFT 任务准入、抓持、抬升或 0.5 秒保持试次；不注入 held 状态或接触，不执行 lift/move 或冒充实际运行的 PRE/SafetyShield。报告软件回放、现场零步、动态开发、正式和实机各自结果。四个新摆放、正式、实机和任务模型均不启用；历史开发动态须主计划 778 帧离线等门槛及本次预检全部放行。保留每次失败；若再遇未覆盖根因，封存并交下一轮 Astra。步骤报告归入阶段总结。
+
+## 上次四个现场帧
+
+| 来源 | 物理步 | 原始 frame_id | 载荷校验 SHA256 |
+|---|---|---|---|
+| bootstrap | 0 | `rgbd-136c7a4ce8a34c58b348c12016d9f8dd` | `6c98e7a59c9c1fdbb289a80bb957b9c503442489888a9899326a9e74d7fc6817` |
+| current | 0 | `rgbd-f96b0268dae64a3d9ded383b5517ec67` | `b88f4c83ac0d8d3cda19ca338ba49809b28871237b70900cb6c113a54c823daa` |
+| initial-target | 0 | `rgbd-a95c7b5981bb4317a6ec5d28808a8eda` | `93f2b3dd541da12c93c614100ae0b4f1d616e8ab3c2c9e2e406d7460bab1b823` |
+| servo-reference | 0 | `rgbd-6b34d0a0728647a89e6344a5ca593098` | `071d7dcc2edc2a3cd079462ff8436ea256cf04870522b0a0a95dcf3dc4e1e77f` |
+
+## 原文件 SHA256
+
+| 路径 | SHA256 |
+|---|---|
+| `/home/ningyd/文档/ChatGPT/BIGsmall/cache/local-verification/g1-visibility-pose-repair-20261124.QGkYvI85/runtime/identity-preflight.stderr` | `7c2c32a4d5a88953452f0df17fccc602ded38315bff61ab19a264b85b0c1aefd` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-visibility-pose-repair-20261124/plan.json` | `9fe2d5f7a514a62ebdac454107360f9077a71feb9809b6e93e02a4c8e15c3ef7` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-visibility-live-preflight-20261124/plan.json` | `4ac1991bdfcc99bcd326562c5cdd9e63ca393755449409d629941fa8354c8525` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-visibility-preflight-identity-20261124/plan.json` | `15b2674b646c147409886201718eddde2f18a311fb83485a2ffdb03059c409ff` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-first-refusal-dual-marker-20261124/zero-step-probes.public.json` | `e8d1cbee3e655bfb8eb2daa54ed4236fa738e312ef9e2ce7b7cbc91773931c55` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/runtime-source/runtime-build.json` | `f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397` |
+| `scripts/graduation/g1_visibility_trials.py` | `a1268ace18159f70d5b80d3caffa62198b9df5bef17f3b093a049972590ec16f` |
+| `tests/test_graduation_g1_visibility_trials.py` | `86e96fa83662b8ad3af2b857392191fe52a96aadb5617eea9b7df494f39766a1` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/historical.json` | `caeb4f48cfea6539d0f430ecee220beeb4b78c0b9944299b419e5682d320b372` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/positive/allocation.json` | `c46d3f767f3727ee4473372677584348e67b375d3dc2971f57206368c5b8a3c2` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/positive/bootstrap.rgbd.json` | `fd9fb1a29af29ac4b0b6de668ef2f4bbe55006d2ea69f8597baa6b6f835a0b8b` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/positive/current.rgbd.json` | `b8c47fd2ba35d658e8c153280bf41921ba6c4ff1247c218e9c6203b1df4df123` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/positive/development-worker.db` | `ad3218103a7a21c1c3043bd1a9048570b7b78271fa54ce2b999b86e2569a58b8` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/positive/development-worker.db.publication.lock` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/positive/initial-target.rgbd.json` | `d2f72a8e3e9fd84da0e2e60c41e4af23d547ac65105bfb4bdfd45f14e86970c7` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/positive/interrupt.json` | `176847fcf97a400badd60932dc8032b8c3eb33f5a0bbc79bad57bf4fbe513ae4` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/positive/servo-reference.rgbd.json` | `1f7f39f8184a55c3b1aabc949d8ca93e4f0d90f8778f3e2731e2785b12a6e1d4` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/positive/tested.rgbd.json` | `b8c47fd2ba35d658e8c153280bf41921ba6c4ff1247c218e9c6203b1df4df123` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/zero-step-rslm979s/positive/trace.json` | `df21edd74b73a89804ac6d8026e1a5d5fd7332b7a2bcc3db314ca0d99dd6a303` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/runtime-source/scripts/graduation/g1_visibility_trials.py` | `a1268ace18159f70d5b80d3caffa62198b9df5bef17f3b093a049972590ec16f` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/runtime-source/scripts/graduation/dynamic_vision.py` | `1c0a069f578e3107c473566db4fb607b3bfab919e6df4faa157aa84dd503665e` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/runtime-source/scripts/graduation/g1_dual_probe.py` | `a1f0586834a134d91e7c9c22fb644f72a12575e1e3b6ffee57ef7807d5daf7b0` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/runtime-source/scripts/graduation/g1_dual_observer.py` | `a6c919b82e769d432c4ce425b4f44c6b8c228bff8ef4b1d7787f28689c416db3` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/runtime-source/src/cloud_edge_robot_arm/research/native_collection_grounding.py` | `fd7c8052cb936e12a90be858f826a8038970404a4018ecbc90eeb26a6beb7aad` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/runtime-source/src/cloud_edge_robot_arm/vision/servo.py` | `991f67035706026b5219b43e398f020be98fabba311246846a30bb9372962768` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/runtime-source/src/cloud_edge_robot_arm/simulation/mujoco/visual_servo.py` | `71218ee666b8b90772cc9e3a03bab93c45c57d3ae6017c8ec734e9dd3fb13ff8` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/f00a35621f30fc4d1ea43a5e7c8cee8f1808145c093de4439188ad1046c7b397/runtime-source/src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py` | `fb2b5179d76cdc438c67f6447e450b495eba569bfbfefad4d38bb299ff82820c` |

@@ -170,136 +170,568 @@ def template(repo, lock):
     return first, {**previous, "geometry": geometry}, full
 
 
-def occlusion_control(frame, geometry, destination):
-    """Feed a fully obscured current packet into the real hold monitor at zero integration steps."""
+def qualified_preflight_pose(repo):
+    file = build.ROUNDS / "round-g1-first-refusal-dual-marker-20261124/zero-step-probes.public.json"
+    prior = pinned(repo / file, "e8d1cbee3e655bfb8eb2daa54ed4236fa738e312ef9e2ce7b7cbc91773931c55")
+    (witness,) = [
+        r for r in prior["results"] if r["kind"] == "both" and r["pose"] == "preregistered-0"
+    ]
+    require(
+        witness["path_success"] is True
+        and witness["usable_ids"] == [7, 8]
+        and witness["pose_xyzyaw"] == [0.45, 0, 0.035, 0]
+        and witness["seed"] == 24113040,
+        "qualification source does not establish this historical both-marker pose",
+    )
+    return witness
+
+
+def obscured_packet(base):
     import base64
     import io
 
     from PIL import Image
-    from scripts.graduation import dynamic_vision as runtime
 
+    blank = io.BytesIO()
+    Image.new("RGB", (base.width, base.height), (127, 127, 127)).save(blank, format="PNG")
+    return type(base).model_validate(
+        {
+            **base.model_dump(),
+            "frame_id": "dev-full-occlusion-" + base.frame_id,
+            "observation_id": "",
+            "checksum_sha256": "",
+            "rgb_png_base64": base64.b64encode(blank.getvalue()).decode("ascii"),
+        }
+    )
+
+
+def diagnostic_case(scene, kind, seed):
+    from scripts.graduation.g1_formal_trials import identities
+
+    from cloud_edge_robot_arm.vision.worker_owner import _identity_string
+
+    require(kind in {"positive", "full-occlusion"}, "foreign diagnostic condition")
+    visual = scene + "/" + kind
+    ids = identities(visual)
+    release = "g1-visibility-preflight-20261124"
+    for value in (ids["run_id"], ids["plan_id"], ids["task_id"], release + "-worker"):
+        _identity_string(value)
+    return {**ids, "visual_id": visual, "visual_seed": seed, "scene_id": scene, "release": release}
+
+
+def diagnostic_owner_software(directory, scene, full, generation):
+    import sqlite3
+    from contextlib import closing
+    from dataclasses import asdict
+
+    from scripts.graduation import dynamic_vision as runtime
+    from scripts.graduation import g1_dual_probe as probe
+
+    directory.mkdir()
+    rows = []
+    for kind in ("positive", "full-occlusion"):
+        case = diagnostic_case(scene, kind, 24113040)
+        path = directory / kind
+        path.mkdir()
+        allocation = dict(
+            case=case,
+            baseline=build.BASE,
+            runtime_build_sha256=generation,
+            component_catalog_sha256=runtime.digest(full),
+            intent_descriptor={"type": "software owner identity", "stages": ["MOVE_ABOVE"]},
+        )
+        write(path / "allocation.json", allocation)
+        owner = runtime.Owner(path, allocation, sha(path / "allocation.json"))
+        live = owner.current()
+        key = dict(
+            episode_id="development-software-identity-only", robot_id="native-collection-panda"
+        )
+        identity = live.identity(**key, task_id=case["task_id"], plan_id=case["plan_id"])
+        _, invalid = probe.result_of(
+            lambda live=live, key=key, case=case: live.identity(
+                **key, task_id=case["visual_id"] + ":task", plan_id=case["visual_id"] + ":plan"
+            )
+        )
+        require(invalid is not None, "old slash task/plan identity unexpectedly accepted")
+        closed = owner.close(kind == "positive")
+        with closing(
+            sqlite3.connect(
+                (path / "development-worker.db").resolve().as_uri() + "?mode=ro&immutable=1",
+                uri=True,
+            )
+        ) as db:
+            db.row_factory = sqlite3.Row
+            (job,) = db.execute("select * from simulation_jobs")
+            (attempt,) = db.execute("select * from simulation_job_attempts")
+            (lease,) = db.execute("select * from simulation_job_leases")
+        require(
+            job["job_id"] == live.job_id == attempt["job_id"] == lease["job_id"]
+            and job["run_id"] == case["run_id"] == live.run_id == attempt["run_id"]
+            and job["lease_id"] == lease["lease_id"] == live.lease_id
+            and lease["worker_id"] == attempt["worker_id"] == case["release"] + "-worker"
+            and job["batch_id"] == job["manifest_id"] == case["release"]
+            and job["scenario_id"] == scene
+            and json.loads(job["manifest_json"])
+            == {k: case[k] for k in ("visual_id", "scene_id", "task_id", "plan_id")}
+            and attempt["attempt"] == live.attempt == 1
+            and lease["released_at"]
+            and job["status"]
+            == attempt["result"]
+            == closed["final_job_status"]
+            == ("SUCCEEDED" if kind == "positive" else "FAILED"),
+            "software owner/lease readback",
+        )
+        rows.append(
+            dict(
+                kind=kind,
+                case=case,
+                lease=live.to_payload(),
+                identity=asdict(identity),
+                old_task_plan_refusal=invalid,
+                close=closed,
+                released_at=lease["released_at"],
+                sqlite_sha256=sha(path / "development-worker.db"),
+            )
+        )
+    require(
+        len({r["lease"]["job_id"] for r in rows}) == 2
+        and len({r["lease"]["lease_id"] for r in rows}) == 2,
+        "software owners overlap",
+    )
+    write(
+        directory / "readback.json",
+        dict(
+            scope="software-only", rows=rows, physics_steps=0, camera_captures=0, backend_commands=0
+        ),
+    )
+    return sha(directory / "readback.json")
+
+
+def occlusion_control(directory, kind, registration, full, pose, generation, scene):
+    """Acquire fresh zero-step packets for the registered target and first hold sample."""
+    import base64
+    import io
+    import time
+    import traceback
+    from datetime import timedelta
+
+    import numpy as np
+    from PIL import Image
+    from scripts.graduation import dynamic_vision as runtime
+    from scripts.graduation import g1_dual_observer as observer
+    from scripts.graduation import g1_dual_probe as probe
+    from scripts.graduation import g1_dual_trials as dual
+
+    from cloud_edge_robot_arm.simulation.mujoco.skill_robot import _DOWNWARD
     from cloud_edge_robot_arm.simulation.mujoco.visual_servo import MuJoCoVisualServoController
 
-    # The reference is a pinned historical capture. The negative keeps its calibrated depth
-    # and cam/scene identity; a new timestamp, frame ID and digest identify the synthetic RGB.
-    blank = io.BytesIO()
-    Image.new("RGB", (frame.width, frame.height), (127, 127, 127)).save(blank, format="PNG")
-    source = frame.model_dump()
-    tracker, evidence = runtime.bootstrap_collection_tracker(frame, geometry)
-    endpoint = runtime.Pose.model_validate(evidence["resolved_top_grasp_tcp"])
-    provider = runtime.OpenCVServoFeedback(
-        frame,
-        tracker,
-        evidence,
-        skill="MOVE_ABOVE",
-        initial_target=endpoint,
-        marker_family_id=geometry["marker_family"],
-        verify_mujoco_calibration=True,
+    directory.mkdir()
+    geometry = registration.to_payload()
+    allocation = dict(
+        case=diagnostic_case(scene, kind, pose["seed"]),
+        baseline=build.BASE,
+        component_catalog_sha256=runtime.digest(full),
+        intent_descriptor={"type": "zero-step development observation", "stages": ["MOVE_ABOVE"]},
+        runtime_build_sha256=generation,
+        pose=pose["pose_xyzyaw"],
+        source="historical qualification",
     )
+    write(directory / "allocation.json", allocation)
+    owner = runtime.Owner(directory, allocation, sha(directory / "allocation.json"))
     backend = runtime.MuJoCoPhysicsBackend()
-    backend.initialize(
-        runtime.SimulatorConfig(model_path=str(ROOT / geometry["asset_path"]), physics_dt_s=1 / 240)
-    )
+    packets, timings, detail = {}, {}, {}
+
+    def acquire(label):
+        start = time.perf_counter()
+        obs = probe.capture(backend, "both", segmented=False)
+        packets[label] = obs
+        timings[label] = {
+            "physics_step": backend.total_physics_steps,
+            "sim_time_s": obs.sim_time_s,
+            "captured_at": obs.captured_at.isoformat(),
+            "frame_id": obs.frame_id,
+            "checksum_sha256": obs.checksum_sha256,
+            "capture_ms": 1000 * (time.perf_counter() - start),
+        }
+        return obs
+
+    complete = False
     try:
-        source.update(
-            frame_id=frame.frame_id + "-development-full-occlusion",
-            observation_id="",
-            captured_at=datetime.now(UTC),
-            sim_time_s=frame.sim_time_s + 1 / 240,
-            checksum_sha256="",
-            rgb_png_base64=base64.b64encode(blank.getvalue()).decode(),
+        backend.initialize(probe.config({"geometry": geometry}, pose["seed"]))
+        compiled = dual.mass_properties(backend._model)
+        x, y, z, yaw = pose["pose_xyzyaw"]
+        scenario = runtime.PhysicalScenarioConfig(
+            scenario_id=scene,
+            seed=pose["seed"],
+            object_pose=runtime.Pose(x=x, y=y, z=z),
+            object_yaw_rad=yaw,
         )
-        obscured = type(frame).model_validate(source)
-        target = runtime.MotionTarget(endpoint, (1, 0, 0, 0))
-        session = runtime.VisualServoSession(
-            lambda prior: runtime.MotionTarget(provider.update(obscured), prior.orientation_wxyz)
+        scenario = dual.bind_scenario_mass(scenario, probe.asset.BODY_MASS_KG, compiled["mass_kg"])
+        backend.reset(scenario)
+        detail.update(
+            requested=runtime.plain(scenario),
+            compiled=compiled,
+            after_reset=dual.mass_properties(backend._model),
         )
-        before = len(backend.command_records)
-        with build.log_measurements() as measurements:
-            try:
-                MuJoCoVisualServoController(backend).monitor_hold(target, session)
-            except ValueError as exc:
-                require(
-                    str(exc) == "servo registered marker geometry unavailable",
-                    "full occlusion stopped for a different reason: " + str(exc),
-                )
-            else:
-                raise ValueError("full occlusion was accepted by the live feedback guard")
-        issued = backend.command_records[before:]
         require(
-            len(issued) == 1
-            and issued[0]["type"] == "hold_current_joints"
-            and issued[0]["accepted"]
-            and not session.records
-            and not provider.records
-            and backend.total_physics_steps == 0,
-            "fully obscured feedback produced a target or advanced physics",
+            all(
+                np.allclose(compiled[k], detail["after_reset"][k], atol=1e-12, rtol=0)
+                for k in compiled
+            ),
+            "zero-step reset changed mass or inertia",
         )
-        write(destination / "full-occlusion.rgbd.json", obscured.model_dump(mode="json"))
-        write(
-            destination / "full-occlusion.actual.json",
-            dict(
-                original_frame=frame.frame_id,
-                source_checksum_sha256=frame.checksum_sha256,
-                packet_sha256=sha(destination / "full-occlusion.rgbd.json"),
-                measurements=measurements,
-                control_samples=len(session.records),
-                accepted_visual_samples=len(provider.records),
-                terminal_reason=session.terminal_reason,
-                backend_commands=issued,
-                physics_steps=0,
-                reset_assignment=None,
-                development_trials=0,
-                formal_claims=0,
+        state = runtime.MuJoCoSkillRobot(backend).get_state()
+        bootstrap = acquire("bootstrap")
+        color, grounding = runtime.bootstrap_collection_tracker(bootstrap, geometry)
+        lease = owner.current()
+        original = runtime.build_collection_contract_v2(
+            assignment=allocation["case"],
+            current_owner={
+                "task_id": allocation["case"]["task_id"],
+                "plan_id": allocation["case"]["plan_id"],
+                "issued_at": lease.acquired_at,
+                "deadline_at": lease.acquired_at + timedelta(hours=1),
+                "role_sha256": runtime.digest(allocation["intent_descriptor"]),
+                "lease": lease,
+            },
+            geometry=geometry,
+            source_hashes=full,
+            observation=bootstrap,
+            protocol_settings={"timeout_basis": "physics_steps"},
+        )
+        initial = acquire("initial-target")
+        initial_tracker = probe.registered_tracker(initial, registration, full)
+        target, _, initial_audit = probe.target(owner, original, initial_tracker, initial, state)
+        detail.update(original_sha256=original.digest(), initial_registered_target=initial_audit)
+        reference = acquire("servo-reference")
+        endpoint = runtime.Pose.model_validate(target)
+        previous = runtime.MotionTarget(state.tcp_pose, _DOWNWARD)
+        common = dict(
+            marker_family_id=registration.marker_family_id, verify_mujoco_calibration=True
+        )
+        moving = runtime.OpenCVServoFeedback(
+            reference, color, grounding, skill="MOVE_ABOVE", initial_target=endpoint, **common
+        )
+        lifting = runtime.OpenCVServoFeedback(
+            reference, color, grounding, skill="LIFT", initial_target=state.tcp_pose, **common
+        )
+        returned_hold_target = None
+
+        def hold_sample(prior):
+            nonlocal returned_hold_target
+            returned_hold_target = runtime.MotionTarget(
+                lifting.update(current), prior.orientation_wxyz
+            )
+            return returned_hold_target
+
+        session = runtime.VisualServoSession(hold_sample)
+        monitor = MuJoCoVisualServoController(backend)
+        before = len(backend.command_records)
+        base = acquire("current")
+        current = obscured_packet(base) if kind == "full-occlusion" else base
+        packets["tested"] = current
+        # The clock starts at capture. Run the two native current-frame checks before file I/O.
+        hold_begin = time.perf_counter()
+        _, hold_refusal = probe.result_of(lambda: monitor.monitor_hold(previous, session))
+        hold_elapsed = time.perf_counter() - hold_begin
+        move_begin = time.perf_counter()
+        revised, move_refusal = probe.result_of(lambda: moving.update(current))
+        move_elapsed = time.perf_counter() - move_begin
+
+        target_stage = "bootstrap_registered_collection_tracker_v2"
+        target_origin = None
+        try:
+            tracker = probe.registered_tracker(current, registration, full)
+            target_stage = "registered_collection_step_v2"
+            assigned = probe.target(owner, original, tracker, current, state)
+            target_refusal = None
+        except ValueError as error:
+            assigned, target_refusal = None, str(error)
+            origin = traceback.extract_tb(error.__traceback__)[-1]
+            target_origin = dict(
+                file=Path(origin.filename).name,
+                function=origin.name,
+                line=origin.lineno,
+                statement=origin.line,
+            )
+
+        measured = observer.measure_frame(current, geometry)
+        base_measured = observer.measure_frame(base, geometry) if base is not current else measured
+        commands = runtime.plain(backend.command_records[before:])
+        validated_fields = (
+            "captured_at",
+            "sim_time_s",
+            "depth_float32_base64",
+            "valid_mask_base64",
+            "width",
+            "height",
+            "intrinsics",
+            "camera_to_world",
+            "calibration_version",
+            "episode_id",
+            "scene_id",
+            "source",
+        )
+        unchanged_fields = {k: getattr(current, k) == getattr(base, k) for k in validated_fields}
+        with Image.open(io.BytesIO(base64.b64decode(current.rgb_png_base64))) as image:
+            pixels = np.asarray(image.convert("RGB"), dtype=int)
+        green = (
+            (pixels[:, :, 1] > pixels[:, :, 0])
+            & (pixels[:, :, 1] > pixels[:, :, 2])
+            & (np.ptp(pixels, axis=2) > 35)
+        )
+        raw_markers = {
+            "observed_ids": base_measured["observed_ids"],
+            "usable_ids": base_measured["usable_ids"],
+            "selected_id": base_measured["selected_id"],
+        }
+        delta = (
+            math.dist([getattr(endpoint, a) for a in "xyz"], [getattr(revised, a) for a in "xyz"])
+            if revised is not None
+            else None
+        )
+        detail.update(
+            scene=scene,
+            episode=bootstrap.episode_id,
+            kind=kind,
+            source_step=0,
+            capture_clock="current source clock at acquisition",
+            mask="uniform RGB (127,127,127) retaining original depth and capture clock"
+            if base is not current
+            else None,
+            current_vs_base=unchanged_fields,
+            tested_rgb_min=int(pixels.min()),
+            tested_rgb_max=int(pixels.max()),
+            tested_green_pixels=int(np.count_nonzero(green)),
+            base_measurement=base_measured,
+            base_markers=raw_markers,
+            measured=measured,
+            target_stage=target_stage,
+            target_refusal=target_refusal,
+            target_exception_origin=target_origin,
+            current_registered_target=runtime.plain(assigned),
+            moving_initial=runtime.plain(endpoint),
+            moving_current=runtime.plain(revised),
+            moving_delta_m=delta,
+            move_refusal=move_refusal,
+            move_elapsed_ms=1000 * move_elapsed,
+            move_feedback=runtime.plain(moving.records),
+            hold_target_source="post-reset MuJoCoSkillRobot.get_state().tcp_pose with _DOWNWARD",
+            initial_hold_target=runtime.plain(previous),
+            returned_hold_target=runtime.plain(returned_hold_target),
+            hold_refusal=hold_refusal,
+            hold_elapsed_ms=1000 * hold_elapsed,
+            current_servo=runtime.plain(lifting.records),
+            controller=runtime.plain(session.records),
+            terminal_reason=session.terminal_reason,
+            command_count_before=before,
+            backend_commands=commands,
+            integration_steps=backend.total_physics_steps,
+        )
+        # Store acquired packets and both native results before evaluating this condition.
+        packet_hashes = {}
+        for key, packet in packets.items():
+            file = directory / (key + ".rgbd.json")
+            write(file, packet.model_dump(mode="json"))
+            packet_hashes[key] = sha(file)
+        detail["packet_files_sha256"] = packet_hashes
+        checks = dict(
+            captured_at_zero=(
+                backend.total_physics_steps == before == 0
+                and all(o.sim_time_s == 0 for o in packets.values())
+            ),
+            unique_acquisitions=len({r.frame_id for k, r in packets.items() if k != "tested"}) == 4,
+            bound_acquisitions=all(
+                o.episode_id == bootstrap.episode_id
+                and o.scene_id == scene
+                and o.calibration_version == "f33940579c533afe"
+                for o in packets.values()
+            ),
+            unaltered_source=all(unchanged_fields.values()),
+            base_visible=(
+                base_measured["usable"]
+                and raw_markers["observed_ids"] == raw_markers["usable_ids"] == [7, 8]
+                and raw_markers["selected_id"] == 7
+                and 0 <= base_measured["target_disagreement_m"] <= 0.01
             ),
         )
-        return sha(destination / "full-occlusion.actual.json")
+        if kind == "positive":
+            target_frame = assigned[2] if assigned is not None else {}
+            checks.update(
+                positive_measurement=measured["usable"]
+                and measured["usable_ids"] == [7, 8]
+                and measured["selected_id"] == 7,
+                registered=(
+                    target_refusal is None
+                    and target_frame.get("observation_id") == current.frame_id
+                    and target_frame.get("checksum_sha256") == current.checksum_sha256
+                ),
+                same_current_feedback=(
+                    len(moving.records) == len(lifting.records) == 1
+                    and all(
+                        r[0]["observation_id"] == current.frame_id
+                        and r[0]["checksum_sha256"] == current.checksum_sha256
+                        for r in (moving.records, lifting.records)
+                    )
+                ),
+                registered_moving=(
+                    move_refusal is None and delta is not None and delta <= moving.max_frame_delta_m
+                ),
+                fixed_lift_target=returned_hold_target == previous
+                and hold_refusal is session.terminal_reason is None,
+                one_hold_sample=len(session.records) == 1 and session.records[0]["phase"] == "HOLD",
+                no_commands=not commands,
+            )
+        else:
+            native_marker_error = "servo registered marker geometry unavailable"
+            marker_origin = (
+                target_refusal
+                == "initial registered geometry unavailable: known_marker_not_observed"
+                and target_origin is not None
+                and target_origin["file"] == "registered_object_tracking.py"
+                and target_origin["function"] == "__init__"
+            )
+            color_origin = (
+                target_refusal == "unique registered green region unavailable"
+                and target_origin is not None
+                and target_origin["file"] == "native_collection_grounding.py"
+                and target_origin["function"] == "collection_bootstrap_evidence"
+                and detail["tested_green_pixels"] == 0
+            )
+            checks.update(
+                uniformly_covered=detail["tested_rgb_min"] == detail["tested_rgb_max"] == 127
+                and current.frame_id != base.frame_id
+                and current.checksum_sha256 != base.checksum_sha256,
+                missing_markers=(
+                    not measured["observed_ids"]
+                    and not measured["usable_ids"]
+                    and not measured["usable"]
+                    and measured["selected_id"] is None
+                    and measured["reason"] == "known_marker_not_observed"
+                    and measured["grasp_world_m"] is None
+                ),
+                registered_visual_refusal=(
+                    assigned is None
+                    and target_stage == "bootstrap_registered_collection_tracker_v2"
+                    and (marker_origin or color_origin)
+                ),
+                same_visual_feedback_refusal=(
+                    hold_refusal == move_refusal == native_marker_error
+                    and session.terminal_reason == "ValueError:" + native_marker_error
+                    and revised is returned_hold_target is None
+                    and not lifting.records
+                    and not moving.records
+                    and not session.records
+                ),
+                protective_hold_only=(
+                    len(commands) == 1
+                    and commands[0]["type"] == "hold_current_joints"
+                    and commands[0]["accepted"] is True
+                ),
+            )
+        detail["checks"] = checks
+        write(directory / "sample-evidence.json", {**detail, "acquisitions": timings})
+        require(
+            all(checks.values()),
+            kind
+            + " diagnostic checks failed: "
+            + ", ".join(k for k, passed in checks.items() if not passed),
+        )
+        complete = True
+    except BaseException:
+        write(directory / "interrupt.json", {"traceback": traceback.format_exc()})
+        raise
     finally:
+        detail["integration_steps"] = backend.total_physics_steps
+        detail["all_commands"] = runtime.plain(backend.command_records)
+        detail["worker"] = owner.close(complete)
+        for key, packet in packets.items():
+            file = directory / (key + ".rgbd.json")
+            if not file.exists():
+                write(file, packet.model_dump(mode="json"))
+        write(directory / "trace.json", {**detail, "acquisitions": timings})
         backend.shutdown()
+    return {p.name: sha(p) for p in sorted(directory.iterdir()) if p.is_file()}
 
 
 def preflight(repo, private, generation, lock):
     import tempfile
 
     from scripts.graduation import g1_dual_observer as observer
+    from scripts.graduation import g1_dual_probe as probe
     from scripts.graduation import g1_dual_trials as dual
     from scripts.graduation import g1_formal_trials as formal
 
-    from cloud_edge_robot_arm.vision.registered_objects import derive_registered_object_geometry
-
-    historical = build.check_history(repo, read(repo / build.PLAN))
-    first, previous, full = template(repo, lock)
-    with device(private):
-        compiled = formal.ready_device({"dual": (first, previous, full)}, 16 * 2**30, private)
-    directory = repo / build.PARENT / "trials" / first["id"] / "instance"
-    old_index = read(directory / "pixel-index.json")
-    geometry = previous["geometry"]
-    frame = dual.vision.frame_from_row(
-        directory, old_index["frames"][0], old_index["episode"], first["scene_id"], geometry
-    )
+    first, old, full = template(repo, lock)
+    geometry = old["geometry"]
     registration = dual.NativeGeometryRegistration(geometry)
-    with bind_scene(first["scene_id"]), build.log_measurements() as measured:
-        derived = derive_registered_object_geometry(frame, registration)
-        target, estimate = observer.servo_measure(frame)
-        require(
-            target is not None
-            and derived.marker_estimate == estimate
-            and observer.matches_current_owner(frame, registration, derived),
-            "historical reset failed live derive, servo or current-owner checks",
-        )
-    boot_row = next(r for r in old_index["frames"] if r["label"] == "bootstrap")
-    boot = dual.vision.frame_from_row(
-        directory, boot_row, old_index["episode"], first["scene_id"], geometry
+    registration.validate_asset(ROOT)
+    witness = qualified_preflight_pose(repo)
+    spec = build.ROUNDS / "round-g1-visibility-live-preflight-20261124/plan.json"
+    supplemental_sha = "4ac1991bdfcc99bcd326562c5cdd9e63ca393755449409d629941fa8354c8525"
+    supplemental = pinned(repo / spec, supplemental_sha)
+    require(
+        sha(repo / spec.with_suffix(".md")) == supplemental["plan_md_sha256"],
+        "changed supplemental Astra plan",
     )
-    zero = Path(tempfile.mkdtemp(prefix="zero-step-", dir=private / "builds" / generation))
+    # These two explicitly modified inputs were verified against the old worktree before RED.
+    # The input runner is also verified byte-for-byte in the retained failed generation.
+    for name, digest in supplemental["inputs_sha256"].items():
+        if name not in {build.RUNNER, "tests/test_graduation_g1_visibility_trials.py"}:
+            require(sha(repo / name) == digest, "changed preflight source: " + name)
+    identity_path = build.ROUNDS / "round-g1-visibility-preflight-identity-20261124/plan.json"
+    identity_sha = "15b2674b646c147409886201718eddde2f18a311fb83485a2ffdb03059c409ff"
+    identity_plan = pinned(repo / identity_path, identity_sha)
+    require(
+        sha(repo / identity_path.with_suffix(".md")) == identity_plan["plan_md_sha256"],
+        "changed Astra identity plan",
+    )
+    for name, digest in identity_plan["inputs_sha256"].items():
+        if name not in {build.RUNNER, "tests/test_graduation_g1_visibility_trials.py"}:
+            require(sha(repo / name) == digest, "changed identity preflight source: " + name)
+    hold_path = build.ROUNDS / "round-g1-visibility-preflight-hold-20261124/plan.json"
+    hold_sha = "61024890eb60d7b7223764f818b8c09985d08f5ca431eef29f6c088a5802a43c"
+    hold_plan = pinned(repo / hold_path, hold_sha)
+    require(
+        sha(repo / hold_path.with_suffix(".md")) == hold_plan["plan_md_sha256"],
+        "changed Astra hold plan",
+    )
+    for name, digest in hold_plan["inputs_sha256"].items():
+        if name not in {build.RUNNER, "tests/test_graduation_g1_visibility_trials.py"}:
+            require(sha(repo / name) == digest, "changed hold diagnosis source: " + name)
+    historical = build.check_history(repo, read(repo / build.PLAN))
+    folder = private / "builds" / generation
+    directory = Path(tempfile.mkdtemp(prefix="zero-step-", dir=folder))
+    scene = RELEASE + "/" + directory.name + "-qualification"
+    raw = repo / build.PARENT / "trials" / first["id"] / "instance"
+    index = read(raw / "pixel-index.json")
+    boot_row = next(r for r in index["frames"] if r["label"] == "bootstrap")
+    boot = dual.vision.frame_from_row(raw, boot_row, index["episode"], first["scene_id"], geometry)
     with bind_scene(first["scene_id"]):
-        full_occlusion_sha = occlusion_control(boot, geometry, zero)
-    with bind_scene("unrelated-development-identity"):
-        require(
-            observer.measure_frame(frame, geometry)["reason"] == "registered_scene_mismatch",
-            "registered live scene mismatch was not refused",
+        archived = observer.measure_frame(boot, geometry)
+        _, stale = probe.result_of(
+            lambda: dual.runtime.bootstrap_collection_tracker(boot, geometry)
         )
-    imports = dual.g1_mount_trials.project_imports(lock)
+    require(
+        stale == "initial acquisition unavailable: capture_time_not_fresh",
+        "historical acquisition did not reject its real stale clock",
+    )
+    with bind_scene("foreign-qualification"):
+        require(
+            observer.measure_frame(boot, geometry)["reason"] == "registered_scene_mismatch",
+            "foreign scene was not refused",
+        )
+    write(
+        directory / "historical.json",
+        dict(
+            rgbd_file_sha256=boot_row["file_sha256"],
+            original_step=boot_row["physics_step"],
+            original_time=boot.captured_at.isoformat(),
+            measurement=archived,
+            live_refusal=stale,
+            use="offline read and stale negative",
+        ),
+    )
     versions = dict(
         python=sys.version,
         mujoco=dual.runtime.mujoco.__version__,
@@ -307,31 +739,65 @@ def preflight(repo, private, generation, lock):
         numpy=dual.runtime.np.__version__,
         pillow=dual.runtime.PIL.__version__,
     )
-    old_imports = read(directory / "imports.json")
+    previous_imports = read(raw / "imports.json")
     require(
-        versions == old_imports["versions"]
-        and sha(Path(sys.executable)) == old_imports["executable_sha256"],
+        versions == previous_imports["versions"]
+        and sha(Path(sys.executable)) == previous_imports["executable_sha256"],
         "original interpreter or core runtime dependencies differ",
     )
+    software_sha = diagnostic_owner_software(directory / "software", scene, full, generation)
+    from scripts.graduation import g1_formal_runtime as scene_binding
+
+    require(
+        observer.expected_scene is scene_binding.expected_scene
+        and scene_binding.expected_scene("unbound") == "unbound"
+        and archived["usable_ids"] == [7, 8],
+        "offline registration context drift",
+    )
+    with device(private), bind_scene(scene):
+        compiled = formal.ready_device({"dual": (first, old, full)}, 16 * 2**30, private)
+        probes = {
+            kind: occlusion_control(
+                directory / kind, kind, registration, full, witness, generation, scene
+            )
+            for kind in ("positive", "full-occlusion")
+        }
+    require(historical == build.check_history(repo, read(repo / build.PLAN)), "frozen data changed")
+    write(
+        directory / "seal.json",
+        {"cases": probes, "historical_sha256": sha(directory / "historical.json")},
+    )
+    path = folder / "preflight.json"
     data = dict(
-        schema="g1.visibility.development-preflight.v1",
+        schema="g1.visibility.development-preflight.v2",
+        eligible=True,
+        plan_sha256=build.PLAN_SHA,
+        preflight_plan_sha256=supplemental_sha,
+        identity_plan_sha256=identity_sha,
+        hold_plan_sha256=hold_sha,
+        software_owner_sha256=software_sha,
         runtime_build_sha256=generation,
         history=historical,
         compiled=compiled,
         versions=versions,
-        full_occlusion_probe_sha256=full_occlusion_sha,
-        full_occlusion_directory=zero.name,
+        qualification_pose=witness["pose_xyzyaw"],
+        qualification_seed=witness["seed"],
+        full_occlusion_probe_sha256=probes["full-occlusion"]["trace.json"],
+        positive_probe_sha256=probes["positive"]["trace.json"],
+        probe_seal_sha256=sha(directory / "seal.json"),
+        full_occlusion_directory=directory.name,
         available_bytes=shutil.disk_usage(private).free,
         interpreter_sha256=sha(Path(sys.executable)),
-        imported_project_files=imports,
-        reset_packet_sha256=old_index["frames"][0]["file_sha256"],
-        reset_frame_id=frame.frame_id,
-        live_callers=measured[frame.frame_id]["callers"],
+        imported_project_files=dual.g1_mount_trials.project_imports(lock),
         calibration=geometry["camera"],
-        formal_claims=0,
         physics_steps=0,
+        motion_commands=0,
+        hold_commands=1,
+        diagnostic_resets=2,
+        development_trials=0,
+        formal_claims=0,
+        hardware_actions=0,
     )
-    path = private / "builds" / generation / "preflight.json"
     if not path.exists():
         write(path, data)
     require(read(path)["runtime_build_sha256"] == generation, "foreign preflight")
