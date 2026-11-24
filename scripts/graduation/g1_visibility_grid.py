@@ -16,6 +16,8 @@ SYMBOLS = np.array([cv2.aruco.generateImageMarker(DICTIONARY, k, 6) > 0 for k in
 PATTERNS = np.concatenate((SYMBOLS, SYMBOLS[:, :, ::-1]))
 TURNS = np.int8([[[1, 0], [0, 1]], [[0, 1], [-1, 0]], [[-1, 0], [0, -1]], [[0, -1], [1, 0]]])
 MIN_CONTRAST = 32
+PROFILE_OFFSETS = np.linspace(-0.61, 0.61, 15)
+MIN_CELL_MARGIN = 0.13
 
 
 def _table():
@@ -43,6 +45,9 @@ WORDS, REFLECTED = _table()
 def _sample(gray, xy):
     """Bilinear sampling at native pixel centers; calls use their real in-frame footprint."""
     flat = np.ascontiguousarray(xy, dtype=np.float32).reshape(-1, 2)
+    if len(flat) < 32767:
+        native = cv2.remap(gray, flat[None, :, :], None, cv2.INTER_LINEAR)
+        return native.reshape(xy.shape[:-1])
     # OpenCV's remapper accepts a signed-short maximum dimension; pad in short rows.
     width = min(1024, len(flat))
     pad = (-len(flat)) % width
@@ -115,27 +120,91 @@ def _transitions(code):
 
 
 def _crossings(gray, grid, basis, center, threshold, contrast, axes, signs):
-    # Project each segment's midpoint and locate its observed signed dark/light crossing.
-    tangent = basis[1 - axes]
-    normals = np.stack([tangent[:, 1], -tangent[:, 0]], axis=1)
-    normals /= np.linalg.norm(normals, axis=1, keepdims=True)
-    normals *= np.sign((normals * basis[axes]).sum(axis=1))[:, None]
-    positions = grid @ basis + center
-    scale = np.linalg.norm(basis[axes], axis=1)
-    delta = np.linspace(-0.61, 0.61, 15) * scale[:, None]
-    samples = _sample(gray, positions[:, None, :] + delta[:, :, None] * normals[:, None, :])
-    profile = (samples.astype(float) - threshold) * signs[:, None]
-    crossing = (profile[:, :-1] <= 0) & (profile[:, 1:] > 0)
-    distance = np.where(crossing, abs(delta[:, :-1] + delta[:, 1:]), np.inf)
-    index = np.argmin(distance, axis=1)
+    # A leading dimension optionally groups independent poses for a single native remap.
+    tangent = basis[..., 1 - axes, :]
+    normals = np.stack([tangent[..., 1], -tangent[..., 0]], axis=-1)
+    normals /= np.linalg.norm(normals, axis=-1, keepdims=True)
+    across = basis[..., axes, :]
+    normals *= np.sign((normals * across).sum(axis=-1))[..., None]
+    positions = grid @ basis + np.expand_dims(center, -2)
+    scale = np.linalg.norm(across, axis=-1)
+    delta = PROFILE_OFFSETS * scale[..., None]
+    samples = _sample(gray, positions[..., None, :] + delta[..., None] * normals[..., None, :])
+    profile = (samples.astype(float) - np.asarray(threshold)[..., None, None]) * signs[:, None]
+    crossing = (profile[..., :-1] <= 0) & (profile[..., 1:] > 0)
+    distance = np.where(crossing, abs(delta[..., :-1] + delta[..., 1:]), np.inf)
+    index = np.argmin(distance, axis=-1).ravel()
     rows = np.arange(len(index))
-    slope = profile[rows, index + 1] - profile[rows, index]
-    frac = -profile[rows, index] / np.maximum(slope, 1e-8)
-    offsets = delta[rows, index] + frac * (delta[rows, index + 1] - delta[rows, index])
+    flat_profile = profile.reshape(len(rows), -1)
+    flat_delta = delta.reshape(len(rows), -1)
+    slope = flat_profile[rows, index + 1] - flat_profile[rows, index]
+    frac = -flat_profile[rows, index] / np.maximum(slope, 1e-8)
+    offsets = flat_delta[rows, index] + frac * (
+        flat_delta[rows, index + 1] - flat_delta[rows, index]
+    )
     # A crossing with inadequate class evidence near either neighboring cell is unsupported.
-    good = crossing.any(axis=1) & (profile.min(axis=1) <= -0.12 * contrast)
-    good &= profile.max(axis=1) >= 0.12 * contrast
-    return positions, normals, offsets, good
+    minimum = 0.12 * np.asarray(contrast)[..., None]
+    good = crossing.any(axis=-1) & (profile.min(axis=-1) <= -minimum)
+    good &= profile.max(axis=-1) >= minimum
+    return positions, normals, offsets.reshape(good.shape), good
+
+
+def _weak_grid_cells(gray, code, seeds):
+    """Prove negative center-cell margins in batches; survivors take the full scalar verifier."""
+    grid, axes, signs, _, _, held = _transitions(code)
+    bits = PATTERNS[code].ravel()
+    centers = np.array([s[1] for s in seeds], float)
+    bases = np.array([s[2] for s in seeds], float)
+    homogeneous = np.column_stack((grid, np.ones(len(grid))))
+    active = np.ones(len(seeds), bool)
+    for iteration in range(5):
+        corners = CORNERS @ bases + centers[:, None]
+        active &= ((corners >= 1) & (corners < np.array(gray.shape[::-1]) - 2)).all(axis=(1, 2))
+        active &= (np.linalg.norm(bases, axis=-1) * 6).min(axis=1) >= 8
+        active &= np.linalg.det(bases) > 0
+        indices = np.flatnonzero(active)
+        if not len(indices):
+            break
+        values = _sample(gray, CELLS @ bases[indices] + centers[indices, None]).astype(float)
+        black = np.median(values[:, ~bits], axis=1)
+        white = np.median(values[:, bits], axis=1)
+        contrast = white - black
+        threshold = (white + black) / 2
+        support = contrast >= MIN_CONTRAST
+        support &= (abs(values[:, ~bits] - black[:, None]) > 0.35 * contrast[:, None]).sum(
+            axis=1
+        ) <= (~bits).sum() / 5
+        active[indices[~support]] = False
+        if iteration == 4:
+            # Use the identical final native sample test only on confidently weak cells.
+            # Other seeds, including every candidate near the decision threshold, are checked
+            # by _verify in their original order, with the complete held-out and depth evidence.
+            smallest = abs(values - threshold[:, None]).min(axis=1)
+            return indices[support & (smallest < (MIN_CELL_MARGIN - 0.01) * contrast)]
+        indices = indices[support]
+        if not len(indices):
+            break
+        _, normals, offsets, good = _crossings(
+            gray,
+            grid,
+            bases[indices],
+            centers[indices],
+            threshold[support],
+            contrast[support],
+            axes,
+            signs,
+        )
+        designs = (homogeneous[:, :, None] * normals[:, :, None, :]).reshape(len(indices), -1, 6)
+        for i, design, offset, fit in zip(indices, designs, offsets, good & ~held, strict=True):
+            if fit.sum() >= 6:
+                change, _, rank, _ = np.linalg.lstsq(design[fit], offset[fit], rcond=None)
+                if rank == 6 and np.isfinite(change).all():
+                    change = change.reshape(3, 2)
+                    bases[i] += change[:2]
+                    centers[i] += change[2]
+                    continue
+            active[i] = False
+    return np.empty(0, dtype=int)
 
 
 def _verify(gray, code, center, basis):
@@ -177,7 +246,7 @@ def _verify(gray, code, center, basis):
     if not np.array_equal(values > threshold, bits):
         return None
     # All 16 data cells and the four complete black sides must be supported by native samples.
-    if np.min(abs(values - threshold)) < 0.13 * contrast:
+    if np.min(abs(values - threshold)) < MIN_CELL_MARGIN * contrast:
         return None
     # Check the local footprint of every bit against those populations as well.
     offsets_xy = np.float32([[-0.15, 0], [0.15, 0], [0, -0.15], [0, 0.15]])
@@ -185,7 +254,7 @@ def _verify(gray, code, center, basis):
     samples = _sample(gray, footprint).astype(float)
     cell_measurements = np.median(samples, axis=1)
     if not np.array_equal(cell_measurements > threshold, bits) or np.any(
-        abs(cell_measurements - threshold) < 0.13 * contrast
+        abs(cell_measurements - threshold) < MIN_CELL_MARGIN * contrast
     ):
         return None
     reverse_id = REFLECTED[bits[DATA] @ WEIGHTS]
@@ -302,25 +371,59 @@ def _inside(candidate, u, v):
     return np.max(abs(np.linalg.solve(candidate["basis"].T, uv))) < 3.4
 
 
-def _accept(gray, seeds, source, candidates):
-    attempted = []
-    for code, center, basis, _ in sorted(seeds, key=lambda s: -s[3]):
+def _accept(gray, seeds, source, candidates, failed):
+    if not seeds:
+        return
+    ordered = sorted(seeds, key=lambda s: -s[3])
+    codes = np.array([s[0] for s in ordered])
+    centers = np.array([s[1] for s in ordered])
+    bases = np.array([s[2] for s in ordered])
+    ignored = np.zeros(len(ordered), bool)
+    screened, weak = set(), set()
+
+    def nearby(i):
+        center_deltas = centers - centers[i]
+        basis_deltas = bases - bases[i]
+        position = np.linalg.norm(center_deltas, axis=1)
+        angle = np.linalg.norm(basis_deltas.reshape(len(bases), 4), axis=1)
+        nearby = (codes == codes[i]) & (position < 0.25) & (angle < 0.08)
+        # At a threshold, use the original per-vector norms and comparisons.
+        borderline = (abs(position - 0.25) < 1e-6) | (abs(angle - 0.08) < 1e-6)
+        for j in np.flatnonzero((codes == codes[i]) & borderline):
+            nearby[j] = (
+                np.linalg.norm(center_deltas[j]) < 0.25 and np.linalg.norm(basis_deltas[j]) < 0.08
+            )
+        return nearby
+
+    for i, (code, center, basis, _) in enumerate(ordered):
+        if ignored[i]:
+            continue
         existing = [c for c in candidates if _inside(c, *center)]
         if any(
             c["pattern"] == code and np.sum(c["basis"] * basis) > 0.8 * np.sum(basis**2)
             for c in existing
         ):
             continue
-        if any(
-            k == code and np.linalg.norm(p - center) < 0.25 and np.linalg.norm(b - basis) < 0.08
-            for k, p, b in attempted
-        ):
+        if code in failed and code not in screened:
+            pending = ~ignored & (codes == code)
+            peers = []
+            for j in range(i, len(ordered)):
+                if pending[j]:
+                    peers.append(j)
+                    pending &= ~nearby(j)
+            if len(peers) >= 2:
+                discarded = _weak_grid_cells(gray, code, [ordered[j] for j in peers])
+                weak.update(peers[j] for j in discarded)
+            screened.add(code)
+        ignored |= nearby(i)
+        if i in weak:
             continue
-        attempted.append((code, center, basis))
         result = _verify(gray, code, center, basis)
         if result is not None:
             result["origins"] = [source]
             candidates.append(result)
+        else:
+            failed.add(code)
 
 
 def _island_seeds(gray, center, area, cell):
@@ -344,7 +447,7 @@ def find_grids(gray, depth, focal_px, marker_size_m):
     params.errorCorrectionRate = 0
     direct, _, rejected = cv2.aruco.ArucoDetector(DICTIONARY, params).detectMarkers(gray)
     contours, islands = _contours(gray)
-    candidates = []
+    candidates, failed = [], set()
     for source, quads in (
         ("direct_quad", direct),
         ("rejected_quad", rejected),
@@ -353,7 +456,7 @@ def find_grids(gray, depth, focal_px, marker_size_m):
         seeds = [_quad_pose(q) for q in quads if abs(cv2.contourArea(np.float32(q))) >= 50]
         if seeds:
             centers, bases = zip(*seeds, strict=True)
-            _accept(gray, _seeds(centers, bases, gray), source, candidates)
+            _accept(gray, _seeds(centers, bases, gray), source, candidates, failed)
     searched = []
     for u, v, area in sorted(islands, key=lambda island: -island[2]):
         if any(_inside(c, u, v) for c in candidates):
@@ -371,7 +474,7 @@ def find_grids(gray, depth, focal_px, marker_size_m):
             continue
         searched.append((u, v, area))
         seeds = _island_seeds(gray, np.float32([u, v]), area, cell)
-        _accept(gray, seeds, "internal_white_component", candidates)
+        _accept(gray, seeds, "internal_white_component", candidates, failed)
     ambiguous = any(c["front_face_ambiguous"] for c in candidates) or any(
         _inside(a, *b["center"]) for i, a in enumerate(candidates) for b in candidates[i + 1 :]
     )
