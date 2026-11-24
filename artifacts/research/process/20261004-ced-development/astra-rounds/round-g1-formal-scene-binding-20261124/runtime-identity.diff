@@ -1,0 +1,69 @@
+--- qualified/scripts/graduation/dynamic_vision.py
++++ formal/scripts/graduation/dynamic_vision.py
+@@ -297 +297 @@
+-            worker_id="graduation-r593-component",
++            worker_id=allocation["case"]["release"] + "-worker",
+@@ -306 +306 @@
+-            batch_id="",
++            batch_id=case["release"],
+@@ -308,2 +308,2 @@
+-            scenario_id="S01_NORMAL_STATIC",
+-            control_mode="DEVELOPMENT_COMPONENTS",
++            scenario_id=case["scene_id"],
++            control_mode="FORMAL_G1_PAIRED",
+@@ -311 +311,2 @@
+-            manifest_id="graduation-r593-dev",
++            manifest_id=case["release"],
++            manifest={k: case[k] for k in ("visual_id", "scene_id", "task_id", "plan_id")},
+@@ -324 +325 @@
+-            reason_code="development",
++            reason_code="g1_formal_paired",
+@@ -348 +349 @@
+-            reason_code="development",
++            reason_code="g1_formal_paired",
+@@ -395,2 +396,2 @@
+-            "control": "development worker, registered conditions and research Shield; "
+-            "no native or formal execution authority",
++            "control": "G1 paired MuJoCo worker with registered conditions and Shield",
++            "formal_identity": {k: self.case[k] for k in ("visual_id", "scene_id", "task_id", "plan_id")},
+@@ -433,2 +434,2 @@
+-                "task_id": "graduation-r593-task",
+-                "plan_id": "graduation-r593-plan",
++                "task_id": self.case["task_id"],
++                "plan_id": self.case["plan_id"],
+@@ -716 +717 @@
+-                scenario_id="S01_NORMAL_STATIC",
++                scenario_id=self.case["scene_id"],
+@@ -829,0 +831 @@
++                "scene": first.scene_id,
+--- qualified/scripts/graduation/g1_dual_observer.py
++++ formal/scripts/graduation/g1_dual_observer.py
+@@ -14,0 +15 @@
++from scripts.graduation.g1_formal_runtime import expected_scene
+@@ -221 +222 @@
+-    if frame.scene_id != asset.SCENE_ID or not frame.episode_id:
++    if frame.scene_id != expected_scene(asset.SCENE_ID) or not frame.episode_id:
+--- qualified/scripts/graduation/g1_mount_trials.py
++++ formal/scripts/graduation/g1_mount_trials.py
+@@ -5,0 +6 @@
++import json
+@@ -455 +456,4 @@
+-        or (job["backend"], job["control_mode"]) != ("MUJOCO", "DEVELOPMENT_COMPONENTS")
++        or (job["backend"], job["control_mode"]) != ("MUJOCO", "FORMAL_G1_PAIRED")
++        or job["scenario_id"] != row["scene_id"]
++        or (job["manifest_id"], job["batch_id"]) != (alloc["case"]["release"],) * 2
++        or json.loads(job["manifest_json"]) != {k: alloc["case"][k] for k in ("visual_id", "scene_id", "task_id", "plan_id")}
+@@ -555,0 +560 @@
++        claim_sha256=read(directory / "started.json")["claim_sha256"],
+@@ -565 +570 @@
+-def capture(plan_file, raw, h, case_id, *, context=check_batch, case_reader=load_case, episode_factory=TranslatedEpisode):
++def capture(plan_file, raw, h, case_id, *, context=check_batch, case_reader=load_case, episode_factory=TranslatedEpisode, before_start=None):
+@@ -579,0 +585 @@
++    claim_sha256 = before_start()
+@@ -585,0 +592 @@
++            claim_sha256=claim_sha256,
+--- qualified/scripts/graduation/proposal_closed_loop.py
++++ formal/scripts/graduation/proposal_closed_loop.py
+@@ -254 +254 @@
+-        request["scenario_id"] != "S01_NORMAL_STATIC"
++        request["scenario_id"] != case["scene_id"]

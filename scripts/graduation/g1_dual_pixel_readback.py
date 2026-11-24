@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import math
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -106,32 +107,42 @@ def read_images(index, digest, output):
     output.mkdir()
     seals, frame_ids = {}, set()
     for token, bundle in packets.items():
-        if len(token) != 64 or set(bundle) != {"episode", "scene", "mode", "geometry", "frames"}:
+        fields = {"episode", "scene", "mode", "geometry", "frames"}
+        if len(token) != 64 or set(bundle) not in (fields, fields | {"registered_scene"}):
             raise ValueError("unexpected input in blind package")
-        rows = []
-        for i, source in enumerate(bundle["frames"]):
-            if source["file"] != f"{i:04d}.json" or source["frame_id"] in frame_ids:
-                raise ValueError("reordered or duplicated anonymous frame")
-            f = frame_from_row(
-                index.parent / token, source, bundle["episode"], bundle["scene"], bundle["geometry"]
-            )
-            if bundle["mode"] not in ("dual", "original"):
-                raise ValueError("unknown capture installation")
-            observed = (dual_read if bundle["mode"] == "dual" else single_read)(
-                f, bundle["geometry"]
-            )
-            rows.append(
-                {
-                    **observed,
-                    "frame_id": f.frame_id,
-                    "checksum_sha256": f.checksum_sha256,
-                    "time": f.sim_time_s,
-                    "captured_at": f.captured_at.isoformat(),
-                    "physics_step": source["physics_step"],
-                    "file_sha256": source["file_sha256"],
-                }
-            )
-            frame_ids.add(f.frame_id)
+        expected = bundle.get("registered_scene", "S01_NORMAL_STATIC")
+        if not isinstance(expected, str) or not expected or bundle["scene"] != expected:
+            raise ValueError("blind input lacks the registered scene or names a different scene")
+        if bundle["mode"] not in ("dual", "original"):
+            raise ValueError("unknown capture installation")
+        context = nullcontext()
+        if "registered_scene" in bundle:
+            from scripts.graduation.g1_formal_runtime import bind_scene
+
+            context = bind_scene(expected)
+        with context:
+            rows = []
+            for i, source in enumerate(bundle["frames"]):
+                if source["file"] != f"{i:04d}.json" or source["frame_id"] in frame_ids:
+                    raise ValueError("reordered or duplicated anonymous frame")
+                f = frame_from_row(
+                    index.parent / token, source, bundle["episode"], expected, bundle["geometry"]
+                )
+                observed = (dual_read if bundle["mode"] == "dual" else single_read)(
+                    f, bundle["geometry"]
+                )
+                rows.append(
+                    {
+                        **observed,
+                        "frame_id": f.frame_id,
+                        "checksum_sha256": f.checksum_sha256,
+                        "time": f.sim_time_s,
+                        "captured_at": f.captured_at.isoformat(),
+                        "physics_step": source["physics_step"],
+                        "file_sha256": source["file_sha256"],
+                    }
+                )
+                frame_ids.add(f.frame_id)
         path = output / (token + ".json")
         write(path, rows)
         seals[token] = sha(path)

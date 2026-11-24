@@ -147,7 +147,7 @@ def source_package(private, public):
     return plan, batch_sha, cases
 
 
-def package(cases, folder):
+def package(cases, folder, *, registered_scene=False):
     folder.mkdir()
     bundles = {}
     for row, allocation, observed, raw in cases:
@@ -178,6 +178,18 @@ def package(cases, folder):
             "geometry": allocation["geometry"],
             "frames": frames,
         }
+        if registered_scene:
+            expected = allocation["case"]["scene_id"]
+            require(
+                expected
+                and expected
+                == row["scene_id"]
+                == observed["physical_reset"]["scenario"]
+                == index["scene"]
+                and index["episode"] == observed["physical_reset"]["episode_id"],
+                "formal scene differs between checked allocation and original capture",
+            )
+            bundles[token]["registered_scene"] = expected
     index_path = folder / "index.json"
     write(index_path, bundles)
     return index_path
@@ -345,7 +357,9 @@ def online_targets(run, audit, frames, geometry, fetch):
     }
 
 
-def score_case(case, allocation, observed, raw, tree, output, blind_seal):
+def score_case(
+    case, allocation, observed, raw, tree, output, blind_seal, *, expected_scene="S01_NORMAL_STATIC"
+):
     header = {
         k: case[k]
         for k in (
@@ -376,7 +390,7 @@ def score_case(case, allocation, observed, raw, tree, output, blind_seal):
         == receipt["allocation_sha256"]
         == case["allocation_sha256"]
         and index["episode"] == truth["episode"] == receipt["physical_reset"]["episode_id"]
-        and index["scene"] == "S01_NORMAL_STATIC",
+        and index["scene"] == expected_scene,
         "foreign real run",
     )
     states = vision.checked_steps(
