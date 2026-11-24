@@ -1,5 +1,7 @@
 # 毕业设计交付与离线演示
 
+正式 G1 批的逐帧归因已补入实验材料。六次首拒涉及手部轮廓侵入标记白色外边，两次首拒涉及 ID8 角点与姿态误差放大。归因复用这八次的原始图像和状态，正式抓放分母仍为每组四次。[八次失败的图像、逐部件对照与几何分解](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/step-report.md)
+
 11 月 24 日完成了首批独立预登记的 G1 单标与低位双标正式配对测量。四个新摆放、八次运行均可评分。进入接近为单标 0/4、双标 2/4，两臂完整抓放均为 0/4。有效帧中的三维定位误差 P90 分别为 2.676 mm 和 2.765 mm。四对数据单独计入本批，开题的 90% 静态抓放成功率仍未达到。[正式 G1 分母、停止原因及原件范围](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-paired-20261124/step-report.md)
 
 11 月 24 日的 G1 后续开发实验确认了两侧标记在首拒姿态的互补性。原 +Y 单标和低位双标各完成 4 次独立摆放试验，进入接近的次数分别为 0 和 3，独立抓放成功均为 0/4。双标的有效帧物顶误差 P90 为 2.927 mm，接近时记录了两次失标和一次夹指与载板接触。论文引用本批结果时，应保留 4 次分配的分母及闭爪、抬升尚无在线观测的范围。[开发实验与冻结原件复核](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-first-refusal-dual-marker-20261124/step-report.md)

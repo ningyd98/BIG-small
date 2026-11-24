@@ -1,5 +1,9 @@
 # 项目状态
 
+## 2026-11-24　G1 正式抓放失败的逐帧归因
+
+复看正式批的 778 帧后，六次失标均定位到夹指或手掌侵入标记白边附近的姿态。逐部件隐藏的静态复拍均能恢复识别。另两次能读出双码，但 ID8 的偏航估计误差约 5°，经安装偏距放大后触发抓取点一致性检查。四个摆放的正式完整抓放成功仍为两组各 0/4。[阶段总结](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/stage-summary.md) · [逐帧慢放](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/eight-stops.gif)
+
 ## 2026-11-24　G1 单标与低位双标的四对正式仿真
 
 在登记提交 `8d946b58` 推送后，四个新摆放完成 8 次独立 MuJoCo 运行，每个组合各运行一次。进入接近阶段的次数为原单标 0/4、低位双标 2/4。另两次双标在上方移动时停机，两个标记各自估计的抓取点相距 13.391 mm 和 10.664 mm，超过登记的 10 mm 上限。按独立物理评分，两组完整抓放成功均为 0/4。778 帧经两个进程独立读回，有效帧中物体顶面中心的三维定位误差 P90 分别为 2.676 mm 和 2.765 mm。G1 的 90% 成功率指标仍未达到，正式教师 v10 本轮消耗 0 次。[正式配对报告](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-paired-20261124/step-report.md)
