@@ -246,9 +246,17 @@ def verify_build(private, generation):
     return tree, lock
 
 
-def prepare(repo, radial_mm=0, radial_timing=None):
+def prepare(repo, radial_mm=0, radial_timing=None, radial_contact=None):
     plan, private = context(repo)
     check_history(repo, plan)
+    if radial_contact is not None:
+        from scripts.graduation import g1_visibility_radial_contact as contact
+
+        require(
+            not radial_mm and radial_timing is None,
+            "130 mm requires its independent contact screen",
+        )
+        return contact.prepare(repo, private, radial_contact)
     if radial_timing is not None:
         require(radial_mm == 0, "performance overlay requires its registered 115 mm assembly")
         return prepare_timing(repo, private, radial_timing)

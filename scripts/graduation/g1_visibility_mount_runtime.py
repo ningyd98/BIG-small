@@ -432,7 +432,13 @@ def radial_preflight(repo, private, generation, lock):
     mechanical, prior = build.verify_build(private, PARENT_GENERATION)
     timing = lock.get("radial_timing")
     checked_plan(repo, mechanical, frozen_detectors=timing is not None)
-    if timing is not None:
+    if lock.get("radial_contact") is not None:
+        from scripts.graduation import g1_visibility_radial_contact as contact
+
+        parent, parent_pf = contact.verify(repo, private, generation, lock)
+        parent_generation = contact.PARENT
+        expected_detectors = parent_pf["radial_timing"]["detector_files_sha256"]
+    elif timing is not None:
         parent, parent_pf = build.verify_timing_build(repo, private, lock)
         parent_generation = build.TIMING_PARENT
         expected_detectors = timing["detector_files_sha256"]
@@ -533,6 +539,8 @@ def radial_preflight(repo, private, generation, lock):
     )
     if timing is not None:
         data["radial_timing"] = timing
+    if "radial_contact" in lock:
+        data["radial_contact"] = lock["radial_contact"]
     output = root / "preflight.json"
     if not output.exists():
         write(output, data)

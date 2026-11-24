@@ -922,8 +922,24 @@ def timing_preflight(repo, private, generation, lock, pre, geometry):
     from scripts.graduation.g1_dual_probe import NEGATIVE
     from scripts.graduation.g1_visibility_mount_runtime import ADAPTER, READER
 
-    _, parent_pre = build.verify_timing_build(repo, private, lock)
     pf = read(pre)
+    if "radial_contact" in lock:
+        from scripts.graduation import g1_visibility_radial_contact as contact
+
+        _, parent_pre = contact.verify(repo, private, generation, lock)
+        parent_id, parent_pre_sha = contact.PARENT, contact.PARENT_PREFLIGHT
+        require(
+            pf.get("radial_contact") == lock["radial_contact"],
+            "different 130 mm live qualification",
+        )
+    else:
+        _, parent_pre = build.verify_timing_build(repo, private, lock)
+        parent_id, parent_pre_sha = build.TIMING_PARENT, build.TIMING_PARENT_PREFLIGHT
+        require(
+            pf["compiled"] == parent_pre["compiled"]
+            and pf["radial_assembly"] == parent_pre["radial_assembly"],
+            "radial timing qualification has a different assembly",
+        )
     evidence = lock["radial_timing"]
     imports = pf["imported_project_files"]
     names = {v["file"] for v in imports.values()}
@@ -931,12 +947,11 @@ def timing_preflight(repo, private, generation, lock, pre, geometry):
         pf.get("eligible") is True
         and pf["runtime_build_sha256"] == generation
         and pf.get("radial_timing") == evidence
-        and pf["parent_runtime_build_sha256"] == build.TIMING_PARENT
-        and pf["parent_preflight_sha256"] == build.TIMING_PARENT_PREFLIGHT
+        and pf["parent_runtime_build_sha256"] == parent_id
+        and pf["parent_preflight_sha256"] == parent_pre_sha
         and pf["registration"] == geometry
         and pf["calibration"] == parent_pre["calibration"] == geometry["camera"]
-        and pf["compiled"] == parent_pre["compiled"]
-        and pf["radial_assembly"] == parent_pre["radial_assembly"] == lock["radial_assembly"]
+        and pf["radial_assembly"] == lock["radial_assembly"]
         and pf["history"] == parent_pre["history"]
         and pf["versions"] == parent_pre["versions"]
         and pf["interpreter_sha256"] == parent_pre["interpreter_sha256"]
@@ -955,6 +970,19 @@ def timing_preflight(repo, private, generation, lock, pre, geometry):
         "foreign radial qualification directory",
     )
     seal = pinned(raw / "seal.json", pf["probe_seal_sha256"])
+    if "radial_contact" in lock:
+        audit = pinned(raw / "compiled-geometry.json", seal["compiled_geometry_sha256"])
+        live = pf["compiled"]["dual"]
+        require(
+            audit["asset_sha256"] == lock["radial_assembly"]["asset_sha256"]
+            and audit["geometry"] == geometry
+            and audit["compiled_body_mass_kg"] == live["mass_kg"]
+            and abs(live["mass_kg"] - lock["radial_assembly"]["body_mass_kg"]) <= 1e-12
+            and audit["com_object_m"] == live["body_local_center_of_mass_m"]
+            and audit["compiled_principal_inertia_kg_m2"] == live["principal_inertia_kg_m2"]
+            and audit["physics_steps"] == audit["dispatched_commands"] == 0,
+            "different 130 mm live mass, inertia, camera registration or audit",
+        )
     controls = pinned(raw / "positive/negative-controls/seal.json", pf["negative_controls_sha256"])
     require(
         set(seal["cases"]) == {"positive", "only-7", "only-8", "full-occlusion"}
@@ -995,6 +1023,27 @@ def timing_preflight(repo, private, generation, lock, pre, geometry):
         and len(set(blind["seals_sha256"])) == 1,
         "radial blind read seals differ",
     )
+    if "radial_contact" in lock:
+        originals = {files["tested.rgbd.json"] for files in seal["cases"].values()}
+        require(
+            set(index) == originals and len(originals) == 4, "missing current 130 mm blind packet"
+        )
+        for token, bundle in index.items():
+            packet_file = raw / "blind-input" / token / "0000.json"
+            packet = pinned(packet_file, token)
+            expected = dict(
+                file="0000.json",
+                file_sha256=token,
+                frame_id=packet["frame_id"],
+                checksum_sha256=packet["checksum_sha256"],
+                physics_step=0,
+            )
+            require(
+                bundle["geometry"] == geometry
+                and bundle["mode"] == "dual"
+                and bundle["frames"] == [expected],
+                "foreign 130 mm blind packet or registration",
+            )
     for name, digest in zip(("blind-one", "blind-two"), blind["seals_sha256"], strict=True):
         readback = pinned(raw / name / "seal.json", digest)
         worker = read(raw / (name + ".process.json"))
@@ -1011,8 +1060,10 @@ def timing_preflight(repo, private, generation, lock, pre, geometry):
         )
 
 
-def prior_d02_contact_clear(private, generation):
-    directory = batch_path(private, "train-radial15-timing-01")
+def prior_d02_contact_clear(
+    private, generation, label="train-radial15-timing-01", expected_id="d02"
+):
+    directory = batch_path(private, label)
     result = read(directory / "score.json")
     require(
         result["runtime_build_sha256"] == generation
@@ -1028,13 +1079,43 @@ def prior_d02_contact_clear(private, generation):
         require(checked["cases"] == result["cases"], "foreign prior d02 score")
     row = result["cases"][0]
     require(
-        row["id"] == "d02"
+        row["id"] == expected_id
         and row["evidence_status"] == "SCORED"
         and row["independent_physical_outcome"]["safety_assessment"] == "SCOPED_NO_VIOLATION"
         and row["independent_physical_outcome"]["safety_violation"] is False
         and row["hand_contacts"]["board_or_support_hand_or_finger_steps"] == [],
         "d02 safety, board contact or evidence does not qualify the independent d01 check",
     )
+    if label.startswith("train-radial30-"):
+        require(
+            row["acquired"] is True
+            and row["safe_stop_succeeded"] is not False
+            and (not row["stop"].get("actual_stop") or row["safe_stop_succeeded"] is True)
+            and result["pixel_index_sha256"] == sha(directory / "scoring/pixels/index.json")
+            and result["blind_seals_sha256"]
+            == [sha(directory / f"scoring/blind-{n}/seal.json") for n in ("one", "two")]
+            and len(set(result["blind_seals_sha256"])) == 1,
+            "incomplete 130 mm history, stop or blind scoring evidence",
+        )
+    return row
+
+
+def contact_histories(private, generation):
+    from scripts.graduation import g1_visibility_radial_contact as contact
+
+    rows = {}
+    for name, groups in contact.ASSIGNMENTS.items():
+        group = groups[0]
+        row = prior_d02_contact_clear(private, generation, name, group)
+        approach = row["phases"]["APPROACH"]
+        reached = approach.get("end_step")
+        require(
+            approach["status"] == "PASS"
+            or (isinstance(reached, int) and reached >= {"d02": 1221, "d01": 1120}[group]),
+            "new evaluation requires both independently checked 130 mm hazard intervals",
+        )
+        rows[group] = row
+    return rows
 
 
 def issue(repo, private, generation, lock, args):
@@ -1051,9 +1132,27 @@ def issue(repo, private, generation, lock, args):
     )
     pre = private / "builds" / generation / "preflight.json"
     require(read(pre)["runtime_build_sha256"] == generation, "preflight generation differs")
-    gate = release_gate(repo, args.gate, args.gate_sha, lock)
     first, previous, full = template(repo, lock)
-    if lock.get("radial_timing") is not None:
+    if "radial_contact" in lock:
+        from scripts.graduation import g1_visibility_radial_contact as contact
+
+        contact.check_identity(lock)
+        require(
+            args.gate.resolve() == (repo / contact.SCREEN).resolve()
+            and args.gate_sha == contact.SCREEN_SHA,
+            "130 mm issuance requires its independently qualified static screen",
+        )
+        gate = pinned(args.gate, args.gate_sha)
+        timing_preflight(repo, private, generation, lock, pre, previous["geometry"])
+        if training:
+            require(contact.ASSIGNMENTS.get(label) == args.groups, "unregistered 130 mm assignment")
+            if args.groups == ["d01"]:
+                prior_d02_contact_clear(private, generation, "train-radial30-contact-d02-01")
+        else:
+            contact_histories(private, generation)
+    else:
+        gate = release_gate(repo, args.gate, args.gate_sha, lock)
+    if "radial_contact" not in lock and lock.get("radial_timing") is not None:
         round_directory = build.issued_timing_round(lock).directory
         require(
             args.gate.resolve() == (repo / round_directory / "replay-release.public.json").resolve()
@@ -1560,6 +1659,7 @@ def parser():
     fixtures = prepare.add_mutually_exclusive_group()
     fixtures.add_argument("--radial-mm", type=int, choices=(0, 15, 30), default=0)
     fixtures.add_argument("--radial-timing", metavar="REPLAY_RELEASE_SHA256")
+    fixtures.add_argument("--radial-contact", metavar="SCREEN_SHA256")
     for cmd in (
         "preflight",
         "issue-training",
@@ -1599,10 +1699,16 @@ def main():
     repo = args.repo.resolve()
     _, private = build.context(repo)
     if args.command == "prepare":
-        print(build.prepare(repo, args.radial_mm, args.radial_timing))
+        print(build.prepare(repo, args.radial_mm, args.radial_timing, args.radial_contact))
         return
+    if getattr(args, "batch", "").startswith("train-radial30-"):
+        from scripts.graduation import g1_visibility_radial_contact as contact
+
+        _, lock = build.verify_build(private, args.generation)
+        contact.check_identity(lock)
     if getattr(args, "batch", None) in TIMING_ASSIGNMENTS:
         _, lock = build.verify_build(private, args.generation)
+        require("radial_contact" not in lock, "115 mm batch cannot use the 130 mm generation")
         build.issued_timing_round(lock)
     # Resolve caller-provided files before switching into the isolated source tree.
     for key in ("gate", "selection", "training_score"):

@@ -1,0 +1,53 @@
+# 130毫米装配开发采集准入修复计划
+
+模型 `gpt-6.2-astra`，Git 基线 `f4df9c06add4ecb006ad34e3efdff012dfbef52a`，已分配但在采集准入处拒绝的构建 `2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d`。
+
+## 原始拒绝与分母
+
+分配 train-radial30-contact-d02-01 成功，实际 capture 调用参数为旧 generation、本标签、批分配 SHA 342b3f33a974f3ca29b8d7af45f66a4fa6411414475da1ddea9fd0b81ccdc731、d02。issue 的 radial_contact 分支核验独立静态 screen 4625888d… 与新代 preflight，capture 却无条件调用 g1_visibility_trials.release_gate，要求 v1 离线 release schema，报 offline and negative control release not qualified。在 capture 第1337行触发，尚未进入 device、reserve_attempt 或 native worker。批目录只有 gate.json、source-inventory.json、allocation.json、d02/allocation.json，逐项原样封存；d02/attempt.json、instance、作业库及原始轨迹均不存在。此项计一次已分配、一次准入拒绝、零真实历史作业/复位/物理步；此前4次零步预检单独计数。
+
+## 身份分派与最小改动
+
+在 g1_visibility_trials.py 提取 issue/capture 共用的资格判定，分派依据冻结锁和 scope，不依据未经验证的 gate.schema、用户给出的标签或是否含某字段来信任记录。对130mm明确 contact.check_identity、contact.verify 与 check_screen；issue 使用已登记 screen 路径，capture 使用批内 gate 副本，均核验登记的 SCREEN_SHA、gate_source_sha256、gate_sha256、文件字节及每个 input_artifacts_sha256，确认资产/注册与31锚点/3432态/负控等全部原门槛。在 device/reserve 之前核对同代 preflight.json 的实际 SHA=批记录、generation、锁和原4类/11负控、盲评分/几何证据。保留普通 v1 release_gate及115mm timing 的原资格/预算/预检/标签约束；禁止让不同 schema 互作回退。复用 batch_context/load_case 与现有独占和原子 attempt；绑定分配、单槽身份、源目录、release、八意图、设备作业与重试检查，任何不一致关闭派发。
+
+## 单槽恢复及无并发双领
+
+只改上述训练入口、必要的 g1_visibility_radial_contact.py 中精确登记映射及相关测试，保留原构建，另生成不可变新 generation。登记替代批 train-radial30-contact-d02-02（仍同一历史 d02摆放和种子）；先在固定设备/派发互斥范围内核验另表所列旧批四个原件哈希、旧批无 attempt、instance 或运行痕迹、旧构建仍在 guard 处拒绝。新入口显式拒绝旧批或旧 generation 对新标签，禁止手改旧分配、复位旧台账或对同一物理机会双领。现有原子排他创建用于新标签；重复/并发领取最多一条 attempt，部分失败保留为占用，不能用另一个后缀再发。新分配保存旧 generation/分配/拒绝凭据与 supersedes 路径（可用本轮独立签名清单）。d01-01 尚未分配，保留为独立唯一历史槽；更新 prior_d02_contact_clear、contact_histories 及入口标签校验，只从本代 d02-02 已封存结果取先决条件。
+
+## 门前 RED 与回归
+
+在开发存储/测试夹具先用原封存批重现旧 schema RED，确认零副作用，随后通过同一 CLI/隔离模块的 issue→capture 正常读批路径，使用可观测、可中断设备边界证明合法130mm能到 reserve 前的预定边界。模拟执行的结果仅计软件。通过另外的排他性测试证明多进程重复登记/领取、异常回收和现有已占用槽均拒第二次消费。覆盖普通旧门、115mm timing 与旧红预算、130mm训练 d02/d01 和 evaluation 路径；测试篡改外来 gate、同类型未登记 screen、缺项、复制件/源 SHA 错误、外 generation、preflight/盲读/资产/评分被替换、旧 d02 score/未到危险阶段与缺训练成功、重复/错组/跨代标签、缺 claim 等。任何拒绝不得产生 attempt/worker/物理步；软件 evaluation 用合成已标识夹具，在真实四槽上不得预跑。 缺包负控的隔离夹具在默认 pytest tmp_path 与私有原件跨文件系统时可能因复制硬链接 EXDEV 在准入前退出。仅测试内改为普通复制，或仅对 os.link 返回 EXDEV 回退 shutil.copy2；删除/损坏操作只针对复制件。使用默认 tmp_path 运行并断言目标拒因确为缺少相应证据，复核源原件 SHA 未变。
+
+## 等效复核、实际恢复与停止
+
+新 prepare/verify 必须精确列出路由代码/标签及必要锁的源差异：原130mm XML、静态身份、31光学、3432稠密态、detector/性能 release、控制与评分逻辑保持原 SHA；runner 进入评分源清单时明确是新 runner SHA，二次独立盲读验证不变的评分结果，禁止复制旧 preflight.json 冒充新代。沿原完整新代 preflight 4次零步/11拒因/原 owner 与像素绑定/双读评分重新封存，核验919原件、账本、独占 EGL、原解释器/相机、16GiB。只在全部通过后正常 issue-training 新 d02-02 → capture → audit/两独立 blind/join/score；登记运行命令、批/槽/claim SHA及真实分母。遇危险/完整性异常停发 d01；d01仅在同代 d02 已采、独立双读评分、安全停符合既定规则、无手板违规/相关安全疑点时继续。全部原计划的既有危险段检查（d02到1221、d01到1120或已通过APPROACH）与至少一个独立完整成功及冻结、预登记、去重条件仍是四个新槽的先决条件。任何新的计划外失败先封存再交Astra，正式、实机与任务模型均为零。
+
+## 输入 SHA256
+
+| 路径 | SHA256 |
+|---|---|
+| `/home/ningyd/文档/ChatGPT/BIGsmall/cache/local-verification/g1-visibility-pose-repair-20261124.QGkYvI85/radial30-d02-capture.log` | `e824d6605f070f514469dfffde05ae6fb56d41ee75bbfec14734bbcfe86a0b3f` |
+| `experiments/results/g1-visibility-pose-repair-20261124/batches/train-radial30-contact-d02-01/allocation.json` | `342b3f33a974f3ca29b8d7af45f66a4fa6411414475da1ddea9fd0b81ccdc731` |
+| `experiments/results/g1-visibility-pose-repair-20261124/batches/train-radial30-contact-d02-01/gate.json` | `4625888d3a356cbf7c856517240a3e1c37cadaa13ee27a6ff1c2ded59ae90178` |
+| `experiments/results/g1-visibility-pose-repair-20261124/batches/train-radial30-contact-d02-01/source-inventory.json` | `b11d0a0e8b435b80ea8336f3d1ea2a0dd869dd1cedf59aea26fef2907bf2c548` |
+| `experiments/results/g1-visibility-pose-repair-20261124/batches/train-radial30-contact-d02-01/d02/allocation.json` | `bd205bc10f35712f5e4b10bce9a33376d2e9bc09894decf82ca576d157f18c76` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-radial30-contact-20261125/plan.json` | `6a8eb89a5609a01dbbd5560c28a5379b95b72c7061522299185c7ced94fc3d9c` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-radial30-contact-20261125/screen-selection.public.json` | `4625888d3a356cbf7c856517240a3e1c37cadaa13ee27a6ff1c2ded59ae90178` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-radial30-contact-20261125/screen-clearance-summary.public.json` | `9dcf04781f98187d925d8067840a249355f9af3480b63aed619e70bfbf9c72bd` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-radial30-contact-20261125/screen-optical-summary.public.json` | `6b4f5992f104a216c87ab2b1df259119d9554f12d260845ee56be5319600e5cf` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-radial30-contact-20261125/runtime-qualification.public.json` | `844348dd02599b359639745f74a548370646c2a74031d63e80992b2d87692313` |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-radial30-contact-20261125/originals-at-capture-refusal.public.json` | `ec8641ee8f28c4d32671018d6b86f586051452765df1f4f8c90bcc6e84b0c327` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d/runtime-source/runtime-build.json` | `2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d/preflight.json` | `4f7a4af2ae46a6be8b9a2adcba1f2bb6dc7d085fb2ef2ad63d43e22bcf66f59b` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d/runtime-source/scripts/graduation/g1_visibility_trials.py` | `53df5a069cde60473b423c67e7ffc006807dcca4caac597c28269420dc285f73` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d/runtime-source/scripts/graduation/g1_visibility_runtime.py` | `52f2629973a3ee52e2027d9f4e43f0c9080fae75851d92ca8537de6e34875ba0` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d/runtime-source/scripts/graduation/g1_visibility_radial_contact.py` | `3a80f0aa5a9903093b9b836cebfe394a53063397b6794f9758ef9e29212e338e` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d/runtime-source/scripts/graduation/g1_visibility_mount_runtime.py` | `7fce2b50d77eb80a0412c8a7f8433f68e917042f2130b7a371db69503edeb29d` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d/runtime-source/scripts/graduation/g1_mount_trials.py` | `468a1a278b2f9b884d962f04a381a9aec518ef436fbde22d53445ca18059a05c` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d/runtime-source/scripts/graduation/g1_dual_batch_score.py` | `24384ffc6df1423d76a2f4b3d4a93e73c485d87c4d90ffc433a07ad4151c4e0c` |
+| `experiments/results/g1-visibility-pose-repair-20261124/builds/2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d/runtime-source/scripts/graduation/g1_dual_pixel_readback.py` | `93c82f96233e480bef041fee1655401d20ed7ffb0dc1e3442c26e30f34af238e` |
+| `scripts/graduation/g1_visibility_trials.py` | `53df5a069cde60473b423c67e7ffc006807dcca4caac597c28269420dc285f73` |
+| `scripts/graduation/g1_visibility_radial_contact.py` | `3a80f0aa5a9903093b9b836cebfe394a53063397b6794f9758ef9e29212e338e` |
+| `scripts/graduation/g1_visibility_runtime.py` | `52f2629973a3ee52e2027d9f4e43f0c9080fae75851d92ca8537de6e34875ba0` |
+| `tests/test_graduation_g1_radial30_contact_runtime.py` | `0dc29ad2c5fb83c460c605620ca4461d38135b1bd04d7b1a833c3b08b4135fa8` |
+| `tests/test_graduation_g1_visibility_trials.py` | `46c700f4402940029324032cd5f58b7c83de5a266284926f1db7a11d14b53891` |
