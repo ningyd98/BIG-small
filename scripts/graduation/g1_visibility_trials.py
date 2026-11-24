@@ -31,6 +31,11 @@ STAGES = [
 ]
 RELEASE = "g1-visibility-pose-repair-20261124"
 FIELDS = ("id", "seed", "reset_fixture_center_m", "yaw_rad")
+TIMING_ASSIGNMENTS = {"train-radial15-timing-01": ["d02"], "train-radial15-contact-01": ["d01"]}
+
+
+def timing_assignment(label, groups):
+    return TIMING_ASSIGNMENTS.get(label) == groups
 
 
 def placements_from_old(repo):
@@ -913,6 +918,125 @@ def check_training_score(private, generation, path, expected):
     return report
 
 
+def timing_preflight(repo, private, generation, lock, pre, geometry):
+    from scripts.graduation.g1_dual_probe import NEGATIVE
+    from scripts.graduation.g1_visibility_mount_runtime import ADAPTER, READER
+
+    _, parent_pre = build.verify_timing_build(repo, private, lock)
+    pf = read(pre)
+    evidence = lock["radial_timing"]
+    imports = pf["imported_project_files"]
+    names = {v["file"] for v in imports.values()}
+    require(
+        pf.get("eligible") is True
+        and pf["runtime_build_sha256"] == generation
+        and pf.get("radial_timing") == evidence
+        and pf["parent_runtime_build_sha256"] == build.TIMING_PARENT
+        and pf["parent_preflight_sha256"] == build.TIMING_PARENT_PREFLIGHT
+        and pf["registration"] == geometry
+        and pf["calibration"] == parent_pre["calibration"] == geometry["camera"]
+        and pf["compiled"] == parent_pre["compiled"]
+        and pf["radial_assembly"] == parent_pre["radial_assembly"] == lock["radial_assembly"]
+        and pf["history"] == parent_pre["history"]
+        and pf["versions"] == parent_pre["versions"]
+        and pf["interpreter_sha256"] == parent_pre["interpreter_sha256"]
+        and pf["diagnostic_resets"] == 4
+        and pf["physics_steps"] == pf["motion_commands"] == 0
+        and pf["hold_commands"] == 1
+        and {build.GRID, build.DETECTOR, build.BUILDER, build.RUNNER, ADAPTER} <= names
+        and all(
+            lock["runtime_files_sha256"].get(v["file"]) == v["sha256"] for v in imports.values()
+        ),
+        "radial timing qualification has a different source, reset, camera, import or gate",
+    )
+    raw = pre.parent / pf["full_occlusion_directory"]
+    require(
+        raw.resolve().parent == pre.parent and raw.name.startswith("zero-step-radial-"),
+        "foreign radial qualification directory",
+    )
+    seal = pinned(raw / "seal.json", pf["probe_seal_sha256"])
+    controls = pinned(raw / "positive/negative-controls/seal.json", pf["negative_controls_sha256"])
+    require(
+        set(seal["cases"]) == {"positive", "only-7", "only-8", "full-occlusion"}
+        and seal["negative_controls_sha256"] == pf["negative_controls_sha256"]
+        and controls.keys() == set(NEGATIVE)
+        and all(x["blocked"] for x in controls.values()),
+        "missing radial live qualification cases or negative controls",
+    )
+    for kind, files in seal["cases"].items():
+        require(
+            all(sha(raw / kind / name) == h for name, h in files.items()),
+            "changed radial diagnostic packet or trace: " + kind,
+        )
+        trace = pinned(raw / kind / "trace.json", files["trace.json"])
+        require(
+            trace["checks"]
+            and all(trace["checks"].values())
+            and trace["integration_steps"] == 0
+            and trace["worker"]["lease_released"]
+            and trace["worker"]["final_job_status"] == "SUCCEEDED",
+            "failed live radial control: " + kind,
+        )
+    for kind, item in controls.items():
+        directory = raw / "positive/negative-controls" / kind
+        row = pinned(directory / "result.json", item["sha256"])
+        require(
+            row["target_emitted"] is False
+            and row["physics_steps"] == row["commands"] == 0
+            and sha(directory / "source.rgbd.json") == row["source_sha256"]
+            and sha(directory / "tested.rgbd.json") == row["tested_sha256"],
+            "radial negative produced a target or movement",
+        )
+    blind = pf["independent_pixel_readback"]
+    index = pinned(raw / "blind-input/index.json", blind["index_sha256"])
+    require(
+        seal["blind"] == blind
+        and len(blind["seals_sha256"]) == 2
+        and len(set(blind["seals_sha256"])) == 1,
+        "radial blind read seals differ",
+    )
+    for name, digest in zip(("blind-one", "blind-two"), blind["seals_sha256"], strict=True):
+        readback = pinned(raw / name / "seal.json", digest)
+        worker = read(raw / (name + ".process.json"))
+        require(
+            readback["n_frames"] == 4
+            and readback["index_sha256"] == blind["index_sha256"]
+            and set(readback["packets"]) == set(index)
+            and all(
+                sha(raw / name / (key + ".json")) == h for key, h in readback["packets"].items()
+            )
+            and worker["status"] == 0
+            and worker["reader_sha256"] == lock["scorer_files_sha256"][READER],
+            "missing independent radial scoring result",
+        )
+
+
+def prior_d02_contact_clear(private, generation):
+    directory = batch_path(private, "train-radial15-timing-01")
+    result = read(directory / "score.json")
+    require(
+        result["runtime_build_sha256"] == generation
+        and result["scope"] == "training"
+        and len(result["cases"]) == 1
+        and result["acquisition_sha256"] == sha(directory / "acquisition.json")
+        and result["allocation_sha256"] == sha(directory / "allocation.json")
+        and len(set(result["score_passes_sha256"])) == 1,
+        "prior d02 acquisition and independent assessment are required",
+    )
+    for suffix, digest in zip(("one", "two"), result["score_passes_sha256"], strict=True):
+        checked = pinned(directory / "scoring" / ("score-" + suffix + ".json"), digest)
+        require(checked["cases"] == result["cases"], "foreign prior d02 score")
+    row = result["cases"][0]
+    require(
+        row["id"] == "d02"
+        and row["evidence_status"] == "SCORED"
+        and row["independent_physical_outcome"]["safety_assessment"] == "SCOPED_NO_VIOLATION"
+        and row["independent_physical_outcome"]["safety_violation"] is False
+        and row["hand_contacts"]["board_or_support_hand_or_finger_steps"] == [],
+        "d02 safety, board contact or evidence does not qualify the independent d01 check",
+    )
+
+
 def issue(repo, private, generation, lock, args):
     from scripts.graduation import g1_dual_trials as dual
     from scripts.graduation.g1_formal_trials import identities
@@ -929,6 +1053,17 @@ def issue(repo, private, generation, lock, args):
     require(read(pre)["runtime_build_sha256"] == generation, "preflight generation differs")
     gate = release_gate(repo, args.gate, args.gate_sha, lock)
     first, previous, full = template(repo, lock)
+    if lock.get("radial_timing") is not None:
+        require(
+            args.gate.resolve() == (repo / build.TIMING_RELEASE).resolve()
+            and args.gate_sha == lock["radial_timing"]["replay_release_sha256"],
+            "issuance requires this overlay's released software and budget",
+        )
+        timing_preflight(repo, private, generation, lock, pre, previous["geometry"])
+        if training:
+            require(timing_assignment(label, args.groups), "unregistered radial timing assignment")
+            if args.groups == ["d01"]:
+                prior_d02_contact_clear(private, generation)
     extras = {}
     if training:
         rows = training_placements(args.groups, placements_from_old(repo))
@@ -1421,7 +1556,9 @@ def parser():
     cli.add_argument("--repo", type=Path, default=ROOT)
     commands = cli.add_subparsers(dest="command", required=True)
     prepare = commands.add_parser("prepare")
-    prepare.add_argument("--radial-mm", type=int, choices=(0, 15, 30), default=0)
+    fixtures = prepare.add_mutually_exclusive_group()
+    fixtures.add_argument("--radial-mm", type=int, choices=(0, 15, 30), default=0)
+    fixtures.add_argument("--radial-timing", metavar="REPLAY_RELEASE_SHA256")
     for cmd in (
         "preflight",
         "issue-training",
@@ -1461,8 +1598,14 @@ def main():
     repo = args.repo.resolve()
     _, private = build.context(repo)
     if args.command == "prepare":
-        print(build.prepare(repo, args.radial_mm))
+        print(build.prepare(repo, args.radial_mm, args.radial_timing))
         return
+    if getattr(args, "batch", None) in TIMING_ASSIGNMENTS:
+        _, lock = build.verify_build(private, args.generation)
+        require(
+            lock.get("radial_timing", {}).get("timing_plan_sha256") == build.TIMING_PLAN_SHA,
+            "the preregistered timing label requires the released radial performance overlay",
+        )
     # Resolve caller-provided files before switching into the isolated source tree.
     for key in ("gate", "selection", "training_score"):
         path = getattr(args, key, None)

@@ -1,0 +1,52 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_____ test_timing_prepare_is_explicit_and_exclusive_of_a_different_fixture _____
+
+    def test_timing_prepare_is_explicit_and_exclusive_of_a_different_fixture():
+        parser = trials.parser()
+        assert parser.parse_args(["prepare"]).radial_mm == 0
+>       assert parser.parse_args(["prepare","--radial-mm","30"]).radial_timing is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'Namespace' object has no attribute 'radial_timing'
+
+tests/test_graduation_g1_radial_timing_runtime.py:17: AttributeError
+________ test_budget_checks_all_four_boundaries_and_the_exact_candidate ________
+
+qualifying_budget = ({'scripts/graduation/g1_visibility_grid.py': '1111111111111111111111111111111111111111111111111111111111111111', 'scr... '2222222222222222222222222222222222222222222222222222222222222222'}, 'eligible': True, 'estimated_max_ms': 90.0, ...})
+
+    def test_budget_checks_all_four_boundaries_and_the_exact_candidate(qualifying_budget):
+        detector, record = qualifying_budget
+>       assert build.qualified_timing_budget(record, detector)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'scripts.graduation.g1_visibility_runtime' has no attribute 'qualified_timing_budget'
+
+tests/test_graduation_g1_radial_timing_runtime.py:41: AttributeError
+_ test_candidate_inventory_rejects_a_changed_camera_controller_scorer_or_mount _
+
+    def test_candidate_inventory_rejects_a_changed_camera_controller_scorer_or_mount():
+        parent_file = Path(build.PRIVATE)/"builds"/PARENT/"runtime-source/runtime-build.json"
+        if not parent_file.exists():
+            pytest.skip("sealed private baseline absent")
+        prior=read(parent_file)
+        measured = {build.GRID:"1"*64, build.DETECTOR:prior["detector_files_sha256"][build.DETECTOR]}
+        release=dict(detector_files_sha256=measured)
+        effective={**prior["runtime_files_sha256"], **measured}
+>       assert build.timing_files_ok(prior,effective,release)
+               ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'scripts.graduation.g1_visibility_runtime' has no attribute 'timing_files_ok'
+
+tests/test_graduation_g1_radial_timing_runtime.py:60: AttributeError
+___ test_performance_issuance_consumes_only_preregistered_development_labels ___
+
+    def test_performance_issuance_consumes_only_preregistered_development_labels():
+>       assert trials.timing_assignment("train-radial15-timing-01",["d02"])
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'scripts.graduation.g1_visibility_trials' has no attribute 'timing_assignment'
+
+tests/test_graduation_g1_radial_timing_runtime.py:77: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_graduation_g1_radial_timing_runtime.py::test_timing_prepare_is_explicit_and_exclusive_of_a_different_fixture
+FAILED tests/test_graduation_g1_radial_timing_runtime.py::test_budget_checks_all_four_boundaries_and_the_exact_candidate
+FAILED tests/test_graduation_g1_radial_timing_runtime.py::test_candidate_inventory_rejects_a_changed_camera_controller_scorer_or_mount
+FAILED tests/test_graduation_g1_radial_timing_runtime.py::test_performance_issuance_consumes_only_preregistered_development_labels
+4 failed in 0.12s

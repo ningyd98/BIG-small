@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 import shutil
@@ -44,6 +45,20 @@ SCORERS = tuple(
     )
 )
 CONTROL_MODE = "G1_VISIBILITY_DEVELOPMENT"
+TIMING_PARENT = "36f9658b9e7ef0d94db0a87876f4224e30d357d59f6dcc18dc65768dbb1e23bf"
+TIMING_PARENT_PREFLIGHT = "90a4c0ed2ab0370e426acefabfc8eb1f991139c7b9178e0c654cf31df6a7723a"
+TIMING_ROUND = ROUNDS / "round-g1-radial-native-timing-20261125"
+TIMING_PLAN_SHA = "567e992a68593aecb32e73a3c3cd5bd9dc4a73d2c8ef2adb5146b91abc944171"
+TIMING_RELEASE = TIMING_ROUND / "replay-release.public.json"
+TIMING_BUDGET = TIMING_ROUND / "paired-budget.public.json"
+TIMING_FILES = (GRID, DETECTOR, BUILDER, RUNNER, PREFIX + "g1_visibility_mount_runtime.py")
+TIMING_DETECTOR_FILES = {
+    GRID: "c0e80c0b3b36ad397a4d26146e9dc8c6d2063669dd28244bb9beb29f6b211e69",
+    DETECTOR: "2e98bd0d96e4b8aa58a58b0ef1d959a8b3fde259f3ae7b948eb68ce4ffa6a169",
+}
+# Published offline, before generation construction. An unqualified pair cannot produce a build.
+TIMING_RELEASE_SHA = "284c149700f70b050fe92ddfc1d222fd105f229993becf0b8af1a78bc6cd2120"
+TIMING_BUDGET_SHA = "f0c4c6577de723af06c63a4b31d06423787a7f8241bea3576afcf9c7300d867c"
 _active_measurements = ContextVar("g1_development_actual_measurements", default=None)
 require = parent_build.require
 
@@ -203,9 +218,12 @@ def verify_build(private, generation):
     return tree, lock
 
 
-def prepare(repo, radial_mm=0):
+def prepare(repo, radial_mm=0, radial_timing=None):
     plan, private = context(repo)
     check_history(repo, plan)
+    if radial_timing is not None:
+        require(radial_mm == 0, "performance overlay requires its registered 115 mm assembly")
+        return prepare_timing(repo, private, radial_timing)
     if radial_mm:
         return prepare_radial(repo, private, radial_mm)
     parent = repo / PARENT / "runtime-source"
@@ -289,6 +307,168 @@ def prepare_radial(repo, private, offset):
         "scorer_files_sha256": {k: effective[k] for k in prior["scorer_files_sha256"]},
     }
     return install_build(private, parent, changes | additions, lock)
+
+
+def qualified_timing_budget(record, detector):
+    limits = dict(estimated_p95=80, estimated_max=90, pixel_p95=35, pixel_max=45)
+    return (
+        record.get("schema") == "g1.visibility.radial-paired-window-budget.v1"
+        and record.get("eligible") is True
+        and record.get("baseline_generation") == TIMING_PARENT
+        and record.get("original_native_windows") == 123
+        and record.get("detector_files_sha256") == detector
+        and record.get("limits_ms") == limits
+        and all(
+            type(value := record.get(key + "_ms")) in (float, int)
+            and math.isfinite(value)
+            and 0 <= value <= limit
+            for key, limit in limits.items()
+        )
+        and record["estimated_p95_ms"] <= record["estimated_max_ms"]
+        and record["pixel_p95_ms"] <= record["pixel_max_ms"]
+    )
+
+
+def timing_files_ok(prior, files, release):
+    detectors = release["detector_files_sha256"]
+    previous = prior["runtime_files_sha256"]
+    return (
+        files.keys() == previous.keys()
+        and detectors.keys() == {GRID, DETECTOR}
+        and all(files[k] == v for k, v in detectors.items())
+        and all(files[k] == previous[k] for k in files.keys() - set(TIMING_FILES))
+    )
+
+
+def timing_qualification(repo, requested_sha):
+    """Require the independently sealed semantics, pixel timing and matched full-window budget."""
+    require(
+        isinstance(requested_sha, str) and re.fullmatch(r"[0-9a-f]{64}", requested_sha),
+        "a radial semantic-release SHA256 is required",
+    )
+    budget = pinned(repo / TIMING_BUDGET, TIMING_BUDGET_SHA)
+    require(
+        qualified_timing_budget(budget, TIMING_DETECTOR_FILES),
+        "unreleased radial timing candidate: same-frame window budget has not qualified",
+    )
+    require(requested_sha == TIMING_RELEASE_SHA, "unreleased radial detector or semantic evidence")
+    plan = pinned(repo / TIMING_ROUND / "plan.json", TIMING_PLAN_SHA)
+    require(
+        plan["failed_generation"] == TIMING_PARENT
+        and sha(repo / TIMING_ROUND / "plan.md") == plan["plan_md_sha256"],
+        "foreign timing plan or mechanical parent",
+    )
+    for name, digest in plan["inputs_sha256"].items():
+        require(sha(repo / name) == digest, "changed timing plan input: " + name)
+    release = pinned(repo / TIMING_RELEASE, requested_sha)
+    tests = dict(
+        schema="g1.visibility.offline-release.v1",
+        plan_sha256=PLAN_SHA,
+        timing_plan_sha256=TIMING_PLAN_SHA,
+        baseline_runtime_build_sha256=TIMING_PARENT,
+        radial_offset_mm=15,
+        eligible=True,
+        historical_frames=778,
+        first_refusals_recovered=8,
+        positive_controls=4,
+        negative_controls=16,
+        false_positive_controls=0,
+        control_witnesses=True,
+        same_all_fields=True,
+        d02_frames=[75, 130, 130],
+        d02_all_fields_equal=True,
+        static_anchors=22,
+        static_pixel_inputs=44,
+        static_all_fields_equal=True,
+        static_geometry_qualified=True,
+        new_formal_trials=0,
+        real_hardware_trials=0,
+    )
+    require(
+        all(release.get(k) == v for k, v in tests.items())
+        and release["historical_gates"]
+        and all(release["historical_gates"].values()),
+        "offline timing candidate has not qualified",
+    )
+    detectors = release["detector_files_sha256"]
+    require(
+        detectors == TIMING_DETECTOR_FILES and qualified_timing_budget(budget, detectors),
+        "timing software or same-frame window budget has not qualified",
+    )
+    for report in (release, budget):
+        sources = report["input_artifacts_sha256"]
+        require(sources, "radial timing release lacks underlying evidence")
+        for name, digest in sources.items():
+            path = repo / name
+            require(
+                not Path(name).is_absolute()
+                and path.resolve().is_relative_to(repo)
+                and sha(path) == digest,
+                "changed or foreign timing evidence: " + name,
+            )
+    sample_file = (TIMING_ROUND / "pixel-timing-samples.public.json.gz").as_posix()
+    require(
+        budget["input_artifacts_sha256"].get(sample_file) == budget["samples_sha256"],
+        "paired window budget does not bind the per-frame samples",
+    )
+    return dict(
+        timing_plan_sha256=TIMING_PLAN_SHA,
+        baseline_runtime_build_sha256=TIMING_PARENT,
+        baseline_preflight_sha256=TIMING_PARENT_PREFLIGHT,
+        replay_release_sha256=requested_sha,
+        paired_budget_sha256=TIMING_BUDGET_SHA,
+        detector_files_sha256=detectors,
+    )
+
+
+def prepare_timing(repo, private, requested_sha):
+    from scripts.graduation import g1_visibility_mount_runtime as mount
+
+    qualification = timing_qualification(repo, requested_sha)
+    parent, prior = verify_build(private, TIMING_PARENT)
+    pinned(parent.parent / "preflight.json", TIMING_PARENT_PREFLIGHT)
+    mechanical, _ = verify_build(private, mount.PARENT_GENERATION)
+    mount.checked_plan(repo, mechanical, frozen_detectors=True)
+    require(prior["radial_assembly"] == mount.spec_for(15), "wrong mechanical parent assembly")
+    overlays = {name: (repo / name).read_bytes() for name in TIMING_FILES}
+    files = {
+        **prior["runtime_files_sha256"],
+        **{k: hashlib.sha256(v).hexdigest() for k, v in overlays.items()},
+    }
+    lock = timing_manifest(prior, files, qualification)
+    return install_build(private, parent, overlays, lock)
+
+
+def timing_manifest(prior, files, qualification):
+    require(
+        timing_files_ok(prior, files, qualification), "unexpected radial timing source or detector"
+    )
+    return {
+        **prior,
+        "parent_runtime_build_sha256": TIMING_PARENT,
+        "radial_timing": qualification,
+        "runtime_files_sha256": files,
+        "detector_files_sha256": qualification["detector_files_sha256"],
+        "source_changes": {
+            k: {"before": prior["runtime_files_sha256"][k], "after": files[k]} for k in TIMING_FILES
+        },
+        "additional_files_sha256": {k: files[k] for k in prior["additional_files_sha256"]},
+        "scorer_files_sha256": {k: files[k] for k in prior["scorer_files_sha256"]},
+    }
+
+
+def verify_timing_build(repo, private, lock):
+    from scripts.graduation import g1_visibility_mount_runtime as mount
+
+    qualification = timing_qualification(repo, lock["radial_timing"]["replay_release_sha256"])
+    parent, prior = verify_build(private, TIMING_PARENT)
+    require(
+        prior["radial_plan_sha256"] == mount.PLAN_SHA
+        and prior["radial_assembly"] == mount.spec_for(15)
+        and lock == timing_manifest(prior, lock["runtime_files_sha256"], qualification),
+        "wrong released radial time, geometry, source inventory or parent",
+    )
+    return parent, pinned(parent.parent / "preflight.json", TIMING_PARENT_PREFLIGHT)
 
 
 def install_build(private, parent, updated, lock):

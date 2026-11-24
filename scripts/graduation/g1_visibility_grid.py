@@ -18,6 +18,9 @@ TURNS = np.int8([[[1, 0], [0, 1]], [[0, 1], [-1, 0]], [[-1, 0], [0, -1]], [[0, -
 MIN_CONTRAST = 32
 PROFILE_OFFSETS = np.linspace(-0.61, 0.61, 15)
 MIN_CELL_MARGIN = 0.13
+# Native samples are uint8. Class medians are half-levels and the decision threshold
+# is their midpoint. Leave one quarter gray level next to each limit to the scalar path.
+PHOTOMETRIC_GUARD = 0.25
 
 
 def _table():
@@ -150,13 +153,14 @@ def _crossings(gray, grid, basis, center, threshold, contrast, axes, signs):
 
 
 def _weak_grid_cells(gray, code, seeds):
-    """Prove negative center-cell margins in batches; survivors take the full scalar verifier."""
+    """Prove strict native photometric failures; other seeds retain the full scalar verifier."""
     grid, axes, signs, _, _, held = _transitions(code)
     bits = PATTERNS[code].ravel()
     centers = np.array([s[1] for s in seeds], float)
     bases = np.array([s[2] for s in seeds], float)
     homogeneous = np.column_stack((grid, np.ones(len(grid))))
     active = np.ones(len(seeds), bool)
+    rejected = np.zeros(len(seeds), bool)
     for iteration in range(5):
         corners = CORNERS @ bases + centers[:, None]
         active &= ((corners >= 1) & (corners < np.array(gray.shape[::-1]) - 2)).all(axis=(1, 2))
@@ -170,17 +174,24 @@ def _weak_grid_cells(gray, code, seeds):
         white = np.median(values[:, bits], axis=1)
         contrast = white - black
         threshold = (white + black) / 2
-        support = contrast >= MIN_CONTRAST
-        support &= (abs(values[:, ~bits] - black[:, None]) > 0.35 * contrast[:, None]).sum(
-            axis=1
-        ) <= (~bits).sum() / 5
+        deviations = abs(values[:, ~bits] - black[:, None])
+        limit = 0.35 * contrast[:, None]
+        max_outliers = (~bits).sum() / 5
+        support = (contrast >= MIN_CONTRAST) & ((deviations > limit).sum(axis=1) <= max_outliers)
+        definite = (contrast < MIN_CONTRAST - PHOTOMETRIC_GUARD) | (
+            (contrast >= MIN_CONTRAST)
+            & ((deviations > limit + PHOTOMETRIC_GUARD).sum(axis=1) > max_outliers)
+        )
+        rejected[indices[definite]] = True
         active[indices[~support]] = False
         if iteration == 4:
-            # Use the identical final native sample test only on confidently weak cells.
-            # Other seeds, including every candidate near the decision threshold, are checked
-            # by _verify in their original order, with the complete held-out and depth evidence.
+            # Same four pose updates and final native samples as _verify. A strict negative
+            # outside the one-quarter-level guard cannot satisfy its original 0.13 margin.
             smallest = abs(values - threshold[:, None]).min(axis=1)
-            return indices[support & (smallest < (MIN_CELL_MARGIN - 0.01) * contrast)]
+            rejected[
+                indices[support & (smallest + PHOTOMETRIC_GUARD < MIN_CELL_MARGIN * contrast)]
+            ] = True
+            break
         indices = indices[support]
         if not len(indices):
             break
@@ -204,7 +215,7 @@ def _weak_grid_cells(gray, code, seeds):
                     centers[i] += change[2]
                     continue
             active[i] = False
-    return np.empty(0, dtype=int)
+    return np.flatnonzero(rejected)
 
 
 def _verify(gray, code, center, basis):
@@ -398,10 +409,11 @@ def _accept(gray, seeds, source, candidates, failed):
     for i, (code, center, basis, _) in enumerate(ordered):
         if ignored[i]:
             continue
-        existing = [c for c in candidates if _inside(c, *center)]
         if any(
-            c["pattern"] == code and np.sum(c["basis"] * basis) > 0.8 * np.sum(basis**2)
-            for c in existing
+            c["pattern"] == code
+            and np.sum(c["basis"] * basis) > 0.8 * np.sum(basis**2)
+            and _inside(c, *center)
+            for c in candidates
         ):
             continue
         if code in failed and code not in screened:

@@ -46,22 +46,24 @@ def spec_for(offset_mm):
     return json.loads(json.dumps({k: result[k] for k in fields}, allow_nan=False))
 
 
-def checked_plan(repo, parent):
+def checked_plan(repo, parent, *, frozen_detectors=False):
     plan = pinned(repo / PLAN, PLAN_SHA)
     require(
         sha(repo / PLAN.with_suffix(".md")) == plan["plan_md_sha256"], "changed mechanical plan"
     )
-    for name, h in plan["inputs_sha256"].items():
-        # Compare the original driver bytes from their sealed parent generation.
-        path = (
-            parent / name
-            if name
-            in {
-                "scripts/graduation/g1_visibility_trials.py",
-                "scripts/graduation/g1_visibility_runtime.py",
-            }
-            else repo / name
+    prior_inputs = {
+        "scripts/graduation/g1_visibility_trials.py",
+        "scripts/graduation/g1_visibility_runtime.py",
+    }
+    if frozen_detectors:
+        prior_inputs.update(
+            (
+                "scripts/graduation/g1_visibility_grid.py",
+                "scripts/graduation/g1_visibility_vision.py",
+            )
         )
+    for name, h in plan["inputs_sha256"].items():
+        path = (parent if name in prior_inputs else repo) / name
         require(sha(path) == h, "mechanical plan input changed: " + name)
     return plan
 
@@ -427,12 +429,21 @@ def radial_preflight(repo, private, generation, lock):
     from scripts.graduation.g1_formal_runtime import bind_scene
     from scripts.graduation.perception_io import ROOT, read, write
 
-    parent, prior = build.verify_build(private, PARENT_GENERATION)
-    checked_plan(repo, parent)
+    mechanical, prior = build.verify_build(private, PARENT_GENERATION)
+    timing = lock.get("radial_timing")
+    checked_plan(repo, mechanical, frozen_detectors=timing is not None)
+    if timing is not None:
+        parent, parent_pf = build.verify_timing_build(repo, private, lock)
+        parent_generation = build.TIMING_PARENT
+        expected_detectors = timing["detector_files_sha256"]
+    else:
+        parent, parent_generation = mechanical, PARENT_GENERATION
+        parent_pf = pinned(
+            parent.parent / "preflight.json",
+            "ed3771d25a59535c1c4f3f5eb6511bb8c0b1e31dcd05a80b7f79528fa551d5bc",
+        )
+        expected_detectors = prior["detector_files_sha256"]
     frozen_pf = parent.parent / "preflight.json"
-    parent_pf = pinned(
-        frozen_pf, "ed3771d25a59535c1c4f3f5eb6511bb8c0b1e31dcd05a80b7f79528fa551d5bc"
-    )
     inherited = build.check_history(repo, read(repo / build.PLAN))
     first, old, full = trials.template(repo, lock)
     geom = old["geometry"]
@@ -452,7 +463,7 @@ def radial_preflight(repo, private, generation, lock):
     require(
         ver == parent_pf["versions"]
         and sha(Path(sys.executable)) == parent_pf["interpreter_sha256"]
-        and prior["detector_files_sha256"] == lock["detector_files_sha256"],
+        and expected_detectors == lock["detector_files_sha256"],
         "parent software, environment or detector differs",
     )
     sw = trials.diagnostic_owner_software(directory / "software", scene, full, generation)
@@ -494,7 +505,7 @@ def radial_preflight(repo, private, generation, lock):
         plan_sha256=build.PLAN_SHA,
         radial_plan_sha256=PLAN_SHA,
         runtime_build_sha256=generation,
-        parent_runtime_build_sha256=PARENT_GENERATION,
+        parent_runtime_build_sha256=parent_generation,
         parent_preflight_sha256=sha(frozen_pf),
         history=inherited,
         radial_assembly=lock["radial_assembly"],
@@ -520,6 +531,8 @@ def radial_preflight(repo, private, generation, lock):
         hardware_actions=0,
         formal_claims=0,
     )
+    if timing is not None:
+        data["radial_timing"] = timing
     output = root / "preflight.json"
     if not output.exists():
         write(output, data)
