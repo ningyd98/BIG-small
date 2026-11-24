@@ -1,5 +1,7 @@
 # 毕业设计交付与离线演示
 
+11 月 24 日的 G1 后续开发实验确认了两侧标记在首拒姿态的互补性。原 +Y 单标和低位双标各完成 4 次独立摆放试验，进入接近的次数分别为 0 和 3，独立抓放成功均为 0/4。双标的有效帧物顶误差 P90 为 2.927 mm，接近时记录了两次失标和一次夹指与载板接触。论文引用本批结果时，应保留 4 次分配的分母及闭爪、抬升尚无在线观测的范围。[开发实验与冻结原件复核](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-first-refusal-dual-marker-20261124/step-report.md)
+
 **研究验收尚未完成。** 11 月 24 日新增四批静态抓放开发试验，并补测门控和运动故障恢复。原论文的实验记录截至 11 月 23 日。下表印本与后续实测可按日期分别引用。[开题指标与新增实验总表](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-proposal-experiment-qualification-20261124/stage-summary.public.md)
 
 G1 后续安装实验复核了 8 个停机姿态，并在 4 个新摆放上对比两种标记安装。新安装在历史停机姿态中可见 7/8，独立抓放两组均为 0/4。各组首拒的实际图像、独立物理结果和三个操作阶段的证据见[标记安装开发实验](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-marker-mount-20261124/step-report.md)。
