@@ -40,6 +40,7 @@ from cloud_edge_robot_arm.research.native_calibration_collection import (
     action_horizons,
     digest,
     regular,
+    source_inventory,
 )
 from cloud_edge_robot_arm.research.native_calibration_collection import (
     detached as _detached_geometry,
@@ -245,12 +246,78 @@ def validate_registration_handoff(
         raise ValueError("distinct same-step original registration captures required")
 
 
+@dataclass(frozen=True, slots=True)
+class BootstrapCornerPolicy:
+    """Opt-in development bootstrap filter bound to the executing r593 source generation."""
+
+    schema: str
+    mode: str
+    source_generation: str
+    asset_sha256: str
+
+    @classmethod
+    def for_development(cls, source_hashes, registration):
+        scope = NativeGeometryRegistration(registration)
+        return cls(
+            "bootstrap.corner-policy.v1",
+            "EXPLICIT_SUBPIX",
+            digest(source_hashes),
+            scope.pose_marker.marked_asset_sha256,
+        )
+
+    def refinement(self, source_hashes, registration) -> Literal["SUBPIX"]:
+        from cloud_edge_robot_arm.vision.marker_families import SIDE_PREPARE_ONLY_FAMILY
+
+        scope = NativeGeometryRegistration(registration)
+        if (
+            scope.marker_family_id != SIDE_PREPARE_ONLY_FAMILY
+            or type(source_hashes) is not dict
+            or self != self.for_development(source_hashes, registration)
+            or source_hashes
+            != source_inventory(
+                marker_family_id=SIDE_PREPARE_ONLY_FAMILY,
+                protocol_schema="native.calibration.operational.v4",
+            )
+        ):
+            raise ValueError("bootstrap corner policy is not bound to the source and asset")
+        return "SUBPIX"
+
+
 def collection_bootstrap_evidence(
-    observation: RGBDObservation, registration: Mapping[str, Any]
+    observation: RGBDObservation,
+    registration: Mapping[str, Any],
+    *,
+    corner_policy: BootstrapCornerPolicy | None = None,
+    source_hashes=None,
+    corner_trace=None,
 ) -> dict[str, Any]:
     validate_camera(observation, registration)
     scope = NativeGeometryRegistration(registration)
-    geometry = derive_registered_object_geometry(observation, scope)
+    if corner_policy is None:
+        geometry = derive_registered_object_geometry(observation, scope)
+        refinement = "NONE"
+    else:
+        if type(corner_policy) is not BootstrapCornerPolicy:
+            raise ValueError("source-bound bootstrap corner policy required")
+        refinement = corner_policy.refinement(source_hashes, registration)
+        geometry = derive_registered_object_geometry(
+            observation, scope, corner_refinement=refinement
+        )
+    if corner_trace is not None:
+        corner_trace(
+            dict(
+                corner_refinement=refinement,
+                frame_id=observation.frame_id,
+                frame_sha256=observation.checksum_sha256,
+                marker_status=geometry.status,
+                marker_reason=geometry.reason,
+                marker_ids=(
+                    list(geometry.marker_estimate.observed_marker_ids)
+                    if geometry.marker_estimate is not None
+                    else []
+                ),
+            )
+        )
     if geometry.status != "DERIVED":
         raise ValueError("registered marker unavailable: " + geometry.reason)
     assert geometry.object_center_world_m is not None
@@ -284,9 +351,23 @@ def collection_bootstrap_evidence(
 
 
 def bootstrap_collection_tracker(
-    observation: RGBDObservation, registration: Mapping[str, Any]
+    observation: RGBDObservation,
+    registration: Mapping[str, Any],
+    *,
+    corner_policy: BootstrapCornerPolicy | None = None,
+    source_hashes=None,
+    corner_trace=None,
 ) -> tuple[OpenCVTargetTracker, dict[str, Any]]:
-    evidence = collection_bootstrap_evidence(observation, registration)
+    if corner_policy is None and corner_trace is None:
+        evidence = collection_bootstrap_evidence(observation, registration)
+    else:
+        evidence = collection_bootstrap_evidence(
+            observation,
+            registration,
+            corner_policy=corner_policy,
+            source_hashes=source_hashes,
+            corner_trace=corner_trace,
+        )
     return OpenCVTargetTracker(observation, evidence), evidence
 
 
@@ -335,8 +416,7 @@ def build_collection_contract(
 ) -> VisualOriginalPlan:
     validate_camera(observation, geometry)
     use_physics_timeout = (
-        protocol_settings is not None
-        and protocol_settings.get("timeout_basis") == "physics_steps"
+        protocol_settings is not None and protocol_settings.get("timeout_basis") == "physics_steps"
     )
     horizons = action_horizons(use_v2=use_physics_timeout)
     issued = current_owner["issued_at"]
@@ -931,7 +1011,15 @@ class RegisteredCollectionPreviewTrackerV2:
     """以完整参考和当前深度核对内部遮挡，失败时不借用旧物体姿态。"""
 
     def __init__(
-        self, observation, registration, *, source_root, source_hashes, nominal_policy=None
+        self,
+        observation,
+        registration,
+        *,
+        source_root,
+        source_hashes,
+        nominal_policy=None,
+        corner_policy=None,
+        corner_trace=None,
     ):
         if nominal_policy is not None:
             expected = registered_nominal_region_policy_v1(source_hashes)
@@ -945,8 +1033,17 @@ class RegisteredCollectionPreviewTrackerV2:
             corner_refinement="NONE" if nominal_policy is None else "SUBPIX",
         )
         reference = RGBDObservation.model_validate(observation.model_dump())
+        options = (
+            {}
+            if corner_policy is None and corner_trace is None
+            else {
+                "corner_policy": corner_policy,
+                "corner_trace": corner_trace,
+                "source_hashes": source_hashes,
+            }
+        )
         self._region_tracker, _ = bootstrap_collection_tracker(
-            reference, self._provider._registration.to_payload()
+            reference, self._provider._registration.to_payload(), **options
         )
         region = self._region_tracker.destination
         if region is None:
@@ -1117,7 +1214,14 @@ def _registered_model_depth_v1(observation, geometry, primitives, pixels):
 
 
 def bootstrap_registered_collection_tracker_v2(
-    observation, registration, *, source_root, source_hashes, nominal_policy=None
+    observation,
+    registration,
+    *,
+    source_root,
+    source_hashes,
+    nominal_policy=None,
+    corner_policy=None,
+    corner_trace=None,
 ):
     """建立固定参考的独立 v2 跟踪器，不授予执行或研究资格。"""
     return RegisteredCollectionPreviewTrackerV2(
@@ -1126,6 +1230,8 @@ def bootstrap_registered_collection_tracker_v2(
         source_root=source_root,
         source_hashes=source_hashes,
         nominal_policy=nominal_policy,
+        corner_policy=corner_policy,
+        corner_trace=corner_trace,
     )
 
 
@@ -1499,8 +1605,7 @@ def build_collection_contract_v2(
 ) -> VisualOriginalPlan:
     validate_camera(observation, geometry)
     use_physics_timeout = (
-        protocol_settings is not None
-        and protocol_settings.get("timeout_basis") == "physics_steps"
+        protocol_settings is not None and protocol_settings.get("timeout_basis") == "physics_steps"
     )
     horizons = action_horizons(use_v2=use_physics_timeout)
     issued = current_owner["issued_at"]

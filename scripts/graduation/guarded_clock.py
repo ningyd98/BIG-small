@@ -279,7 +279,9 @@ class GuardedClockEpisode(r1.Episode):
         step, label, handoff = self.frames[-1]
         if label != "registration-handoff" or step != self.backend.total_physics_steps:
             raise ValueError("missing original registered handoff")
-        self.color, self.evidence = bootstrap_collection_tracker(handoff, self.geometry)
+        self.color, self.evidence = bootstrap_collection_tracker(
+            handoff, self.geometry, **self.bootstrap_options("guarded_handoff")
+        )
         self.current = (step, handoff)
         self.report["dispatch_reference"] = {
             "physics_step": step,

@@ -39,6 +39,7 @@ from cloud_edge_robot_arm.research.native_calibration_collection import (
     digest as product_digest,
 )
 from cloud_edge_robot_arm.research.native_collection_grounding import (
+    BootstrapCornerPolicy,
     bootstrap_collection_tracker,
     bootstrap_registered_collection_tracker_v2,
     build_collection_contract_v2,
@@ -384,6 +385,19 @@ class Episode:
         self.raw, self.alloc, self.alloc_sha, self.catalog = raw, alloc, alloc_sha, catalog
         self.case = alloc["case"]
         self.geometry = alloc["geometry"]
+        binding = alloc.get("bootstrap_policy_binding")
+        self._corner_binding = None
+        if binding is not None:
+            arm = self.case.get("arm")
+            explicit = BootstrapCornerPolicy.for_development(self.catalog, self.geometry)
+            expected = {**dataclasses.asdict(explicit), "mode": arm}
+            if (
+                arm not in {"EXACT_DEFAULT", "EXPLICIT_SUBPIX"}
+                or expected != binding
+                or self.alloc["intent_descriptor"].get("bootstrap_policy_binding") != expected
+            ):
+                raise ValueError("bootstrap arm, source or asset does not match the issuance")
+            self._corner_binding = (arm, explicit, digest(expected))
         self.owner = Owner(raw, alloc, alloc_sha)
         self.backend = MuJoCoPhysicsBackend()
         self.robot = MuJoCoSkillRobot(self.backend)
@@ -401,6 +415,27 @@ class Episode:
         self.phase = "RESET"
         self.action = None
         self.registration = NativeGeometryRegistration(self.geometry)
+        if self._corner_binding is not None:
+            self.report["bootstrap_consumers"] = []
+
+    def bootstrap_options(self, role, *, factory=False):
+        if self._corner_binding is None:
+            return {}
+        arm, policy, binding = self._corner_binding
+        if digest(self.alloc["bootstrap_policy_binding"]) != binding:
+            raise ValueError("cannot share differently bound bootstrap references")
+
+        def traced(row):
+            self.report["bootstrap_consumers"].append(
+                {"role": role, "arm": arm, "binding_sha256": binding, **row}
+            )
+
+        args = {"corner_trace": traced}
+        if arm == "EXPLICIT_SUBPIX":
+            args["corner_policy"] = policy
+            if not factory:
+                args["source_hashes"] = self.catalog
+        return args
 
     def active(self):
         lease = self.owner.current()
@@ -417,7 +452,9 @@ class Episode:
     def bootstrap(self):
         boot = self.capture("bootstrap")
         lease = self.active()
-        self.color, self.evidence = bootstrap_collection_tracker(boot, self.geometry)
+        self.color, self.evidence = bootstrap_collection_tracker(
+            boot, self.geometry, **self.bootstrap_options("bootstrap")
+        )
         self.report["bootstrap"] = {
             "frame_id": boot.frame_id,
             "checksum_sha256": boot.checksum_sha256,
@@ -454,7 +491,9 @@ class Episode:
         self.report["bootstrap"]["physics_step"] = self.backend.total_physics_steps
         before_reset = self.frames[0][2]
         try:
-            zero = collection_bootstrap_evidence(before_reset, self.geometry)
+            zero = collection_bootstrap_evidence(
+                before_reset, self.geometry, **self.bootstrap_options("reset_readonly")
+            )
             zero["grounded_destination"] = before_reset.world_point(
                 zero["original_pixel_destination"]
             ).model_dump()
@@ -489,6 +528,7 @@ class Episode:
             source_root=ROOT,
             source_hashes=self.catalog,
             nominal_policy=registered_nominal_region_policy_v1(self.catalog),
+            **self.bootstrap_options("v2_region_reference", factory=True),
         )
 
     def check_shield(self, obs, phase, contract, step, started, clearance):
