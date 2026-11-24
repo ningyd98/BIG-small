@@ -1,5 +1,7 @@
 # 毕业设计交付与离线演示
 
+**研究验收尚未完成。** 11 月 24 日新增四批静态抓放开发试验，并补测门控和运动故障恢复。原论文的实验记录截至 11 月 23 日。下表印本与后续实测可按日期分别引用。[开题指标与新增实验总表](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-proposal-experiment-qualification-20261124/stage-summary.public.md)
+
 题目为《面向边缘智能场景的小型机械臂云边协同控制系统的设计》。11 月 24 日的论文长稿共 38 页，七章叙述正文有 33,326 个汉字，整份 Word 有 37,259 个可印汉字。正文计数剔除标题、图表、代码、摘要、书目及附录。Word 的中英文合计字数为 42,499。实验记录截至 11 月 23 日，各章附同一次试验的来源与复算依据。[逐章字数及印本文字核验](../../../artifacts/research/process/20261004-ced-development/astra-rounds/round-graduation-manuscript-length-20261123/length.public.json)
 
 | 交付 | 用途 |
