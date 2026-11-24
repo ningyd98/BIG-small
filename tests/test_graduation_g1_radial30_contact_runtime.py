@@ -21,7 +21,7 @@ def test_normal_cli_reserves_separate_case_names_and_only_the_new_static_gate(co
         == "2" * 64
     )
     assert contact.ASSIGNMENTS == {
-        "train-radial30-contact-d02-01": ["d02"],
+        "train-radial30-contact-d02-02": ["d02"],
         "train-radial30-contact-d01-01": ["d01"],
     }
     with pytest.raises(ValueError, match="130 mm"):
@@ -35,7 +35,7 @@ def test_static_gate_rejects_wrong_parent_dropouts_and_failed_mechanical_control
     expected = dict(
         schema="g1.visibility.radial30-screen-selection.v1",
         plan_sha256=contact.PLAN_SHA,
-        parent_generation=contact.PARENT,
+        parent_generation=contact.MOUNT_PARENT,
         candidate_offset_mm=30,
         selected_offset_mm=30,
         asset_sha256=mount.spec_for(30)["asset_sha256"],
@@ -70,9 +70,9 @@ def test_static_gate_rejects_wrong_parent_dropouts_and_failed_mechanical_control
 
 def test_full_sources_must_preserve_timed_observer_scorer_and_parent_archive(contact):
     private = Path.cwd() / build.PRIVATE
-    if not (private / "builds" / contact.PARENT / "preflight.json").is_file():
+    if not (private / "builds" / contact.MOUNT_PARENT / "preflight.json").is_file():
         pytest.skip("frozen parent tree is local")
-    parent, prior = build.verify_build(private, contact.PARENT)
+    parent, prior = build.verify_build(private, contact.MOUNT_PARENT)
     source, overlays = contact.overlays(Path.cwd(), parent, prior)
     assert set(overlays) == set(contact.ADAPTERS) | {build.ASSET, contact.MODULE, source}
     assert source not in prior["runtime_files_sha256"]
@@ -81,7 +81,7 @@ def test_full_sources_must_preserve_timed_observer_scorer_and_parent_archive(con
     )
     assert not set(overlays) & {build.GRID, build.DETECTOR, *build.SCORERS}
     assert len(prior["runtime_files_sha256"]) == 565
-    assert sha(parent / "runtime-build.json") == contact.PARENT
+    assert sha(parent / "runtime-build.json") == contact.MOUNT_PARENT
 
 
 def test_evaluation_requires_both_same_geometry_danger_intervals(tmp_path, contact):
@@ -136,13 +136,12 @@ def test_completed_native_sequence_without_emergency_stop_remains_a_safe_history
 
 
 def test_published_qualification_refuses_parent_and_missing_current_depth_packet(contact, tmp_path):
-    import os
     import shutil
 
     from scripts.graduation.perception_io import read
 
     repo = Path.cwd()
-    public = repo / contact.DIRECTORY / "runtime-qualification.public.json"
+    public = repo / contact.ADMISSION / "runtime-qualification.public.json"
     if not public.is_file():
         pytest.skip("separate live 130 mm qualification has not been conducted")
     generation = read(public)["runtime_build_sha256"]
@@ -161,7 +160,7 @@ def test_published_qualification_refuses_parent_and_missing_current_depth_packet
     shutil.copyfile(original, copied)
     raw = tree.parent / pf["full_occlusion_directory"]
     copied_raw = tmp_path / raw.name
-    shutil.copytree(raw, copied_raw, copy_function=os.link)
+    shutil.copytree(raw, copied_raw)
     tested = copied_raw / "only-8" / "tested.rgbd.json"
     original_digest = sha(raw / "only-8/tested.rgbd.json")
     tested.unlink()

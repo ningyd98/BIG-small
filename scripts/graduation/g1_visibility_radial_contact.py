@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 from pathlib import Path
 
@@ -11,8 +12,8 @@ from scripts.graduation import g1_visibility_runtime as build
 from scripts.graduation.g1_formal_runtime import require
 from scripts.graduation.perception_io import pinned, sha
 
-PARENT = "f33d25e2ebac4342e32e3878263ab6f92838ed51c715a3b0c28a9777a4dad892"
-PARENT_PREFLIGHT = "8e12a9e9ab1417c43d9ed5a2f98f30ee41f572225838f1bfbaa55073d7bebe01"
+MOUNT_PARENT = "f33d25e2ebac4342e32e3878263ab6f92838ed51c715a3b0c28a9777a4dad892"
+MOUNT_PREFLIGHT = "8e12a9e9ab1417c43d9ed5a2f98f30ee41f572225838f1bfbaa55073d7bebe01"
 PLAN_SHA = "6a8eb89a5609a01dbbd5560c28a5379b95b72c7061522299185c7ced94fc3d9c"
 DIRECTORY = build.ROUNDS / "round-g1-radial30-contact-20261125"
 SCREEN = DIRECTORY / "screen-selection.public.json"
@@ -20,14 +21,20 @@ SCREEN = DIRECTORY / "screen-selection.public.json"
 SCREEN_SHA = "4625888d3a356cbf7c856517240a3e1c37cadaa13ee27a6ff1c2ded59ae90178"
 MODULE = build.PREFIX + "g1_visibility_radial_contact.py"
 ADAPTERS = (build.BUILDER, build.RUNNER, mount.ADAPTER)
-ASSIGNMENTS = {"train-radial30-contact-d02-01": ["d02"], "train-radial30-contact-d01-01": ["d01"]}
+PARENT = "2d67f55f990226db232ac8c09ee454d2ae40fabc31b43156ff05f5d069dd372d"
+PARENT_PREFLIGHT = "4f7a4af2ae46a6be8b9a2adcba1f2bb6dc7d085fb2ef2ad63d43e22bcf66f59b"
+ADMISSION = build.ROUNDS / "round-g1-radial30-capture-admission-20261125"
+ADMISSION_PLAN = "e8faaee12c3c781065ba5e9725355a74968a510a4515532027f400eea577e071"
+REJECTED_LABEL = "train-radial30-contact-d02-01"
+REPLACEMENT = "train-radial30-contact-d02-02"
+ASSIGNMENTS = {REPLACEMENT: ["d02"], "train-radial30-contact-d01-01": ["d01"]}
 
 
 def check_screen(record):
     fields = dict(
         schema="g1.visibility.radial30-screen-selection.v1",
         plan_sha256=PLAN_SHA,
-        parent_generation=PARENT,
+        parent_generation=MOUNT_PARENT,
         candidate_offset_mm=30,
         selected_offset_mm=30,
         asset_sha256=mount.spec_for(30)["asset_sha256"],
@@ -54,6 +61,7 @@ def check_identity(lock):
         SCREEN_SHA is not None
         and binding.get("screen_sha256") == SCREEN_SHA
         and binding.get("plan_sha256") == PLAN_SHA
+        and binding.get("admission_plan_sha256") == ADMISSION_PLAN
         and lock.get("parent_runtime_build_sha256") == PARENT
         and lock.get("radial_assembly") == mount.spec_for(30),
         "130 mm slots require the current 130 mm qualification and generation",
@@ -67,7 +75,7 @@ def qualification(repo, parent, requested_sha):
     )
     plan = pinned(repo / DIRECTORY / "plan.json", PLAN_SHA)
     require(
-        plan["parent_generation"] == PARENT
+        plan["parent_generation"] == MOUNT_PARENT
         and plan["only_new_offset_mm"] == 30
         and sha(repo / DIRECTORY / "plan.md") == plan["plan_md_sha256"],
         "wrong 130 mm plan",
@@ -99,7 +107,7 @@ def qualification(repo, parent, requested_sha):
     } | {
         "screen_sha256": requested_sha,
         "screen_file": SCREEN.as_posix(),
-        "parent_preflight_sha256": PARENT_PREFLIGHT,
+        "parent_preflight_sha256": MOUNT_PREFLIGHT,
     }
 
 
@@ -164,11 +172,74 @@ def manifest(prior, updates, qualification):
     }
 
 
+def supersedes(repo, private):
+    plan = pinned(repo / ADMISSION / "plan.json", ADMISSION_PLAN)
+    directory = private / "batches" / REJECTED_LABEL
+    expected = {directory / name for name in plan["batch_inventory"]}
+    observed = set(directory.rglob("*"))
+    require(
+        observed == expected | {directory / "d02"},
+        "old 130 mm slot has an attempt, instance or unregistered trace",
+    )
+    for path in expected:
+        key = (build.PRIVATE / "batches" / REJECTED_LABEL / path.relative_to(directory)).as_posix()
+        require(
+            path.is_file() and not path.is_symlink() and sha(path) == plan["inputs_sha256"][key],
+            "old 130 mm slot inventory changed",
+        )
+    return dict(
+        label=REJECTED_LABEL,
+        batch_path=(build.PRIVATE / "batches" / REJECTED_LABEL).as_posix(),
+        runtime_build_sha256=PARENT,
+        allocation_sha256=plan["rejected_batch_sha256"],
+        case_allocation_sha256=sha(directory / "d02/allocation.json"),
+        refusal_sha256=plan["original_stderr_sha256"],
+        admission_plan_sha256=ADMISSION_PLAN,
+    )
+
+
 def parent_inputs(repo, private, requested_sha, adapter_source=None):
     parent, prior = build.verify_build(private, PARENT)
     parent_preflight = pinned(parent.parent / "preflight.json", PARENT_PREFLIGHT)
-    evidence = qualification(repo, parent, requested_sha)
-    _, updates = overlays(repo, parent, prior, adapter_source)
+    mechanical, base = build.verify_build(private, MOUNT_PARENT)
+    evidence = qualification(repo, mechanical, requested_sha)
+    require(
+        prior["radial_contact"] == evidence
+        and prior["radial_assembly"] == mount.spec_for(30)
+        and prior["parent_runtime_build_sha256"] == MOUNT_PARENT,
+        "wrong predecessor of the 130 mm admission",
+    )
+    _, original = overlays(repo, mechanical, base, parent)
+    require(
+        all(
+            hashlib.sha256(data).hexdigest() == prior["runtime_files_sha256"][k]
+            for k, data in original.items()
+        ),
+        "changed 130 mm predecessor geometry or scoring source",
+    )
+    plan = pinned(repo / ADMISSION / "plan.json", ADMISSION_PLAN)
+    require(
+        plan["rejected_generation"] == PARENT
+        and plan["preflight_sha256"] == PARENT_PREFLIGHT
+        and plan["static_gate_sha256"] == SCREEN_SHA
+        and sha(repo / ADMISSION / "plan.md") == plan["plan_md_sha256"],
+        "wrong capture admission plan or predecessor",
+    )
+    for name, digest in plan["inputs_sha256"].items():
+        if name == "tests/test_graduation_g1_radial30_contact_runtime.py":
+            raw = gzip.decompress((repo / ADMISSION / "frozen-plan-test.py.gz").read_bytes())
+            actual = hashlib.sha256(raw).hexdigest()
+        else:
+            actual = sha((parent if name in (build.RUNNER, MODULE, build.BUILDER) else repo) / name)
+        require(actual == digest, "changed capture admission input: " + name)
+    source = repo if adapter_source is None else adapter_source
+    updates = {name: (source / name).read_bytes() for name in (build.RUNNER, MODULE)}
+    evidence = {
+        **evidence,
+        "admission_plan_sha256": ADMISSION_PLAN,
+        "superseded_preflight_sha256": PARENT_PREFLIGHT,
+        "supersedes": supersedes(repo, private),
+    }
     return parent, parent_preflight, updates, manifest(prior, updates, evidence)
 
 

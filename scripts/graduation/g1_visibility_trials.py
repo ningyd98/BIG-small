@@ -1118,6 +1118,80 @@ def contact_histories(private, generation):
     return rows
 
 
+def admission(
+    repo, private, generation, lock, pre, geometry, scope, label, groups, path, digest, batch=None
+):
+    """Authenticate the original gate or its allocated copy before a device or worker is entered."""
+    require(
+        scope in ("training", "evaluation") and (label == "evaluation") == (scope == "evaluation"),
+        "foreign scope for development admission",
+    )
+    require(read(pre)["runtime_build_sha256"] == generation, "preflight generation differs")
+    if batch is not None:
+        require(
+            batch["preflight_sha256"] == sha(pre)
+            and batch["gate_sha256"] == digest
+            and path == batch_path(private, label) / "gate.json"
+            and batch["scorer_files_sha256"] == lock["scorer_files_sha256"],
+            "changed allocation preflight, scorer or gate copy",
+        )
+    contact_mount = (lock.get("radial_assembly") or {}).get(
+        "offset_mm"
+    ) == 30 and "radial_timing" in lock
+    if "radial_contact" in lock or contact_mount:
+        from scripts.graduation import g1_visibility_radial_contact as contact
+
+        contact.check_identity(lock)
+        require(
+            digest == contact.SCREEN_SHA
+            and (
+                (batch is None and path.resolve() == (repo / contact.SCREEN).resolve())
+                or (batch is not None and batch["gate_source_sha256"] == contact.SCREEN_SHA)
+            ),
+            "130 mm admission requires its registered screen and exact allocated copy",
+        )
+        gate = pinned(path, digest)
+        contact.check_screen(gate)
+        timing_preflight(repo, private, generation, lock, pre, geometry)
+        if scope == "training":
+            require(contact.ASSIGNMENTS.get(label) == groups, "unregistered 130 mm assignment")
+            if groups == ["d01"]:
+                prior_d02_contact_clear(private, generation, contact.REPLACEMENT)
+            elif batch is not None:
+                require(
+                    batch.get("supersedes") == lock["radial_contact"]["supersedes"],
+                    "130 mm replacement allocation lacks its sealed predecessor",
+                )
+        else:
+            contact_histories(private, generation)
+        return gate
+    gate = release_gate(repo, path, digest, lock)
+    if lock.get("radial_timing") is not None:
+        configuration = build.issued_timing_round(lock)
+        source = lock["radial_timing"]["replay_release_sha256"]
+        require(
+            (
+                batch is None
+                and path.resolve()
+                == (repo / configuration.directory / "replay-release.public.json").resolve()
+                and digest == source
+            )
+            or (
+                batch is not None
+                and batch["gate_source_sha256"] == source
+                and gate
+                == pinned(repo / configuration.directory / "replay-release.public.json", source)
+            ),
+            "issuance requires this overlay's released software and budget",
+        )
+        timing_preflight(repo, private, generation, lock, pre, geometry)
+        if scope == "training":
+            require(timing_assignment(label, groups), "unregistered radial timing assignment")
+            if groups == ["d01"]:
+                prior_d02_contact_clear(private, generation)
+    return gate
+
+
 def issue(repo, private, generation, lock, args):
     from scripts.graduation import g1_dual_trials as dual
     from scripts.graduation.g1_formal_trials import identities
@@ -1133,37 +1207,19 @@ def issue(repo, private, generation, lock, args):
     pre = private / "builds" / generation / "preflight.json"
     require(read(pre)["runtime_build_sha256"] == generation, "preflight generation differs")
     first, previous, full = template(repo, lock)
-    if "radial_contact" in lock:
-        from scripts.graduation import g1_visibility_radial_contact as contact
-
-        contact.check_identity(lock)
-        require(
-            args.gate.resolve() == (repo / contact.SCREEN).resolve()
-            and args.gate_sha == contact.SCREEN_SHA,
-            "130 mm issuance requires its independently qualified static screen",
-        )
-        gate = pinned(args.gate, args.gate_sha)
-        timing_preflight(repo, private, generation, lock, pre, previous["geometry"])
-        if training:
-            require(contact.ASSIGNMENTS.get(label) == args.groups, "unregistered 130 mm assignment")
-            if args.groups == ["d01"]:
-                prior_d02_contact_clear(private, generation, "train-radial30-contact-d02-01")
-        else:
-            contact_histories(private, generation)
-    else:
-        gate = release_gate(repo, args.gate, args.gate_sha, lock)
-    if "radial_contact" not in lock and lock.get("radial_timing") is not None:
-        round_directory = build.issued_timing_round(lock).directory
-        require(
-            args.gate.resolve() == (repo / round_directory / "replay-release.public.json").resolve()
-            and args.gate_sha == lock["radial_timing"]["replay_release_sha256"],
-            "issuance requires this overlay's released software and budget",
-        )
-        timing_preflight(repo, private, generation, lock, pre, previous["geometry"])
-        if training:
-            require(timing_assignment(label, args.groups), "unregistered radial timing assignment")
-            if args.groups == ["d01"]:
-                prior_d02_contact_clear(private, generation)
+    gate = admission(
+        repo,
+        private,
+        generation,
+        lock,
+        pre,
+        previous["geometry"],
+        scope,
+        label,
+        args.groups if training else [],
+        args.gate,
+        args.gate_sha,
+    )
     extras = {}
     if training:
         rows = training_placements(args.groups, placements_from_old(repo))
@@ -1182,7 +1238,16 @@ def issue(repo, private, generation, lock, args):
         extras = {k: selection[k] for k in ("sampling_rule_sha256", "training_score_sha256")}
         extras["selection_sha256"] = args.selection_sha
     release = RELEASE + "-" + label
-    directory.mkdir(parents=True)
+    if "radial_contact" in lock:
+        from scripts.graduation import g1_visibility_radial_contact as contact
+
+        with device(private):
+            predecessor = contact.supersedes(repo, private)
+            if label == contact.REPLACEMENT:
+                extras["supersedes"] = predecessor
+            directory.mkdir(parents=True)
+    else:
+        directory.mkdir(parents=True)
     reserve_attempt(directory / "gate.json", gate)
     inventory = directory / "source-inventory.json"
     write(inventory, full)
@@ -1334,7 +1399,44 @@ def capture(repo, private, generation, lock, directory, batch, h, case_id):
 
     row = next((r for r in batch["cases"] if r["id"] == case_id), None)
     require(row is not None, "unallocated development case")
-    release_gate(repo, directory / "gate.json", batch["gate_sha256"], lock)
+    checked_directory, checked_batch = batch_context(private, generation, batch["label"], h)
+    require(
+        checked_directory == directory and checked_batch == batch, "foreign acquisition allocation"
+    )
+    case, _ = load_case(directory, batch, row)
+    admission(
+        repo,
+        private,
+        generation,
+        lock,
+        private / "builds" / generation / "preflight.json",
+        case["geometry"],
+        batch["scope"],
+        batch["label"],
+        [item["id"] for item in batch["cases"]],
+        directory / "gate.json",
+        batch["gate_sha256"],
+        batch,
+    )
+    if "radial_contact" in lock and batch["scope"] == "evaluation":
+        from scripts.graduation import g1_visibility_radial_contact as contact
+
+        selection = pinned(directory / "selection.json", batch["selection_sha256"])
+        require(
+            selection["runtime_build_sha256"] == generation
+            and selection["training_score_sha256"] == batch["training_score_sha256"]
+            and checked_placements(selection["placements"], "evaluation")
+            == [{k: r[k] for k in FIELDS} for r in batch["cases"]],
+            "foreign held-out evaluation selection",
+        )
+        scores = [batch_path(private, label) / "score.json" for label in contact.ASSIGNMENTS]
+        eligible = [
+            score
+            for score in scores
+            if score.is_file() and sha(score) == batch["training_score_sha256"]
+        ]
+        require(len(eligible) == 1, "missing candidate training score for evaluation capture")
+        check_training_score(private, generation, eligible[0], batch["training_score_sha256"])
     owned = None
     instance = directory / case_id / "instance"
 
@@ -1357,6 +1459,18 @@ def capture(repo, private, generation, lock, directory, batch, h, case_id):
         return owned
 
     with device(private), bind_scene(row["scene_id"]), build.log_measurements() as measured:
+        if "radial_contact" in lock:
+            from scripts.graduation import g1_visibility_radial_contact as contact
+
+            require(
+                contact.supersedes(repo, private) == lock["radial_contact"]["supersedes"],
+                "a prior 130 mm physical opportunity was already consumed",
+            )
+            case_dir = directory / case_id
+            require(
+                not (case_dir / "attempt.json").exists() and not (case_dir / "instance").exists(),
+                "130 mm slot has an existing or interrupted physical attempt",
+            )
         try:
             dual.g1_mount_trials.capture(
                 repo / build.PLAN,
@@ -1706,6 +1820,7 @@ def main():
 
         _, lock = build.verify_build(private, args.generation)
         contact.check_identity(lock)
+        require(args.batch in contact.ASSIGNMENTS, "old or unregistered 130 mm batch")
     if getattr(args, "batch", None) in TIMING_ASSIGNMENTS:
         _, lock = build.verify_build(private, args.generation)
         require("radial_contact" not in lock, "115 mm batch cannot use the 130 mm generation")
