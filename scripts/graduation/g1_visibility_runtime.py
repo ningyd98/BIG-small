@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
+import json
 import math
 import os
 import re
@@ -13,6 +15,7 @@ import tempfile
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
+from typing import NamedTuple
 
 from scripts.graduation import g1_formal_runtime as parent_build
 from scripts.graduation.perception_io import ROOT, pinned, read, sha, write
@@ -59,6 +62,31 @@ TIMING_DETECTOR_FILES = {
 # Published offline, before generation construction. An unqualified pair cannot produce a build.
 TIMING_RELEASE_SHA = "284c149700f70b050fe92ddfc1d222fd105f229993becf0b8af1a78bc6cd2120"
 TIMING_BUDGET_SHA = "f0c4c6577de723af06c63a4b31d06423787a7f8241bea3576afcf9c7300d867c"
+FIT_DIRECTORY = ROUNDS / "round-g1-radial-fit-reuse-20261125"
+
+
+class TimingRound(NamedTuple):
+    directory: Path
+    plan_sha256: str
+    release_sha256: str | None
+    budget_sha256: str | None
+    grid_sha256: str | None
+
+
+NATIVE_ROUND = TimingRound(
+    TIMING_ROUND,
+    TIMING_PLAN_SHA,
+    TIMING_RELEASE_SHA,
+    TIMING_BUDGET_SHA,
+    TIMING_DETECTOR_FILES[GRID],
+)
+FIT_ROUND = TimingRound(
+    FIT_DIRECTORY,
+    "70d6f895fa88b80d0e5b2415c5cb51b63f39f17abe53252da2eb782be5535c5f",
+    "81bf8af00c237912b963b73263041ed7340ed2f921bba5545fa59213f0586ea8",
+    "861599926e5cc428609e207fa0389a7bfd8aff67778dff4d850833cbd52b607f",
+    "cefc238814296daa8c33d2a42c7e4844452391f5e910ef1ab324c56de4add088",
+)
 _active_measurements = ContextVar("g1_development_actual_measurements", default=None)
 require = parent_build.require
 
@@ -340,31 +368,86 @@ def timing_files_ok(prior, files, release):
     )
 
 
-def timing_qualification(repo, requested_sha):
-    """Require the independently sealed semantics, pixel timing and matched full-window budget."""
+def registered_timing_round(requested_sha):
     require(
         isinstance(requested_sha, str) and re.fullmatch(r"[0-9a-f]{64}", requested_sha),
-        "a radial semantic-release SHA256 is required",
+        "unreleased radial timing digest",
     )
-    budget = pinned(repo / TIMING_BUDGET, TIMING_BUDGET_SHA)
+    for registration in (NATIVE_ROUND, FIT_ROUND):
+        if (
+            requested_sha == registration.release_sha256
+            and registration.budget_sha256
+            and registration.grid_sha256
+        ):
+            return registration
+    raise ValueError("unreleased radial timing digest")
+
+
+def issued_timing_round(lock):
+    evidence = lock.get("radial_timing", {})
+    configuration = registered_timing_round(evidence.get("replay_release_sha256"))
     require(
-        qualified_timing_budget(budget, TIMING_DETECTOR_FILES),
-        "unreleased radial timing candidate: same-frame window budget has not qualified",
+        evidence.get("timing_plan_sha256") == configuration.plan_sha256
+        and evidence.get("paired_budget_sha256") == configuration.budget_sha256,
+        "foreign radial timing round or budget",
     )
-    require(requested_sha == TIMING_RELEASE_SHA, "unreleased radial detector or semantic evidence")
-    plan = pinned(repo / TIMING_ROUND / "plan.json", TIMING_PLAN_SHA)
+    return configuration
+
+
+def check_timing_plan(repo, configuration, plan):
+    snapshot = {}
+    redirects = {}
+    if configuration.directory == FIT_DIRECTORY:
+        raw = repo / FIT_DIRECTORY / "frozen-plan-inputs/previous-software-sources.json.gz"
+        require(
+            sha(raw) == "78f6c3354cd9432262d9be97f336ee8a57731743c4807e42b6c9548423919960",
+            "previous software-source archive changed",
+        )
+        snapshot = json.loads(gzip.decompress(raw.read_bytes()))
+        redirects = {
+            name: FIT_DIRECTORY / "frozen-plan-inputs" / Path(name).name
+            for name in plan["inputs_from_git_commit"]
+        }
+        supplements = {
+            "pixel_residual_profile.py": "solver_witness.py",
+            "remaining-pixel-profile.public.json": "solver-witness.public.json",
+        }
+        for name, digest in plan["supplementary_worktree_inputs_sha256"].items():
+            require(
+                sha(repo / TIMING_ROUND / supplements[Path(name).name]) == digest,
+                "changed supplementary timing profile",
+            )
     require(
-        plan["failed_generation"] == TIMING_PARENT
-        and sha(repo / TIMING_ROUND / "plan.md") == plan["plan_md_sha256"],
+        plan.get("native_baseline_generation", plan.get("failed_generation")) == TIMING_PARENT
+        and sha(repo / configuration.directory / "plan.md") == plan["plan_md_sha256"],
         "foreign timing plan or mechanical parent",
     )
     for name, digest in plan["inputs_sha256"].items():
-        require(sha(repo / name) == digest, "changed timing plan input: " + name)
-    release = pinned(repo / TIMING_RELEASE, requested_sha)
+        actual = (
+            hashlib.sha256(snapshot[name].encode()).hexdigest()
+            if name in snapshot
+            else sha(repo / redirects.get(name, name))
+        )
+        require(actual == digest, "changed timing plan input: " + name)
+
+
+def timing_qualification(repo, requested_sha):
+    """Require the independently sealed semantics, pixel timing and matched full-window budget."""
+    configuration = registered_timing_round(requested_sha)
+    source = repo / configuration.directory
+    expected_detector = {**TIMING_DETECTOR_FILES, GRID: configuration.grid_sha256}
+    budget = pinned(source / "paired-budget.public.json", configuration.budget_sha256)
+    require(
+        qualified_timing_budget(budget, expected_detector),
+        "unreleased radial timing candidate: same-frame window budget has not qualified",
+    )
+    plan = pinned(source / "plan.json", configuration.plan_sha256)
+    check_timing_plan(repo, configuration, plan)
+    release = pinned(source / "replay-release.public.json", requested_sha)
     tests = dict(
         schema="g1.visibility.offline-release.v1",
         plan_sha256=PLAN_SHA,
-        timing_plan_sha256=TIMING_PLAN_SHA,
+        timing_plan_sha256=configuration.plan_sha256,
         baseline_runtime_build_sha256=TIMING_PARENT,
         radial_offset_mm=15,
         eligible=True,
@@ -384,6 +467,21 @@ def timing_qualification(repo, requested_sha):
         new_formal_trials=0,
         real_hardware_trials=0,
     )
+    if configuration.directory == FIT_DIRECTORY:
+        tests.update(
+            fit_reuse_plan_sha256=configuration.plan_sha256,
+            previous_timing_plan_sha256=TIMING_PLAN_SHA,
+            previous_software_release_sha256=TIMING_RELEASE_SHA,
+            static_geometry_asset_sha256="47aae36ececab0d6bedd055a976fd74ce895e85a9827e1d0689afa6e3c3f8715",
+            static_geometry_registration_id="g1-development-only-dual-7y115-8x115-low-bracket-v3",
+            source_switch_control_passed=True,
+        )
+        require(
+            budget.get("fit_reuse_plan_sha256") == configuration.plan_sha256
+            and budget.get("prior_failed_budget_sha256") == TIMING_BUDGET_SHA
+            and budget.get("sample_group_counts") == {"cycle": 615, "neighbors": 60, "cold": 5},
+            "foreign fit-reuse budget or paired population",
+        )
     require(
         all(release.get(k) == v for k, v in tests.items())
         and release["historical_gates"]
@@ -392,7 +490,7 @@ def timing_qualification(repo, requested_sha):
     )
     detectors = release["detector_files_sha256"]
     require(
-        detectors == TIMING_DETECTOR_FILES and qualified_timing_budget(budget, detectors),
+        detectors == expected_detector,
         "timing software or same-frame window budget has not qualified",
     )
     for report in (release, budget):
@@ -406,17 +504,17 @@ def timing_qualification(repo, requested_sha):
                 and sha(path) == digest,
                 "changed or foreign timing evidence: " + name,
             )
-    sample_file = (TIMING_ROUND / "pixel-timing-samples.public.json.gz").as_posix()
+    sample_file = (configuration.directory / "pixel-timing-samples.public.json.gz").as_posix()
     require(
         budget["input_artifacts_sha256"].get(sample_file) == budget["samples_sha256"],
         "paired window budget does not bind the per-frame samples",
     )
     return dict(
-        timing_plan_sha256=TIMING_PLAN_SHA,
+        timing_plan_sha256=configuration.plan_sha256,
         baseline_runtime_build_sha256=TIMING_PARENT,
         baseline_preflight_sha256=TIMING_PARENT_PREFLIGHT,
         replay_release_sha256=requested_sha,
-        paired_budget_sha256=TIMING_BUDGET_SHA,
+        paired_budget_sha256=configuration.budget_sha256,
         detector_files_sha256=detectors,
     )
 

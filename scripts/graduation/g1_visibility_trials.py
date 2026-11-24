@@ -1054,8 +1054,9 @@ def issue(repo, private, generation, lock, args):
     gate = release_gate(repo, args.gate, args.gate_sha, lock)
     first, previous, full = template(repo, lock)
     if lock.get("radial_timing") is not None:
+        round_directory = build.issued_timing_round(lock).directory
         require(
-            args.gate.resolve() == (repo / build.TIMING_RELEASE).resolve()
+            args.gate.resolve() == (repo / round_directory / "replay-release.public.json").resolve()
             and args.gate_sha == lock["radial_timing"]["replay_release_sha256"],
             "issuance requires this overlay's released software and budget",
         )
@@ -1602,10 +1603,7 @@ def main():
         return
     if getattr(args, "batch", None) in TIMING_ASSIGNMENTS:
         _, lock = build.verify_build(private, args.generation)
-        require(
-            lock.get("radial_timing", {}).get("timing_plan_sha256") == build.TIMING_PLAN_SHA,
-            "the preregistered timing label requires the released radial performance overlay",
-        )
+        build.issued_timing_round(lock)
     # Resolve caller-provided files before switching into the isolated source tree.
     for key in ("gate", "selection", "training_score"):
         path = getattr(args, key, None)

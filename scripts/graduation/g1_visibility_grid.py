@@ -21,6 +21,38 @@ MIN_CELL_MARGIN = 0.13
 # Native samples are uint8. Class medians are half-levels and the decision threshold
 # is their midpoint. Leave one quarter gray level next to each limit to the scalar path.
 PHOTOMETRIC_GUARD = 0.25
+ISLAND_ANGLES = np.radians(np.arange(0, 90, 7.5))
+ISLAND_ROTATIONS = (
+    np.stack(
+        [
+            np.cos(ISLAND_ANGLES),
+            np.sin(ISLAND_ANGLES),
+            -np.sin(ISLAND_ANGLES),
+            np.cos(ISLAND_ANGLES),
+        ],
+        axis=1,
+    )
+    .reshape(-1, 2, 2)
+    .astype(np.float32)
+)
+
+
+def _registered_lstsq_kernel():
+    if np.__version__ != "2.5.3":
+        return None
+    try:
+        from numpy.linalg import _umath_linalg
+    except ImportError:
+        return None
+    fn = getattr(_umath_linalg, "lstsq", None)
+    if getattr(
+        fn, "signature", None
+    ) != "(m,n),(m,nrhs),()->(n,nrhs),(nrhs),(),(p)" or "ddd->ddid" not in getattr(fn, "types", ()):
+        return None
+    return fn
+
+
+_LSTSQ_KERNEL = _registered_lstsq_kernel()
 
 
 def _table():
@@ -77,16 +109,21 @@ def _seeds(centers, bases, gray):
     centers, bases = np.float32(centers), np.float32(bases)
     points = CELLS @ bases + centers[:, None, :]
     levels = _sample(gray, points)
-    ink = np.median(levels[:, BORDER], axis=1)
-    white = np.sort(levels[:, DATA], axis=1)[:, -3:].mean(axis=1)
+    border, data = levels[:, BORDER], levels[:, DATA]
+    ink = np.median(border, axis=1)
+    white = np.sort(data, axis=1)[:, -3:].mean(axis=1)
     threshold = ((white + ink) / 2)[:, None]
-    lookup = (levels[:, DATA] > threshold) @ WEIGHTS
+    lookup = (data > threshold) @ WEIGHTS
     ids = WORDS[lookup]
-    valid = (ids[:, 0] >= 0) & (white - ink >= MIN_CONTRAST)
-    valid &= (levels[:, BORDER] > threshold).sum(axis=1) <= 2
-    border_deviation = abs(levels[:, BORDER] - ink[:, None])
-    valid &= (border_deviation > 0.35 * (white - ink)[:, None]).sum(axis=1) <= 4
-    hit = np.flatnonzero(valid)
+    contrast = white - ink
+    possible = np.flatnonzero((ids[:, 0] >= 0) & (contrast >= MIN_CONTRAST))
+    if not len(possible):
+        return []
+    edges = border[possible]
+    supported = (edges > threshold[possible]).sum(axis=1) <= 2
+    deviations = abs(edges - ink[possible, None])
+    supported &= (deviations > 0.35 * contrast[possible, None]).sum(axis=1) <= 4
+    hit = possible[supported]
     # Prefer the pose with well-separated cell classes for a given physical candidate.
     strength = abs(levels[hit].astype(float) - threshold[hit]).mean(axis=1)
     return [
@@ -124,14 +161,14 @@ def _transitions(code):
 
 def _crossings(gray, grid, basis, center, threshold, contrast, axes, signs):
     # A leading dimension optionally groups independent poses for a single native remap.
-    tangent = basis[..., 1 - axes, :]
-    normals = np.stack([tangent[..., 1], -tangent[..., 0]], axis=-1)
-    normals /= np.linalg.norm(normals, axis=-1, keepdims=True)
-    across = basis[..., axes, :]
-    normals *= np.sign((normals * across).sum(axis=-1))[..., None]
+    tangent = basis[..., ::-1, :]
+    lengths = np.linalg.norm(basis, axis=-1)
+    axis_normals = np.stack([tangent[..., 1], -tangent[..., 0]], axis=-1)
+    axis_normals /= lengths[..., ::-1, None]
+    axis_normals *= np.sign((axis_normals * basis).sum(axis=-1))[..., None]
+    normals = axis_normals[..., axes, :]
     positions = grid @ basis + np.expand_dims(center, -2)
-    scale = np.linalg.norm(across, axis=-1)
-    delta = PROFILE_OFFSETS * scale[..., None]
+    delta = (PROFILE_OFFSETS * lengths[..., None])[..., axes, :]
     samples = _sample(gray, positions[..., None, :] + delta[..., None] * normals[..., None, :])
     profile = (samples.astype(float) - np.asarray(threshold)[..., None, None]) * signs[:, None]
     crossing = (profile[..., :-1] <= 0) & (profile[..., 1:] > 0)
@@ -152,13 +189,56 @@ def _crossings(gray, grid, basis, center, threshold, contrast, axes, signs):
     return positions, normals, offsets.reshape(good.shape), good
 
 
+@lru_cache(maxsize=100)
+def _homogeneous_grid(code):
+    grid = _transitions(code)[0]
+    return np.column_stack((grid, np.ones(len(grid))))
+
+
+def _pose_lstsq(matrices, rhs):
+    """Solve independent affine fits with the original NumPy LAPACK operation and cutoff."""
+    m, n = matrices.shape[-2:]
+    if (
+        _LSTSQ_KERNEL is not None
+        and len(matrices) > 1
+        and n == 6
+        and m >= n
+        and matrices.dtype == np.float64
+        and rhs.dtype == np.float64
+        and rhs.shape == matrices.shape[:-1]
+    ):
+        cutoff = np.finfo(np.float64).eps * max(m, n)
+        try:
+            with np.errstate(invalid="raise", over="raise", divide="raise", under="ignore"):
+                x, _, ranks, singular = _LSTSQ_KERNEL(
+                    matrices, rhs[..., None], cutoff, signature="ddd->ddid"
+                )
+            # Ill-conditioned systems and uncertain numerical outcomes retain the public
+            # scalar driver, including its full rank and error handling.
+            if (
+                np.isfinite(x).all()
+                and np.isfinite(singular).all()
+                and (ranks == n).all()
+                and (singular[:, -1] > 8 * cutoff * singular[:, 0]).all()
+            ):
+                return x[..., 0], ranks, singular
+        except (FloatingPointError, TypeError, ValueError, np.linalg.LinAlgError):
+            pass
+    results = [np.linalg.lstsq(a, b, rcond=None) for a, b in zip(matrices, rhs, strict=True)]
+    return (
+        np.stack([r[0] for r in results]),
+        np.array([r[2] for r in results]),
+        np.stack([r[3] for r in results]),
+    )
+
+
 def _weak_grid_cells(gray, code, seeds):
     """Prove strict native photometric failures; other seeds retain the full scalar verifier."""
     grid, axes, signs, _, _, held = _transitions(code)
     bits = PATTERNS[code].ravel()
     centers = np.array([s[1] for s in seeds], float)
     bases = np.array([s[2] for s in seeds], float)
-    homogeneous = np.column_stack((grid, np.ones(len(grid))))
+    homogeneous = _homogeneous_grid(code)
     active = np.ones(len(seeds), bool)
     rejected = np.zeros(len(seeds), bool)
     for iteration in range(5):
@@ -206,15 +286,21 @@ def _weak_grid_cells(gray, code, seeds):
             signs,
         )
         designs = (homogeneous[:, :, None] * normals[:, :, None, :]).reshape(len(indices), -1, 6)
-        for i, design, offset, fit in zip(indices, designs, offsets, good & ~held, strict=True):
-            if fit.sum() >= 6:
-                change, _, rank, _ = np.linalg.lstsq(design[fit], offset[fit], rcond=None)
-                if rank == 6 and np.isfinite(change).all():
-                    change = change.reshape(3, 2)
-                    bases[i] += change[:2]
-                    centers[i] += change[2]
-                    continue
-            active[i] = False
+        fits = good & ~held
+        counts = fits.sum(axis=1)
+        active[indices] = False
+        for m in np.unique(counts[counts >= 6]):
+            rows = np.flatnonzero(counts == m)
+            row, column = np.nonzero(fits[rows])
+            matrices = designs[rows[row], column].reshape(len(rows), m, 6)
+            rhs = offsets[rows[row], column].reshape(len(rows), m)
+            changes, ranks, _ = _pose_lstsq(matrices, rhs)
+            valid = (ranks == 6) & np.isfinite(changes).all(axis=1)
+            targets = indices[rows[valid]]
+            change = changes[valid].reshape(-1, 3, 2)
+            bases[targets] += change[:, :2]
+            centers[targets] += change[:, 2]
+            active[targets] = True
     return np.flatnonzero(rejected)
 
 
@@ -242,7 +328,7 @@ def _verify(gray, code, center, basis):
             gray, grid, basis, center, threshold, contrast, axes, signs
         )
         fit = good & ~held
-        design = np.column_stack((grid, np.ones(len(grid))))[:, :, None] * normals[:, None, :]
+        design = _homogeneous_grid(code)[:, :, None] * normals[:, None, :]
         design = design.reshape(-1, 6)
         if fit.sum() < 6:
             return None
@@ -391,6 +477,7 @@ def _accept(gray, seeds, source, candidates, failed):
     bases = np.array([s[2] for s in ordered])
     ignored = np.zeros(len(ordered), bool)
     screened, weak = set(), set()
+    peer_masks = {}
 
     def nearby(i):
         center_deltas = centers - centers[i]
@@ -422,12 +509,14 @@ def _accept(gray, seeds, source, candidates, failed):
             for j in range(i, len(ordered)):
                 if pending[j]:
                     peers.append(j)
-                    pending &= ~nearby(j)
+                    peer_masks[j] = nearby(j)
+                    pending &= ~peer_masks[j]
             if len(peers) >= 2:
                 discarded = _weak_grid_cells(gray, code, [ordered[j] for j in peers])
                 weak.update(peers[j] for j in discarded)
             screened.add(code)
-        ignored |= nearby(i)
+        mask = peer_masks.pop(i, None)
+        ignored |= nearby(i) if mask is None else mask
         if i in weak:
             continue
         result = _verify(gray, code, center, basis)
@@ -445,9 +534,7 @@ def _island_seeds(gray, center, area, cell):
     offsets = desc[keep, :2]
     if not len(offsets):
         return []
-    angle = np.radians(np.arange(0, 90, 7.5))
-    unit = np.stack([np.cos(angle), np.sin(angle), -np.sin(angle), np.cos(angle)], axis=1)
-    bases = unit.reshape(-1, 2, 2).astype(np.float32) * cell
+    bases = ISLAND_ROTATIONS * cell
     centers = center - offsets @ bases
     bases = np.broadcast_to(bases[:, None], (len(bases), len(offsets), 2, 2))
     return _seeds(centers.reshape(-1, 2), bases.reshape(-1, 2, 2), gray)
