@@ -1,5 +1,11 @@
 # 项目状态
 
+## 2026-11-24　G1 标记安装与静态抓放
+
+同一顶视相机下，在 8 个历史停机姿态中，将标记从方块 +Y 侧移到 +X 侧，可用抓取点从 0/8 增至 7/8。两种安装随后在四个全新摆放中各运行一次，独立物理抓放成功均为 0/4，8 次都在首个上方移动动作失标停机。原安装与 +X 安装全程可定位帧的物顶误差 P90 分别为 3.111 mm 和 2.445 mm。G1 静态抓放的 90% 开题指标尚未达到。本轮新增正式运行 0 次。[逐组结果与阶段诊断](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-marker-mount-20261124/step-report.md)
+
+单独从历史固定 TCP 成功轨迹恢复 7 个名义场景姿态，接近阶段两种安装均在 3 个姿态中有 2 个可用，闭爪与抬升均为 3/3。8 个新试次都在接近前停止，后三阶段尚无新摆放的在线观测。[逐帧来源与姿态核验](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-marker-mount-20261124/phase-reconstruction.public.json)
+
 ## 2026-11-24　开题指标与补做实验
 
 静态抓放在 13 个新增开发摆放上独立复位运行 22 次。按分配计，完整通过在线动作与独立物理评价的有 0 次。另做了 4 次固定动作时效实验和 4 次故障恢复实验。v10 正式教师仍只有首组运行过，9 个登记组中合格 0 组。G1 至 G4 均未取得开题验收所需的结果。[逐项实测、分母与缺口](../artifacts/research/process/20261004-ced-development/astra-rounds/round-proposal-experiment-qualification-20261124/stage-summary.public.md)
