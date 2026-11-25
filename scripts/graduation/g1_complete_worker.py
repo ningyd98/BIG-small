@@ -103,6 +103,7 @@ class ClearanceEpisode(TranslatedEpisode):
         self.calibration_hash = allocation["calibration_sha256"]
         self.clock_starts = {}
         self.last_handoff = None
+        self.entry_command = None
         self.preflight = preflight
         self.approach_diagnostic = (
             allocation["case"]["release"].split("-train-")[-1].startswith("approach-probe-")
@@ -146,6 +147,58 @@ class ClearanceEpisode(TranslatedEpisode):
             **camera_encoder_pose(backend._model, backend._data),
         )
 
+    def command_handoff(self, skill, phase, robot, frame):
+        """Bind a continuous native stage transition to encoders and applied actuator targets."""
+        if phase == "STATIC_SELECTION" or skill == g1_visibility_trials.STAGES[0]:
+            return None
+        index = g1_visibility_trials.STAGES.index(skill)
+        prior = self.report["actions"][index - 1]
+        backend = self.backend
+        step = backend.total_physics_steps
+        # Applied drive setpoints, independently of any queued or planned target.
+        joint_targets = [float(x) for x in backend._data.ctrl[:7]]
+        finger_targets = [float(x) for x in backend._data.ctrl[7:9]]
+        seq = backend.next_command_sequence - 1
+        if phase == "PRE":
+            trials.require(
+                prior.get("status") == "PASS" and prior.get("end_step") == step,
+                "previous native stage did not return at this physical step",
+            )
+            self.entry_command = dict(
+                source_skill=prior["skill"],
+                destination_skill=skill,
+                prior_end_step=prior["end_step"],
+                entry_step=step,
+                entry_command_seq=seq,
+                entry_target_rad=joint_targets,
+                entry_finger_target_m=finger_targets,
+                entry_effective_arm_goal_rad=[float(x) for x in backend._target_positions],
+                entry_native_arm_velocity_rad_s=list(
+                    backend.get_joint_command_state().velocity_rad_s
+                ),
+                entry_gripper_open=bool(backend._gripper_open),
+                entry_frame_id=frame.frame_id,
+                entry_checksum_sha256=frame.checksum_sha256,
+                entry_joint_positions_rad=robot["joint_positions_rad"],
+                entry_joint_velocities_rad_s=robot["joint_velocities_rad_s"],
+                entry_finger_positions_m=robot["finger_positions_m"],
+                entry_finger_velocities_m_s=robot["finger_velocities_m_s"],
+            )
+        trials.require(
+            self.entry_command is not None
+            and self.entry_command["destination_skill"] == skill
+            and self.entry_command["entry_step"] <= step
+            and self.entry_command["entry_command_seq"] <= seq,
+            "unbound native command handoff",
+        )
+        return dict(
+            self.entry_command,
+            current_step=step,
+            last_command_seq=seq,
+            effective_joint_target_rad=joint_targets,
+            effective_finger_target_m=finger_targets,
+        )
+
     def check_current(self, frame, skill, target, phase):
         started = time.perf_counter_ns()
         if self.certificate is None:
@@ -171,6 +224,7 @@ class ClearanceEpisode(TranslatedEpisode):
                 frame, self.geometry, consumer="local_clearance"
             )
         robot = self.robot_observation(frame)
+        robot["handoff"] = self.command_handoff(skill, phase, robot, frame)
         status = self.certificate.check(
             frame,
             marker,

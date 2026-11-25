@@ -4,6 +4,7 @@ import base64
 
 import cv2
 import numpy as np
+from scripts.graduation.g1_complete_cv_angle_domain import contact_opportunity
 from scripts.graduation.g1_complete_cv_angle_edges import plate_yaw
 from scripts.graduation.g1_complete_cv_calibrate import BAND, axial
 
@@ -317,6 +318,21 @@ def grasp_readiness(
         original_center_world_m=np.asarray(center).tolist(),
         marker_upright_zz=float(np.asarray(object_rotation)[2, 2]),
     )
+    opportunity = contact_opportunity(
+        refined,
+        upright,
+        tcp,
+        wrist_rotation,
+        fingers,
+        [*xy_uncertainty, 0.00075],
+        yaw_error_deg=error,
+        yaw_uncertainty_deg=uncertainty,
+        measured_rotation=object_rotation,
+        support_height=float(geometry["support_height_m"]),
+    )
+    patch["previous_center_height_gate"] = patch["passes"]
+    patch["bilateral_contact_domain"] = opportunity
+    patch["passes"] = opportunity["passes"]
     tabletop_center = float(geometry["support_height_m"]) + float(
         geometry["object_half_extent_m"][2]
     )

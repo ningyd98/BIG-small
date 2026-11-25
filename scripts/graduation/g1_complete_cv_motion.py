@@ -28,10 +28,26 @@ def support_axes():
     return vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
 
 
-def upper_support(vertices, axes, residual):
+def upper_support(vertices, axes, residual, minimum_between_ticks=0.0):
     projected = vertices @ axes.T
     between_ticks = 0.5 * abs(np.diff(projected, axis=0)).max(axis=(0, 1))
-    return projected.max(axis=(0, 1)) + residual + between_ticks
+    return projected.max(axis=(0, 1)) + residual + np.maximum(between_ticks, minimum_between_ticks)
+
+
+def hermite_rate_limits(vertices, velocities, axes):
+    # A cubic with the physical endpoint positions/derivatives has a quadratic
+    # Bezier derivative. These are ALL its control values. Projection onto a
+    # fixed direction cannot exceed their maximum at any interior time.
+    middle = 3 * 240 * np.diff(vertices, axis=0) - velocities[:-1] - velocities[1:]
+    return np.stack(
+        [
+            np.maximum(
+                (velocities[:, i].reshape(-1, 3) @ axes.T).max(0),
+                (middle[:, i].reshape(-1, 3) @ axes.T).max(0),
+            )
+            for i in range(vertices.shape[1])
+        ]
+    )
 
 
 def _rot(axis, theta):
@@ -97,6 +113,30 @@ class MotionGeometry:
     def vertices(self, c, r):
         return c[:, :, None, :] + (SIGNS * self.sizes[:, None, :]) @ r.transpose(0, 1, 3, 2)
 
+    def vertex_velocities(self, q, f, dq, df, center, rot, linear, angular_world):
+        c, r, _, wrist = self.solids(q, f, center, rot)
+        points = self.vertices(c, r)
+        speed = np.zeros_like(points)
+        orient = np.broadcast_to(np.eye(3), (len(q), 3, 3))
+        origin = np.broadcast_to(self.model.base, (len(q), 3))
+        hinges = [(trans, axis) for trans, axis, *unused in self.model.chain]
+        hinges.append((self.model.hand_pos, self.model.hand_axis))
+        for i, (translation, local_axis) in enumerate(hinges):
+            origin = origin + orient @ translation
+            axis = orient @ local_axis
+            omega = axis * dq[:, i, None]
+            reach = points[:, i : self.load_start] - origin[:, None, None, :]
+            speed[:, i : self.load_start] += np.cross(omega[:, None, None, :], reach)
+            orient = orient @ _rot(local_axis, q[:, i])
+        for j, sign in enumerate((1, -1)):
+            speed[:, self.hand_start + 1 + j] += (
+                sign * wrist[:, :, 1, None].transpose(0, 2, 1) * df[:, j, None, None]
+            )
+        speed[:, self.load_start :] = linear[:, None, None, :] + np.cross(
+            angular_world[:, None, None, :], points[:, self.load_start :] - center[:, None, None, :]
+        )
+        return points, speed
+
     def forecast(self, q, f, dq, df, center, rot, dt, loaded):
         qq = q + dq * dt
         ff = f + df * dt
@@ -133,3 +173,33 @@ class MotionGeometry:
             b = Box(name, c[0, i], self.sizes[i], r[0, i])
             boxes.append(enclose(b, vertices[:, i], pad[i]))
         return (boxes, vertices) if with_vertices else boxes
+
+
+class DirectionCone:
+    """Upper-bound arbitrary support queries by positive combinations of measured axes."""
+
+    def __init__(self, axes):
+        self.axes = axes
+        self.pos = np.argmax(axes, axis=0)
+        self.neg = np.argmin(axes, axis=0)
+
+    def mix(self, dirs):
+        # Subtract one measured vector in the same octant, then decompose the
+        # remainder onto signed Cartesian axes. Every coefficient is positive
+        # and the weighted directions reconstruct the query exactly.
+        products = dirs[:, None, :] * self.axes
+        same = (products >= 0).all(axis=2)
+        ratios = np.divide(
+            abs(dirs[:, None, :]),
+            abs(self.axes),
+            out=np.full_like(products, np.inf),
+            where=abs(self.axes) > 1e-12,
+        )
+        first = np.where(same, ratios.min(axis=2), 0.0)
+        remain = dirs[:, None, :] - first[:, :, None] * self.axes
+        best = np.argmin(first + abs(remain).sum(axis=2), axis=1)
+        rows = np.arange(len(dirs))
+        rest = remain[rows, best]
+        facets = np.column_stack((best, np.where(rest >= 0, self.pos, self.neg)))
+        weights = np.column_stack((first[rows, best], abs(rest)))
+        return facets, weights

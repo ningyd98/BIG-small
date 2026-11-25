@@ -8,7 +8,15 @@ import numpy as np
 from scripts.graduation.g1_complete_cv_angle import grasp_readiness
 from scripts.graduation.g1_complete_cv_calibrate import BAND, CAMERA_FIELDS, axial, digest
 from scripts.graduation.g1_complete_cv_geometry import Box, Model, box_gaps, visible_box
-from scripts.graduation.g1_complete_cv_motion import MotionGeometry, upper_support
+from scripts.graduation.g1_complete_cv_handoff import handoff_motion
+from scripts.graduation.g1_complete_cv_motion import DirectionCone, MotionGeometry, upper_support
+from scripts.graduation.g1_complete_cv_support_domain import (
+    FREE_PHASES,
+    descending,
+    locate,
+    optically_supported,
+    state_rows,
+)
 
 from cloud_edge_robot_arm.simulation.mujoco.skill_robot import _DOWNWARD
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
@@ -172,6 +180,7 @@ class LocalClearance:
         ):
             raise ValueError("unbound directional motion calibration")
         self.axes = np.asarray(support["axes"])
+        self.directions = DirectionCone(self.axes)
         self.opposite = np.argmin(self.axes @ self.axes.T, axis=1)
         self.down = int(np.argmin(self.axes[:, 2]))
         self.support_phases = {
@@ -181,6 +190,83 @@ class LocalClearance:
             )
             for stage, values in support["phases"].items()
         }
+        domain_path = Path(__file__).with_name("g1_complete_cv_domain_profile.json")
+        domain = json.loads(domain_path.read_bytes())
+        if (
+            digest(domain_path)
+            != "4a70e01d5a222eb32b34c5819feb6b85476867f7b84a89576af10d9afe95093b"
+            or domain["sources"] != profile["sources"]
+            or domain["parts"] != profile["parts"]
+            or domain["asset_sha256"] != asset_hash
+        ):
+            raise ValueError("unbound directional applicability")
+        self.domain_states = {
+            stage: np.asarray(row["states"]) for stage, row in domain["phases"].items()
+        }
+        self.half_tick = {}
+        for stage, row in domain["phases"].items():
+            speed = np.asarray(row["corner_speed_m_s"])
+            self.half_tick[stage] = (1.25 * np.maximum(speed, speed[:, self.opposite]) + 0.001) / (
+                2 * 240
+            )
+        descent_path = Path(__file__).with_name("g1_complete_cv_descent_profile.json")
+        descent = json.loads(descent_path.read_bytes())
+        if (
+            digest(descent_path)
+            != "0f34b663c0795b7c4edcc431888980ab251a47c551d476d12f774404292c7183"
+            or descent["sources"] != profile["sources"]
+            or descent["parts"] != profile["parts"]
+            or descent["asset_sha256"] != asset_hash
+        ):
+            raise ValueError("unbound precontact descent calibration")
+        self.descent_support = 1.25 * (
+            np.asarray(descent["normal"]) + np.asarray(descent["stop"])
+        ) + 0.0005 * abs(self.axes).sum(1)
+        self.descent_vrange = 1.25 * np.asarray(descent["velocity_increment"]) + 0.001
+        self.descent_sources = [descent["normal_windows"], descent["stop_branches"]]
+        tracking_path = Path(__file__).with_name("g1_complete_cv_tracking_profile.json")
+        tracking = json.loads(tracking_path.read_bytes())
+        if (
+            digest(tracking_path)
+            != "28f20eef64221c27df8661f1429a2c0f34a719de80815db1610901706a3407aa"
+            or tracking["parts"] != profile["parts"]
+            or tracking["asset_sha256"] != asset_hash
+        ):
+            raise ValueError("unbound continuous precontact tracking")
+        for stage, values in tracking["phases"].items():
+            extra = np.asarray(values["normal"])
+            if stage == "DESCENT":
+                self.descent_support += 1.25 * np.maximum(
+                    0.0, extra - np.asarray(descent["normal"])
+                )
+                self.descent_vrange = np.maximum(
+                    self.descent_vrange, 1.25 * np.asarray(values["velocity_increment"]) + 0.001
+                )
+                self.descent_sources[0] += values["windows"]
+            else:
+                self.domain_states[stage] = np.concatenate(
+                    (self.domain_states[stage], values["states"])
+                )
+                prior = np.asarray(support["phases"][stage]["normal"])
+                self.support_phases[stage] += 1.25 * np.maximum(0.0, extra - prior)
+                world = np.argmax(self.axes, axis=0)
+                existing = np.asarray(self.motion_profiles[stage]["normal"])
+                self.motion_profiles[stage]["normal"] = np.maximum(
+                    existing, np.maximum(extra[:, world], extra[:, self.opposite[world]])
+                ).tolist()
+        curve_path = Path(__file__).with_name("g1_complete_cv_curve_profile.json")
+        curve = json.loads(curve_path.read_bytes())
+        if (
+            digest(curve_path) != "5dd8a5e5fe730c7c6fccd94b2b8bc02eb98721ab5632b7677fa2d3786e3ee564"
+            or curve["parts"] != profile["parts"]
+            or curve["asset_sha256"] != asset_hash
+        ):
+            raise ValueError("unbound between-tick trajectory calibration")
+        for stage, speeds in curve["phases"].items():
+            rate = np.asarray(speeds)
+            minimum = (1.25 * np.maximum(rate, rate[:, self.opposite]) + 0.001) / 480
+            self.half_tick[stage] = np.maximum(self.half_tick[stage], minimum)
+        self.world_axes = np.argmax(self.axes, axis=0)
         self.asset_path = Path(asset_path)
         self.robot_raster = None
         self.geometry, self.asset_sha, self.calibration_sha = (
@@ -208,10 +294,13 @@ class LocalClearance:
             np.stack(((u - cx) / fx, (v - cy) / fy, np.ones_like(v)), axis=-1) @ tf[:3, :3].T
         )
         self.pixel_extent = np.hypot(0.5 / fx, 0.5 / fy)
+        self.stationary_surface = None
         self.episode = None
         self.seen = set()
 
-    def short_motion(self, q, f, dq, df, center, rot, skill, robot, allow_table_contact):
+    def short_motion(
+        self, q, f, dq, df, center, rot, skill, robot, allow_table_contact, *, optical=None
+    ):
         row = self.motion_profiles[skill]
         speed = float(abs(dq).max())
         # A future brake may start at any of the following eight physical ticks.
@@ -238,16 +327,68 @@ class LocalClearance:
         )
         if speed > max(row["peak_joint_speed"]) + float(row["speed_increment"]) + 0.002:
             return evidence | dict(reason="measured_speed_outside_motion_calibration")
+        start = self.motion.load_start
+        measurement_pad = np.zeros((len(self.motion.names), len(self.axes)))
+        matched = None
+        directional_error = self.support_phases[skill]
+        if optical is not None and skill in FREE_PHASES:
+            center, rot, pad = optical
+            measurement_pad[start:] = pad
+            sample = state_rows(self.motion, q[None], f[None], dq[None], df[None], center[None])[0]
+            matched = locate(sample, self.domain_states[skill])
+            if (
+                matched is not None
+                and skill == "APPROACH"
+                and descending(sample[-3:], self.descent_vrange)
+            ):
+                directional_error = self.descent_support
+                evidence["reachable_precontact_descent"] = dict(
+                    windows=self.descent_sources[0],
+                    stop_branches=self.descent_sources[1],
+                    tcp_velocity_m_s=sample[-3:].tolist(),
+                    eight_tick_velocity_allowance_m_s=self.descent_vrange.tolist(),
+                )
+            evidence["directional_domain_reference"] = matched
+            evidence["optical_carrier_support_m"] = pad[:, self.world_axes].tolist()
+            evidence["tabletop_workpiece_center_m"] = center.tolist()
         boxes, vertices = self.motion.envelopes(
             q, f, dq, df, center, rot, skill, profile, with_vertices=True
         )
+        if optical is not None and skill in FREE_PHASES:
+            for i in range(start, len(boxes)):
+                b = boxes[i]
+                pad_xyz = np.maximum(
+                    measurement_pad[i, self.world_axes],
+                    measurement_pad[i, self.opposite[self.world_axes]],
+                )
+                boxes[i] = Box(b.name, b.c, b.h + abs(b.r.T) @ pad_xyz, b.r)
+        stationary = (
+            self.stationary_surface if optical is not None and skill in FREE_PHASES else None
+        )
+        if stationary is not None:
+            observed = np.stack(
+                [
+                    (vertices[0, i] @ self.axes.T).max(0) + measurement_pad[i]
+                    for i in range(start, len(boxes))
+                ]
+            )
+            if np.any(observed + stationary[:, self.opposite] < 0):
+                return evidence | dict(
+                    reason="current_optical_pose_disagrees_with_precontact_surface"
+                )
         supports = {}
 
         def upper(i):
             if i not in supports:
                 supports[i] = upper_support(
-                    vertices[:, i], self.axes, self.support_phases[skill][i]
+                    vertices[:, i],
+                    self.axes,
+                    directional_error[i] + measurement_pad[i],
+                    self.half_tick[skill][i],
                 )
+                if stationary is not None and i >= start:
+                    past = stationary[i - start] + directional_error[i] + self.half_tick[skill][i]
+                    supports[i] = np.minimum(supports[i], past)
             return supports[i]
 
         refinements = []
@@ -262,7 +403,7 @@ class LocalClearance:
             gap = float(b.c[2] - abs(b.r[2]) @ b.h - floor)
             if b.name == "object_geom" and allow_table_contact:
                 gap = float("inf")
-            elif gap <= 0:
+            elif gap <= 0 and matched is not None:
                 gap = max(gap, float(-upper(i)[self.down] - floor))
             if gap < minimum:
                 minimum, pair = gap, [b.name, "table"]
@@ -285,18 +426,53 @@ class LocalClearance:
                     gaps[0] = float("inf")
             else:
                 gaps = box_gaps(b, cs, hs, rot)
-                for k in np.flatnonzero(gaps <= 0):
+                for k in np.flatnonzero(gaps <= 0) if matched is not None else ():
                     # Each axis tests the complete sampled forecast and both
                     # signed uncertainties. A single positive axis suffices.
                     separation = -upper(start + k)[self.opposite] - upper(i)
                     axis = int(np.argmax(separation))
                     improved = float(separation[axis])
+                    live_axes = np.vstack(
+                        (b.r.T, rot.T, np.cross(b.r.T[:, None], rot.T).reshape(-1, 3))
+                    )
+                    length = np.linalg.norm(live_axes, axis=1)
+                    live_axes = live_axes[length > 1e-8] / length[length > 1e-8, None]
+                    live_axes = np.vstack((live_axes, -live_axes))
+                    face, weights = self.directions.mix(live_axes)
+                    opposite_face = self.opposite[face]
+
+                    def live(n, directions, facets, coefficients):
+                        residual = directional_error[n] + measurement_pad[n]
+                        return upper_support(
+                            vertices[:, n],
+                            directions,
+                            (residual[facets] * coefficients).sum(1),
+                            (self.half_tick[skill][n, facets] * coefficients).sum(1),
+                        )
+
+                    moving_support = live(i, live_axes, face, weights)
+                    fixed_support = live(start + k, -live_axes, opposite_face, weights)
+                    if stationary is not None:
+                        carried = (
+                            stationary[k]
+                            + directional_error[start + k]
+                            + self.half_tick[skill][start + k]
+                        )
+                        fixed_support = np.minimum(
+                            fixed_support, (carried[opposite_face] * weights).sum(1)
+                        )
+                    direct = -fixed_support - moving_support
+                    j = int(np.argmax(direct))
+                    chosen = self.axes[axis]
+                    if direct[j] > improved:
+                        chosen = live_axes[j]
+                        improved = float(direct[j])
                     refinements.append(
                         dict(
                             pair=[b.name, load[k].name],
                             gap_box_m=float(gaps[k]),
                             gap_support_m=improved,
-                            axis_world=self.axes[axis].tolist(),
+                            axis_world=chosen.tolist(),
                         )
                     )
                     gaps[k] = max(gaps[k], improved)
@@ -325,6 +501,17 @@ class LocalClearance:
         return evidence | dict(
             reason=None if all(views.values()) else "short_motion_outside_calibrated_views",
             views=views,
+        )
+
+    def remember_stationary(self, optical):
+        center, rot, uncertainty = optical
+        # Exclusive fixed workcell and an unbroken sequence of already certified
+        # noncontact, open-jaw moves. The current RGB-D estimate still has to agree.
+        self.stationary_surface = np.stack(
+            [
+                (obj.placed(center, rot).corners() @ self.axes.T).max(0) + uncertainty[k] + 0.00025
+                for k, obj in enumerate(self.model.object)
+            ]
         )
 
     def close(self):
@@ -591,8 +778,62 @@ class LocalClearance:
         allow_ground = skill in ("MOVE_ABOVE", "APPROACH", "GRASP", "LIFT") or (
             skill in ("PLACE", "RELEASE", "RETREAT") and in_region
         )
-        motion = self.short_motion(q, fingers, dq, df, center, rot, skill, robot, allow_ground)
+        optical = None
+        if skill in FREE_PHASES:
+            optical = optically_supported(
+                marker, self.geometry, result.get("grasp_angle"), self.model, self.axes, fingers
+            )
+        handoff = m.get("handoff")
+        entry_optical = None
+        if isinstance(handoff, dict) and handoff.get("current_step") == handoff.get("entry_step"):
+            from scripts.graduation.g1_complete_cv_handoff_optics import rigid_pose
+
+            entry_optical = rigid_pose(frame, marker, self.geometry)
+
+        def volume_check(box, xyz_pad_m):
+            c = np.asarray(xyz_pad_m, float)
+            if c.shape != (3,) or not np.isfinite(c).all() or np.any(c < 0):
+                return False
+            hull = Box(box.name, box.c, box.h + abs(box.r).T @ c, box.r)
+            corners = hull.corners()
+            allow = box.name == "object_geom" and allow_ground
+            if allow:
+                corners[:, 2] = np.maximum(corners[:, 2], floor)
+            return any(
+                _covers(corners, *self.maps[k], 2 * BAND if allow else 0.0)
+                for k in ("panel-primary", "panel-start")
+            )
+
+        motion = handoff_motion(
+            frame,
+            marker,
+            handoff,
+            skill,
+            phase,
+            q,
+            fingers,
+            dq,
+            df,
+            center,
+            rot,
+            self.model,
+            optical=entry_optical,
+            volume_check=volume_check,
+        )
+        if motion is None:
+            motion = self.short_motion(
+                q, fingers, dq, df, center, rot, skill, robot, allow_ground, optical=optical
+            )
         result["short_motion"] = motion
         if motion["reason"]:
             return finish("UNKNOWN", motion["reason"])
+        if (
+            skill in FREE_PHASES
+            and optical is not None
+            and self.stationary_surface is None
+            and set(marker["usable_ids"]) == {7, 8}
+        ):
+            self.remember_stationary(optical)
+        elif skill not in FREE_PHASES:
+            self.stationary_surface = None
         return finish("CLEAR", "controlled_scene_current_surfaces_and_registered_clearance")
