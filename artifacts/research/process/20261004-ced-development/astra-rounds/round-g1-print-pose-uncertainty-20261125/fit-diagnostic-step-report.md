@@ -7,3 +7,7 @@
 新受控静态拟合序列 A/B 和独立 C/D 的位姿、原相机和强证据门已在 diagnostic-registration.json 中预登记；本次只重放已采拟合影像，未启动新曝光或独立评估。新静态序列的进一步采集属于开发诊断，不能代替未见运动轨迹的独立资格。原四个越界帧继续用于失败回归；本试验没有读取这些帧或任何新保留数据。
 
 从工作树根目录在项目 Python 环境运行 check_print_candidates.py replay，再运行 check_print_candidates.py score。两阶段只创建新输出，防止覆盖已封存原件。逐帧预测在本地 experiments/results/g1-print-pose-uncertainty-20261125/fit-prediction.json，散列与分组计数见 fit-diagnostic.public.json。运行复验需使用保留原件的独立工作副本及空输出路径。
+
+## 新静态拟合 A/B
+
+随后按已封存的 A/B 摆放补采 24 张原生全图，八个静止姿态各用三个不同深度噪声种子。所有曝光均保留了更强的独立光学信息，其中 15 帧同时解出两个标记，9 帧同时保留 ID8 和对侧印边。该组尚未提供新的单标、无对侧支持的区间证据，单标证书仍禁用，C/D 的预登记保留组仍未启封。使用了原顶视相机，控制器动作和积分步均为零。[静态登记](static-fit-capture-registration.json) · [独立读回](native-static-fit.public.json)
