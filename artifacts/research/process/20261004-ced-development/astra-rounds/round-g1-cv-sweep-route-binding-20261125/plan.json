@@ -1,0 +1,66 @@
+{
+  "round": "round-g1-cv-sweep-route-binding-20261125",
+  "title": "G1 同帧偏移高点、原腕姿与扫掠复核计划",
+  "model": "gpt-6.2-astra",
+  "baseline": "40f9cf2da56e7c8e4f4c5ea33dc28c8a3ae4c5d6",
+  "date": "2026-11-25",
+  "parent": "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125",
+  "sections": [
+    [
+      "问题与原始证据",
+      "首代按方向缓存从同帧实测手姿到中央高点，接理想切向横移。签发端以完整标记旋转 R·δ 加到中央 TCP 后求 MOVE_ABOVE，而现场指令没有中央横移段。独立审校 A 的 +41 mm、B 的 +44 mm 示例，初始段终点相差 40.998077 和 43.995127 mm，中点各差 20.499 和 21.998 mm。两例是审校标本，均未派发。数学等价的固定腕四元数分量有舍入尾数，check_direction 对其拒绝 fixed tool direction required，对原 _DOWNWARD 常量放行。两盲帧各 303 个，首代各 231 BLOCKED、72 UNKNOWN、0 执行 CLEAR。各 101 个原腕方向均在初始刚性有限面条件失败，最近面角差分别 0.126507°、2.228279°，首代以 <1e−9 rad 判平行。每帧 72 个名义几何可行的物体系方向都有局部 FREE，也都有缺测或遮挡。"
+    ],
+    [
+      "因果假设与独立复核",
+      "同一条从可视估计到可执行候选的几何证据链中，路径与签发语义不一致，舍入姿态误拒，且求解器无见证可能被误报为不可支承。8 个姿态/偏移样本中曾见 cv2.solveLP/Simplex 未返可检验解，实际静力模型 0.08 kg 居中、每侧向上 0.3924 N、μ=0.8、每侧法向 0.4905 N、低于 8.5 N 是独立解析正控；该数值仅用于匹配的测试模型。130 mm 实装配用其各自质量和质心。路径错误独立于接触、深度和全程误差证据是否足够。"
+    ],
+    [
+      "修改范围与输入隔离",
+      "在本轮新目录创建扫掠派生模块、测试、独立只读审校和步骤报告，新代证据独立命名。首代源码/封存包和真实采集字节只读。盲筛进程仅给匿名帧、同帧本体测量、登记标定/XML、原策略及接口；父轮计划、分配、reset 物体真值、终帧、旧候选评分不得成为选择器输入。可在独立审校端读取封存与原碰撞步。每个输入核 SHA；预检差异、新根因或扩大范围须生成下一轮。冻结面搭接、相机、可见标记、控制器、原阈值、固定矩阵和破同分序。"
+    ],
+    [
+      "步骤一　红测与实际目标",
+      "先保留首代失败与带偏移直接段独有障碍的 RED，零偏移等价，+7、上述 +41/+44、±偏移、倾斜观测和固定腕精确常量均纳入。逐候选由与实际签发同一参数约定的完整 R·δ、中央 TCP、原高点公式求 high/approach，交由独立 reader 与绑定原函数/登记参数逐轴比对。固定腕行和合并别名用原生 _DOWNWARD 字面值，不能为物体系任意方向贴上常量取得通行。分别报告哪一对面、实际闭合轴/偏差、方向资格和原生拒因。"
+    ],
+    [
+      "步骤二　覆盖路线与独立障碍对照",
+      "从同帧 7 轴实测 FK、指宽或其有据区间开始，直接扫至各自的选中 high，再扫至选中 low 和首次允许接触。逐段覆左右指及掌。起终姿、初始手宽、控制器真实轨迹与理想直线须分别指明；若控制器路径与误差未界定，名义扫掠只作诊断。允许共享经证明包含每个实际直接段的保守包络，记录包含证明、过度拒绝及在已知全自由场景对 0 和非零偏移的 CLEAR 正控；歧义行可按需细化。逐段给实际分段数、最大顶点移动（≤1 mm）、余量膨胀及毫米净距下界、构件对与段位，记录原始物理轨迹真实步号/时间步；零步新帧注明无实走轨迹。独立复算左右指/掌、直接段专属障碍、单指、掌、跨步薄梁、缺深度、背面、边缘截断、可证射线通道、最终允许接触和旧 115/130 mm 首碰步 1221/1228；把仅包络相交与已知实体实际相交分别标记。"
+    ],
+    [
+      "步骤三　误差、触面与力证据",
+      "按部件和段列出现有原数据可直接计算的深度误差带/射线、同帧姿态与指宽、旋转投影、到位/纠偏阈值适用阶段、离散剩余行程；给出单位、源字段、适用时间及可证正净距。若可由原控制器、有界速度/加速度/采样间隔、实测记录推导局部或全程跟踪/停车上界，展示假设与推导。不能把个例观测最大值、末端到位门限或名义插值扩展为全程保证。分别报告可见自由体积、占用见证及未知的实际覆盖；不得用固定腕微小角度单独替代障碍/遮挡对照。刚体首接触有限面缺失与真实闭合时可能的被动找正分栏。必要时仅在独立无驱动几何模型做灵敏度界，例如从标记位姿求闭合间隙、修正至平行所需角位移/角点位移、两侧潜在搭接及支架净距；实测闭合力、滑移和抓持未经观测一律未证，不据此新增准入。重新检算旧正解的力/力矩平衡、法向非负与原限、切向摩擦不等式和接触作用点，输出可复核见证/残差。对原无有效解的相关行按同一模型独立解析/稳健求解并逐条代回，覆盖 0.08 kg 正控及不可行反控。无见证记未证；严格不可行需独立证明。"
+    ],
+    [
+      "步骤四　复放验收与交付",
+      "以新代测试及独立几何读回验证覆盖；对原 12 历史帧和两匿名新帧按原矩阵重算或证明共享覆盖等价，新代封存后按帧列新旧方向、0/偏移和 CLEAR/BLOCKED/UNKNOWN 迁移、左右指和掌主因、净距与全部剩余缺项，分别给 A/B 原不派发是否改变。不以缺见证、源已过期或未尝试冒充物理失败。本轮只做软件、离线重读与有界几何，两个新槽无重采、无新命令、无新 claim、正式新增零。只有独立汇总在实际当前同帧、真实全门与原限均已通过才可按父轮现有授权评定派发；旧帧诊断、静力见证或本计划不签发动作。步骤报告列原失败、红绿证据、冻结代、独立读回和未证项，再按项目 Git 流程交付。"
+    ]
+  ],
+  "input_sha256": {
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/plan.md": "b4f39ce95a56271ab26412a8ac71e968ba4c20720b55f2781055fc66af92d7cc",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/plan.json": "596158c29f9d43573a92c2be22a5b9db55e5d8b21f08cc8382e65e3d8b7ffb1a",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep-seal.public.json": "23321cb174a9db4012af5560517c0ba6a669ac1e17b4581672b6bdeac5a8b02c",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep-candidates.public.json": "2fdde9a02b1aa2989157237ab01085a8646ba5057ce996983816206b72d1e318",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep-history.public.json": "ed3227b1823aac1878eb410e702b52a9ff995275fb14d29514e91ac1cfb0a14d",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep-prospective.public.json": "9254aa055b99ee17e566b305fe5966de2410ecef9417c2c13baa6c825d3bb4ec",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep-review.public.json": "14fbf8fbc359f2b98f88f537b89158dc20a55213033e077f29d3cfa9cbe54419",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep_review.py": "236b1a9146a744f60e0f4d193d24aa23dd7f997c95d6a194f9c19673faf0e199",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep_start.py": "b3556405b58950224f585a7af156e40de3eb99c64ebe78f11b287c67eee14e2c",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep_geometry.py": "d81939371f565f39b8274e01d19a6df9780ad1313fa2910edd231e856805cb57",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep_evaluate.py": "83d0658cb7bfb533f071e1822c66f8dd9185670a79962e98330809fec2f3ae99",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep_depth.py": "694b0937ceaaa85bcfa43226758d3f2700e1eeb57f29a380afb628e79aab2abb",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep_history.py": "a5fbff7f52d90dd98b77f931583ac3e43f33ecd73b04eb7449c658e7e3772ea7",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep_replay.py": "22e4b5771516346fdf4fda86b37a2552ed57651940f6547683f7b3080becf502",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/test_sweep.py": "7a6725daceb04330ae64c1b71e2aab06b0c650228e62aa863aa8765ffdfa2a71",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/binding.py": "831d9c9d308a13d3ee3a82d5918685dd655ffffdf59384947d7e5565ccae528d",
+    "experiments/results/g1-cv-grasp-validation-20261125/capture-v2/blind/A/frame.json": "937042ca9e0fb006e67a74ac05e0a1ecb93c3536c6581ba6f4247d6fa0198345",
+    "experiments/results/g1-cv-grasp-validation-20261125/capture-v2/blind/B/frame.json": "af7f98dcc73524b7d3656e5d6979ea61b499a0df0df5b18c695aa11dbf9c7180",
+    "experiments/results/g1-cv-grasp-validation-20261125/capture-v2/blind/A/proprio.json": "382cce692f49d4178c201eee10a1abc5ce7f8b341910dab41af1d5715ac31cba",
+    "experiments/results/g1-cv-grasp-validation-20261125/capture-v2/blind/B/proprio.json": "c3f4f43e4b3cb423099b6a7dc9c85f840ab4bb169161c493e988f4462bed1aed",
+    "experiments/results/g1-cv-grasp-validation-20261125/capture-v2/blind/geometry.json": "91e1cc2e94eac947fd7d6d83f50947734294bec4a7b7899eff8710cee3539cc1",
+    "experiments/results/g1-cv-grasp-validation-20261125/binding-qualification/run-01/runtime-source/src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py": "fb2b5179d76cdc438c67f6447e450b495eba569bfbfefad4d38bb299ff82820c",
+    "experiments/results/g1-cv-grasp-validation-20261125/binding-qualification/run-01/runtime-source/scripts/graduation/binding.py": "831d9c9d308a13d3ee3a82d5918685dd655ffffdf59384947d7e5565ccae528d",
+    "experiments/results/g1-cv-grasp-validation-20261125/binding-qualification/run-01/runtime-source/src/cloud_edge_robot_arm/vision/owner_registration.py": "125da683c8a735a7bd3517dce1a820bf295bb5187ec68f7b161eca754b03d736",
+    "experiments/results/g1-cv-grasp-validation-20261125/binding-qualification/run-01/runtime-source/assets/robots/franka_panda/scene_g1_development_dual_id7_y130_id8_x130_low_bracket_v3.xml": "14a1a9fc2d2993fa28fbb873e25d1e9672c07b7433b3cb9ad27f07434c75efbe",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-cv-grasp-validation-20261125/sweep-controls.public.json": "1d729c82f2663ee17018cbfd9b75d9b4836df235b3693706ee8a62c41b7c0bb0"
+  }
+}
