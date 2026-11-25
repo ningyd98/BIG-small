@@ -1,0 +1,70 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+__________ test_end_wings_leave_both_cube_gripping_faces_unobstructed __________
+
+    def test_end_wings_leave_both_cube_gripping_faces_unobstructed():
+        fixture = mount()
+        original = (ROOT / OLD).read_bytes()
+        xml = fixture.build_xml(original) if fixture else original
+        model = mujoco.MjModel.from_xml_string(xml.decode())
+        for code, sign in ((7, -1), (8, 1)):
+            prefix = f"g1_dual_id{code}_"
+            beam = model.geom(prefix + "crossbar")
+>           assert sign * beam.pos[0] - beam.size[0] == pytest.approx(0.035), (
+                f"ID{code} beam root must meet the non-gripping X end face"
+            )
+E           AssertionError: ID7 beam root must meet the non-gripping X end face
+E           assert np.float64(-0.004) == 0.035 ± 3.5e-08
+E             
+E             comparison failed
+E             Obtained: -0.004
+E             Expected: 0.035 ± 3.5e-08
+
+tests/test_graduation_g1_clearance_mount.py:38: AssertionError
+___________ test_physical_print_bits_move_rigidly_without_reflection ___________
+
+    def test_physical_print_bits_move_rigidly_without_reflection():
+        fixture = mount()
+        before = (ROOT / OLD).read_bytes()
+        after = fixture.build_xml(before) if fixture else before
+        tree0, tree1 = (ET.fromstring(x) for x in (before, after))
+        for code, original_center, expected_center in (
+            (7, (0, 0.130), (-0.130, 0)), (8, (0.130, 0), (0.130, 0))
+        ):
+            for row in range(6):
+                for col in range(6):
+                    path = f".//geom[@name='g1_dual_id{code}_r{row}c{col}']"
+                    old, new = tree0.find(path), tree1.find(path)
+                    offset = np.fromstring(old.get("pos"), sep=" ")[:2] - original_center
+                    measured = np.fromstring(new.get("pos"), sep=" ")[:2]
+>                   np.testing.assert_allclose(measured, expected_center + offset, atol=1e-12)
+E                   AssertionError: 
+E                   Not equal to tolerance rtol=1e-07, atol=1e-12
+E                   
+E                   Mismatched elements: 2 / 2 (100%)
+E                   Mismatch at indices:
+E                    [0]: -0.03125 (ACTUAL), -0.16125 (DESIRED)
+E                    [1]: 0.16125 (ACTUAL), 0.03125 (DESIRED)
+E                   Max absolute difference among violations: 0.13
+E                   Max relative difference among violations: 4.16
+E                    ACTUAL: array([-0.03125,  0.16125])
+E                    DESIRED: array([-0.16125,  0.03125])
+
+tests/test_graduation_g1_clearance_mount.py:67: AssertionError
+_______ test_exported_geometry_and_native_registry_match_compiled_mount ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-267/test_exported_geometry_and_nat0')
+
+    @pytest.mark.skipif(not PARENT.exists(), reason="private frozen runtime unavailable")
+    def test_exported_geometry_and_native_registry_match_compiled_mount(tmp_path):
+        fixture = mount()
+>       assert fixture is not None, "a generation-specific mount provider is required"
+E       AssertionError: a generation-specific mount provider is required
+E       assert None is not None
+
+tests/test_graduation_g1_clearance_mount.py:79: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_graduation_g1_clearance_mount.py::test_end_wings_leave_both_cube_gripping_faces_unobstructed
+FAILED tests/test_graduation_g1_clearance_mount.py::test_physical_print_bits_move_rigidly_without_reflection
+FAILED tests/test_graduation_g1_clearance_mount.py::test_exported_geometry_and_native_registry_match_compiled_mount
+3 failed in 0.17s
