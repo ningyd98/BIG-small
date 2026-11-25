@@ -1,0 +1,24 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_signed_sweep_proves_separation_and_protects_a_real_midpath_intruder ___
+
+    def test_signed_sweep_proves_separation_and_protects_a_real_midpath_intruder():
+        from scripts.graduation import g1_complete_cv_motion as motion
+    
+        axes = np.array([[1, 0, 0], [-1, 0, 0], [1, 0, -1], [-1, 0, 1]], float)
+        axes /= np.linalg.norm(axes, axis=1, keepdims=True)
+        signs = _geometry().SIGNS
+        half = np.array([0.002, 0.002, 0.002])
+        centers = np.linspace([0.02, 0, 0.02], [0, 0, 0], 9)
+        arm = centers[:, None, :] + signs * half
+        # A real stop carries a little farther along the same diagonal.
+        measured = np.array([[0, 0, 0], [-0.006, 0, -0.006]])
+        residual = (measured @ axes.T).max(axis=0)
+>       upper = motion.upper_support(arm, axes, residual)
+                ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'scripts.graduation.g1_complete_cv_motion' has no attribute 'upper_support'
+
+tests/test_graduation_g1_complete_cv_clearance.py:151: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_graduation_g1_complete_cv_clearance.py::test_signed_sweep_proves_separation_and_protects_a_real_midpath_intruder
+1 failed, 11 deselected in 0.15s
