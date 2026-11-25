@@ -118,7 +118,17 @@ def observe_sample_failures(events):
 
 
 class ClearanceEpisode(TranslatedEpisode):
-    def __init__(self, directory, allocation, allocation_sha, catalog, measured, events, preflight):
+    def __init__(
+        self,
+        directory,
+        allocation,
+        allocation_sha,
+        catalog,
+        measured,
+        events,
+        preflight,
+        payload_samples,
+    ):
         super().__init__(directory, allocation, allocation_sha, catalog)
         self.backend = g1_dual_trials.RegisteredAssemblyBackend(directory, allocation["case"])
         self.robot = native.MuJoCoSkillRobot(self.backend)
@@ -134,6 +144,9 @@ class ClearanceEpisode(TranslatedEpisode):
         self.clock_starts = {}
         self.last_handoff = None
         self.entry_command = None
+        self.observed_command_count = 0
+        self.last_gripper_command = None
+        self.payload_samples = payload_samples
         self.preflight = preflight
         self.approach_diagnostic = (
             allocation["case"]["release"].split("-train-")[-1].startswith("approach-probe-")
@@ -145,6 +158,33 @@ class ClearanceEpisode(TranslatedEpisode):
         finally:
             if self.certificate is not None:
                 self.certificate.close()
+
+    def payload_command_context(self):
+        commands = self.backend._command_records
+        for command in commands[self.observed_command_count :]:
+            if command.get("type") == "gripper" and command.get("accepted") is True:
+                self.last_gripper_command = command
+        self.observed_command_count = len(commands)
+        last = self.last_gripper_command or {}
+        completed = next(
+            (
+                r
+                for r in reversed(self.report["actions"])
+                if r.get("controller_result", {}).get("success") is True
+                and type(r.get("controller_return_step")) is int
+            ),
+            {},
+        )
+        return dict(
+            native_last_command_seq=self.backend.next_command_sequence - 1,
+            previous_native_successful_skill=completed.get("skill"),
+            previous_native_return_step=completed.get("controller_return_step"),
+            previous_native_terminal_step=completed.get("end_step")
+            if completed.get("status") == "PASS"
+            else None,
+            last_accepted_gripper_open=last.get("target_open"),
+            last_accepted_gripper_command_step=last.get("physics_step"),
+        )
 
     def robot_observation(self, frame):
         backend = self.backend
@@ -176,6 +216,7 @@ class ClearanceEpisode(TranslatedEpisode):
                 for n in ("finger_left_joint", "finger_right_joint")
             ],
             **camera_encoder_pose(backend._model, backend._data),
+            **self.payload_command_context(),
         )
 
     def command_handoff(self, skill, phase, robot, frame):
@@ -317,6 +358,32 @@ class ClearanceEpisode(TranslatedEpisode):
             self.check_current(frame, "MOVE_ABOVE", target, "STATIC_SELECTION")
         start = time.perf_counter_ns()
         frame = super().capture(label)
+        terminals = {"GRASP/POST", "LIFT/POST", "MOVE_TO_REGION/POST", "PLACE/POST", "RELEASE/POST"}
+        if label in terminals or label.startswith(("LIFT/dwell-", "RELEASE/dwell-")):
+            # Observe the already scheduled native dwell exposures and handoff frames.
+            # Record their current encoder and command context without an additional physics step.
+            skill, phase = label.split("/", 1)
+            marker = (
+                self.measurements[frame.frame_id]["measurement"]
+                if frame.frame_id in self.measurements
+                else g1_dual_observer.measure_frame(
+                    frame, self.geometry, consumer="payload_support"
+                )
+            )
+            robot = self.robot_observation(frame)
+            result = self.certificate.observe_payload_frame(frame, marker, robot, skill, phase)
+            self.payload_samples.append(
+                dict(
+                    label=label,
+                    frame_id=frame.frame_id,
+                    checksum_sha256=frame.checksum_sha256,
+                    physics_step=self.backend.total_physics_steps,
+                    sim_time_s=frame.sim_time_s,
+                    robot=robot,
+                    evidence=native.plain(result),
+                    elapsed_ms=(time.perf_counter_ns() - start) / 1e6,
+                )
+            )
         if label == "reset":
             from OpenGL import GL
 
@@ -410,6 +477,7 @@ def run(repo, label, allocation_sha, case_id, *, preflight=False):
             )
     pinned(Path(batch["calibration_directory"]) / "manifest.json", batch["calibration_sha256"])
     events = []
+    payload_samples = []
     claimed = None
     instance = directory / case_id / "instance"
 
@@ -449,7 +517,9 @@ def run(repo, label, allocation_sha, case_id, *, preflight=False):
                 case_id,
                 context=lambda *_: (batch, lock),
                 case_reader=g1_visibility_trials.load_case,
-                episode_factory=lambda *args: ClearanceEpisode(*args, measured, events, preflight),
+                episode_factory=lambda *args: ClearanceEpisode(
+                    *args, measured, events, preflight, payload_samples
+                ),
                 before_start=reserve,
             )
         finally:
@@ -477,11 +547,12 @@ def run(repo, label, allocation_sha, case_id, *, preflight=False):
                 write(
                     local,
                     dict(
-                        schema="g1.development.local-clearance.v1",
+                        schema="g1.development.local-clearance.v2",
                         runtime_build_sha256=generation,
                         calibration_sha256=batch["calibration_sha256"],
                         plan_sha256=trials.PLAN_SHA,
                         rows=events,
+                        passive_payload_samples=payload_samples,
                         failed_feedback=failures,
                         preflight=preflight,
                     ),

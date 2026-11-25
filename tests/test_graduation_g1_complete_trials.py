@@ -142,3 +142,52 @@ def test_optical_identity_comes_from_successful_independent_reset():
             native_reset_ids([first, wrong], "allocated/one", "reset-episode")
     with pytest.raises(ValueError, match="reset"):
         native_reset_ids([first, last], "allocated/two", "reset-episode")
+
+
+def test_passive_support_uses_actual_return_and_accepted_gripper_command():
+    from scripts.graduation.g1_complete_worker import ClearanceEpisode
+
+    episode = object.__new__(ClearanceEpisode)
+    episode.observed_command_count = 0
+    episode.last_gripper_command = None
+    episode.backend = SimpleNamespace(
+        next_command_sequence=3,
+        _command_records=[
+            dict(type="gripper", accepted=True, target_open=False, physics_step=1392),
+            dict(type="gripper", accepted=False, target_open=True, physics_step=1430),
+        ],
+    )
+    episode.report = {
+        "actions": [
+            dict(
+                skill="GRASP",
+                controller_result={"success": True},
+                controller_return_step=1632,
+                end_step=1632,
+                status="PASS",
+            ),
+            dict(skill="LIFT", status="ENTERED", dispatch_step=1632),
+        ]
+    }
+    state = episode.payload_command_context()
+    assert state["previous_native_successful_skill"] == "GRASP"
+    assert state["previous_native_return_step"] == state["previous_native_terminal_step"] == 1632
+    assert state["last_accepted_gripper_open"] is False
+    assert state["last_accepted_gripper_command_step"] == 1392
+    episode.backend._command_records.append(
+        dict(type="gripper", accepted=True, target_open=True, physics_step=6120)
+    )
+    episode.backend.next_command_sequence = 4
+    episode.report["actions"].append(
+        dict(
+            skill="RELEASE",
+            controller_result={"success": True},
+            controller_return_step=6360,
+            status="ENTERED",
+        )
+    )
+    current = episode.payload_command_context()
+    assert current["previous_native_successful_skill"] == "RELEASE"
+    assert current["previous_native_return_step"] == 6360
+    assert current["previous_native_terminal_step"] is None
+    assert current["last_accepted_gripper_open"] is True

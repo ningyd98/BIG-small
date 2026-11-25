@@ -266,3 +266,206 @@ def test_cli_refuses_unfrozen_batch_before_creating_any_score(tmp_path):
     assert proc.returncode != 0
     assert "plan" in proc.stderr.lower()
     assert not list(batch.rglob("independent-score.json"))
+
+
+def release_readback_fixture():
+    roles, samples, frames, physics = [], [], {}, {}
+    native = [
+        dict(skill="GRASP", controller_return_step=340, controller_result={"success": True}),
+        dict(skill="LIFT", controller_return_step=360, controller_result={"success": True}),
+        dict(
+            skill="MOVE_TO_REGION", controller_return_step=490, controller_result={"success": True}
+        ),
+        dict(skill="PLACE", controller_return_step=500, controller_result={"success": True}),
+        dict(skill="RELEASE", controller_return_step=740, controller_result={"success": True}),
+    ]
+    receipts = [
+        dict(
+            skill="GRASP",
+            command_seq_half_open=[2, 3],
+            backend_return_step=340,
+            receipt_success=True,
+        ),
+        dict(
+            skill="LIFT",
+            command_seq_half_open=[3, 4],
+            backend_return_step=360,
+            receipt_success=True,
+        ),
+        dict(
+            skill="MOVE_TO_REGION",
+            command_seq_half_open=[4, 7],
+            backend_return_step=490,
+            receipt_success=True,
+        ),
+        dict(
+            skill="PLACE",
+            command_seq_half_open=[4, 10],
+            backend_return_step=500,
+            receipt_success=True,
+        ),
+        dict(
+            skill="RELEASE",
+            command_seq_half_open=[10, 11],
+            backend_return_step=740,
+            receipt_success=True,
+        ),
+    ]
+    commands = [
+        dict(command_seq=2, type="gripper", accepted=True, target_open=False, physics_step=100),
+        dict(command_seq=9, type="joint_target", accepted=True, physics_step=492),
+        dict(command_seq=10, type="gripper", accepted=True, target_open=True, physics_step=500),
+    ]
+    times = [
+        ("GRASP/POST", 340),
+        *((f"LIFT/dwell-{i}", 360 + i) for i in range(0, 121, 8)),
+        ("LIFT/POST", 480),
+        ("MOVE_TO_REGION/POST", 490),
+        ("PLACE/POST", 500),
+        *((f"RELEASE/dwell-{i}", 740 + i) for i in range(0, 241, 8)),
+        ("RELEASE/POST", 980),
+    ]
+    for label, step in times:
+        skill = label.split("/")[0]
+        releasing = skill == "RELEASE"
+        base = dict(
+            frame_id=str(step),
+            checksum_sha256=f"{step:064x}",
+            physics_step=step,
+            sim_time_s=step / 240,
+        )
+        role = dict(
+            base, label=label, acquired_for_this_role=label not in {"LIFT/POST", "RELEASE/POST"}
+        )
+        roles.append(role)
+        frames[str(step)] = dict(base)
+        state = dict(
+            joint_positions_rad=[0.3] * 7,
+            joint_velocities_rad_s=[0.0] * 7,
+            finger_positions_m=[0.03] * 2,
+            finger_velocities_m_s=[0.0] * 2,
+            tcp_position_m=[0.45, 0.01, 0.04],
+        )
+        physics[step] = dict(state, physics_step=step, sim_time_s=step / 240)
+        robot = dict(
+            base,
+            **state,
+            native_last_command_seq={
+                "GRASP": 2,
+                "LIFT": 3,
+                "MOVE_TO_REGION": 6,
+                "PLACE": 9,
+                "RELEASE": 10,
+            }[skill],
+            previous_native_successful_skill=skill,
+            previous_native_return_step={
+                "GRASP": 340,
+                "LIFT": 360,
+                "MOVE_TO_REGION": 490,
+                "PLACE": 500,
+                "RELEASE": 740,
+            }[skill],
+            previous_native_terminal_step=None,
+            last_accepted_gripper_open=releasing,
+            last_accepted_gripper_command_step=500 if releasing else 100,
+        )
+        samples.append(
+            dict(
+                base,
+                label=label,
+                robot=robot,
+                elapsed_ms=20.0,
+                evidence=dict(relation="supported_and_separated" if releasing else "held"),
+            )
+        )
+    return samples, roles, frames, physics, native, commands, receipts
+
+
+def test_passive_rgbd_dwell_joins_original_frame_physics_and_command_boundaries():
+    samples, roles, frames, physics, native, commands, receipts = release_readback_fixture()
+    check = scorer().passive_payload_readback
+    result = check(samples, roles, frames, physics, native, commands, receipts)
+    assert result["complete"]
+    assert result["lift_distinct_exposures"] == 16
+    assert result["release_distinct_exposures"] == 31
+    assert result["release_elapsed_physics_steps"] == 240
+    assert not check([], [], {}, {}, [], [], [])["complete"]
+
+
+def test_payload_history_replays_actual_roles_including_two_uses_of_one_capture():
+    roles = [
+        dict(label=k, frame_id=f)
+        for k, f in [
+            ("GRASP/PRE", "a"),
+            ("GRASP/POST", "b"),
+            ("LIFT/PRE", "b"),
+            ("LIFT/feedback", "c"),
+        ]
+    ]
+    rows = [
+        dict(
+            skill=s,
+            phase=p,
+            frame_id=f,
+            status="CLEAR",
+            evidence={"payload_observation": {"relation": r}},
+        )
+        for s, p, f, r in [
+            ("GRASP", "PRE", "a", "unknown"),
+            ("LIFT", "PRE", "b", "held"),
+            ("LIFT", "FEEDBACK", "c", "held"),
+        ]
+    ]
+    passive = [dict(label="GRASP/POST", frame_id="b", evidence={"relation": "held"})]
+    ordered = scorer().payload_replay_events(rows, passive, roles)
+    assert [(s, p, v["frame_id"]) for s, p, v, e in ordered] == [
+        ("GRASP", "PRE", "a"),
+        ("GRASP", "POST", "b"),
+        ("LIFT", "PRE", "b"),
+        ("LIFT", "FEEDBACK", "c"),
+    ]
+    with pytest.raises(ValueError, match="role"):
+        scorer().payload_replay_events(rows, passive, roles[:-1])
+    with pytest.raises(ValueError, match="missing"):
+        scorer().payload_replay_events([rows[-1] | {"evidence": {}}], [], roles)
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "skipped",
+        "duplicate",
+        "missing_role",
+        "checksum",
+        "encoder",
+        "same_step_command",
+        "missing_support",
+        "retained_as_fresh",
+    ],
+)
+def test_passive_rgbd_dwell_detects_missing_substituted_and_stale_sources(damage):
+    samples, roles, frames, physics, native, commands, receipts = release_readback_fixture()
+    if damage == "skipped":
+        del samples[3]
+    elif damage == "duplicate":
+        samples[4] = samples[3]
+    elif damage == "missing_role":
+        del roles[3], samples[3]
+    elif damage == "checksum":
+        samples[3]["checksum_sha256"] = "0" * 64
+    elif damage == "encoder":
+        samples[3]["robot"]["finger_positions_m"] = [0.0, 0.0]
+    elif damage == "same_step_command":
+        samples[1]["robot"]["last_accepted_gripper_open"] = True
+    elif damage == "retained_as_fresh":
+        roles[-1]["frame_id"] = "fake-new"
+    else:
+        samples[-1]["evidence"]["relation"] = "unknown"
+        assert not scorer().passive_payload_readback(
+            samples, roles, frames, physics, native, commands, receipts
+        )["complete"]
+        return
+    with pytest.raises(ValueError):
+        scorer().passive_payload_readback(
+            samples, roles, frames, physics, native, commands, receipts
+        )

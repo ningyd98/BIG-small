@@ -202,6 +202,106 @@ def check_issued_endpoint(issue, frame, destination):
     )
 
 
+def passive_payload_readback(samples, roles, frames, physics, actions, commands, receipts):
+    """Join actual native dwell and terminal exposures to encoders and commands."""
+    dwell = {"LIFT": 120, "RELEASE": 240}
+    registered = []
+    for skill in STAGES[2:-1]:
+        if skill in dwell:
+            registered.extend(f"{skill}/dwell-{i}" for i in range(0, dwell[skill] + 1, 8))
+        registered.append(f"{skill}/POST")
+    expected = set(registered)
+    sources = [
+        r
+        for r in roles
+        if r["label"] in expected or r["label"].startswith(("LIFT/dwell-", "RELEASE/dwell-"))
+    ]
+    labels = [r["label"] for r in sources]
+    require(
+        labels == registered[: len(sources)] and labels == [r["label"] for r in samples],
+        "passive role or exposure order differs from the registered dwell",
+    )
+    returned = {
+        r["skill"]: r for r in actions if r.get("controller_result", {}).get("success") is True
+    }
+    issued = {r["skill"]: r for r in receipts if r.get("receipt_success") is True}
+    gripper = [c for c in commands if c.get("type") == "gripper" and c.get("accepted") is True]
+    measured = (
+        "joint_positions_rad",
+        "joint_velocities_rad_s",
+        "tcp_position_m",
+        "finger_positions_m",
+        "finger_velocities_m_s",
+    )
+    exposures, last_dwell = {skill: set() for skill in dwell}, {}
+    release_steps = []
+    for sample, source in zip(samples, sources, strict=True):
+        label, frame_id, step = source["label"], source["frame_id"], source["physics_step"]
+        image, robot, dense = frames.get(frame_id), sample["robot"], physics.get(step)
+        require(
+            image is not None
+            and dense is not None
+            and valid_duration(sample["elapsed_ms"])
+            and all(
+                record.get(k) == source[k]
+                for record in (sample, robot, image)
+                for k in ("frame_id", "checksum_sha256", "physics_step")
+            )
+            and sample["sim_time_s"]
+            == robot["sim_time_s"]
+            == dense["sim_time_s"]
+            == source["sim_time_s"]
+            and all(robot[k] == dense[k] for k in measured),
+            "passive RGB-D, physics time or encoder source differs",
+        )
+        skill = label.partition("/")[0]
+        action, receipt = returned.get(skill), issued.get(skill)
+        require(
+            action is not None and receipt is not None, "passive exposure lacks a native return"
+        )
+        end_seq = receipt["command_seq_half_open"][1] - 1
+        prior = next((x for x in reversed(gripper) if x["command_seq"] <= end_seq), {})
+        returning = action["controller_return_step"]
+        require(
+            returning == receipt["backend_return_step"] == robot["previous_native_return_step"]
+            and robot["native_last_command_seq"] == end_seq
+            and robot["previous_native_successful_skill"] == skill
+            and robot["previous_native_terminal_step"] is None
+            and prior.get("target_open") is (skill == "RELEASE")
+            and robot["last_accepted_gripper_open"] is prior["target_open"]
+            and robot["last_accepted_gripper_command_step"] == prior["physics_step"] <= returning,
+            "passive sample refers to a different native return or gripper command",
+        )
+        if "/dwell-" in label:
+            require(
+                source["acquired_for_this_role"] is True
+                and step == returning + int(label.split("-")[-1])
+                and not any(frame_id in ids for ids in exposures.values()),
+                "native dwell used a stale, repeated or mistimed frame",
+            )
+            exposures[skill].add(frame_id)
+            last_dwell[skill] = frame_id
+            if skill == "RELEASE":
+                release_steps.append(step)
+        elif skill not in dwell:
+            require(step == returning, "terminal frame differs from the native return")
+        else:
+            require(
+                source["acquired_for_this_role"] is False
+                and step == returning + dwell[skill]
+                and frame_id == last_dwell.get(skill),
+                "native POST differs from the final dwell exposure",
+            )
+    terminal = samples[-1]["evidence"].get("relation") if labels == registered else None
+    return dict(
+        complete=labels == registered and terminal == "supported_and_separated",
+        lift_distinct_exposures=len(exposures["LIFT"]),
+        release_distinct_exposures=len(exposures["RELEASE"]),
+        release_elapsed_physics_steps=release_steps[-1] - release_steps[0] if release_steps else 0,
+        terminal_optical_relation=terminal,
+    )
+
+
 def local_gate_readback(rows, frames, run):
     """Compare the sealed live decision identity with the acquisition at each callback."""
     seen, clear = set(), set()
@@ -252,6 +352,122 @@ def local_gate_readback(rows, frames, run):
         "captured_feedback_without_clear": sorted(actual - clear),
         "all_captured_feedback_clear": bool(actual) and actual == clear,
     }
+
+
+def payload_replay_events(rows, passive, roles):
+    """Retained POST and subsequent PRE may read the same pixels for different roles."""
+    by_role = {}
+    for row in rows:
+        skill, phase = row["skill"], row["phase"]
+        evidence = row["evidence"].get("payload_observation")
+        if evidence is None:
+            require(
+                skill not in STAGES[2:] or row["status"] != "CLEAR",
+                "missing current payload observation at a cleared gate",
+            )
+            continue
+        label = skill + "/" + ("feedback" if phase == "FEEDBACK" else phase)
+        key = label, row["frame_id"]
+        require(key not in by_role, "duplicate active payload role")
+        by_role[key] = (skill, phase, row, evidence)
+    for sample in passive:
+        label = sample["label"]
+        key = label, sample["frame_id"]
+        require(key not in by_role, "duplicate passive payload role")
+        skill, phase = label.split("/", 1)
+        by_role[key] = (skill, phase, sample, sample["evidence"])
+    ordered = []
+    for role in roles:
+        key = role["label"], role["frame_id"]
+        if key in by_role:
+            ordered.append(by_role.pop(key))
+    require(not by_role, "payload evidence lacked an original native frame role")
+    return ordered
+
+
+def replay_payload_pixels(raw, index, allocation, receipt, generation, events, physics, commands):
+    """Recompute the relation in a new history using native pixels in their original order."""
+    from scripts.graduation import dynamic_vision, dynamic_vision_score
+    from scripts.graduation.g1_complete_cv_handoff_optics import rigid_pose
+    from scripts.graduation.g1_complete_cv_optical_identity import bind_allocation
+    from scripts.graduation.g1_complete_cv_payload_observation import (
+        frozen_red_geometry,
+        payload_observation,
+    )
+    from scripts.graduation.g1_complete_worker import native_reset_ids
+    from scripts.graduation.g1_dual_observer import measure_frame
+
+    geometry = allocation["geometry"]
+    red_geometry = frozen_red_geometry(ROOT, ROOT / geometry["asset_path"])
+    scene, episode = native_reset_ids(
+        pinned(raw / "reset-observed.json", receipt["reset_sha256"]),
+        index["scene"],
+        receipt["physical_reset"]["episode_id"],
+    )
+    require(episode == index["episode"], "native release reader has a foreign episode")
+    identity = bind_allocation(
+        (raw.parent / "allocation.json").read_bytes(),
+        allocation_sha256=receipt["allocation_sha256"],
+        generation_sha256=generation,
+        calibration_sha256=sha(Path(allocation["calibration_directory"]) / "manifest.json"),
+        asset_sha256=sha(ROOT / geometry["asset_path"]),
+        reset_scene_id=scene,
+        reset_episode_id=episode,
+    )
+    sources = {r["frame_id"]: r for r in index["frames"]}
+    gripper = [c for c in commands if c["type"] == "gripper" and c["accepted"] is True]
+    history, counts = {}, Counter()
+    current = None
+    for skill, phase, record, original in events:
+        frame_id = record["frame_id"]
+        if current != frame_id:
+            frame = dynamic_vision_score.frame_from_row(
+                raw, sources[frame_id], episode, scene, geometry
+            )
+            marker = measure_frame(frame, geometry)
+            current = frame_id
+        step, robot = record["physics_step"], record["robot"]
+        dense = physics[step]
+        prior = next(
+            (c for c in reversed(gripper) if c["command_seq"] <= robot["native_last_command_seq"]),
+            {},
+        )
+        require(
+            all(
+                robot[k] == dense[k]
+                for k in (
+                    "joint_positions_rad",
+                    "joint_velocities_rad_s",
+                    "finger_positions_m",
+                    "finger_velocities_m_s",
+                    "tcp_position_m",
+                    "sim_time_s",
+                )
+            )
+            and prior.get("target_open") is robot["last_accepted_gripper_open"]
+            and prior.get("physics_step") == robot["last_accepted_gripper_command_step"],
+            "optical relation robot packet differs from native proprioception or applied command",
+        )
+        optical = rigid_pose(frame, marker, geometry, identity=identity, physics_step=step)
+        replayed = payload_observation(
+            frame,
+            marker,
+            geometry,
+            robot,
+            skill,
+            phase,
+            identity=identity,
+            physics_step=step,
+            optical=optical,
+            history=history,
+            red_geometry=red_geometry,
+        )
+        require(
+            dynamic_vision.plain(replayed) == original,
+            f"payload relation differs on cold RGB-D replay at {skill}/{phase} step {step}",
+        )
+        counts[replayed["relation"]] += 1
+    return dict(replayed=len(events), by_relation=dict(counts))
 
 
 PLAN = "4f84f847bc86f68d474d4f81feb0083f6f9e2e9ee93d49e4d5c5509600cc824b"
@@ -508,6 +724,32 @@ def read_slot(directory, batch, tree, case_id, area, lock):
     local_facts = local_gate_readback(rows, frames, run)
     timing = feedback_timing(run, audit)
     complete = timing["complete"] and local_facts["all_captured_feedback_clear"]
+    if isinstance(local, dict) and local.get("schema") == "g1.development.local-clearance.v2":
+        receipt = pinned(raw / "receipt.json", receipt_sha)
+        commands = pinned(raw / "backend-commands.json", receipt["full_commands_sha256"])
+        physics = {s["physics_step"]: s for s in truth["samples"]}
+        passive = passive_payload_readback(
+            local["passive_payload_samples"],
+            run["frame_roles"],
+            frames,
+            physics,
+            run["actions"],
+            commands,
+            receipt["action_commands"],
+        )
+        events = payload_replay_events(rows, local["passive_payload_samples"], run["frame_roles"])
+        passive["current_pixel_replay"] = replay_payload_pixels(
+            raw,
+            index,
+            allocation,
+            receipt,
+            batch["runtime_build_sha256"],
+            events,
+            physics,
+            commands,
+        )
+        local_facts["passive_payload"] = passive
+        complete = complete and passive["complete"]
     imports = g1_mount_trials.project_imports(lock)
     return {
         **common,

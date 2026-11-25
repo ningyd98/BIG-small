@@ -3,17 +3,20 @@
 import argparse
 import hashlib
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
 from scripts.graduation import g1_complete_trials as trials
 from scripts.graduation.g1_clearance_mount import overlays
 from scripts.graduation.g1_formal_runtime import check_tree
-from scripts.graduation.perception_io import ROOT, pinned, sha, write
+from scripts.graduation.perception_io import ROOT, pinned, read, sha, write
 
 QUALIFICATION = trials.ROUNDS / "round-g1-cv-qualification-entry-20261125"
 TARGET_PLAN = trials.ROUNDS / "round-g1-target-visibility-20261125" / "plan.json"
 TARGET_SHA = "50eb1413e14876ce17de4f0b1c901af48f66c3ab745b47b76853541c99c8dbc8"
+RED_INK_CPP = "scripts/graduation/g1_complete_cv_red_ink.cpp"
+RED_INK_LIBRARY = "scripts/graduation/g1_complete_cv_red_ink.so"
 
 
 def replace_one(source, anchor, change):
@@ -57,6 +60,24 @@ def color_archive_sources(repo, parent):
     }
 
 
+def print_registration_sources(repo):
+    source = repo / RED_INK_CPP
+    profile = source.with_name("g1_complete_cv_relation_profile.json")
+    if not source.exists() or not profile.exists():
+        return {}
+    if not read(profile).get("single_id8_red_print", {}).get("enabled"):
+        return {}
+    before = source.read_bytes()
+    with tempfile.TemporaryDirectory(prefix="g1-red-ink-build-") as folder:
+        binary = Path(folder) / Path(RED_INK_LIBRARY).name
+        subprocess.run(
+            ["g++", "-O3", "-shared", "-fPIC", "-o", str(binary), str(source)],
+            check=True,
+        )
+        trials.require(source.read_bytes() == before, "print kernel source changed during build")
+        return {RED_INK_CPP: before, RED_INK_LIBRARY: binary.read_bytes()}
+
+
 def prepare(repo, *, target_vision=False):
     base = repo / trials.OLD / "builds" / trials.PARENT / "runtime-source"
     original = pinned(base / "runtime-build.json", trials.PARENT)
@@ -91,6 +112,7 @@ def prepare(repo, *, target_vision=False):
         trials.require(motion.is_file(), "missing physical braking profile")
     for profile in sorted(scripts.glob("g1_complete_cv_*_profile.json")):
         additions[profile.relative_to(repo).as_posix()] = profile.read_bytes()
+    additions.update(print_registration_sources(repo))
     effective = dict(original["runtime_files_sha256"])
     effective.update({k: hashlib.sha256(v).hexdigest() for k, v in additions.items()})
     detector = set(original["detector_files_sha256"])

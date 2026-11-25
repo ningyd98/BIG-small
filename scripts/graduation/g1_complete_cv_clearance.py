@@ -9,7 +9,14 @@ from scripts.graduation.g1_complete_cv_angle import grasp_readiness
 from scripts.graduation.g1_complete_cv_calibrate import BAND, CAMERA_FIELDS, axial, digest
 from scripts.graduation.g1_complete_cv_geometry import Box, Model, box_gaps, visible_box
 from scripts.graduation.g1_complete_cv_handoff import handoff_motion
+from scripts.graduation.g1_complete_cv_handoff_optics import rigid_pose
 from scripts.graduation.g1_complete_cv_motion import DirectionCone, MotionGeometry, upper_support
+from scripts.graduation.g1_complete_cv_payload import STAGES as PAYLOAD_MOTIONS
+from scripts.graduation.g1_complete_cv_payload import (
+    PayloadClearance,
+    permits_relation,
+    source_support_evidence,
+)
 from scripts.graduation.g1_complete_cv_support_domain import (
     FREE_PHASES,
     descending,
@@ -166,6 +173,41 @@ class LocalClearance:
             raise ValueError("incorrect asset or camera registration")
         self.model = Model(asset_path)
         self.motion = MotionGeometry(self.model)
+        payload_path = Path(__file__).with_name("g1_complete_cv_payload_profile.json")
+        payload = json.loads(payload_path.read_bytes())
+        if (
+            digest(payload_path)
+            != "48d5108e194fed21373f96133d174951afaf78fbe4a6e36766d2ee0ba6b1a10e"
+            or payload["schema"] != "g1.loaded-and-free-braking.v1"
+            or payload["asset_sha256"] != asset_hash
+            or payload["parts"] != self.motion.names
+        ):
+            raise ValueError("unbound loaded-motion qualification")
+        source_path = Path(__file__).with_name("g1_complete_cv_source_support_profile.json")
+        if (
+            digest(source_path)
+            != "6dd36013c01e14763d6897804b9fb45cbff7dfc84edcfcc7eccf4f75860f2e0d"
+        ):
+            raise ValueError("unbound named support qualification")
+        self.source_support = json.loads(source_path.read_bytes())
+        near_path = Path(__file__).with_name("g1_complete_cv_source_motion_profile.json")
+        near = json.loads(near_path.read_bytes())
+        if (
+            digest(near_path) != "afeaa3ca7360f8287a094a4cb3285126cd47398548fb3b51b2f41d2e3be16f76"
+            or near["asset_sha256"] != asset_hash
+            or near["parts"] != self.motion.names
+            or near["source_support_sha256"] != digest(source_path)
+        ):
+            raise ValueError("unbound swept volume at registered source support")
+        self.payload_gate = PayloadClearance(self.motion, payload, near)
+        self.payload_history = {}
+        from scripts.graduation.g1_complete_cv_payload_observation import frozen_red_geometry
+
+        self.red_geometry = frozen_red_geometry(
+            Path(__file__).resolve().parents[2], Path(asset_path)
+        )
+        self.carried_surface = None
+        self.grasp_on_table = None
         profile_path = Path(__file__).with_name("g1_complete_cv_motion_profile.json")
         profile = json.loads(profile_path.read_bytes())
         if (
@@ -526,8 +568,35 @@ class LocalClearance:
         if self.robot_raster is not None:
             self.robot_raster.close()
             self.robot_raster = None
+        if self.carried_surface is not None and hasattr(self.carried_surface, "close"):
+            self.carried_surface.close()
+            self.carried_surface = None
 
-    def changed_surfaces(self, frame, workpiece, robot, tcp, links, joints, fingers):
+    def observe_payload_frame(self, frame, marker, robot_packet, skill, phase):
+        """Store one native-clock observation, also used by the independent release dwell."""
+        from scripts.graduation.g1_complete_cv_payload_observation import payload_observation
+
+        step = robot_packet.get("physics_step")
+        optical = rigid_pose(
+            frame, marker, self.geometry, identity=self.optical_identity, physics_step=step
+        )
+        return payload_observation(
+            frame,
+            marker,
+            self.geometry,
+            robot_packet,
+            skill,
+            phase,
+            identity=self.optical_identity,
+            physics_step=step,
+            optical=optical,
+            history=self.payload_history,
+            red_geometry=self.red_geometry,
+        )
+
+    def changed_surfaces(
+        self, frame, workpiece, robot, tcp, links, joints, fingers, *, payload_pose=None
+    ):
         depth = axial(frame)
         near, lost = depth_changes(depth, self.reference, BAND)
         ys, xs = near.nonzero()
@@ -570,10 +639,26 @@ class LocalClearance:
             arm[ii[explained]] = True
             unknown[ii[explained]] = False
             explained_raster = int(explained.sum())
+        carried_evidence = None
+        if unknown.any() and payload_pose is not None:
+            from scripts.graduation.g1_complete_cv_carried_surface import CarriedSurface
+
+            if self.carried_surface is None:
+                self.carried_surface = CarriedSurface(self.asset_path)
+            ii = np.flatnonzero(unknown)
+            uv = np.column_stack((xs[ii], ys[ii]))
+            verified, carried_evidence = self.carried_surface.explain(
+                frame, payload_pose, joints, fingers, uv
+            )
+            verified = np.asarray(verified)
+            if verified.shape == (len(ii),) and verified.dtype == np.bool_:
+                unknown[ii[verified]] = False
+                objects[ii[verified]] = True
         return dict(
             nearer_returns=int(near.sum()),
             arm_surface_pixels=int(arm.sum()),
             robot_raster_surface_pixels=explained_raster,
+            carried_surface_evidence=carried_evidence,
             workpiece_surface_pixels=int(objects.sum()),
             unknown_pixels=int(unknown.sum()),
             unmatched_pixels_uv=np.column_stack((xs[unknown], ys[unknown]))[:12].tolist(),
@@ -698,12 +783,31 @@ class LocalClearance:
             joint_rad=float(abs(exposed_q - q).max()),
             finger_m=float(abs(exposed_f - fingers).max()),
         )
-        measured = self.changed_surfaces(frame, obj, robot, tcp, links, exposed_q, exposed_f)
+        carried = None
+        if skill in (*PAYLOAD_MOTIONS, "RELEASE"):
+            carried = self.observe_payload_frame(frame, marker, m, skill, phase)
+            result["payload_observation"] = carried
+        elif skill == "GRASP" and phase == "PRE":
+            result["payload_observation"] = self.observe_payload_frame(
+                frame, marker, m, skill, phase
+            )
+        pose = (
+            carried.get("pose")
+            if carried and permits_relation(skill, carried.get("relation"))
+            else None
+        )
+        measured = self.changed_surfaces(
+            frame, obj, robot, tcp, links, exposed_q, exposed_f, payload_pose=pose
+        )
         result["depth"] = measured
         if measured["unknown_pixels"]:
             return finish("BLOCKED", "unregistered_near_surface")
         if measured["lost_or_farther_static"]:
             return finish("UNKNOWN", "lost_static_depth_support")
+        if carried is not None and (
+            pose is None or not permits_relation(skill, carried.get("relation"))
+        ):
+            return finish("UNKNOWN", "unqualified_current_payload_relation")
         floor = self.model.table.c[2] + self.model.table.h[2]
         present = self.model.hand_gaps(
             robot,
@@ -797,11 +901,31 @@ class LocalClearance:
         handoff = m.get("handoff")
         entry_optical = None
         if isinstance(handoff, dict) and handoff.get("current_step") == handoff.get("entry_step"):
-            from scripts.graduation.g1_complete_cv_handoff_optics import rigid_pose
-
-            entry_optical = rigid_pose(
-                frame, marker, self.geometry, identity=binding, physics_step=m.get("physics_step")
+            entry_optical = (
+                pose
+                if pose is not None
+                else rigid_pose(
+                    frame,
+                    marker,
+                    self.geometry,
+                    identity=binding,
+                    physics_step=m.get("physics_step"),
+                )
             )
+
+        if carried is not None:
+            allow_ground = bool(
+                in_region and carried.get("allow_registered_block_table_contact") is True
+            )
+            if skill == "LIFT":
+                source = source_support_evidence(
+                    carried, self.grasp_on_table, self.model, self.source_support
+                )
+                result["source_table_support"] = source
+                allow_ground = source["qualified"]
+                interval = carried.get("evidence", {}).get("cube_bottom_interval_m")
+                if interval is not None and interval[0] > self.source_support["max_current_gap_m"]:
+                    self.grasp_on_table = None
 
         def volume_check(box, xyz_pad_m):
             c = np.asarray(xyz_pad_m, float)
@@ -834,12 +958,35 @@ class LocalClearance:
             volume_check=volume_check,
         )
         if motion is None:
-            motion = self.short_motion(
-                q, fingers, dq, df, center, rot, skill, robot, allow_ground, optical=optical
-            )
+            if skill in PAYLOAD_MOTIONS:
+                motion = self.payload_gate.check(
+                    skill,
+                    q,
+                    fingers,
+                    dq,
+                    df,
+                    handoff,
+                    carried,
+                    volume_check,
+                    allow_grasp_station_contact=allow_ground,
+                    native_target=target if target_xyz is not None else None,
+                )
+            else:
+                motion = self.short_motion(
+                    q, fingers, dq, df, center, rot, skill, robot, allow_ground, optical=optical
+                )
         result["short_motion"] = motion
         if motion["reason"]:
             return finish("UNKNOWN", motion["reason"])
+        if skill == "GRASP" and phase == "PRE" and entry_optical is not None:
+            now = np.asarray(entry_optical["center_m"])
+            body = self.model.object[0].placed(now, np.asarray(entry_optical["rotation"]))
+            substrate = result["payload_observation"].get("evidence", {})
+            if (
+                substrate.get("support_surface_visible") is True
+                and abs(body.corners()[:, 2].min() - floor) <= 2 * BAND
+            ):
+                self.grasp_on_table = now[:2].copy()
         if (
             skill in FREE_PHASES
             and optical is not None
