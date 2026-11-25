@@ -1,0 +1,385 @@
+{
+  "author_model": "gpt-6.2-astra",
+  "baseline_commit": "b11e9a86387b87b27fc31b4c0fec974a7dc4f65f",
+  "parent_plan": "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-complete-cv-repair-20261125/plan.json",
+  "sections": {
+    "问题与证据": "七个同代静态姿态中，高位持物与回撤两帧的内部白色连通域沿不同方向解出 17，拒绝歧义。Mesa 每帧两次，NVIDIA 每帧三次。GPU 细查候选中心邻近 (76,89)，偏离实体板。仅高位持物目的区拒绝，3 个角锚已达门槛。唯一未解释像素 (119,66) 的 RGB 为 (73,147,88)，深度 1.396585 m，离线实例为目的区，邻域跨手、梁和 link4。实例仅作盲读后的审计。",
+    "范围与假设": "假设一是投影/阴影或边缘形状产生缺乏实体印刷边界的伪码。假设二是原目的区平面在遮影下仍有可验证的绿色色度。均需证伪。保留原固定顶视、目标区几何与身份、控制器、100 ms、原训练与独立评分边界及正式运行数 0。沿臂回波归父计划。",
+    "实施顺序": "先在复制的新开发装配中逐项改变受控印刷尺寸、梁表面光照或印刷板相对遮光位置，冻结每项的尺度和姿态，保持用户可见标记与碰撞物理一致。逐项重渲七姿态并比较两渲染器的拒绝、误差、碰撞间隙。如果证据指向通用读取问题，再改实际 worker 共用的当前 RGB-D 读法。",
+    "身份判据": "在受控场景以相机内参、当前深度和预登记的合法物理尺度/平面残差及可见印刷外框验证候选。仅对有正面几何矛盾的伪候选作排除。缺失深度、无法判定边界或可信的未知码仍拒绝。禁止按 ID17、坐标、角色、姿态或是否已有 8 作豁免。",
+    "区域判据": "用当前深度重建已绑定原区域平面，在已观察角锚和连续边界内，以独立标定并预冻结的照明变化下绿色色度支持解释变暗区域；真正高于区域的遮挡需有有效前景几何。异色同平面补丁、移区、缺深度、冒名绿板和无法解释的缺口均拒绝。禁止扩大任意缺绿像素预算或按真值填充。",
+    "验证与运行前置": "先核输入 SHA 并保存历史 RED；用项目虚拟环境、相同相机标定/装配、相同姿态和 EGL 运行原完整测量入口。独立校准光照、尺度、深度误差后锁定阈值。保留原两帧、真实印刷 17 替换 7/8、有合法 8 共存的真实 17、移位和跨尺度候选、假绿色平板、渐暗绿色以及缺深度反例。保存解码来源、支持点/残差、边界、区域判别与失败原因，再用离线实例对照。",
+    "验收与停线": "两渲染器各七姿态正控保持正确原区和注册姿态、原误差阈值，替换/歧义与区域反例全部拒绝。逐次记录真实端到端反馈 ≤100 ms。静态证据只记开发验证；训练及独立评分必须使用父计划要求的事前登记、独立案例和新生成代，沿用原八阶段、接触/提升/释放门槛。新根因或范围扩展暂停另立 Astra 计划。"
+  },
+  "reproductions": [
+    {
+      "capture": "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture",
+      "renderer": {
+        "renderer": "llvmpipe (LLVM 20.1.2, 256 bits)",
+        "vendor": "Mesa",
+        "version": "4.5 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.3"
+      },
+      "rows": [
+        {
+          "role": "over-region-held",
+          "observed_ids": [
+            8,
+            17,
+            17
+          ],
+          "marker_reason": "ambiguous_marker_identity",
+          "destination_reason": "region_missing_color_not_explained_by_foreground"
+        },
+        {
+          "role": "at-region-retracted",
+          "observed_ids": [
+            8,
+            17,
+            17
+          ],
+          "marker_reason": "ambiguous_marker_identity",
+          "destination_reason": null
+        }
+      ]
+    },
+    {
+      "capture": "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture-gpu",
+      "renderer": {
+        "renderer": "NVIDIA GeForce RTX 4070 Ti SUPER/PCIe/SSE2",
+        "vendor": "NVIDIA Corporation",
+        "version": "4.6.0 NVIDIA 595.99.02"
+      },
+      "rows": [
+        {
+          "role": "over-region-held",
+          "observed_ids": [
+            8,
+            17,
+            17,
+            17
+          ],
+          "marker_reason": "ambiguous_marker_identity",
+          "destination_reason": "region_missing_color_not_explained_by_foreground"
+        },
+        {
+          "role": "at-region-retracted",
+          "observed_ids": [
+            8,
+            17,
+            17,
+            17
+          ],
+          "marker_reason": "ambiguous_marker_identity",
+          "destination_reason": null
+        }
+      ]
+    },
+    {
+      "capture": "experiments/results/g1-complete-cv-repair-20261125/mount-optics-02/capture-gpu",
+      "renderer": {
+        "renderer": "NVIDIA GeForce RTX 4070 Ti SUPER/PCIe/SSE2",
+        "vendor": "NVIDIA Corporation",
+        "version": "4.6.0 NVIDIA 595.99.02"
+      },
+      "rows": [
+        {
+          "role": "over-region-held",
+          "observed_ids": [
+            8,
+            17,
+            17,
+            17
+          ],
+          "marker_reason": "ambiguous_marker_identity",
+          "destination_reason": "region_missing_color_not_explained_by_foreground",
+          "unexplained_destination_pixels": [
+            {
+              "depth_m": 1.396585464477539,
+              "neighbor_geoms_for_readback": [
+                "g1_dual_id7_crossbar",
+                "hand",
+                "link4",
+                "target_region_geom"
+              ],
+              "pixel_xy": [
+                119,
+                66
+              ],
+              "rgb": [
+                73,
+                147,
+                88
+              ],
+              "source_geom_for_readback": "target_region_geom"
+            }
+          ],
+          "detection_candidates": [
+            {
+              "front_face_ambiguous": false,
+              "id": 8,
+              "ordered_corners_px": [
+                [
+                  147.40206387468638,
+                  58.70393322812626
+                ],
+                [
+                  163.45138927702735,
+                  58.658454022737445
+                ],
+                [
+                  163.26498218769441,
+                  74.59176894461109
+                ],
+                [
+                  147.21565678535345,
+                  74.6372481499999
+                ]
+              ],
+              "origins": [
+                "direct_quad"
+              ]
+            },
+            {
+              "front_face_ambiguous": false,
+              "id": 17,
+              "ordered_corners_px": [
+                [
+                  85.79942093869542,
+                  77.95240844050298
+                ],
+                [
+                  88.60437000201819,
+                  99.4950387108865
+                ],
+                [
+                  67.15865854665529,
+                  101.90286666394744
+                ],
+                [
+                  64.35370948333252,
+                  80.36023639356391
+                ]
+              ],
+              "origins": [
+                "internal_white_component"
+              ]
+            },
+            {
+              "front_face_ambiguous": false,
+              "id": 17,
+              "ordered_corners_px": [
+                [
+                  89.12681229121566,
+                  80.46385793120508
+                ],
+                [
+                  85.43136211215138,
+                  101.10301854079825
+                ],
+                [
+                  63.401423598702614,
+                  97.12080718067476
+                ],
+                [
+                  67.0968737777669,
+                  76.4816465710816
+                ]
+              ],
+              "origins": [
+                "internal_white_component"
+              ]
+            },
+            {
+              "front_face_ambiguous": false,
+              "id": 17,
+              "ordered_corners_px": [
+                [
+                  93.70660573212089,
+                  88.74852929425322
+                ],
+                [
+                  76.54029352392983,
+                  99.87774902663007
+                ],
+                [
+                  61.16484529104741,
+                  85.54787957097957
+                ],
+                [
+                  78.33115749923847,
+                  74.41865983860272
+                ]
+              ],
+              "origins": [
+                "internal_white_component"
+              ]
+            }
+          ]
+        },
+        {
+          "role": "at-region-retracted",
+          "observed_ids": [
+            8,
+            17,
+            17,
+            17
+          ],
+          "marker_reason": "ambiguous_marker_identity",
+          "destination_reason": null,
+          "unexplained_destination_pixels": [],
+          "detection_candidates": [
+            {
+              "front_face_ambiguous": false,
+              "id": 8,
+              "ordered_corners_px": [
+                [
+                  148.19138668853793,
+                  64.02877231881962
+                ],
+                [
+                  162.82603758419722,
+                  63.917347484639684
+                ],
+                [
+                  162.9964218607539,
+                  78.2787803986771
+                ],
+                [
+                  148.36177096509462,
+                  78.39020523285703
+                ]
+              ],
+              "origins": [
+                "rejected_quad"
+              ]
+            },
+            {
+              "front_face_ambiguous": false,
+              "id": 17,
+              "ordered_corners_px": [
+                [
+                  85.79942093869542,
+                  77.95240844050298
+                ],
+                [
+                  88.60437000201819,
+                  99.4950387108865
+                ],
+                [
+                  67.15865854665529,
+                  101.90286666394744
+                ],
+                [
+                  64.35370948333252,
+                  80.36023639356391
+                ]
+              ],
+              "origins": [
+                "internal_white_component"
+              ]
+            },
+            {
+              "front_face_ambiguous": false,
+              "id": 17,
+              "ordered_corners_px": [
+                [
+                  89.12681229121566,
+                  80.46385793120508
+                ],
+                [
+                  85.43136211215138,
+                  101.10301854079825
+                ],
+                [
+                  63.401423598702614,
+                  97.12080718067476
+                ],
+                [
+                  67.0968737777669,
+                  76.4816465710816
+                ]
+              ],
+              "origins": [
+                "internal_white_component"
+              ]
+            },
+            {
+              "front_face_ambiguous": false,
+              "id": 17,
+              "ordered_corners_px": [
+                [
+                  93.70660573212089,
+                  88.74852929425322
+                ],
+                [
+                  76.54029352392983,
+                  99.87774902663007
+                ],
+                [
+                  61.16484529104741,
+                  85.54787957097957
+                ],
+                [
+                  78.33115749923847,
+                  74.41865983860272
+                ]
+              ],
+              "origins": [
+                "internal_white_component"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "input_sha256": {
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-complete-cv-repair-20261125/plan.json": "4f84f847bc86f68d474d4f81feb0083f6f9e2e9ee93d49e4d5c5509600cc824b",
+    "AGENTS.md": "7f4f8b080b2f1e99b53d24aeebf62f51815315c69a40dc9223d2e974c3c40cdb",
+    "scripts/graduation/g1_clearance_mount_optics.py": "acd3eca51211d0e120acc5acf764edd86e31fe0617bd6f218cb48095a12e2cbf",
+    "src/cloud_edge_robot_arm/vision/servo_region.py": "17be952ca97ce313e2f32b37d8a951150563509857878fa7284b51fc73915f77",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture/summary.json": "a22b1c187f0a4fbe9b376d2c1aea6d3dcabdc0a20680d38b089b2f6b4f406aa9",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture/compiled.json.gz": "1fd0b586dcee97e0e1e182e1485818fde050adbc0d2bc4153fc2348d5ce17eeb",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/runtime-source/mount-diagnostic-generation.json": "d290e2e16747ef72ac7b6340565aa7cdbb5b065f794f6097454f8e26aaeb732a",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture/over-region-held.instances.npz": "02699ac018e91b1d0c92353113978a6c62b03e060fc53ba64205c21eeb13fdcd",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture/over-region-held.rgbd.json.gz": "f9ff9ac2dce2ee249c6608eb99e9581b26a4a29526c5355005e7ebec1050811e",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture/at-region-retracted.rgbd.json.gz": "0c5fed0c5ecbe62a2d924ad92c9545745d815217c4381ae3f10250a5a092f186",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture/at-region-retracted.instances.npz": "48966921751ed99009de75b725028c45a312d79394af1476c241f3c08c860a64",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture-gpu/summary.json": "119467bc8e1e26f6186600e8e63b66edee1884e07bb75a7d392c7576673db7c9",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture-gpu/compiled.json.gz": "1fd0b586dcee97e0e1e182e1485818fde050adbc0d2bc4153fc2348d5ce17eeb",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture-gpu/over-region-held.instances.npz": "46a39fe28a62f23d92a21b5b5909f69a4bd0ed3e93884848188816690e0bff77",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture-gpu/over-region-held.rgbd.json.gz": "754a70eb1757b81d0a2facf855307ad9ab7ff1fb1d14e925abf68d77bbebd126",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture-gpu/at-region-retracted.rgbd.json.gz": "56e8a19ddb3a72d56619808a088c8aaf96e06636d537d76655166609b476a58f",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-01/capture-gpu/at-region-retracted.instances.npz": "da1f550b200adcc9fcbbb72a8b36c4a5b501e72169bd48067f013b7057d0fcd7",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-02/capture-gpu/summary.json": "dbfb60c94329b083dccfb75f995126dd9924854ebafafb8debb62d3d34ce378a",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-02/capture-gpu/compiled.json.gz": "1fd0b586dcee97e0e1e182e1485818fde050adbc0d2bc4153fc2348d5ce17eeb",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-02/runtime-source/mount-diagnostic-generation.json": "ff9bd7530cfaa1ca51d1d084134befca0f88515f4b5a56d8531936d8f3a9c7da",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-02/capture-gpu/over-region-held.instances.npz": "46a39fe28a62f23d92a21b5b5909f69a4bd0ed3e93884848188816690e0bff77",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-02/capture-gpu/over-region-held.rgbd.json.gz": "c6762f4d6cc574914109b4c49e0175c6890baae63938ee7aedfc45c7f25725ba",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-02/capture-gpu/over-region-held.bootstrap.json.gz": "4ec391975d8dd9817349a118ff9689c788df887b2329ee20c3cac9c5ac770622",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-02/capture-gpu/at-region-retracted.rgbd.json.gz": "425d0b216d03f78b127bc16b89efbe4b404bd39ae64599ae3b36f195eb5819b0",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-02/capture-gpu/at-region-retracted.bootstrap.json.gz": "25dbff904a4434c5f3fca8c578ba9694976a19b0f685b0b5aca9de4775c018ee",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-optics-02/capture-gpu/at-region-retracted.instances.npz": "da1f550b200adcc9fcbbb72a8b36c4a5b501e72169bd48067f013b7057d0fcd7"
+  },
+  "acceptance": {
+    "formal_runs": 0,
+    "max_feedback_ms": 100,
+    "min_hold_s": 0.5,
+    "min_lift_m": 0.05,
+    "min_placed_stable_s": 1,
+    "native_stages": [
+      "MOVE_ABOVE",
+      "APPROACH",
+      "GRASP",
+      "LIFT",
+      "MOVE_TO_REGION",
+      "PLACE",
+      "RELEASE",
+      "RETREAT"
+    ],
+    "posts": 8,
+    "qualified_slots_required_for_complete": 2,
+    "registered_slots": 2,
+    "require": "existing training_success and score_case, bilateral object contact, qualified lift/release windows, full native actual-feedback timing, no forbidden hand/structure contact"
+  }
+}
