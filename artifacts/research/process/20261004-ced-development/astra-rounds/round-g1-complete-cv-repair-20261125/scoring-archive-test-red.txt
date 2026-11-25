@@ -1,0 +1,49 @@
+........FFF                                                              [100%]
+=================================== FAILURES ===================================
+__________ test_runtime_source_catalog_requires_pinned_private_bytes ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-273/test_runtime_source_catalog_re0')
+
+    def test_runtime_source_catalog_requires_pinned_private_bytes(tmp_path):
+        import hashlib
+        import json
+    
+        runtime = tmp_path / "runtime-source"
+        runtime.mkdir()
+        module = runtime / "independent_reader.py"
+        module.write_bytes(b"registered reader")
+        file_digest = hashlib.sha256(module.read_bytes()).hexdigest()
+        lock = runtime / "runtime-build.json"
+        lock.write_text(json.dumps({"runtime_files_sha256": {module.name: file_digest}}))
+        generation = hashlib.sha256(lock.read_bytes()).hexdigest()
+>       assert scorer().verify_generation(runtime, generation)["runtime_files_sha256"][module.name] == file_digest
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'scripts.graduation.g1_clearance_score' has no attribute 'verify_generation'
+
+tests/test_graduation_g1_clearance_score.py:134: AttributeError
+______ test_native_targets_are_rebuilt_using_registered_center_and_region ______
+
+    def test_native_targets_are_rebuilt_using_registered_center_and_region():
+>       check = scorer().check_issued_endpoint
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'scripts.graduation.g1_clearance_score' has no attribute 'check_issued_endpoint'
+
+tests/test_graduation_g1_clearance_score.py:141: AttributeError
+_ test_local_gate_requires_every_actual_feedback_frame_and_refuses_crossed_identity _
+
+    def test_local_gate_requires_every_actual_feedback_frame_and_refuses_crossed_identity():
+        run, audit = completed_samples()
+        frames = {r["frame_id"]: r for r in run["frame_roles"]}
+        rows = [{"phase": "FEEDBACK", "skill": r["label"].split("/")[0], "frame_id": r["frame_id"],
+                 "checksum_sha256": r["checksum_sha256"], "physics_step": r["physics_step"],
+                 "status": "CLEAR", "reason": None, "gate_ms": 3.6} for r in run["frame_roles"]]
+>       complete = scorer().local_gate_readback(rows, frames, run)["all_captured_feedback_clear"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'scripts.graduation.g1_clearance_score' has no attribute 'local_gate_readback'
+
+tests/test_graduation_g1_clearance_score.py:166: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_graduation_g1_clearance_score.py::test_runtime_source_catalog_requires_pinned_private_bytes
+FAILED tests/test_graduation_g1_clearance_score.py::test_native_targets_are_rebuilt_using_registered_center_and_region
+FAILED tests/test_graduation_g1_clearance_score.py::test_local_gate_requires_every_actual_feedback_frame_and_refuses_crossed_identity
+3 failed, 8 passed in 0.12s

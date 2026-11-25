@@ -1,0 +1,165 @@
+{
+  "author_model": "gpt-6.2-astra",
+  "baseline_commit": "202d4d4003ea282f7bec8b2788995b83a98c6d10",
+  "runtime_build_sha256": "070531c703250817e45d9ad99d2c357f5dc074a6406186416065f3727e22336e",
+  "failed_row": {
+    "calibration_sha256": "c0369782b42fc17766082770e1c3231545743f7ddcda551c5638a9414c264ca3",
+    "camera_current_encoder_difference": {
+      "finger_m": 8.309702190234525e-09,
+      "joint_rad": 5.803070743104488e-06
+    },
+    "center_approach": {
+      "gap_m": 0.004230742479754086,
+      "pair": [
+        "left_finger_geom",
+        "object_geom"
+      ]
+    },
+    "check_ms": 10.650787,
+    "checksum_sha256": "66a0b9ca1712f351cf746b9ec3b14ab32ab0265d10ad174788db87cf44527772",
+    "commanded_target_xyz_m": [
+      0.4513949255557311,
+      -0.007567583086742023,
+      0.04535318941837748
+    ],
+    "depth": {
+      "arm_surface_pixels": 2218,
+      "lost_or_farther_static": 0,
+      "measured_surface_tolerance_m": 0.007819084374842283,
+      "missing_uv": [],
+      "nearer_returns": 2848,
+      "robot_raster_surface_pixels": 17,
+      "static_covered": 39508,
+      "unknown_pixels": 0,
+      "unmatched_pixels_uv": [],
+      "unmatched_world_m": [],
+      "workpiece_surface_pixels": 630
+    },
+    "frame_id": "rgbd-7537550e8bc84d9c9eef77391d0e1452",
+    "grasp_angle": {
+      "decoded_id": 8,
+      "edge": {
+        "center_row": 120.74912357972777,
+        "columns": 6,
+        "maximum_pair_residual_px": 0.012511599511583427,
+        "slope": -0.0035357142857156245,
+        "span_px": 5.0
+      },
+      "edge_plate_id": 7,
+      "method": "one_id_and_opposite_plate_edges",
+      "uncertainty_deg": 0.3,
+      "upper_error_deg": 0.41472140714664646,
+      "wrist_yaw_deg": 0.0,
+      "yaw_deg": -0.1147214071466591
+    },
+    "hand_above_floor_m": 0.0731257495380766,
+    "known_volume_views": {
+      "g1_dual_id7_crossbar": "panel-primary",
+      "g1_dual_id7_plate": "panel-primary",
+      "g1_dual_id7_upright": "panel-primary",
+      "g1_dual_id8_crossbar": "panel-primary",
+      "g1_dual_id8_plate": "panel-primary",
+      "g1_dual_id8_upright": "panel-primary",
+      "hand": "panel-primary",
+      "left_finger_geom": "panel-primary",
+      "object_geom": "panel-primary",
+      "right_finger_geom": "panel-primary"
+    },
+    "measured_hand_gap": {
+      "gap_m": 0.0041347409554279915,
+      "pair": [
+        "left_finger_geom",
+        "object_geom"
+      ]
+    },
+    "phase": "FEEDBACK",
+    "reason": "eight_tick_and_stop_envelope_meets_solid",
+    "schema": "g1.local-current-rgbd.v1",
+    "selected_object_delta_m": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "short_motion": {
+      "brake_speed_class": 0.4,
+      "brake_ticks": 240,
+      "limiting_pair": [
+        "left_finger_geom",
+        "g1_dual_id8_plate"
+      ],
+      "max_initial_joint_speed_rad_s": 0.3356412475555427,
+      "minimum_gap_m": -0.0057540254029626505,
+      "physics_ticks": 8,
+      "reason": "eight_tick_and_stop_envelope_meets_solid",
+      "stop_branches": 44,
+      "training_windows": 1167
+    },
+    "skill": "APPROACH",
+    "status": "UNKNOWN"
+  },
+  "sections": {
+    "实测问题": "原代 MOVE_ABOVE 90 个反馈，最大 56.03 ms；APPROACH 38 个反馈，最大 46.97 ms。step 1136 未识别深度为零，当前最紧 left_finger_geom/object_geom 为 +4.135 mm；8 步与随后的 240 步制停预测拒绝，限制对为 left_finger_geom/g1_dual_id8_plate，−5.754 mm。不同几何对的间隙不能相减作为过量余度。",
+    "待证假设": "envelopes 对 0…8 步 FK 角点的并集同时加 normal、stop 及半个相邻角点最大位移；速度桶 0.4 对应 44 个制停分支和 1167 个训练窗口。按身体和世界轴独取极值，再对两件独立包围，可能把不同方向、不同时刻极值叠加。真实禁碰或停距不足仍是待检原因。178 个不同分支为开发样本；两条历史轨迹旧装配有真实碰撞，旧件 76 个回放制停分支中 5 个晚期分支触架。",
+    "先锁定与复演": "锁原注册代、时钟、240 Hz、初态、载荷、碰撞几何及相机。原失败现场从复位及原命令/物理钟进行独立离线动力学回放，先核每步关节、指位、控制器内部目标、速度和 TCP 一致；无法复原则新采完整原生开发状态。对第 1136 步及不同邻近初态，分别在未来 0 至 8 步每一个可能停点调用原 emergency_stop/hold_current_joints，监护随后 240 步。保留每个物理步的所有刚体角点、定向间隙、相对运动、最小间隙/接触、1/8/240 步累计峰值。实际禁碰则不放行。",
+    "可验证预测": "仅在冻结的开发适用域（装配、阶段、接触/载荷类别、姿态、位置、速度和方向、关节及指位）内拟合；运行时适用域必须由已授权当前观测可判定。预先按整条轨迹划分拟合及未见验证，禁止相邻窗口跨集。对每一可能停点、每一未来步，计算角点相对短预测的有符号残差，沿独立登记方向包围每个实体，或对同步实体对构造可证明的相对支撑上界。覆盖转动、连续步间路径、模型/观测标定误差、制动状态及未采样差异；半步推论须有速度/加速度或连续扫掠证明。所有残差、真实轨迹和已登记误差都须包含，禁止改小原裕量凑通过。若只获得样本峰值，保持样本边界，超域、覆盖不足或无法证明时沿用原拒绝。",
+    "物理负控与验收": "逐历史原装配两次禁碰及 5 个触架分支不得放行；只在中段相交、两个端点均安全的实体障碍、反向速度、超速超域、载荷变化和丢失当前观测均须拒绝。用未见真实轨迹独立检验每步角点围合、危险状态提前停和无漏拒。仅修改开发包络及必要采集/测试，保留相机、控制器、停距、全部 8+240 步门限；在线禁用物件真值、分割和接触放行。通过后新代新登记受控训练，逐次正常反馈仍 ≤100 ms。两独立评分未开，正式与硬件 0。保留失败原件，新根因另立计划。"
+  },
+  "input_sha256": {
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-complete-cv-repair-20261125/plan.json": "4f84f847bc86f68d474d4f81feb0083f6f9e2e9ee93d49e4d5c5509600cc824b",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-complete-cv-repair-20261125/mount-step-report.md": "92274b6108cb98565efd256bc31a02633020f10366efe84578ac61d1aff80e79",
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-complete-cv-repair-20261125/mount-evidence.public.json": "98209d56f4a98f32f13add769f0e5c64158a9b6d0fafee304312a70ca8870349",
+    "experiments/results/g1-complete-cv-repair-20261125/builds/070531c703250817e45d9ad99d2c357f5dc074a6406186416065f3727e22336e/runtime-source/runtime-build.json": "070531c703250817e45d9ad99d2c357f5dc074a6406186416065f3727e22336e",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/allocation.json": "4262406a1ce272840041c8cde2761d8da47526ff0e28d5a7b33f1742b264be23",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/source-inventory.json": "438b718c0f5fa780165ced039ca9778dc1886e065b49c242badcfc9f2e3fa20e",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/run.json": "5038b3f6ec13f0c73e3456913b906035035bef26a2d3c86c3ad5c7e39271e164",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/pixel-index.json": "a995f170804fca5273c9567cd335142550e32ac9f72cb5b9f072bef3f6876da6",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/online-vision-seal.json": "12c63684b4cfa0994a5e6664b0c52b4db968cebaeeac3b2df3d7a928b4f2bd20",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/receipt.json": "79bf47193d1f8c83fcabf9b00706fb0249ad42a914cf7f3b431dd1012cad012c",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/online-vision.json": "f0e03f4a3c47711687efa0246f3bd321f07731fb18ebb72e9c68c882126f61cd",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/started.json": "1fd127ad38eb927df2c870e5fe79ae7ba25bae8f27e79410de1f868b711392ff",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/imports.json": "d12fbea6e7ffa02948ba7f5f15ffdda2e5a25c57159b9aa4d9215010a4b59e78",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/backend-commands.json": "d21e81f6208092636e46dc13a5c41ded812e33b108bb836714cf7d9937a169c1",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/offline-truth.json": "6cd62e13f1fc7d497699b7d8575908db038f17dcab113bf905222972c2852218",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/assembly-reset.json": "fc48ed35d75122621b46b65c61d3abe8653e3682686cd4eed47bf44e134f6ce1",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/local-clearance.json": "2aeabc08fa6909426c47bebc037bbe9cb7568bd5ba8acf59b1c1ae0ad62ea306",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/acquisition-seal.json": "08819cab7ba555e90601e928a529246fd2bd14cc399bb132825aab97c93cd73c",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/online-audit.json": "84ae20c3f19ade3e0484cc1b0fc1190c2dd3c51433406e35cef1a5e0a2e0f293",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/local-clearance-seal.json": "1db67b62d38873bda4ccc8222d3a83285e9906fcb5165ea11cb54a7f90a8faf6",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/reset-observed.json": "564f0caa2239400fd1134fc21984902e9851bb9d95b20e3f74f4e1b81b5c3119",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/camera-setup.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "experiments/results/g1-complete-cv-repair-20261125/batches/train-approach-probe-02/cvfix-t01/instance/development-worker.db": "2cd6e7a08dbbc4b749fd07bdee33379a1f514d10c0ab63a7844f911bbdfe40a7",
+    "experiments/results/g1-complete-cv-repair-20261125/builds/070531c703250817e45d9ad99d2c357f5dc074a6406186416065f3727e22336e/runtime-source/scripts/graduation/g1_complete_cv_motion.py": "67dfc37a8d1e228df9030ccdf13f432dda473dd6a2c2cd4f6746c302e6416d39",
+    "experiments/results/g1-complete-cv-repair-20261125/builds/070531c703250817e45d9ad99d2c357f5dc074a6406186416065f3727e22336e/runtime-source/scripts/graduation/g1_complete_cv_motion_fit.py": "ffd5ac97e3a3e1208e2d0d4242ddbb95efb5f8b41f38f2474a5a8a1dd7acf9ac",
+    "experiments/results/g1-complete-cv-repair-20261125/builds/070531c703250817e45d9ad99d2c357f5dc074a6406186416065f3727e22336e/runtime-source/scripts/graduation/g1_complete_cv_motion_profile.json": "d0538758052dcaab43af8cea64c1defe43396eae1fa12d15c8a33ddc84a7c1f8",
+    "experiments/results/g1-complete-cv-repair-20261125/builds/070531c703250817e45d9ad99d2c357f5dc074a6406186416065f3727e22336e/runtime-source/scripts/graduation/g1_complete_cv_clearance.py": "22b78c0d603bc35d965cf0dc5370645ca9fa11c3c75dacdd3f42bb222e37372e",
+    "experiments/results/g1-complete-cv-repair-20261125/builds/070531c703250817e45d9ad99d2c357f5dc074a6406186416065f3727e22336e/runtime-source/scripts/graduation/g1_complete_cv_geometry.py": "97a4a982e338a17a3362906ed24250d7a2d684c7ec466aabb7be77a588e31f6a",
+    "experiments/results/g1-complete-cv-repair-20261125/builds/070531c703250817e45d9ad99d2c357f5dc074a6406186416065f3727e22336e/runtime-source/src/cloud_edge_robot_arm/simulation/mujoco/backend.py": "4d6dd9e0b92efab1b3895aa66473cb739e46558b3b47260caeec114a638f7bf4",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-01/braking/empty-native.json.gz": "93db0dab297f08577c345d529307b9b978511fb43061285edb3da87bea51ad8e",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-01/braking/empty-branches.json.gz": "7336aa2398ac2991313ca6c84822cd3fefa90c761611cd5d10adbe4f27e029ce",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-01/braking/loaded-branches.json.gz": "f2656aaffc6fcc4d73abb5399f96448826d01954ede7dfa5330534ce2c04e4a0",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-01/braking/loaded-native.json.gz": "8a28e53ae7e7d75e3759539af0978f3a14a4bf3ee8aa09c3454c3b1d2a8e11d1",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-01/braking/summary.json": "b4a96f72caece2c655d161ea58885fb3431d62f2856e464cb49e8aa7206eba06",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-historic-brake-01/braking/train-radial30-contact-d02-02-original-stop.json.gz": "38569f9a66f4266601e20ddb206e6968a96fe956fe8ca2f0b16667392a1ddf4d",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-historic-brake-01/braking/train-radial15-timing-01-original-stop.json.gz": "f188787e6c0b7fbff20136a1902f114a39ffd2624d0c266145fdcbc22e8d57a3",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-historic-brake-01/braking/train-radial30-contact-d02-02-end-wings-stop.json.gz": "e3f636bba423609d6d3d6f8306d90ef2169e30c2aa5d97e703667421763173ea",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-historic-brake-01/braking/train-radial30-contact-d02-02-original-continuous.npz": "52ca6c66ce8965698d382a2021b3f56d65ede14f25aa123f355c22f1d16dabaa",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-historic-brake-01/braking/train-radial15-timing-01-end-wings-stop.json.gz": "29ac18bc3d3067e88db4efcfbde89df4f061167e4ab3465f68cbfa3dc813845d",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-historic-brake-01/braking/train-radial30-contact-d02-02-end-wings-continuous.npz": "8de73cca0e9152c9fd1bd451ebff1d514386ae8576bf32826245ed0572362e91",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-historic-brake-01/braking/summary.json": "04b08b76a4f0c1ced3469be26ebcaf7e06560edd5003e457f697fa8c9488c451",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-historic-brake-01/braking/train-radial15-timing-01-end-wings-continuous.npz": "504a190049cf7990380bcfbc439b8434e8bd88423cc2f395844bdc68cea5818f",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-historic-brake-01/braking/train-radial15-timing-01-original-continuous.npz": "50ce6d68f572668192494f2bdcba2900c6c2bd816198ecb4397edd0bc08fb3f2",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-03/braking/loaded-continuous.npz": "bde72709f879a13175f2a65427ecb67898ce5a97e6534570e9a004c2abd4a89f",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-03/braking/loaded-branches.json.gz": "1fd9ec230e6ddfd616b70301897d5303df1018a4fae0cc606a96234aacab0d85",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-03/braking/loaded-native.json.gz": "9833f8da1b26daacc362e692560e70765b617961844ec6da262314b2cb12ebb6",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-03/braking/summary.json": "4f66839b4c66a2b78cbaa8cb48ceefd7b7f0242e79367ac150f0001abdf0d152",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-02/braking/empty-native.json.gz": "d1ee90ae9d4286b3206ab56c409ac14693a906cdf8252ee5df700e5fda054be9",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-02/braking/empty-continuous.npz": "3bed0a58b1e7ed067338850df44fe10f830b051cd3a9de7ba7ea9f015ade49f5",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-02/braking/empty-branches.json.gz": "7336aa2398ac2991313ca6c84822cd3fefa90c761611cd5d10adbe4f27e029ce",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-02/braking/loaded-continuous.npz": "1fc614ef9fdabb0bbe66ea0fe2502d0f5df851f62a30ef360207fe1450ca61af",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-02/braking/loaded-branches.json.gz": "f2656aaffc6fcc4d73abb5399f96448826d01954ede7dfa5330534ce2c04e4a0",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-02/braking/loaded-native.json.gz": "2270131bfd2b40bfd4856222def921a95a54183377f59015d5872a77e8c3a8f1",
+    "experiments/results/g1-complete-cv-repair-20261125/mount-brake-02/braking/summary.json": "e9435ac1ebd15e97dcb2c332909efa668b90af146e6dd563fc1001b322ddefdc"
+  },
+  "independent_slots_opened": 0,
+  "formal_runs": 0
+}

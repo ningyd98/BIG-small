@@ -1,0 +1,26 @@
+...........F                                                             [100%]
+=================================== FAILURES ===================================
+__________ test_cli_refuses_unfrozen_batch_before_creating_any_score ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-274/test_cli_refuses_unfrozen_batc0')
+
+    def test_cli_refuses_unfrozen_batch_before_creating_any_score(tmp_path):
+        import json
+        import subprocess
+        import sys
+    
+        batch = tmp_path / "batches" / "attempt-01"
+        batch.mkdir(parents=True)
+        (batch / "allocation.json").write_text(json.dumps({"plan_sha256": "0" * 64,
+                                                           "runtime_build_sha256": "0" * 64,
+                                                           "cases": [{"id": "cvfix-t01"}]}))
+        proc = subprocess.run([sys.executable, "-m", "scripts.graduation.g1_clearance_score",
+                               str(batch), "cvfix-t01"], text=True, capture_output=True)
+>       assert proc.returncode != 0
+E       AssertionError: assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python', '-m', 'scripts.graduation.g1_clearance_sco...ingyd/pytest-274/test_cli_refuses_unfrozen_batc0/batches/attempt-01', 'cvfix-t01'], returncode=0, stdout='', stderr='').returncode
+
+tests/test_graduation_g1_clearance_score.py:190: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_graduation_g1_clearance_score.py::test_cli_refuses_unfrozen_batch_before_creating_any_score
+1 failed, 11 passed in 0.34s
