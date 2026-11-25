@@ -29,6 +29,36 @@ from cloud_edge_robot_arm.simulation.mujoco.skill_robot import _DOWNWARD
 from cloud_edge_robot_arm.simulation.mujoco.visual_servo import MuJoCoVisualServoController
 
 
+def native_reset_ids(events, scene, episode):
+    """Read only the reset operation's identity and clock, independently of its pixels."""
+    trials.require(len(events) == 2, "missing native reset transaction")
+    begin, end = events
+    trials.require(
+        isinstance(scene, str)
+        and scene
+        and isinstance(episode, str)
+        and episode
+        and begin.get("phase") == "BEGIN"
+        and end.get("phase") == "END"
+        and begin.get("operation_id") == end.get("operation_id")
+        and type(begin.get("operation_id")) is int
+        and begin.get("parameters") == end.get("parameters")
+        and end.get("parameters", {}).get("requested", {}).get("scenario_id") == scene
+        and end.get("episode_id") == episode
+        and end.get("result", {}).get("physics_dt_s") == 1 / 240
+        and all(
+            e.get("physics_step") == 0
+            and e.get("sim_time_s") == 0
+            and e.get("kind") == "RESET"
+            and e.get("error") is None
+            and e.get("error_type") is None
+            for e in events
+        ),
+        "native reset, scene or episode identity differs",
+    )
+    return scene, episode
+
+
 @contextmanager
 def observe_sample_failures(events):
     """On native exceptions only, read sampling start and the throw location from traceback."""
@@ -132,6 +162,7 @@ class ClearanceEpisode(TranslatedEpisode):
             checksum=frame.checksum_sha256,
             checksum_sha256=frame.checksum_sha256,
             sim_time_s=joints.sim_time_s,
+            physics_step=backend.total_physics_steps,
             joint_positions_rad=list(joints.positions),
             joint_velocities_rad_s=list(joints.velocities),
             tcp_position_m=[tcp.x, tcp.y, tcp.z],
@@ -202,7 +233,23 @@ class ClearanceEpisode(TranslatedEpisode):
     def check_current(self, frame, skill, target, phase):
         started = time.perf_counter_ns()
         if self.certificate is None:
+            from scripts.graduation.g1_complete_cv_optical_identity import bind_allocation
+
             cfg = self.backend._config
+            scene, episode = native_reset_ids(
+                read(self.raw / "reset-observed.json"),
+                self.backend._scenario.scenario_id,
+                self.backend._episode_id,
+            )
+            binding = bind_allocation(
+                (self.raw.parent / "allocation.json").read_bytes(),
+                allocation_sha256=self.alloc_sha,
+                generation_sha256=sha(ROOT / "runtime-build.json"),
+                calibration_sha256=sha(self.calibration / "manifest.json"),
+                asset_sha256=sha(self.asset_path),
+                reset_scene_id=scene,
+                reset_episode_id=episode,
+            )
             isolated = (
                 type(self.backend) is g1_dual_trials.RegisteredAssemblyBackend
                 and self.backend.view == "nominal"
@@ -216,6 +263,7 @@ class ClearanceEpisode(TranslatedEpisode):
                 self.calibration,
                 calibration_sha256=self.calibration_hash,
                 isolated_scene=isolated,
+                optical_identity=binding,
             )
         if frame.frame_id in self.measurements:
             marker = self.measurements[frame.frame_id]["measurement"]

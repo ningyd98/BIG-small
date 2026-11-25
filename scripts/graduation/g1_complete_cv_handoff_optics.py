@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 from scripts.graduation.g1_complete_cv_calibrate import axial
+from scripts.graduation.g1_complete_cv_optical_identity import OpticalIdentity
 
 # Fit only to complete development trajectories. Unknown views retain no authorization.
 CALIBRATION = {
@@ -292,10 +293,9 @@ def measured_pose(frame, marker, geometry):
     )
 
 
-def rigid_pose(frame, marker, geometry):
-    if (
-        frame.source != "mujoco_camera"
-        or frame.scene_id != geometry["development_dual"]["scene_id"]
+def rigid_pose(frame, marker, geometry, *, identity=None, physics_step=None):
+    if type(identity) is not OpticalIdentity or not identity.matches(
+        frame, marker, geometry, physics_step
     ):
         return None
     result = measured_pose(frame, marker, geometry)

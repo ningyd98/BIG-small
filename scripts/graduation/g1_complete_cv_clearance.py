@@ -139,7 +139,14 @@ def _covers(points, camera, depth, floor_contact):
 
 class LocalClearance:
     def __init__(
-        self, geometry, asset_path, calibration_dir, *, calibration_sha256, isolated_scene
+        self,
+        geometry,
+        asset_path,
+        calibration_dir,
+        *,
+        calibration_sha256,
+        isolated_scene,
+        optical_identity=None,
     ):
         base = Path(calibration_dir)
         manifest = base / "manifest.json"
@@ -296,6 +303,7 @@ class LocalClearance:
         self.pixel_extent = np.hypot(0.5 / fx, 0.5 / fy)
         self.stationary_surface = None
         self.episode = None
+        self.optical_identity = optical_identity
         self.seen = set()
 
     def short_motion(
@@ -612,6 +620,9 @@ class LocalClearance:
         if not frame.scene_id or not frame.episode_id:
             return finish("UNKNOWN", "missing_native_scene")
         identity = (frame.scene_id, frame.episode_id)
+        binding = self.optical_identity
+        if binding is not None and identity != (binding.scene_id, binding.episode_id):
+            return finish("UNKNOWN", "frame_outside_registered_reset_instance")
         if self.episode not in (None, identity) or frame.frame_id in self.seen:
             return finish("UNKNOWN", "changed_episode_or_repeated_frame")
         self.episode = identity
@@ -788,7 +799,9 @@ class LocalClearance:
         if isinstance(handoff, dict) and handoff.get("current_step") == handoff.get("entry_step"):
             from scripts.graduation.g1_complete_cv_handoff_optics import rigid_pose
 
-            entry_optical = rigid_pose(frame, marker, self.geometry)
+            entry_optical = rigid_pose(
+                frame, marker, self.geometry, identity=binding, physics_step=m.get("physics_step")
+            )
 
         def volume_check(box, xyz_pad_m):
             c = np.asarray(xyz_pad_m, float)

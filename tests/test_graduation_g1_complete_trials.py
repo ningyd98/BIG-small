@@ -112,3 +112,33 @@ def test_continuous_grasp_inherits_real_joint_motion_and_freezes_entry_setpoint(
     assert later["entry_command_seq"] + 1 == later["last_command_seq"]
     with pytest.raises(ValueError, match="physical step"):
         episode.command_handoff("GRASP", "PRE", robot, frame)
+
+
+def test_optical_identity_comes_from_successful_independent_reset():
+    from scripts.graduation.g1_complete_worker import native_reset_ids
+
+    base = dict(
+        kind="RESET",
+        physics_step=0,
+        sim_time_s=0,
+        operation_id=5,
+        parameters={"requested": {"scenario_id": "allocated/one"}},
+        error=None,
+        error_type=None,
+    )
+    first = base | dict(phase="BEGIN", episode_id=None)
+    last = base | dict(phase="END", episode_id="reset-episode", result={"physics_dt_s": 1 / 240})
+    assert native_reset_ids([first, last], "allocated/one", "reset-episode") == (
+        "allocated/one",
+        "reset-episode",
+    )
+    for wrong in (
+        last | {"episode_id": "other"},
+        last | {"operation_id": 6},
+        last | {"physics_step": 1},
+        last | {"phase": "BEGIN"},
+    ):
+        with pytest.raises(ValueError, match="reset"):
+            native_reset_ids([first, wrong], "allocated/one", "reset-episode")
+    with pytest.raises(ValueError, match="reset"):
+        native_reset_ids([first, last], "allocated/two", "reset-episode")
