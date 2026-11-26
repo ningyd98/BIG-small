@@ -32,6 +32,10 @@ t02 第 1512 步保持同一归档曝光、命令及历史，两个只代入独�
 
 [^g1-t02-oracle]: [t02 首拒反事实及封存摘要](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-t02-pose-oracle-20261126/step-report.md)
 
+t02 第 1512 步唯一有注册深度及印刷支持的邻列，在两个像素中心之间的度量残差跨度下界为 5.164 mm，超出原允许的 3.800 mm。两侧 16 个原 RGB 锚点的点估计仅供诊断，未签发新证书。[^g1-t02-bracket]
+
+[^g1-t02-bracket]: [深度区间冷读与独立标签比较](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-t02-depth-bracket-20261126/step-report.md)
+
 G2 软件已同时保留原逻辑云指标和远程派发指标。派发前注入丢包计零，已派发的超时和重试逐次计入。正式结论仍需合格的固定周期基线与实际配对成功结果。[^g2-dispatch]
 
 [^g2-dispatch]: [远程派发归属验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-transport-dispatch-20261126/step-report.md) · [原始收发文件与尝试身份读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-original-wire-identity-20261126/step-report.md)
