@@ -20,6 +20,14 @@ G1 完整训练的整套守护准入仍缺证据，t01 新训练停在分配前�
 
 [^g1-posture]: [t01 派发前审查](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-t01-native-training-20261126/step-report.md) · [静态几何对照](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-fixed-tcp-id7-geometry-20261126/step-report.md)
 
+在同一固定工具位姿的 IK 分支上，九个 B 释放状态各自向两侧延拓到 60° 名义关节弧长。正向 48° 至 60° 的七个公共检查点均让可见码格只兼容原 ID7。全 549 个登记状态的遮挡侧仍无合格的理想深度列，双侧释放资格未建立。[^g1-branch]
+
+[^g1-branch]: [固定 TCP 分支几何筛查](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-fixed-tcp-branch-visibility-20261126/step-report.md)
+
+G2 软件已同时保留原逻辑云指标和远程派发指标。派发前注入丢包计零，已派发的超时和重试逐次计入。正式结论仍需合格的固定周期基线与实际配对成功结果。[^g2-dispatch]
+
+[^g2-dispatch]: [远程派发归属验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-transport-dispatch-20261126/step-report.md)
+
 ## 2026-11-24　G1 正式抓放失败的逐帧归因
 
 复看正式批的 778 帧后，六次失标均定位到夹指或手掌侵入标记白边附近的姿态。逐部件隐藏的静态复拍均能恢复识别。另两次能读出双码，但 ID8 的偏航估计误差约 5°，经安装偏距放大后触发抓取点一致性检查。四个摆放的正式完整抓放成功仍为两组各 0/4。[阶段总结](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/stage-summary.md) · [逐帧慢放](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/eight-stops.gif)
