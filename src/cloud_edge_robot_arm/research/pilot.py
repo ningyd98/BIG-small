@@ -131,6 +131,45 @@ def build_pilot_assignments(
     return assignments
 
 
+def _power_design_matrix(groups: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Enumerate planned work from the validated power groups without granting execution."""
+    from cloud_edge_robot_arm.research.resource_plan import METHOD_IDS
+
+    rows = []
+    for group in groups:
+        base = group["base_assignment"]
+        for method in METHOD_IDS:
+            rows.append(
+                {
+                    "planned_episode_id": f"{base['assignment_id']}::{method}",
+                    "group_assignment_id": group["assignment_id"],
+                    "method_id": method,
+                    "role_bundle_hash": None,
+                    "method_hash": None,
+                    "b0_period_s": None,
+                    "group_id": group["group_id"],
+                    "stratum_id": group["stratum_id"],
+                    "scene_hash": group["scene_hash"],
+                    "physics_seed": group["physics_seed"],
+                    "base_assignment": base,
+                    "network_schedule": group["network_schedule"],
+                    "pools_hash": group["pools_hash"],
+                }
+            )
+    return {
+        "schema_version": "ced.power-design-matrix.v1",
+        "scope": "DESIGN_ONLY",
+        "power_group_manifest_hash": content_digest(groups),
+        "execution_admitted": False,
+        "planned_groups": len(groups),
+        "planned_method_episodes": len(rows),
+        "executed_episodes": 0,
+        "resource_methods": list(METHOD_IDS),
+        "statistical_pair_methods": ["B0", "JOINT"],
+        "planned_episodes": rows,
+    }
+
+
 def choose_b0_period(
     assignments: Sequence[Mapping[str, Any]],
     records: Sequence[Mapping[str, Any]],
@@ -307,6 +346,15 @@ def run_pilot_stage(
         "b0_period_s": period_s if stage == "foundation" else None,
         "terminal_status_counts": dict(Counter(r["status"] for r in records)),
     }
+    if stage == "power":
+        matrix = _power_design_matrix(assignments)
+        (output / "power-design-matrix.json").write_text(canonical_json(matrix) + "\n")
+        summary.update(
+            power_design_matrix_hash=content_digest(matrix),
+            planned_groups=matrix["planned_groups"],
+            planned_method_episodes=matrix["planned_method_episodes"],
+            executed_episodes=0,
+        )
     if stage == "selection":
         summary["selection_diagnostic"] = choose_b0_period(assignments, records)
     (output / "summary.json").write_text(canonical_json(summary) + "\n")

@@ -250,6 +250,20 @@ def test_power_stage_preserves_groups_and_declares_unintegrated_methods(pools, t
     assert result["method_runtime_integrated"] is False
     assert result["actual_research_status"] == "NOT_RUN"
 
+    from cloud_edge_robot_arm.research.resource_plan import METHOD_IDS
+
+    matrix = json.loads((tmp_path / "power" / "power-design-matrix.json").read_text())
+    assert matrix["scope"] == "DESIGN_ONLY"
+    assert matrix["execution_admitted"] is False
+    assert result["planned_groups"] == 120
+    assert result["planned_method_episodes"] == len(matrix["planned_episodes"]) == 840
+    assert result["executed_episodes"] == 0
+    assert matrix["resource_methods"] == list(METHOD_IDS)
+    assert matrix["statistical_pair_methods"] == ["B0", "JOINT"]
+    assert {row["method_id"] for row in matrix["planned_episodes"][:7]} == set(METHOD_IDS)
+    assert all(row["method_hash"] is None for row in matrix["planned_episodes"])
+    assert len(list((tmp_path / "power" / "cases").iterdir())) == 120
+
 
 def test_ced_cli_callable_dry_preregisters_without_loading_legacy_or_renderer(
     pools, tmp_path, monkeypatch
