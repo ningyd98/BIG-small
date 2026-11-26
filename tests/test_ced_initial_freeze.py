@@ -339,7 +339,9 @@ def test_case_empty_response_cannot_keep_a_stale_nonempty_hash(tmp_path):
         api()._case_wire_payloads(tmp_path, entry)
 
 
-@pytest.mark.parametrize("damage", [None, "role", "request_id", "duplicate", "response_identity"])
+@pytest.mark.parametrize(
+    "damage", [None, "role", "request_id", "duplicate", "response_identity", "reused_original"]
+)
 def test_b0_costs_join_planner_and_supervisor_to_each_original_wire(tmp_path, damage):
     import hashlib
 
@@ -401,6 +403,13 @@ def test_b0_costs_join_planner_and_supervisor_to_each_original_wire(tmp_path, da
             response_request_id="foreign",
             response_model_role="SUPERVISOR",
             response_provider_version="a" * 64,
+        )
+    if damage == "reused_original":
+        wire[1].update(request_path=wire[0]["request_path"],
+                       request_sha256=wire[0]["request_sha256"],
+                       serialized_sent_bytes=wire[0]["serialized_sent_bytes"])
+        rows[1] = rows[1].model_copy(
+            update={"serialized_sent_bytes": rows[0].serialized_sent_bytes}
         )
     if damage is None:
         joined = api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
@@ -551,3 +560,39 @@ def test_actual_evaluation_start_cannot_hide_later_prefix_safety_events(start):
     else:
         with pytest.raises(ValueError):
             api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+
+
+def test_b0_stage_can_reject_original_wire_reuse_across_case_roots(tmp_path):
+    import hashlib
+
+    from cloud_edge_robot_arm.research.cost_ledger import RequestCost
+
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    request = b'{"messages": []}'
+    path = first / "request.raw"
+    path.write_bytes(request)
+    (second / path.name).hardlink_to(path)
+    proof = set()
+    for index, case in enumerate((first, second)):
+        cost = RequestCost(
+            request_id=f"attempt-{index}", sent_at="2026-10-04T00:00:00Z",
+            finished_at="2026-10-04T00:00:01Z", is_cloud_model=True,
+            model_role="PLANNER", deployment="CLOUD", provider_location="REMOTE_SERVICE",
+            provider_version="a" * 64, status="TIMEOUT",
+            serialized_sent_bytes=len(request), serialized_received_bytes=0,
+        )
+        wire = [{
+            "request_id": cost.request_id, "model_role": cost.model_role,
+            "provider_version": cost.provider_version, "request_path": path.name,
+            "request_sha256": hashlib.sha256(request).hexdigest(),
+            "serialized_sent_bytes": len(request), "serialized_received_bytes": 0,
+            "response_present": False, "response_path": None, "response_sha256": None,
+        }]
+        audit = api()._verified_b0_wire(case, [cost], wire, "a" * 64, wire_originals=proof)
+        if index == 0:
+            assert next(audit).request == request
+        else:
+            with pytest.raises(ValueError, match="distinct regular file"):
+                list(audit)

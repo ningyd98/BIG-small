@@ -692,3 +692,54 @@ def test_compiler_seam_retains_all_sunk_failures_but_uses_complete_success_costs
     assert result["original_denominators"] == {"selection": 480, "foundation": 120}
     assert result["terms"]["foundation_sunk"]["amount"]["wall_s"] == pytest.approx(100.119)
     assert result["terms"]["g3_rules"]["opportunities"] == 3001
+
+
+@pytest.mark.parametrize(
+    "damage",
+    ["request_reuse", "response_reuse", "request_as_response", "hardlink",
+     "v2_role_drift", "v2_response_version"],
+)
+def test_strict_cost_reader_requires_distinct_originals_and_exact_v2_identity(tmp_path, damage):
+    import json
+
+    rows, wire = request_fixture(tmp_path)
+    if damage in {"request_reuse", "response_reuse", "hardlink", "request_as_response"}:
+        direction = "request" if damage in {"request_reuse", "hardlink"} else "response"
+        source = "request" if damage == "request_as_response" else direction
+        path = wire[0][f"{source}_path"]
+        if damage == "hardlink":
+            (tmp_path / "alias").hardlink_to(tmp_path / path)
+            path = "alias"
+        wire[1][f"{direction}_path"] = path
+        wire[1][f"{direction}_sha256"] = wire[0][f"{source}_sha256"]
+        if damage == "request_as_response":
+            rows[1]["serialized_received_bytes"] = rows[0]["serialized_sent_bytes"]
+    else:
+        for cost, entry in zip(rows, wire, strict=True):
+            entry["schema_version"] = "ced.pilot-wire-entry.v2"
+            entry["response_present"] = True
+            for field in ("request_id", "provider_version", "model_role"):
+                entry[field] = entry[f"response_{field}"] = cost[field]
+            for field in ("serialized_sent_bytes", "serialized_received_bytes"):
+                entry[field] = cost[field]
+        if damage == "v2_role_drift":
+            wire[1]["model_role"] = "JUDGE"
+        else:
+            wire[1]["response_provider_version"] = "b" * 64
+    (tmp_path / "requests.json").write_text(json.dumps(rows))
+    (tmp_path / "wire.json").write_text(json.dumps(wire))
+    with pytest.raises(ValueError, match="wire"):
+        api()._read_request_costs(tmp_path, "requests.json", "wire.json")
+
+
+def test_distinct_original_files_may_record_identical_retry_bytes(tmp_path):
+    import json
+
+    rows, wire = request_fixture(tmp_path)
+    original = (tmp_path / wire[0]["request_path"]).read_bytes()
+    (tmp_path / wire[1]["request_path"]).write_bytes(original)
+    wire[1]["request_sha256"] = wire[0]["request_sha256"]
+    (tmp_path / "wire.json").write_text(json.dumps(wire))
+    assert rows[0]["request_id"] != rows[1]["request_id"]
+    result = api()._read_request_costs(tmp_path, "requests.json", "wire.json")
+    assert result["cloud_model_requests"] == result["source_bound_wire_attempts"] == 4

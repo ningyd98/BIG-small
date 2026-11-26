@@ -363,12 +363,46 @@ def test_changed_files_during_metadata_read_reject(tmp_path, monkeypatch):
     from cloud_edge_robot_arm.research import provider_usage
 
     registration, evidence = fixture(tmp_path)
-    original = provider_usage._read_request_costs
+    original = provider_usage._join_request_wire
 
     def change(*args, **kwargs):
-        value = original(*args, **kwargs)
+        yield from original(*args, **kwargs)
         (evidence / "unreported.json").write_text("{}")
-        return value
 
-    monkeypatch.setattr(provider_usage, "_read_request_costs", change)
+    monkeypatch.setattr(provider_usage, "_join_request_wire", change)
+    assert read(registration).status == "INVALID"
+
+
+def test_usage_rejects_self_consistent_reuse_of_same_request_as_response(tmp_path):
+    registration, evidence = fixture(tmp_path, status="ERROR")
+    ledger_path = evidence / "ledger.json"
+    wire_path = evidence / "wire.json"
+    ledger, wire = json.loads(ledger_path.read_text()), json.loads(wire_path.read_text())
+    wire[0].update(response_path=wire[0]["request_path"], response_sha256=wire[0]["request_sha256"],
+                   response_present=True)
+    ledger[0]["serialized_received_bytes"] = ledger[0]["serialized_sent_bytes"]
+    ledger_path.write_text(json.dumps(ledger))
+    wire_path.write_text(json.dumps(wire))
+    result = read(rebound(registration, evidence))
+    assert result.status == "INVALID"
+    assert result.sent_attempts is None and not result.attempts
+
+
+def test_rehashed_equal_length_wire_change_does_not_replace_frozen_original(tmp_path, monkeypatch):
+    from cloud_edge_robot_arm.research import provider_usage
+
+    registration, evidence = fixture(tmp_path)
+    original = (evidence / "request.json").read_bytes()
+    changed = original.replace(MODEL.encode(), MODEL.upper().encode(), 1)
+    assert changed != original and len(changed) == len(original)
+    (evidence / "request.json").write_bytes(changed)
+    wire_path = evidence / "wire.json"
+    wire = json.loads(wire_path.read_text())
+    wire[0]["request_sha256"] = hashlib.sha256(changed).hexdigest()
+    wire_path.write_text(json.dumps(wire))
+
+    def no_wire_read(*args, **kwargs):
+        pytest.fail("frozen original inventory must reject the replacement first")
+
+    monkeypatch.setattr(provider_usage, "_join_request_wire", no_wire_read)
     assert read(registration).status == "INVALID"

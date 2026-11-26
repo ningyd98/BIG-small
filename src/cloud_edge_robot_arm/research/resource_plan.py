@@ -5,8 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import stat
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -349,6 +352,124 @@ def _tree_sizes(root: Path) -> dict[str, Any]:
     }
 
 
+@dataclass(frozen=True, slots=True)
+class _OriginalWire:
+    entry: Mapping[str, Any]
+    cost: RequestCost | None
+    request: bytes
+    response: bytes | None
+
+
+def _read_original_wire_bytes(
+    root: Path, filename: str, digest: str, originals: set[tuple[int, int]]
+) -> bytes:
+    path = _path(root, filename)
+    # Use the opened file identity for both uniqueness and byte verification.
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    with os.fdopen(os.open(path, flags), "rb") as source:
+        info = os.fstat(source.fileno())
+        identity = (info.st_dev, info.st_ino)
+        if not stat.S_ISREG(info.st_mode) or identity in originals:
+            raise ValueError("original wire payload is not a distinct regular file")
+        data = source.read()
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise ValueError("original request/response wire hash differs")
+    originals.add(identity)
+    return data
+
+
+def _read_wire_payloads(
+    root: Path, entry: Mapping[str, Any], originals: set[tuple[int, int]], *,
+    require_size_fields: bool = False,
+) -> tuple[bytes, bytes | None]:
+    request = _read_original_wire_bytes(root, entry["request_path"], entry["request_sha256"],
+                                        originals)
+    response = None
+    response_path = entry.get("response_path")
+    if response_path is not None:
+        if entry.get("response_present", True) is not True:
+            raise ValueError("response presence contradicts its original wire payload")
+        response = _read_original_wire_bytes(
+            root, response_path, entry["response_sha256"], originals
+        )
+    elif entry.get("response_present") is not False or entry.get("response_sha256") is not None:
+        raise ValueError("absent response requires explicit absence and no wire payload hash")
+    for field, size in (("serialized_sent_bytes", len(request)),
+                        ("serialized_received_bytes", len(response or b""))):
+        if require_size_fields or field in entry:
+            value = entry.get(field)
+            if type(value) is not int or value != size:
+                raise ValueError("original wire byte count differs from index")
+    return request, response
+
+
+def _join_request_wire(
+    root: Path, requests: Sequence[RequestCost], wire: object, *,
+    require_request_ids: bool = True, require_attribution: bool = False,
+    expected_provider_version: str | None = None,
+    originals: set[tuple[int, int]] | None = None,
+) -> Iterator[_OriginalWire]:
+    if len({row.request_id for row in requests}) != len(requests) or any(
+        row.status == "IN_FLIGHT" for row in requests
+    ):
+        raise ValueError("request costs require unique fully settled original attempts")
+    sent = {row.request_id: row for row in requests if row.sent_at is not None}
+    if expected_provider_version is not None and any(
+        row.provider_location == "REMOTE_SERVICE"
+        and row.provider_version != expected_provider_version
+        for row in sent.values()
+    ):
+        raise ValueError("actual cloud cost provider version differs from the frozen role")
+    if not isinstance(wire, list) or len(wire) != len(sent):
+        raise ValueError("complete actual request/wire attempt denominator differs")
+
+    files = originals if originals is not None else set()
+    seen_ids = set()
+    legacy_sizes = []
+    for entry in wire:
+        if not isinstance(entry, Mapping):
+            raise ValueError("actual wire index rows must be objects")
+        tagged = entry.get("schema_version") == "ced.pilot-wire-entry.v2"
+        strict = require_attribution or tagged
+        cost = None
+        if require_request_ids or strict:
+            identity = entry.get("request_id")
+            if not isinstance(identity, str) or identity not in sent or identity in seen_ids:
+                raise ValueError("actual request IDs do not join each original wire attempt")
+            seen_ids.add(identity)
+            cost = sent[identity]
+        request, response = _read_wire_payloads(root, entry, files, require_size_fields=strict)
+        if cost is not None:
+            if response is None and cost.status == "SUCCESS":
+                raise ValueError("successful request cannot have an absent original response")
+            if tagged and entry.get("response_present") is not (response is not None):
+                raise ValueError("v2 wire requires explicit response presence")
+            for field in ("request_id", "model_role", "provider_version"):
+                if (strict or field in entry) and entry.get(field) != getattr(cost, field):
+                    raise ValueError("request wire attribution differs from its ledger")
+                response_field = f"response_{field}"
+                if response is None:
+                    if entry.get(response_field) is not None:
+                        raise ValueError("absent wire response cannot have provenance")
+                elif (strict or response_field in entry) and (
+                    entry.get(response_field) != getattr(cost, field)
+                ):
+                    raise ValueError("response wire attribution differs from its ledger")
+            if (len(request), len(response or b"")) != (
+                cost.serialized_sent_bytes, cost.serialized_received_bytes
+            ):
+                raise ValueError("actual original wire lengths differ from request costs")
+        if not require_request_ids:
+            legacy_sizes.append((len(request), len(response or b"")))
+        yield _OriginalWire(entry, cost, request, response)
+
+    if not require_request_ids:
+        ledger_sizes = [(row.serialized_sent_bytes, row.serialized_received_bytes)
+                        for row in sent.values()]
+        if sorted(legacy_sizes) != sorted(ledger_sizes):
+            raise ValueError("actual serialized wire bytes differ from full settled request ledger")
+
+
 def _read_request_costs(
     root: Path,
     requests_path: str,
@@ -364,58 +485,12 @@ def _read_request_costs(
     if not isinstance(payload, list):
         raise ValueError("raw request ledger must retain all original rows")
     requests = [RequestCost.model_validate(row) for row in payload]
-    if len({row.request_id for row in requests}) != len(requests) or any(
-        row.status == "IN_FLIGHT" for row in requests
-    ):
-        raise ValueError("request costs require unique fully settled original attempts")
+    joined = _join_request_wire(
+        root, requests, _json(root, wire_path), require_request_ids=require_request_ids,
+        expected_provider_version=expected_provider_version,
+    )
     sent = [row for row in requests if row.sent_at is not None]
-    if expected_provider_version is not None and any(
-        row.provider_location == "REMOTE_SERVICE"
-        and row.provider_version != expected_provider_version
-        for row in sent
-    ):
-        raise ValueError("actual cloud cost provider version differs from the frozen role")
-    wire = _json(root, wire_path)
-    if not isinstance(wire, list) or len(wire) != len(sent):
-        raise ValueError("complete actual request/wire attempt denominator differs")
-    by_id = {row.request_id: row for row in sent}
-    seen, actual_lengths = set(), []
-    for entry in wire:
-        if not isinstance(entry, dict):
-            raise ValueError("actual wire index rows must be objects")
-        request = _path(root, entry["request_path"]).read_bytes()
-        response_path = entry.get("response_path")
-        if response_path:
-            if entry.get("response_present", True) is not True:
-                raise ValueError("response presence contradicts its original payload")
-            response = _path(root, response_path).read_bytes()
-            if hashlib.sha256(response).hexdigest() != entry.get("response_sha256"):
-                raise ValueError("original response wire hash differs, including empty payloads")
-        else:
-            if entry.get("response_present") is not False or (
-                entry.get("response_sha256") is not None
-            ):
-                raise ValueError("absent response requires explicit absence and no payload hash")
-            response = b""
-        if hashlib.sha256(request).hexdigest() != entry["request_sha256"] or (
-            response_path is None and entry.get("serialized_received_bytes", 0) != 0
-        ):
-            raise ValueError("original request/response wire hash differs")
-        actual_lengths.append((len(request), len(response)))
-        if require_request_ids:
-            identity = entry.get("request_id")
-            if identity not in by_id or identity in seen:
-                raise ValueError("actual request IDs do not join each original wire attempt")
-            seen.add(identity)
-            row = by_id[identity]
-            if not response_path and row.status == "SUCCESS":
-                raise ValueError("successful request cannot have an absent original response")
-            if (row.serialized_sent_bytes, row.serialized_received_bytes) != actual_lengths[-1]:
-                raise ValueError("actual original wire lengths differ from request costs")
-    if sorted(actual_lengths) != sorted(
-        (row.serialized_sent_bytes, row.serialized_received_bytes) for row in sent
-    ):
-        raise ValueError("actual serialized wire bytes differ from full settled request ledger")
+    actual_lengths = [(len(entry.request), len(entry.response or b"")) for entry in joined]
     fees = [row.monetary_cost for row in sent]
     proven = bool(sent) or zero_request_proven
     declared_money = (

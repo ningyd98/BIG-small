@@ -12,7 +12,7 @@ from types import MappingProxyType
 from typing import Any, Literal
 
 from cloud_edge_robot_arm.research.cost_ledger import RequestCost
-from cloud_edge_robot_arm.research.resource_plan import _read_request_costs
+from cloud_edge_robot_arm.research.resource_plan import _join_request_wire
 from cloud_edge_robot_arm.vision.role_models import RoleProviderSnapshot
 
 REQUIRED_SOURCES = frozenset(
@@ -263,15 +263,14 @@ class ProviderUsageAuditor:
                     raise ValueError("original_ledger_invalid")
                 costs = [RequestCost.model_validate(value) for value in ledger]
                 original_count = len(costs)
-                sent_count = sum(cost.sent_at is not None for cost in costs)
-                _read_request_costs(
+                joined = _join_request_wire(
                     root,
-                    registration.ledger_path,
-                    registration.wire_path,
+                    costs,
+                    _json(root / registration.wire_path),
                     expected_provider_version=role.digest(),
                 )
-                wire = _json(root / registration.wire_path)
-                entries = {row["request_id"]: row for row in wire}
+                entries = {attempt.entry["request_id"]: attempt for attempt in joined}
+                sent_count = len(entries)
                 seen_ids = set()
                 for cost in costs:
                     if cost.provider_location != "REMOTE_SERVICE" or cost.model_role == "JUDGE":
@@ -288,14 +287,13 @@ class ProviderUsageAuditor:
                         )
                         continue
                     entry = entries[cost.request_id]
-                    request = _json(root / entry["request_path"])
+                    request = json.loads(entry.request, object_pairs_hook=_unique_object)
                     if not isinstance(request, dict) or request.get("model") != role.model_id:
                         raise ValueError("request_model_binding_mismatch")
-                    response_path = entry.get("response_path")
                     response = None
-                    if response_path:
+                    if entry.response is not None:
                         try:
-                            response = _json(root / response_path)
+                            response = json.loads(entry.response, object_pairs_hook=_unique_object)
                         except ValueError:
                             pass  # Original empty/partial/error payload remains in denominator.
                     identity = model = None

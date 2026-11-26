@@ -483,70 +483,39 @@ def _audit_ced_reset(raw: list[Any], header: Mapping[str, Any], scene: Mapping[s
 
 
 def _case_wire_payloads(case: Path, entry: Mapping[str, Any]) -> tuple[bytes, bytes]:
-    request = _inside(case, entry["request_path"]).read_bytes()
-    response_path = entry.get("response_path")
-    if response_path:
-        if entry.get("response_present", True) is not True:
-            raise ValueError("response presence contradicts original wire payload")
-        response = _inside(case, response_path).read_bytes()
-        if hashlib.sha256(response).hexdigest() != entry.get("response_sha256"):
-            raise ValueError("actual response wire hash differs, including empty payloads")
-    else:
-        if entry.get("response_present") is not False or (entry.get("response_sha256") is not None):
-            raise ValueError("absent response requires explicit absence and no wire payload hash")
-        response = b""
-    if (
-        hashlib.sha256(request).hexdigest() != entry["request_sha256"]
-        or len(request) != entry["serialized_sent_bytes"]
-        or len(response) != entry["serialized_received_bytes"]
-    ):
-        raise ValueError("actual request/response wire length/hash differs from settled counts")
-    return request, response
+    from cloud_edge_robot_arm.research.resource_plan import _read_wire_payloads
+
+    raw, response = _read_wire_payloads(case, entry, set(), require_size_fields=True)
+    return raw, response if response is not None else b""
 
 
-def _join_b0_cost_wire(
-    case: Path, requests: list[RequestCost], wire: list[Mapping[str, Any]], provider_version: str
-) -> list[tuple[Mapping[str, Any], RequestCost]]:
-    """Join exact original B0 request IDs, roles, provider and role-specific wire prompt."""
-    by_id = {r.request_id: r for r in requests if r.sent_at is not None}
-    if len({r.request_id for r in requests}) != len(requests) or len(by_id) != len(wire):
-        raise ValueError("B0 original request/wire IDs are incomplete or duplicated")
+def _verified_b0_wire(case, requests, wire, provider_version, *, wire_originals=None):
+    from cloud_edge_robot_arm.research.resource_plan import _join_request_wire
+
     if any(
-        r.status == "IN_FLIGHT"
-        or r.provider_location != "REMOTE_SERVICE"
+        r.provider_location != "REMOTE_SERVICE"
         or r.model_role not in {"PLANNER", "SUPERVISOR"}
         or r.provider_version != provider_version
         for r in requests
     ):
         raise ValueError("B0 settled planner/supervisor provider attribution differs")
-    seen, joined = set(), []
-    for entry in wire:
-        if not isinstance(entry, Mapping):
-            raise ValueError("B0 original wire rows must be objects")
-        identity = entry.get("request_id")
-        if not isinstance(identity, str) or identity not in by_id or identity in seen:
-            raise ValueError("B0 original request ID does not join a unique wire attempt")
-        seen.add(identity)
-        row = by_id[identity]
-        raw, response = _case_wire_payloads(case, entry)
-        if not entry.get("response_path") and row.status == "SUCCESS":
-            raise ValueError("successful B0 request cannot have an absent original response")
-        body = json.loads(raw)
-        if not isinstance(body, dict):
+    joined = _join_request_wire(
+        case, requests, wire, require_attribution=True, originals=wire_originals,
+    )
+    for attempt in joined:
+        if not isinstance(json.loads(attempt.request), dict):
             raise ValueError("B0 request body must be its original JSON object")
-        if (
-            entry.get("model_role") != row.model_role
-            or entry.get("provider_version") != row.provider_version
-            or (len(raw), len(response))
-            != (row.serialized_sent_bytes, row.serialized_received_bytes)
-        ):
-            raise ValueError("B0 role/provider/original wire identity differs from settled cost")
-        if entry.get("response_path") and any(
-            entry.get(f"response_{field}") != getattr(row, field)
-            for field in ("request_id", "model_role", "provider_version")
-        ):
-            raise ValueError("B0 response role/provider/request identity differs from its ledger")
-        joined.append((entry, row))
+        yield attempt
+
+
+def _join_b0_cost_wire(
+    case: Path, requests: list[RequestCost], wire: list[Mapping[str, Any]], provider_version: str
+) -> list[tuple[Mapping[str, Any], RequestCost]]:
+    """Read the original B0 ledger and retain its per-attempt attributed index."""
+    joined = []
+    for attempt in _verified_b0_wire(case, requests, wire, provider_version):
+        assert attempt.cost is not None
+        joined.append((attempt.entry, attempt.cost))
     return joined
 
 
@@ -664,7 +633,8 @@ def _ced_evaluation_start(header: Mapping[str, Any], raw_count: int) -> int:
 
 
 def _audit_ced_case(
-    case: Path, assignment: Mapping[str, Any], row: Mapping[str, Any], probe: Mapping[str, Any]
+    case: Path, assignment: Mapping[str, Any], row: Mapping[str, Any], probe: Mapping[str, Any],
+    *, wire_originals: set[tuple[int, int]] | None = None,
 ) -> dict[str, Any]:
     from dataclasses import asdict
 
@@ -776,9 +746,12 @@ def _audit_ced_case(
     costs = read_json(_inside(case, "costs.json"))
     requests = [RequestCost.model_validate(value) for value in costs["requests"]]
     sent = [r for r in requests if r.sent_at is not None]
-    joined = _join_b0_cost_wire(case, requests, wire, _model_evidence_hash(settings))
-    for entry, cost in joined:
-        request_raw, _ = _case_wire_payloads(case, entry)
+    joined = _verified_b0_wire(
+        case, requests, wire, _model_evidence_hash(settings), wire_originals=wire_originals,
+    )
+    for attempt in joined:
+        entry, cost, request_raw = attempt.entry, attempt.cost, attempt.request
+        assert cost is not None
         body = json.loads(request_raw)
         summary = summarize_role_request(body)
         if hashlib.sha256(request_raw).hexdigest() != entry["request_sha256"] or (
@@ -805,6 +778,11 @@ def _audit_ced_case(
         sum(e["serialized_received_bytes"] for e in wire)
         != sum(r.serialized_received_bytes for r in sent)
         or costs["summary"]["cloud_model_requests"] != len(sent)
+        or (
+            "remote_model_requests" in costs["summary"]
+            and (type(costs["summary"]["remote_model_requests"]) is not int
+                 or costs["summary"]["remote_model_requests"] != len(sent))
+        )
         or costs["summary"]["application_bytes"]
         != sum(r.serialized_sent_bytes + r.serialized_received_bytes for r in sent)
         or row["costs"] != costs["summary"]
@@ -882,6 +860,7 @@ def audit_ced_pilot_stage(directory: Path, stage: str) -> dict[str, Any]:
             raise ValueError("all assigned failed/blocked original records are required")
         if read_json(_inside(directory, "selection-rule.json")) != BUDGET_SELECTION_RULE:
             raise ValueError("selection/budget rule differs from fixed design")
+        wire_originals: set[tuple[int, int]] = set()
         for assignment in expected:
             cases.append(
                 _audit_ced_case(
@@ -889,6 +868,7 @@ def audit_ced_pilot_stage(directory: Path, stage: str) -> dict[str, Any]:
                     assignment,
                     rows[assignment["assignment_id"]],
                     probe,
+                    wire_originals=wire_originals,
                 )
             )
         result = {
