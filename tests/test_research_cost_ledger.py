@@ -173,3 +173,105 @@ def test_remote_sent_attempts_exclude_local_roles_and_unsent_requests():
     assert summary["cloud_model_requests"] == 6
     assert summary["model_requests"] == 7
     assert CostLedger().export()["summary"]["remote_model_requests"] == 0
+
+
+def test_remote_pilot_attempts_begin_at_transport_boundary(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from scripts.run_rgbd_pilot import _PilotWireCollector
+
+    from cloud_edge_robot_arm.research.network import NetworkInjector, NetworkSchedule
+    from cloud_edge_robot_arm.research.resource_plan import _read_request_costs
+
+    collector = _PilotWireCollector(tmp_path, secret="")
+    called = []
+
+    class Opener:
+        def open(self, request, *, timeout):
+            called.append(request.data)
+            if len(called) == 1:
+                raise TimeoutError("fixture sent timeout")
+            return nullcontext(SimpleNamespace(read=lambda _: b'{"message": "fixture"}'))
+
+    monkeypatch.setattr("urllib.request.build_opener", lambda *_: Opener())
+    policy = NetworkSchedule(schedule_id="test", rtt_ms=0, jitter_fraction=0, loss_rate=1, seed=1)
+    planner = RGBDPlannerAdapter(
+        base_url="https://fixture.invalid",
+        provider="openai_compatible",
+        cost_ledger=collector.ledger,
+        network_injector=NetworkInjector(policy, wait=lambda _: None),
+        raw_transport_observer=collector.observe,
+    )
+    prompt = {"model": "unit", "messages": [{"content": "fixture"}]}
+    with pytest.raises(RGBDModelUnavailable):
+        planner._post("/chat/completions", prompt)
+    assert not called and not collector.wire
+    dropped, = collector.ledger.requests()
+    assert dropped.sent_at is None and dropped.serialized_sent_bytes == 0
+    assert dropped.status == "TIMEOUT"
+    assert collector.ledger.snapshot().remote_model_requests == 0
+
+    planner.network_injector = None
+    with pytest.raises(RGBDModelUnavailable):
+        planner._post("/chat/completions", prompt)
+
+    class LoseResponse:
+        def begin(self, sent_bytes):
+            return sent_bytes
+
+        def finish(self, transfer, received_bytes):
+            raise TimeoutError("fixture lost response")
+
+    planner.network_injector = LoseResponse()
+    with pytest.raises(RGBDModelUnavailable):
+        planner._post("/chat/completions", prompt)
+    planner.network_injector = None
+    assert planner._post("/chat/completions", prompt) == {"message": "fixture"}
+
+    assert len(called) == 3 and len(collector.wire) == 3
+    assert [row.status for row in collector.ledger.requests()] == [
+        "TIMEOUT", "TIMEOUT", "TIMEOUT", "SUCCESS",
+    ]
+    assert [row["response_present"] for row in collector.wire] == [False, True, True]
+    assert len({row.request_id for row in collector.ledger.requests()}) == 4
+    (tmp_path / "costs.json").write_text(json.dumps(collector.ledger.export()))
+    result = _read_request_costs(tmp_path, "costs.json", "wire-index.json")
+    assert result["cloud_model_requests"] == 3
+    assert result["original_attempts"] == 4
+    assert result["source_bound_wire_attempts"] == 3
+
+
+@pytest.mark.parametrize("failure", ["opener", "request_observer", "cost_binding"])
+def test_pre_dispatch_failures_do_not_create_sent_attempt(failure, monkeypatch):
+    from scripts.run_rgbd_pilot import _PilotCostLedger
+
+    def open_socket(*args, **kwargs):
+        pytest.fail("application transport must not be called")
+
+    from types import SimpleNamespace
+
+    def build_opener(*_):
+        if failure == "opener":
+            raise ValueError("fixture opener rejected")
+        return SimpleNamespace(open=open_socket)
+
+    def observe(phase, path, payload):
+        if failure == "request_observer":
+            raise ValueError("fixture request observer rejected")
+
+    def bind(cost):
+        if failure == "cost_binding" and cost.sent_at is not None:
+            raise ValueError("fixture cost binding rejected")
+
+    monkeypatch.setattr("urllib.request.build_opener", build_opener)
+    ledger = _PilotCostLedger(bind)
+    planner = RGBDPlannerAdapter(
+        base_url="https://fixture.invalid", provider="openai_compatible",
+        cost_ledger=ledger, raw_transport_observer=observe,
+    )
+    with pytest.raises(RGBDModelUnavailable):
+        planner._post("/chat/completions", {"model": "unit"})
+    row, = ledger.requests()
+    assert row.status == "ERROR" and row.sent_at is None and row.serialized_sent_bytes == 0
+    assert ledger.snapshot().remote_model_requests == 0

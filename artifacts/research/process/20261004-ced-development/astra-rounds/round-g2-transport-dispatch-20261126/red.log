@@ -1,0 +1,46 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_remote_pilot_attempts_begin_at_transport_boundary ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-317/test_remote_pilot_attempts_beg0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76feb6d2c140>
+
+    def test_remote_pilot_attempts_begin_at_transport_boundary(tmp_path, monkeypatch):
+        from contextlib import nullcontext
+        from types import SimpleNamespace
+    
+        from scripts.run_rgbd_pilot import _PilotWireCollector
+    
+        from cloud_edge_robot_arm.research.network import NetworkInjector, NetworkSchedule
+        from cloud_edge_robot_arm.research.resource_plan import _read_request_costs
+    
+        collector = _PilotWireCollector(tmp_path, secret="")
+        called = []
+    
+        class Opener:
+            def open(self, request, *, timeout):
+                called.append(request.data)
+                if len(called) == 1:
+                    raise TimeoutError("fixture sent timeout")
+                return nullcontext(SimpleNamespace(read=lambda _: b'{"message": "fixture"}'))
+    
+        monkeypatch.setattr("urllib.request.build_opener", lambda *_: Opener())
+        policy = NetworkSchedule(schedule_id="test", rtt_ms=0, jitter_fraction=0, loss_rate=1, seed=1)
+        planner = RGBDPlannerAdapter(
+            base_url="https://fixture.invalid",
+            provider="openai_compatible",
+            cost_ledger=collector.ledger,
+            network_injector=NetworkInjector(policy, wait=lambda _: None),
+            raw_transport_observer=collector.observe,
+        )
+        prompt = {"model": "unit", "messages": [{"content": "fixture"}]}
+        with pytest.raises(RGBDModelUnavailable):
+            planner._post("/chat/completions", prompt)
+>       assert not called and not collector.wire
+E       AssertionError: assert (not [] and not [{'chat_path': '/chat/completions', 'model_role': 'PLANNER', 'provider_version': 'qwen3-vl-candidate:4b-instruct', 'request_id': '3d779e68b22347cabe393b810b3cde51', ...}])
+E        +  where [{'chat_path': '/chat/completions', 'model_role': 'PLANNER', 'provider_version': 'qwen3-vl-candidate:4b-instruct', 'request_id': '3d779e68b22347cabe393b810b3cde51', ...}] = <scripts.run_rgbd_pilot._PilotWireCollector object at 0x76feb6d2c170>.wire
+
+tests/test_research_cost_ledger.py:209: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_cost_ledger.py::test_remote_pilot_attempts_begin_at_transport_boundary
+1 failed in 0.19s

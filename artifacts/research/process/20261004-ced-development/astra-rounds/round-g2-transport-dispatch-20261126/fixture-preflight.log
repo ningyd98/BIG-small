@@ -1,0 +1,70 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_remote_pilot_attempts_begin_at_transport_boundary ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-316/test_remote_pilot_attempts_beg0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e83db0dedb0>
+
+    def test_remote_pilot_attempts_begin_at_transport_boundary(tmp_path, monkeypatch):
+        from contextlib import nullcontext
+        from types import SimpleNamespace
+    
+        from scripts.run_rgbd_pilot import _PilotWireCollector
+    
+        from cloud_edge_robot_arm.research.network import NetworkInjector, NetworkSchedule
+        from cloud_edge_robot_arm.research.resource_plan import _read_request_costs
+    
+        collector = _PilotWireCollector(tmp_path, secret="")
+        called = []
+    
+        class Opener:
+            def open(self, request, *, timeout):
+                called.append(request.data)
+                if len(called) == 1:
+                    raise TimeoutError("fixture sent timeout")
+                return nullcontext(SimpleNamespace(read=lambda _: b'{"message": "fixture"}'))
+    
+        monkeypatch.setattr("urllib.request.build_opener", lambda *_: Opener())
+        policy = NetworkSchedule(schedule_id="test", rtt_ms=0, jitter_fraction=0, loss_rate=1, seed=1)
+>       planner = RGBDPlannerAdapter(
+            base_url="https://fixture.invalid",
+            cost_ledger=collector.ledger,
+            network_injector=NetworkInjector(policy, wait=lambda _: None),
+            raw_transport_observer=collector.observe,
+        )
+
+tests/test_research_cost_ledger.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/vision/planner.py:187: in __init__
+    self.base_url = EndpointSecurityPolicy().validate(kind, base_url)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.model_control.endpoint_security.EndpointSecurityPolicy object at 0x7e83db2d22a0>
+provider_kind = <PlannerProviderKind.OLLAMA: 'OLLAMA'>
+base_url = 'https://fixture.invalid'
+
+    def validate(self, provider_kind: PlannerProviderKind, base_url: str) -> str:
+        """校验 provider endpoint 并返回规范化后的安全 URL。"""
+    
+        if provider_kind in {PlannerProviderKind.MOCK, PlannerProviderKind.RULE_BASED}:
+            return ""
+        parsed = urlparse(base_url)
+        if parsed.scheme not in self.allowed_schemes:
+            raise EndpointSecurityError("unsupported_endpoint_scheme")
+        if not parsed.hostname:
+            raise EndpointSecurityError("missing_endpoint_host")
+        host = parsed.hostname.strip()
+        ip = _host_ip(host)
+        if ip in self.metadata_addresses:
+            raise EndpointSecurityError("metadata_address_blocked")
+        if ip is not None and (ip.is_link_local or ip.is_multicast or ip.is_unspecified):
+            raise EndpointSecurityError("unsafe_endpoint_address")
+        if provider_kind == PlannerProviderKind.OLLAMA and not _is_loopback(host, ip):
+>           raise EndpointSecurityError("remote_ollama_blocked")
+E           cloud_edge_robot_arm.model_control.endpoint_security.EndpointSecurityError: remote_ollama_blocked
+
+src/cloud_edge_robot_arm/model_control/endpoint_security.py:48: EndpointSecurityError
+=========================== short test summary info ============================
+FAILED tests/test_research_cost_ledger.py::test_remote_pilot_attempts_begin_at_transport_boundary
+1 failed in 0.17s

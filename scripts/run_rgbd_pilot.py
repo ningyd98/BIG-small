@@ -416,8 +416,13 @@ class _PilotCostLedger(CostLedger):
 
     def record_request(self, cost: RequestCost) -> None:
         validated = RequestCost.model_validate(cost.model_dump())
-        super().record_request(validated)
-        self.observer(validated)
+        if validated.status == "IN_FLIGHT":
+            # A failed wire binding must abort before an attempt becomes sent.
+            self.observer(validated)
+            super().record_request(validated)
+        else:
+            super().record_request(validated)
+            self.observer(validated)
 
 
 class _PilotWireCollector:
@@ -485,6 +490,11 @@ class _PilotWireCollector:
     def bind_cost(self, row: RequestCost) -> None:
         with self.lock:
             thread = threading.get_ident()
+            if row.sent_at is None:
+                if row.status == "IN_FLIGHT" or thread in self.pending:
+                    raise ValueError("unsent attempt conflicts with original wire capture")
+                self._publish()
+                return
             if row.status == "IN_FLIGHT":
                 entry = self.pending[thread]
                 if row.request_id in self.by_request_id or "request_id" in entry:

@@ -262,22 +262,20 @@ class RGBDPlannerAdapter:
                 except Exception:
                     raise RGBDModelUnavailable("raw transport observer failed") from None
 
-        # A request-observer failure occurs before transmission and records no sent call.
-        if self.raw_transport_observer is not None:
-            if len(payload) > 2_000_000:
-                raise RGBDModelUnavailable("observed request exceeds body limit")
-            observe("REQUEST", payload)
+        if self.raw_transport_observer is not None and len(payload) > 2_000_000:
+            raise RGBDModelUnavailable("observed request exceeds body limit")
         # Registry probes are telemetry. Only actual inference endpoints are model attempts.
         is_model = path in {"/api/chat", "/chat/completions", "/v1/chat/completions"}
-        sent_at, started = datetime.now(UTC), time.monotonic()
+        started = time.monotonic()
+        ledger = self.cost_ledger
         request_cost = None
-        if is_model and self.cost_ledger is not None:
+        if is_model and ledger is not None:
             from urllib.parse import urlparse
 
             local = urlparse(self.base_url).hostname in {"localhost", "127.0.0.1", "::1"}
             request_cost = RequestCost(
                 request_id=uuid.uuid4().hex,
-                sent_at=sent_at,
+                sent_at=None,
                 finished_at=None,
                 is_cloud_model=True,
                 model_role=self.model_role,
@@ -287,15 +285,19 @@ class RGBDPlannerAdapter:
                 if self.model_snapshot
                 else self.model_name,
                 status="IN_FLIGHT",
-                serialized_sent_bytes=len(payload),
+                serialized_sent_bytes=0,
                 serialized_received_bytes=0,
                 monetary_cost=0 if local else None,
             )
-            self.cost_ledger.record_request(request_cost)
         raw = b""
         status: Literal["SUCCESS", "ERROR", "TIMEOUT", "CANCELLED"] = "ERROR"
         network_s = 0.0
+        dispatched = False
         try:
+            handlers: list[urllib.request.BaseHandler] = [urllib.request.ProxyHandler({})]
+            if self.model_name == SOL_MODEL:
+                handlers.append(_NoSolRedirect())
+            opener = urllib.request.build_opener(*handlers)
             transfer = None
             if is_model and self.network_injector is not None:
                 before = time.monotonic()
@@ -303,12 +305,18 @@ class RGBDPlannerAdapter:
                     transfer = self.network_injector.begin(len(payload))
                 finally:
                     network_s += time.monotonic() - before
-            handlers: list[urllib.request.BaseHandler] = [urllib.request.ProxyHandler({})]
-            if self.model_name == SOL_MODEL:
-                handlers.append(_NoSolRedirect())
-            with urllib.request.build_opener(*handlers).open(
-                request, timeout=self.timeout_s
-            ) as response:
+            # The pilot wire collector binds this observation when the sent row is added.
+            # Pre-dispatch failures have neither a request observation nor sent bytes.
+            observe("REQUEST", payload)
+            if request_cost is not None:
+                assert ledger is not None
+                sent_cost = request_cost.model_copy(update={
+                    "sent_at": datetime.now(UTC), "serialized_sent_bytes": len(payload),
+                })
+                ledger.record_request(sent_cost)
+                request_cost = sent_cost
+            dispatched = True
+            with opener.open(request, timeout=self.timeout_s) as response:
                 raw = response.read(2_000_001)
                 observe("RESPONSE", raw)
                 if transfer is not None:
@@ -345,10 +353,8 @@ class RGBDPlannerAdapter:
                 "check vision service and installed model"
             ) from exc
         finally:
-            ledger = self.cost_ledger
             if ledger is not None:
-                if is_model:
-                    assert request_cost is not None
+                if request_cost is not None:
                     ledger.record_request(
                         request_cost.model_copy(
                             update={
@@ -360,9 +366,11 @@ class RGBDPlannerAdapter:
                     )
                     ledger.record_timing(
                         network_s=network_s,
-                        provider_roundtrip_s=max(0.0, time.monotonic() - started - network_s),
+                        provider_roundtrip_s=(
+                            max(0.0, time.monotonic() - started - network_s) if dispatched else 0.0
+                        ),
                     )
-                else:
+                elif dispatched:
                     ledger.record_telemetry(len(payload), len(raw))
 
     def _get(self, path: str) -> dict[str, Any]:
