@@ -489,6 +489,11 @@ def test_g2_requires_remote_accounting_and_no_observed_success_loss(
     metrics = {
         "scope": "SOFTWARE_ONLY",
         "main_paired_group_denominator": 600,
+        "g2_safety_accounting": {
+            "basis": "PAIRED_EPISODE_SAFETY_ASSESSMENT",
+            "assigned_episodes_by_method": {"B0": 600, "JOINT": 600},
+            "known_episodes_by_method": {"B0": 600, "JOINT": 600},
+        },
         "effects": {
             "G2_REQUESTS": effect(request_point, 0.10, 0.60).__dict__ if request_point is not None
             else effect(None, None, None, p=None).__dict__,
@@ -529,3 +534,83 @@ def test_missing_remote_field_round_trips_legacy_episode_hash_and_distinguishes_
     assert zero_payload["costs"]["remote_model_requests"] == 0
     assert zero_payload["content_hash"] != old_payload["content_hash"]
     assert load(zero_payload).to_payload() == zero_payload
+
+
+def test_g2_keeps_partial_safety_pair_in_success_and_request_denominators():
+    from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
+
+    complete_rows = [
+        replace(
+            row,
+            outcome=replace(row.outcome, safety_assessment="SCOPED_NO_VIOLATION"),
+            costs=CostSnapshot(
+                model_requests=10,
+                cloud_model_requests=10,
+                remote_model_requests=6 if row.assignment.method_id == "JOINT" else 10,
+            ),
+        )
+        for row in records(4)
+    ]
+    changed = [
+        replace(row, outcome=replace(row.outcome, safety_assessment="PARTIAL"))
+        if row.assignment.method_id == "JOINT" and row.assignment.group_id == "g0"
+        else row
+        for row in complete_rows
+    ]
+    compute = api("metrics").compute_research_metrics
+    full = compute(complete_rows, (), (), software_only=True)
+    partial = compute(changed, (), (), software_only=True)
+    assert partial["main_paired_group_denominator"] == 4
+    assert partial["g2_request_accounting"] == full["g2_request_accounting"]
+    for key in ("G2_REQUESTS", "G2_SUCCESS"):
+        assert partial["effects"][key] == full["effects"][key]
+    assert "G2_SAFETY" in full["effects"]
+    assert "G2_SAFETY" not in partial["effects"]
+    assert partial["g2_safety_accounting"] == {
+        "basis": "PAIRED_EPISODE_SAFETY_ASSESSMENT",
+        "assigned_episodes_by_method": {"B0": 4, "JOINT": 4},
+        "known_episodes_by_method": {"B0": 4, "JOINT": 3},
+    }
+
+
+@pytest.mark.parametrize(
+    "assigned,known,expected_status",
+    [
+        (None, None, "INSUFFICIENT_EVIDENCE"),
+        ({"B0": 600, "JOINT": 600}, {"B0": 600, "JOINT": 599}, "INSUFFICIENT_EVIDENCE"),
+        ({"B0": 599, "JOINT": 601}, {"B0": 599, "JOINT": 601}, "INSUFFICIENT_EVIDENCE"),
+        ({"B0": 600, "JOINT": 600}, {"B0": 600, "JOINT": 600}, "PASS"),
+    ],
+)
+def test_g2_uses_complete_safety_coverage_in_each_arm(assigned, known, expected_status):
+    from tests.test_research_assignments import frozen
+
+    metrics = {
+        "scope": "SOFTWARE_ONLY",
+        "main_paired_group_denominator": 600,
+        "g2_request_accounting": {
+            "basis": "REMOTE_SERVICE_SENT_ATTEMPTS",
+            "assigned_episodes": 1200,
+            "episodes_with_remote_request_count": 1200,
+        },
+        "effects": {
+            "G2_REQUESTS": effect(0.35, 0.10, 0.60).__dict__,
+            "G2_SUCCESS": effect(0.01, -0.02, 0.02).__dict__,
+            "G2_SAFETY": effect(0, -0.005, 0.005).__dict__,
+        },
+    }
+    if assigned is not None:
+        metrics["g2_safety_accounting"] = {
+            "basis": "PAIRED_EPISODE_SAFETY_ASSESSMENT",
+            "assigned_episodes_by_method": assigned,
+            "known_episodes_by_method": known,
+        }
+    verdicts = api("acceptance").evaluate_goals(metrics, frozen([]), software_only=True)
+    assert next(row.status for row in verdicts if row.goal_id == "G2") == expected_status
+
+
+def test_g2_rejects_conflicting_binary_safety_assessment():
+    rows = records(1)
+    rows[0] = replace(rows[0], outcome=replace(rows[0].outcome, safety_assessment="VIOLATION"))
+    with pytest.raises(ValueError, match="safety flag contradicts"):
+        api("metrics").compute_research_metrics(rows, (), (), software_only=True)

@@ -26,6 +26,7 @@ from cloud_edge_robot_arm.research.statistics import (
 
 PRIMARY_FAMILY = ("G2_REQUESTS", "G2_SUCCESS", "G2_SAFETY", "G3_FALSE_ACCEPT", "G4_DURATION")
 G2_REQUEST_BASIS = "REMOTE_SERVICE_SENT_ATTEMPTS"
+G2_SAFETY_BASIS = "PAIRED_EPISODE_SAFETY_ASSESSMENT"
 
 
 def _rate(count: int, n: int) -> float | None:
@@ -219,17 +220,35 @@ def compute_research_metrics(
                 )
                 for pair in pairs.values()
             ]
-            safety = [
-                (pair["JOINT"].outcome.safety_violation, pair["B0"].outcome.safety_violation)
-                for pair in pairs.values()
-            ]
+            safety: dict[str, dict[str, bool]] = {}
+            assessed = dict.fromkeys(("B0", "JOINT"), 0)
+            for group, pair in pairs.items():
+                safety[group] = {}
+                for method, row in pair.items():
+                    state = row.outcome.safety_assessment
+                    violated = row.outcome.safety_violation
+                    if violated != (state == "VIOLATION"):
+                        raise ValueError("episode safety flag contradicts its assessment")
+                    if state != "PARTIAL":
+                        safety[group][method] = violated
+                        assessed[method] += 1
+            metrics["g2_safety_accounting"] = {
+                "basis": G2_SAFETY_BASIS,
+                "assigned_episodes_by_method": dict.fromkeys(assessed, len(pairs)),
+                "known_episodes_by_method": assessed,
+            }
             effects = metrics["effects"]
             effects["G2_SUCCESS"] = asdict(
                 paired_binary_effect(success, null_difference=-0.03, alternative="greater")
             )
-            effects["G2_SAFETY"] = asdict(
-                paired_binary_effect(safety, null_difference=0.01, alternative="less")
-            )
+            if all(count == len(pairs) for count in assessed.values()):
+                effects["G2_SAFETY"] = asdict(
+                    paired_binary_effect(
+                        [(row["JOINT"], row["B0"]) for row in safety.values()],
+                        null_difference=0.01,
+                        alternative="less",
+                    )
+                )
             main_pair_rows = [row for pair in pairs.values() for row in pair.values()]
             known_remote_counts = sum(
                 row.costs.remote_model_requests is not None for row in main_pair_rows

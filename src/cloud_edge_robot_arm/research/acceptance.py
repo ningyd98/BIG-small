@@ -18,7 +18,11 @@ from cloud_edge_robot_arm.research.assignments import (
     episode_record_from_payload,
     validate_formal_protocol,
 )
-from cloud_edge_robot_arm.research.metrics import G2_REQUEST_BASIS, compute_research_metrics
+from cloud_edge_robot_arm.research.metrics import (
+    G2_REQUEST_BASIS,
+    G2_SAFETY_BASIS,
+    compute_research_metrics,
+)
 from cloud_edge_robot_arm.research.protocol import FrozenProtocol, load_protocol
 from cloud_edge_robot_arm.research.statistics import EffectEstimate, holm_adjust
 
@@ -172,6 +176,19 @@ def evaluate_goals(
         key: (effects[key].get("p_value") if isinstance(effects.get(key), Mapping) else None)
         for key in protocol.spec.hypothesis_family
     }
+    n = metrics.get("main_paired_group_denominator", 0)
+    required = protocol.spec.selected_n or 0
+    safety_accounting = metrics.get("g2_safety_accounting")
+    expected_arm_counts = {"B0": required, "JOINT": required}
+    complete_safety = (
+        n == required
+        and isinstance(safety_accounting, Mapping)
+        and safety_accounting.get("basis") == G2_SAFETY_BASIS
+        and safety_accounting.get("assigned_episodes_by_method") == expected_arm_counts
+        and safety_accounting.get("known_episodes_by_method") == expected_arm_counts
+    )
+    if not complete_safety:
+        raw_p["G2_SAFETY"] = None
     adjusted = holm_adjust(
         {key: float(value) if value is not None else 1.0 for key, value in raw_p.items()}
     )
@@ -188,8 +205,6 @@ def evaluate_goals(
             ("required source-bound metric has not been produced",),
             evidence_scope=scope,
         )
-    n = metrics.get("main_paired_group_denominator", 0)
-    required = protocol.spec.selected_n or 0
     if n != required:
         verdicts["G2"] = GoalVerdict(
             "G2",
@@ -211,6 +226,8 @@ def evaluate_goals(
         )
         if not complete_remote_counts:
             requests = None
+        if not complete_safety:
+            safety = None
         request_status = (
             improvement_status(requests, 0.3) if requests is not None else "INSUFFICIENT_EVIDENCE"
         )
@@ -221,6 +238,8 @@ def evaluate_goals(
         )
         observed_success_delta = success.point if success is not None else None
         reasons = ["software threshold evaluation only; no accepted physical evidence"]
+        if not complete_safety:
+            reasons.append("complete known safety assessment in both paired arms is required")
         if not complete_remote_counts:
             reasons.append("full paired remote request accounting is required")
         elif requests is None or requests.point is None:
@@ -246,6 +265,7 @@ def evaluate_goals(
                 "success": asdict(success) if success is not None else None,
                 "safety": asdict(safety) if safety is not None else None,
                 "request_accounting": accounting,
+                "safety_accounting": safety_accounting,
                 "holm_adjusted_p": adjusted,
             },
             tuple(reasons),
