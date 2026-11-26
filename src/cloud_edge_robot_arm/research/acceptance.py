@@ -18,7 +18,7 @@ from cloud_edge_robot_arm.research.assignments import (
     episode_record_from_payload,
     validate_formal_protocol,
 )
-from cloud_edge_robot_arm.research.metrics import compute_research_metrics
+from cloud_edge_robot_arm.research.metrics import G2_REQUEST_BASIS, compute_research_metrics
 from cloud_edge_robot_arm.research.protocol import FrozenProtocol, load_protocol
 from cloud_edge_robot_arm.research.statistics import EffectEstimate, holm_adjust
 
@@ -202,27 +202,55 @@ def evaluate_goals(
         requests, success, safety = (
             estimates[key] for key in ("G2_REQUESTS", "G2_SUCCESS", "G2_SAFETY")
         )
-        if requests is not None and success is not None and safety is not None:
-            status = improvement_status(requests, 0.3)
-            ni_status = noninferiority_status(success, safety)
-            if status == "FAIL" or ni_status == "FAIL":
-                status = "FAIL"
-            elif ni_status != "PASS":
-                status = "INSUFFICIENT_EVIDENCE"
-            if any(adjusted[key] > 0.05 for key in ("G2_REQUESTS", "G2_SUCCESS", "G2_SAFETY")):
-                status = "INSUFFICIENT_EVIDENCE" if status != "FAIL" else status
-            verdicts["G2"] = GoalVerdict(
-                "G2",
-                status,
-                {
-                    "requests": asdict(requests),
-                    "success": asdict(success),
-                    "safety": asdict(safety),
-                    "holm_adjusted_p": adjusted,
-                },
-                ("software threshold evaluation only; no accepted physical evidence",),
-                evidence_scope=scope,
-            )
+        accounting = metrics.get("g2_request_accounting")
+        complete_remote_counts = (
+            isinstance(accounting, Mapping)
+            and accounting.get("basis") == G2_REQUEST_BASIS
+            and accounting.get("episodes_with_remote_request_count")
+            == accounting.get("assigned_episodes") == 2 * required
+        )
+        if not complete_remote_counts:
+            requests = None
+        request_status = (
+            improvement_status(requests, 0.3) if requests is not None else "INSUFFICIENT_EVIDENCE"
+        )
+        ni_status = (
+            noninferiority_status(success, safety)
+            if success is not None and safety is not None
+            else "INSUFFICIENT_EVIDENCE"
+        )
+        observed_success_delta = success.point if success is not None else None
+        reasons = ["software threshold evaluation only; no accepted physical evidence"]
+        if not complete_remote_counts:
+            reasons.append("full paired remote request accounting is required")
+        elif requests is None or requests.point is None:
+            reasons.append("relative reduction requires a defined remote request baseline")
+        if observed_success_delta is not None and observed_success_delta < 0:
+            reasons.append("observed paired task success is lower than B0")
+            status = "FAIL"
+        elif request_status == "FAIL" or ni_status == "FAIL":
+            status = "FAIL"
+        elif (
+            request_status == ni_status == "PASS"
+            and observed_success_delta is not None
+            and all(adjusted[key] <= 0.05 for key in ("G2_REQUESTS", "G2_SUCCESS", "G2_SAFETY"))
+        ):
+            status = "PASS"
+        else:
+            status = "INSUFFICIENT_EVIDENCE"
+        verdicts["G2"] = GoalVerdict(
+            "G2",
+            status,
+            {
+                "requests": asdict(requests) if requests is not None else None,
+                "success": asdict(success) if success is not None else None,
+                "safety": asdict(safety) if safety is not None else None,
+                "request_accounting": accounting,
+                "holm_adjusted_p": adjusted,
+            },
+            tuple(reasons),
+            evidence_scope=scope,
+        )
     secondary: dict[str, GoalStatus] = {}
     for key, target in (("G2A_BYTES", 0.25), ("G2A_DURATION", 0.15)):
         estimate = estimates[key]

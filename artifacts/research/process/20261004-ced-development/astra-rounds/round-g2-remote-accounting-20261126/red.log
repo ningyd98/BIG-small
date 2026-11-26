@@ -1,0 +1,172 @@
+FFF.F.F                                                                  [100%]
+=================================== FAILURES ===================================
+______ test_remote_sent_attempts_exclude_local_roles_and_unsent_requests _______
+
+    def test_remote_sent_attempts_exclude_local_roles_and_unsent_requests():
+        ledger = CostLedger()
+        ledger.record_request(cost("local-cloud"))
+        ledger.record_request(cost("local-edge", model_role="JUDGE", deployment="EDGE", is_cloud_model=False))
+        for role, status in (
+            ("PLANNER", "TIMEOUT"), ("PLANNER", "SUCCESS"), ("SUPERVISOR", "ERROR"),
+            ("REPLANNER", "CANCELLED"), ("JUDGE", "SUCCESS"),
+        ):
+            row = cost(f"{role}-{status}", model_role=role, status=status, provider_location="REMOTE_SERVICE")
+            ledger.record_request(row.model_copy(update={
+                "finished_at": None, "status": "IN_FLIGHT", "serialized_received_bytes": 0,
+            }))
+            ledger.record_request(row)
+        ledger.record_request(cost("unsent", sent_at=None, status="CANCELLED", serialized_sent_bytes=0,
+                                   serialized_received_bytes=0, provider_location="REMOTE_SERVICE"))
+        summary = ledger.export()["summary"]
+>       assert summary["remote_model_requests"] == 5
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'remote_model_requests'
+
+tests/test_research_cost_ledger.py:168: KeyError
+_____ test_g2_uses_remote_requests_and_preserves_missing_pair_denominator ______
+
+    def test_g2_uses_remote_requests_and_preserves_missing_pair_denominator():
+        from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
+    
+        changed = [
+            replace(
+                row,
+                costs=CostSnapshot(
+                    model_requests=14 if row.assignment.method_id == "B0" else 8,
+                    cloud_model_requests=14 if row.assignment.method_id == "B0" else 8,
+                    remote_model_requests=10 if row.assignment.method_id == "B0" else 8,
+                ),
+                run_status="TIMEOUT" if row.assignment.group_id == "g0" else "FAILED",
+            )
+            for row in records(4)
+        ]
+        compute = api("metrics").compute_research_metrics
+        metrics = compute(changed, (), (), software_only=True)
+        assert metrics["methods"]["B0"]["cloud_requests_total"] == 56
+>       assert metrics["methods"]["B0"]["remote_requests_total"] == 40
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'remote_requests_total'
+
+tests/test_research_acceptance.py:448: KeyError
+_ test_g2_requires_remote_accounting_and_no_observed_success_loss[-0.01-True-0.3-FAIL] _
+
+success_point = -0.01, with_current_accounting = True, request_point = 0.3
+expected_status = 'FAIL'
+
+    @pytest.mark.parametrize(
+        "success_point,with_current_accounting,request_point,expected_status",
+        [
+            (-0.01, True, 0.30, "FAIL"),
+            (0, True, 0.30, "PASS"),
+            (0, False, 0.30, "INSUFFICIENT_EVIDENCE"),
+            (0, True, None, "INSUFFICIENT_EVIDENCE"),
+        ],
+    )
+    def test_g2_requires_remote_accounting_and_no_observed_success_loss(
+        success_point, with_current_accounting, request_point, expected_status,
+    ):
+        from tests.test_research_assignments import frozen
+    
+        metrics = {
+            "scope": "SOFTWARE_ONLY",
+            "main_paired_group_denominator": 600,
+            "effects": {
+                "G2_REQUESTS": effect(request_point, 0.10, 0.60).__dict__ if request_point is not None
+                else effect(None, None, None, p=None).__dict__,
+                "G2_SUCCESS": effect(success_point, -0.02, 0.02).__dict__,
+                "G2_SAFETY": effect(0, -0.005, 0.005).__dict__,
+            },
+        }
+        if with_current_accounting:
+            metrics["g2_request_accounting"] = {
+                "basis": "REMOTE_SERVICE_SENT_ATTEMPTS",
+                "assigned_episodes": 1200,
+                "episodes_with_remote_request_count": 1200,
+            }
+        verdict = next(
+            row for row in api("acceptance").evaluate_goals(metrics, frozen([]), software_only=True)
+            if row.goal_id == "G2"
+        )
+>       assert verdict.status == expected_status
+E       AssertionError: assert 'PASS' == 'FAIL'
+E         
+E         - FAIL
+E         + PASS
+
+tests/test_research_acceptance.py:493: AssertionError
+_ test_g2_requires_remote_accounting_and_no_observed_success_loss[0-False-0.3-INSUFFICIENT_EVIDENCE] _
+
+success_point = 0, with_current_accounting = False, request_point = 0.3
+expected_status = 'INSUFFICIENT_EVIDENCE'
+
+    @pytest.mark.parametrize(
+        "success_point,with_current_accounting,request_point,expected_status",
+        [
+            (-0.01, True, 0.30, "FAIL"),
+            (0, True, 0.30, "PASS"),
+            (0, False, 0.30, "INSUFFICIENT_EVIDENCE"),
+            (0, True, None, "INSUFFICIENT_EVIDENCE"),
+        ],
+    )
+    def test_g2_requires_remote_accounting_and_no_observed_success_loss(
+        success_point, with_current_accounting, request_point, expected_status,
+    ):
+        from tests.test_research_assignments import frozen
+    
+        metrics = {
+            "scope": "SOFTWARE_ONLY",
+            "main_paired_group_denominator": 600,
+            "effects": {
+                "G2_REQUESTS": effect(request_point, 0.10, 0.60).__dict__ if request_point is not None
+                else effect(None, None, None, p=None).__dict__,
+                "G2_SUCCESS": effect(success_point, -0.02, 0.02).__dict__,
+                "G2_SAFETY": effect(0, -0.005, 0.005).__dict__,
+            },
+        }
+        if with_current_accounting:
+            metrics["g2_request_accounting"] = {
+                "basis": "REMOTE_SERVICE_SENT_ATTEMPTS",
+                "assigned_episodes": 1200,
+                "episodes_with_remote_request_count": 1200,
+            }
+        verdict = next(
+            row for row in api("acceptance").evaluate_goals(metrics, frozen([]), software_only=True)
+            if row.goal_id == "G2"
+        )
+>       assert verdict.status == expected_status
+E       AssertionError: assert 'PASS' == 'INSUFFICIENT_EVIDENCE'
+E         
+E         - INSUFFICIENT_EVIDENCE
+E         + PASS
+
+tests/test_research_acceptance.py:493: AssertionError
+_ test_missing_remote_field_round_trips_legacy_episode_hash_and_distinguishes_zero _
+
+    def test_missing_remote_field_round_trips_legacy_episode_hash_and_distinguishes_zero():
+        from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
+    
+        row = records(1)[0]
+        legacy = replace(
+            row,
+            provenance=row.provenance.model_copy(update={"split_role": "selection"}),
+            costs=CostSnapshot(model_requests=3, cloud_model_requests=2),
+        )
+        old_payload = legacy.to_payload()
+        assert "remote_model_requests" not in old_payload["costs"]
+        load = api("assignments").episode_record_from_payload
+        assert load(old_payload).to_payload() == old_payload
+        zero_payload = replace(
+            legacy, costs=CostSnapshot(model_requests=3, cloud_model_requests=2, remote_model_requests=0),
+        ).to_payload()
+>       assert zero_payload["costs"]["remote_model_requests"] == 0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'remote_model_requests'
+
+tests/test_research_acceptance.py:512: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_research_cost_ledger.py::test_remote_sent_attempts_exclude_local_roles_and_unsent_requests
+FAILED tests/test_research_acceptance.py::test_g2_uses_remote_requests_and_preserves_missing_pair_denominator
+FAILED tests/test_research_acceptance.py::test_g2_requires_remote_accounting_and_no_observed_success_loss[-0.01-True-0.3-FAIL]
+FAILED tests/test_research_acceptance.py::test_g2_requires_remote_accounting_and_no_observed_success_loss[0-False-0.3-INSUFFICIENT_EVIDENCE]
+FAILED tests/test_research_acceptance.py::test_missing_remote_field_round_trips_legacy_episode_hash_and_distinguishes_zero
+5 failed, 2 passed in 0.26s

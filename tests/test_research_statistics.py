@@ -102,7 +102,11 @@ def records(group_count=8, *, baseline=10, joint=5):
                     row,
                     outcome,
                     provenance,
-                    CostSnapshot(model_requests=calls, cloud_model_requests=calls),
+                    CostSnapshot(
+                        model_requests=calls,
+                        cloud_model_requests=calls,
+                        remote_model_requests=calls,
+                    ),
                     120.0,
                     None,
                     (),

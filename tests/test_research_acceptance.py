@@ -151,6 +151,11 @@ def test_g2_preserves_definite_target_failure_and_clear_inferiority(requests, su
     metrics = {
         "scope": "SOFTWARE_ONLY",
         "main_paired_group_denominator": 600,
+        "g2_request_accounting": {
+            "basis": "REMOTE_SERVICE_SENT_ATTEMPTS",
+            "assigned_episodes": 1200,
+            "episodes_with_remote_request_count": 1200,
+        },
         "effects": {
             "G2_REQUESTS": effect(*requests).__dict__,
             "G2_SUCCESS": effect(*success).__dict__,
@@ -425,3 +430,102 @@ def test_final_analysis_rejects_rehashed_incomplete_coverage(
         assert "coverage" in result["reasons"][0]
         assert saved_metrics["coverage_status"] == "INCOMPLETE"
     assert (runs / "records.jsonl").read_bytes() == original
+
+
+def test_g2_uses_remote_requests_and_preserves_missing_pair_denominator():
+    from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
+
+    changed = [
+        replace(
+            row,
+            costs=CostSnapshot(
+                model_requests=14 if row.assignment.method_id == "B0" else 8,
+                cloud_model_requests=14 if row.assignment.method_id == "B0" else 8,
+                remote_model_requests=10 if row.assignment.method_id == "B0" else 8,
+            ),
+            run_status="TIMEOUT" if row.assignment.group_id == "g0" else "FAILED",
+        )
+        for row in records(4)
+    ]
+    compute = api("metrics").compute_research_metrics
+    metrics = compute(changed, (), (), software_only=True)
+    assert metrics["methods"]["B0"]["cloud_requests_total"] == 56
+    assert metrics["methods"]["B0"]["remote_requests_total"] == 40
+    assert metrics["effects"]["G2_REQUESTS"]["point"] == pytest.approx(0.2)
+    zero_baseline = [
+        replace(
+            row,
+            costs=CostSnapshot(model_requests=14, cloud_model_requests=14, remote_model_requests=0),
+        )
+        if row.assignment.method_id == "B0" else row
+        for row in changed
+    ]
+    zero_metrics = compute(zero_baseline, (), (), software_only=True)
+    assert zero_metrics["methods"]["B0"]["remote_requests_total"] == 0
+    assert zero_metrics["effects"]["G2_REQUESTS"]["point"] is None
+    changed[-1] = replace(changed[-1], costs=CostSnapshot(model_requests=8, cloud_model_requests=8))
+    metrics = compute(changed, (), (), software_only=True)
+    assert metrics["main_paired_group_denominator"] == 4
+    assert metrics["g2_request_accounting"]["episodes_with_remote_request_count"] == 7
+    assert metrics["methods"]["JOINT"]["remote_requests_total"] is None
+    assert "G2_REQUESTS" not in metrics["effects"]
+    assert metrics["primary_family"]["holm_adjusted_p"]["G2_REQUESTS"] == 1
+
+
+@pytest.mark.parametrize(
+    "success_point,with_current_accounting,request_point,expected_status",
+    [
+        (-0.01, True, 0.30, "FAIL"),
+        (0, True, 0.30, "PASS"),
+        (0, False, 0.30, "INSUFFICIENT_EVIDENCE"),
+        (0, True, None, "INSUFFICIENT_EVIDENCE"),
+    ],
+)
+def test_g2_requires_remote_accounting_and_no_observed_success_loss(
+    success_point, with_current_accounting, request_point, expected_status,
+):
+    from tests.test_research_assignments import frozen
+
+    metrics = {
+        "scope": "SOFTWARE_ONLY",
+        "main_paired_group_denominator": 600,
+        "effects": {
+            "G2_REQUESTS": effect(request_point, 0.10, 0.60).__dict__ if request_point is not None
+            else effect(None, None, None, p=None).__dict__,
+            "G2_SUCCESS": effect(success_point, -0.02, 0.02).__dict__,
+            "G2_SAFETY": effect(0, -0.005, 0.005).__dict__,
+        },
+    }
+    if with_current_accounting:
+        metrics["g2_request_accounting"] = {
+            "basis": "REMOTE_SERVICE_SENT_ATTEMPTS",
+            "assigned_episodes": 1200,
+            "episodes_with_remote_request_count": 1200,
+        }
+    verdict = next(
+        row for row in api("acceptance").evaluate_goals(metrics, frozen([]), software_only=True)
+        if row.goal_id == "G2"
+    )
+    assert verdict.status == expected_status
+
+
+def test_missing_remote_field_round_trips_legacy_episode_hash_and_distinguishes_zero():
+    from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
+
+    row = records(1)[0]
+    legacy = replace(
+        row,
+        provenance=row.provenance.model_copy(update={"split_role": "selection"}),
+        costs=CostSnapshot(model_requests=3, cloud_model_requests=2),
+    )
+    old_payload = legacy.to_payload()
+    assert "remote_model_requests" not in old_payload["costs"]
+    load = api("assignments").episode_record_from_payload
+    assert load(old_payload).to_payload() == old_payload
+    zero_payload = replace(
+        legacy,
+        costs=CostSnapshot(model_requests=3, cloud_model_requests=2, remote_model_requests=0),
+    ).to_payload()
+    assert zero_payload["costs"]["remote_model_requests"] == 0
+    assert zero_payload["content_hash"] != old_payload["content_hash"]
+    assert load(zero_payload).to_payload() == zero_payload

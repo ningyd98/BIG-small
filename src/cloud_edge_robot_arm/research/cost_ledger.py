@@ -5,9 +5,16 @@ from __future__ import annotations
 import threading
 from collections import Counter
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 
 class RequestCost(BaseModel):
@@ -50,6 +57,7 @@ class RequestCost(BaseModel):
 class CostSnapshot(BaseModel):
     model_requests: int = 0
     cloud_model_requests: int = 0
+    remote_model_requests: int | None = Field(default=None, ge=0, strict=True)
     requests_by_role: dict[str, int] = Field(default_factory=dict)
     telemetry_messages: int = 0
     application_bytes: int = 0
@@ -60,6 +68,23 @@ class CostSnapshot(BaseModel):
     commit_check_s: float = 0
     switch_s: float = 0
     latency_scope: Literal["MEASURED_COMPONENT_SUM"] = "MEASURED_COMPONENT_SUM"
+
+    @model_validator(mode="after")
+    def check_remote_request_count(self) -> CostSnapshot:
+        remote = self.remote_model_requests
+        if remote is not None and remote > min(self.model_requests, self.cloud_model_requests):
+            raise ValueError("remote requests cannot exceed total or logical cloud requests")
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_serialization(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        data = handler(self)
+        if self.remote_model_requests is None:
+            # Historical v1 episode hashes cover the serialized cost snapshot.
+            data.pop("remote_model_requests", None)
+        return data
 
     @property
     def decision_latency_s(self) -> float:
@@ -124,6 +149,9 @@ class CostLedger:
             return CostSnapshot.model_validate({
                 "model_requests": len(sent),
                 "cloud_model_requests": sum(row.is_cloud_model for row in sent),
+                "remote_model_requests": sum(
+                    row.provider_location == "REMOTE_SERVICE" for row in sent
+                ),
                 "requests_by_role": dict(Counter(row.model_role for row in sent)),
                 "telemetry_messages": self._telemetry_messages,
                 "application_bytes": self._telemetry_bytes + sum(

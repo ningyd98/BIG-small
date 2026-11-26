@@ -172,6 +172,11 @@ def holm_adjust(p_values: Mapping[str, float]) -> dict[str, float]:
 
 
 def _value(record: EpisodeRecord, metric: str) -> float:
+    if metric == "remote_requests_relative_reduction":
+        remote_requests = record.costs.remote_model_requests
+        if remote_requests is None:
+            raise ValueError("remote request effect requires all paired request counts")
+        return float(remote_requests)
     if metric.startswith("cloud_requests"):
         return float(record.costs.cloud_model_requests)
     if metric.startswith("application_bytes"):

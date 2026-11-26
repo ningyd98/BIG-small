@@ -147,3 +147,29 @@ def test_application_bytes_are_actual_payload_lengths(malformed):
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_remote_sent_attempts_exclude_local_roles_and_unsent_requests():
+    ledger = CostLedger()
+    ledger.record_request(cost("local-cloud"))
+    ledger.record_request(
+        cost("local-edge", model_role="JUDGE", deployment="EDGE", is_cloud_model=False)
+    )
+    for role, status in (
+        ("PLANNER", "TIMEOUT"), ("PLANNER", "SUCCESS"), ("SUPERVISOR", "ERROR"),
+        ("REPLANNER", "CANCELLED"), ("JUDGE", "SUCCESS"),
+    ):
+        row = cost(
+            f"{role}-{status}", model_role=role, status=status, provider_location="REMOTE_SERVICE"
+        )
+        ledger.record_request(row.model_copy(update={
+            "finished_at": None, "status": "IN_FLIGHT", "serialized_received_bytes": 0,
+        }))
+        ledger.record_request(row)
+    ledger.record_request(cost("unsent", sent_at=None, status="CANCELLED", serialized_sent_bytes=0,
+                               serialized_received_bytes=0, provider_location="REMOTE_SERVICE"))
+    summary = ledger.export()["summary"]
+    assert summary["remote_model_requests"] == 5
+    assert summary["cloud_model_requests"] == 6
+    assert summary["model_requests"] == 7
+    assert CostLedger().export()["summary"]["remote_model_requests"] == 0

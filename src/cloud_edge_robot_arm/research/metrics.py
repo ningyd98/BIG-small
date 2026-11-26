@@ -25,6 +25,7 @@ from cloud_edge_robot_arm.research.statistics import (
 )
 
 PRIMARY_FAMILY = ("G2_REQUESTS", "G2_SUCCESS", "G2_SAFETY", "G3_FALSE_ACCEPT", "G4_DURATION")
+G2_REQUEST_BASIS = "REMOTE_SERVICE_SENT_ATTEMPTS"
 
 
 def _rate(count: int, n: int) -> float | None:
@@ -69,6 +70,12 @@ def _method_metrics(rows: Sequence[EpisodeRecord], *, software_only: bool) -> di
     roles: Counter[str] = Counter()
     for row in rows:
         roles.update(row.costs.requests_by_role)
+    remote_counts = [
+        row.costs.remote_model_requests
+        for row in rows
+        if row.costs.remote_model_requests is not None
+    ]
+    remote_total = sum(remote_counts) if n and len(remote_counts) == n else None
     durations = [row.duration_penalized_s for row in rows]
     latency = [row.costs.decision_latency_s for row in rows]
     return {
@@ -113,6 +120,9 @@ def _method_metrics(rows: Sequence[EpisodeRecord], *, software_only: bool) -> di
         "cloud_requests_mean": float(np.mean([row.costs.cloud_model_requests for row in rows]))
         if n
         else None,
+        "remote_requests_total": remote_total,
+        "remote_requests_mean": remote_total / n if remote_total is not None else None,
+        "episodes_with_remote_request_count": len(remote_counts),
         "model_requests_total": sum(row.costs.model_requests for row in rows),
         "model_requests_by_role": dict(roles),
         "telemetry_messages_total": sum(row.costs.telemetry_messages for row in rows),
@@ -220,13 +230,26 @@ def compute_research_metrics(
             effects["G2_SAFETY"] = asdict(
                 paired_binary_effect(safety, null_difference=0.01, alternative="less")
             )
-            formal_rows = [row for row in records if row.provenance.split_role == "formal"]
+            main_pair_rows = [row for pair in pairs.values() for row in pair.values()]
+            known_remote_counts = sum(
+                row.costs.remote_model_requests is not None for row in main_pair_rows
+            )
+            metrics["g2_request_accounting"] = {
+                "basis": G2_REQUEST_BASIS,
+                "assigned_episodes": len(main_pair_rows),
+                "episodes_with_remote_request_count": known_remote_counts,
+            }
+            if known_remote_counts == len(main_pair_rows):
+                effects["G2_REQUESTS"] = asdict(
+                    stratified_paired_bootstrap(
+                        main_pair_rows, "remote_requests_relative_reduction"
+                    )
+                )
             for goal, metric in (
-                ("G2_REQUESTS", "cloud_requests_relative_reduction"),
                 ("G2A_BYTES", "application_bytes_relative_reduction"),
                 ("G2A_DURATION", "duration_penalized_s_p95_relative_reduction"),
             ):
-                effects[goal] = asdict(stratified_paired_bootstrap(formal_rows, metric))
+                effects[goal] = asdict(stratified_paired_bootstrap(main_pair_rows, metric))
             metrics["main_paired_group_denominator"] = len(pairs)
     if gate_records:
         if not opportunities:
