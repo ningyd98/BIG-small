@@ -40,6 +40,10 @@ t02 第 1512 步唯一有注册深度及印刷支持的邻列，在两个像素�
 
 [^g1-t02-reduced]: [四列 RGB 跨轨迹验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-rgb-edge-reduced-20261126/step-report.md)
 
+使用原保留锚点的同平面实测深度重拟合后，2,504 个冻结配对均落在原诊断包络内，549 个俯仰越界全部恢复。t02 第 1512 步角点误差为 0.273 mm。自然匹配只有一条非目标轨迹，仍缺更多独立开发样本。本轮未新增场景曝光或实际抓放。[^g1-t02-plane]
+
+[^g1-t02-plane]: [配对平面重拟合](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-rgb-edge-plane-refit-20261126/step-report.md)
+
 G2 软件已同时保留原逻辑云指标和远程派发指标。派发前注入丢包计零，已派发的超时和重试逐次计入。正式结论仍需合格的固定周期基线与实际配对成功结果。[^g2-dispatch]
 
 [^g2-dispatch]: [远程派发归属验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-transport-dispatch-20261126/step-report.md) · [原始收发文件与尝试身份读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-original-wire-identity-20261126/step-report.md)
