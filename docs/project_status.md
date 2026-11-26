@@ -10,6 +10,11 @@
 
 [正式定位与抓放计分](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-paired-20261124/step-report.md) · [t01 前缀与 27 条制停分支冷读](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-t01-joint-stop-readback-20261126/step-report.md) · [B0 前置复验](../artifacts/research/process/20261004-ced-development/astra-rounds/round-b0-current-role-probe-20261126/step-report.md)
 
+
+当前有载门对封存 t01 第 1640 步给出 CLEAR。源台有载制停界下左右指尖离桌保守下界约 12.62 mm，16 个原包络各通过登记体积检查。t02 原轨迹在当前门中首个拒绝为第 1512 步缺少有界工件姿态，第 2112 步仍有未登记近面。两例共复验 85 个封存角色，新增曝光、积分和整机各零次。[^g1-volume]
+
+[^g1-volume]: [当前有载门与独立冷读](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-lift-registered-volume-20261126/step-report.md)
+
 ## 2026-11-24　G1 正式抓放失败的逐帧归因
 
 复看正式批的 778 帧后，六次失标均定位到夹指或手掌侵入标记白边附近的姿态。逐部件隐藏的静态复拍均能恢复识别。另两次能读出双码，但 ID8 的偏航估计误差约 5°，经安装偏距放大后触发抓取点一致性检查。四个摆放的正式完整抓放成功仍为两组各 0/4。[阶段总结](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/stage-summary.md) · [逐帧慢放](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/eight-stops.gif)
