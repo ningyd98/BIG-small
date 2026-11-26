@@ -44,6 +44,10 @@ t02 第 1512 步唯一有注册深度及印刷支持的邻列，在两个像素�
 
 [^g1-t02-plane]: [配对平面重拟合](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-rgb-edge-plane-refit-20261126/step-report.md)
 
+另七轨的 3,858 张原生档案有 88 张自然四列匹配，均在运输或退回。921 张抬升反馈无命中。原平面重拟合的 43 个成功输出中有一个运输帧超过原滚转误差界，第 1512 步不进入关系回放。[^g1-t02-natural]
+
+[^g1-t02-natural]: [自然四列档案验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-rgb-edge-natural-archive-20261126/step-report.md)
+
 G2 软件已同时保留原逻辑云指标和远程派发指标。派发前注入丢包计零，已派发的超时和重试逐次计入。正式结论仍需合格的固定周期基线与实际配对成功结果。[^g2-dispatch]
 
 [^g2-dispatch]: [远程派发归属验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-transport-dispatch-20261126/step-report.md) · [原始收发文件与尝试身份读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-original-wire-identity-20261126/step-report.md)
