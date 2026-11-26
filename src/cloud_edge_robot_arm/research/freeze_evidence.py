@@ -694,6 +694,12 @@ def _audit_ced_case(
         read_json(_inside(case, "physical-outcome.json"))
     ):
         raise ValueError("independent physical verdict differs from original raw evaluation")
+    assessment = physical.safety_assessment
+    case_id = assignment["assignment_id"]
+    if physical.safety_violation != (assessment == "VIOLATION"):
+        raise ValueError(f"{case_id}: physical safety flag contradicts its assessment")
+    if assessment not in {"SCOPED_NO_VIOLATION", "VIOLATION"}:
+        raise ValueError(f"{case_id}: partial physical safety coverage")
     episode = read_json(_inside(case, "episode.json"))
     if (
         episode["episode_id"] != raw[0].episode_id
@@ -797,6 +803,7 @@ def _audit_ced_case(
         "stratum_id": assignment["stratum_id"],
         "success": success,
         "safety_violation": physical.safety_violation,
+        "safety_assessment": assessment,
         "cloud_requests": len(sent),
     }
 

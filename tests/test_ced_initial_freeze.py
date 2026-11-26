@@ -596,3 +596,81 @@ def test_b0_stage_can_reject_original_wire_reuse_across_case_roots(tmp_path):
         else:
             with pytest.raises(ValueError, match="distinct regular file"):
                 list(audit)
+
+
+@pytest.mark.parametrize(
+    "assessment,violated,rejection",
+    [
+        ("PARTIAL", False, "partial physical safety coverage"),
+        ("PARTIAL", True, "safety flag contradicts"),
+        ("VIOLATION", False, "safety flag contradicts"),
+        ("SCOPED_NO_VIOLATION", False, None),
+        ("VIOLATION", True, None),
+    ],
+)
+def test_b0_original_case_checks_recomputed_safety_before_wire(
+    tmp_path, monkeypatch, assessment, violated, rejection
+):
+    from dataclasses import asdict
+
+    from cloud_edge_robot_arm.research import protocol_evidence
+    from cloud_edge_robot_arm.simulation.mujoco import episode_evaluator
+
+    module = api()
+    assignment = {
+        "assignment_id": "selection-fixture",
+        "base_assignment": {"scene": {"scene_parameters": {"target": {"color_name": "red"}}}},
+        "period_s": 1.0,
+    }
+    row = {"scope": "REAL_RUNTIME", "success": False, "safety_violation": False}
+    # End the fixture before reading online or wire artifacts. The only authoritative value
+    # under test is what the independent physical evaluator returns at the original call site.
+    outcome = episode_evaluator.EpisodeOutcome(
+        False, "FAILED", violated, "fixture failure", 0.0, 0.0, 0.0, 1.0,
+        safety_assessment=assessment,
+    )
+    probe = {
+        "bundle_hash": "software-fixture", "bundle": {},
+        "edge_snapshot": {}, "device_source_hashes": {},
+        "edge_policy": {"verification_budget": 3}, "request_settings": {},
+    }
+    fields = {
+        "assignment.json": assignment,
+        "case-result.json": row,
+        "context.json": {"pilot_assignment_hash": content_digest(assignment),
+                         "role_bundle_hash": "software-fixture", "evaluation_start_step": 120},
+        "policy.json": {
+            "instruction": "Move the red block to the green region.",
+            "device_pipeline": "OPENCV", "model_snapshot_hash": "fixture",
+            "role_binding": {
+                "bundle": {}, "edge_snapshot": {}, "device_source_hashes": {},
+                "edge_policy": {"verification_budget": 3},
+            },
+            "verification_budget": 3, "supervision_period_s": 1.0,
+            "advance_physics_during_wait": True,
+        },
+        "physical-evidence.json": [asdict(outcome)],
+        "physical-outcome.json": asdict(outcome),
+    }
+
+    class ReachedOtherOriginals(Exception):
+        pass
+
+    def files(path):
+        if path.name == "episode.json":
+            raise ReachedOtherOriginals()
+        return fields[path.name]
+
+    monkeypatch.setattr(module, "read_json", files)
+    monkeypatch.setattr(module, "_model_evidence_hash", lambda *_: "fixture")
+    monkeypatch.setattr(module, "_audit_ced_reset", lambda *_: None)
+    monkeypatch.setattr(module, "_audit_actuators", lambda *_: None)
+    monkeypatch.setattr(protocol_evidence, "_trace", lambda *_: list(range(121)))
+    monkeypatch.setattr(episode_evaluator, "sample_physical_observation", lambda *_: outcome)
+    monkeypatch.setattr(episode_evaluator, "evaluate_evidence", lambda *_, **__: outcome)
+    if rejection:
+        with pytest.raises(ValueError, match=rejection):
+            module._audit_ced_case(tmp_path, assignment, row, probe)
+    else:
+        with pytest.raises(ReachedOtherOriginals):
+            module._audit_ced_case(tmp_path, assignment, row, probe)
