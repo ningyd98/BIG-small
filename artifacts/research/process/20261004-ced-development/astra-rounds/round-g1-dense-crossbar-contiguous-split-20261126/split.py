@@ -1,0 +1,346 @@
+"""Select an independently held-out crossbar interval using only sealed geometry."""
+
+import argparse
+import hashlib
+import json
+from collections import Counter
+from fractions import Fraction
+from importlib.util import module_from_spec, spec_from_file_location
+from itertools import combinations
+from pathlib import Path
+
+import mujoco
+import numpy as np
+from scripts.graduation.perception_io import ROOT, read, sha
+
+HERE = Path(__file__).resolve().parent
+PLAN_PATH = HERE / "plan.json"
+PLAN = read(PLAN_PATH)
+OUT = ROOT / PLAN["output"]
+P = PLAN["thresholds"]
+MM = range(PLAN["station_range_mm"][0], PLAN["station_range_mm"][1] + 1, PLAN["stride_mm"])
+GAP = PLAN["minimum_gap_mm"]
+
+
+def require(ok, why):
+    if not ok:
+        raise ValueError(why)
+
+
+def check(sources):
+    for relative, expected in sources.items():
+        file = ROOT / relative
+        require(
+            file.resolve(strict=True) == file and sha(file) == expected, f"input changed: {file}"
+        )
+
+
+def previous():
+    path = ROOT / PLAN["inherited_source"]
+    spec = spec_from_file_location("frozen_crossbar", path)
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    require(module.P == P, "thresholds drifted from the prior round")
+    # Every station is a singleton so the original helper does not discard a duplicate
+    # before both candidate intervals have been established.
+    module.PLAN["physical_segments_mm"] = {str(mm): [mm, mm] for mm in MM}
+    return module
+
+
+def registered():
+    check(PLAN["registered_sources"])
+    base = previous()
+    optical, bounds = base.library("source_reader"), base.library("prior_bounds")
+    camera, info = optical.snapshot_sources()
+    rows = {name for name, _ in PLAN["pairs"]}
+    require(len(rows) == 3, "wrong registered pair count")
+    selected = {key for _, pair in PLAN["pairs"] for key in pair}
+    info = [row for row in info if row[0]["key"] in selected]
+    require(len(info) == 6, "six-frame enrollment changed")
+    seed = {row["dense_frame_id"]: row for row in read(ROOT / base.PLAN["local_seed"])["dense"]}
+    return base, bounds, camera, info, seed
+
+
+def stations(base, geometry, model, row, seed):
+    job, meta, _raw, frame = row
+    require(
+        seed["key"] == job["key"]
+        and seed["original_frame_id"] == job["frame_id"]
+        and seed["original_checksum_sha256"] == job["checksum_sha256"]
+        and seed["dense_raw_sha256"] == meta["file_sha256"],
+        "coarse prediction and dense sample identity differ",
+    )
+    data, pose = geometry.camera_state(model, job)
+    scene = geometry.SurfaceBounds(model, data, pose)
+    schedules, sign, r, c = base.geometry_schedule(job, meta, seed, scene)
+    edge = np.array([[mm / 1000, 0.004, 0.019] for mm in MM])
+    coords = base.project(c + edge @ r.T, meta)
+    output = {}
+    for mm, (u, _) in zip(MM, coords, strict=True):
+        result = schedules[str(mm)]
+        available = bool(result["legal"])
+        (actual,) = result["legal"] if available else result["denied"]
+        require(actual["u"] == int(round(u)), "station projected differently")
+        output[mm] = actual | {
+            "available": available,
+            "column_center_distance": abs(actual["u"] - u),
+        }
+    return output, (sign, r, c)
+
+
+def representatives(stations):
+    columns = {}
+    for row in stations:
+        u = row["u"]
+        if u not in columns or (row["column_center_distance"], row["mm"]) < (
+            columns[u]["column_center_distance"],
+            columns[u]["mm"],
+        ):
+            columns[u] = row
+    return sorted(columns.values(), key=lambda r: r["mm"])
+
+
+def interval_data(frames, lo, hi):
+    results = []
+    for rows in frames:
+        selected = [rows[mm] for mm in range(lo, hi + 1)]
+        if not all(row["available"] for row in selected):
+            return None
+        kept = representatives(selected)
+        used_pixels = frozenset((row["u"], y) for row in kept for y in row["all_search_rows"])
+        span = kept[-1]["mm"] - kept[0]["mm"]
+        results.append((kept, len(kept), span, used_pixels))
+    return results
+
+
+def minimum_ratio(results, role, p):
+    return min(
+        min(Fraction(c, p[f"{role}_columns"]), Fraction(d, p[f"{role}_span_mm"]))
+        for _, c, d, _ in results
+    )
+
+
+def legal_runs(frames, mm):
+    runs = []
+    for x in mm:
+        if all(frame[x]["available"] for frame in frames):
+            if not runs or x != runs[-1][-1] + 1:
+                runs.append([x, x])
+            else:
+                runs[-1][-1] = x
+    return runs
+
+
+def select(frames, mm=MM, thresholds=P):
+    slots = {}
+    for span in combinations(mm, 2):
+        results = interval_data(frames, *span)
+        if results is not None:
+            slots[span] = results
+    counts = Counter()
+    sha_ledger = hashlib.sha256()
+    rank, choice = None, None
+    best_validation_counts = best_validation_span = None
+    for a, b, c, d in combinations(mm, 4):
+        if c - b < GAP:
+            continue
+        gap = c - b
+        for fit, val in (((a, b), (c, d)), ((c, d), (a, b))):
+            f, v = slots.get(fit), slots.get(val)
+            if f is None:
+                reason = "fit_has_disallowed_station"
+            elif (f_ratio := minimum_ratio(f, "fit", thresholds)) < 1:
+                reason = "fit_under_minimum"
+            elif v is None:
+                reason = "validation_has_disallowed_station"
+            elif any(left[3] & right[3] for left, right in zip(f, v, strict=True)):
+                reason = "fit_and_validation_pixel_overlap"
+            else:
+                cols, length = min(r[1] for r in v), min(r[2] for r in v)
+                best_validation_counts = max(cols, best_validation_counts or 0)
+                best_validation_span = max(length, best_validation_span or 0)
+                v_ratio = minimum_ratio(v, "validation", thresholds)
+                if v_ratio < 1:
+                    reason = "validation_under_minimum"
+                else:
+                    reason = "eligible"
+                    endpoints = (*fit, *val)
+                    key = (min(f_ratio, v_ratio), gap, tuple(-x for x in endpoints))
+                    if rank is None or key > rank:
+                        rank, choice = key, (fit, val)
+            counts[reason] += 1
+            sha_ledger.update(f"{fit[0]},{fit[1]},{val[0]},{val[1]},{reason}\n".encode())
+    intervals = [
+        {"endpoints_mm": list(k), "support_by_frame": [[row[1], row[2]] for row in rows]}
+        for k, rows in slots.items()
+    ]
+    summary = {
+        "legal_contiguous_runs_mm": legal_runs(frames, mm),
+        "individually_legal_intervals": intervals,
+        "independent_best_min_columns": max(
+            (min(r[1] for r in rows) for rows in slots.values()), default=0
+        ),
+        "independent_best_min_span_mm": max(
+            (min(r[2] for r in rows) for rows in slots.values()), default=0
+        ),
+        "max_validation_columns_after_qualifying_fit": best_validation_counts,
+        "max_validation_span_after_qualifying_fit_mm": best_validation_span,
+        "candidate_outcomes": dict(counts),
+        "complete_ordered_candidate_ledger_sha256": sha_ledger.hexdigest(),
+        "selected": None,
+    }
+    if choice is None:
+        return summary, None
+    chosen = {
+        group: [dict(legal=r[0], denied=[], legal_span_mm=r[2]) for r in slots[span]]
+        for group, span in zip(("fit", "validation"), choice, strict=True)
+    }
+    summary["selected"] = {
+        "fit_mm": choice[0],
+        "validation_mm": choice[1],
+        "minimum_support_ratio": str(rank[0]),
+        "physical_gap_mm": rank[1],
+        "actual_measurement_footprints": chosen,
+    }
+    return summary, chosen
+
+
+def controls():
+    p = dict(fit_columns=2, fit_span_mm=1, validation_columns=2, validation_span_mm=1)
+
+    def spec(x, pixel, okay=True, error=0.0):
+        return dict(
+            mm=x, u=pixel, available=okay, all_search_rows=[1, 2], column_center_distance=error
+        )
+
+    g = {x: spec(x, x, x not in (2, 3)) for x in range(6)}
+    positive, _ = select([g, g], range(6), p)
+    close = {x: spec(x, x, x in [0, 1, 3, 4]) for x in range(6)}
+    coincident = {x: spec(x, x % 4, x not in (2, 3)) for x in range(6)}
+    rejected, _ = select([g, close], range(6), p)
+    shared, _ = select([coincident, coincident], range(6), p)
+    same = representatives([spec(1, 2, error=0.2), spec(2, 2, error=0.3)])
+    result = {
+        "known_two_intervals_selected": tuple(positive["selected"]["fit_mm"]) == (0, 1)
+        and tuple(positive["selected"]["validation_mm"]) == (4, 5),
+        "no_single_frame_section_can_qualify_pair": rejected["selected"] is None,
+        "shared_pixel_footprint_rejected": shared["selected"] is None,
+        "duplicate_only_counts_once_at_closest_station": len(same) == 1 and same[0]["mm"] == 1,
+    }
+    require(all(result.values()), "geometry split controls failed")
+    return result
+
+
+def sorted_pairs(info):
+    by_key = {}
+    for row in info:
+        by_key.setdefault(row[0]["key"], []).append(row)
+    for group, (a, b) in PLAN["pairs"]:
+        rows = by_key[a] + by_key[b] if a != b else by_key[a]
+        require(len(rows) == 2, "scene pair enrollment changed")
+        yield group, rows
+
+
+def pose_within_old_bound(candidate, old):
+    c = np.array(candidate["center_world_m"])
+    r = np.array(candidate["rotation_object_to_world"])
+    estimated_r = np.array(old["rotation"])
+    anchor = np.array(old["anchor_object_m"])
+    estimated_anchor = np.array(old["anchor_world_m"])
+    e = np.array(old["anchor_error_object_m"])
+    b = np.array(old["basis_error_object"])
+    return np.all(abs(estimated_r.T @ (c + r @ anchor - estimated_anchor)) <= e) and np.all(
+        abs(estimated_r.T @ r - np.eye(3)) <= b
+    )
+
+
+def save(name, result):
+    OUT.mkdir(parents=True, exist_ok=True)
+    with (OUT / name).open("x", encoding="utf-8") as f:
+        f.write(
+            json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n"
+        )
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("name", choices=("prediction.json", "prediction.cold.json"))
+    name = p.parse_args().name
+    base, bounds, _, info, seeds = registered()
+    checks = controls() | base.controls()
+    model = mujoco.MjModel.from_xml_path(str(ROOT / base.PLAN["asset"]))
+    pairs, eligible = [], []
+    for group, rows in sorted_pairs(info):
+        stations_by_row, details = zip(
+            *(stations(base, bounds, model, row, seeds[row[3]]) for row in rows), strict=True
+        )
+        selection, slots = select(stations_by_row)
+        result = {
+            "group": group,
+            "selection": selection,
+            "stations_by_frame": stations_by_row,
+            "frames": [
+                {
+                    "key": job["key"],
+                    "frame_id": frame,
+                    "episode_shutter_checksum": job["checksum_sha256"],
+                    "dense_raw_sha256": meta["file_sha256"],
+                    "fixture": meta.get("model"),
+                }
+                for job, meta, _, frame in rows
+            ],
+        }
+        pairs.append(result)
+        if slots is not None:
+            eligible.append((result, rows, slots, details))
+    files_gate_sha = hashlib.sha256(
+        json.dumps(pairs, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    authorized_images = {r[2] for _, rows, _, _ in eligible for r in rows}
+    common_files = sorted(p.relative_to(ROOT).as_posix() for p in authorized_images)
+    base.blind({ROOT / base.PLAN["asset"], OUT / name, *authorized_images})
+    denied = 0
+    for image in {row[2] for row in info} - authorized_images:
+        try:
+            image.read_bytes()
+        except PermissionError:
+            denied += 1
+        else:
+            raise ValueError("a geometry-rejected source was opened")
+    for result, rows, slots, details in eligible:
+        for i, ((job, meta, file, frame), (sign, r, c)) in enumerate(
+            zip(rows, details, strict=True)
+        ):
+            seed = seeds[frame]
+            require(
+                sha(file) == seed["dense_raw_sha256"] == meta["file_sha256"],
+                "changed native pixels",
+            )
+            with np.load(file, allow_pickle=False) as data:
+                arrays = data["depth_m"], data["rgb"], data["valid"]
+            scheduled = {section: values[i] for section, values in slots.items()}
+            measurement = base.measured_pose(
+                scheduled, meta, arrays, sign, r, c, model.geom(base.CROSSBAR), seed["pose"]
+            )
+            if measurement["pose"] and not pose_within_old_bound(
+                measurement["pose"], job["optical"]
+            ):
+                measurement.update(reason="correction_outside_frozen_pose_bound", pose=None)
+            result["frames"][i]["measurement"] = measurement
+    save(
+        name,
+        {
+            "plan_sha256": sha(PLAN_PATH),
+            "script_sha256": sha(Path(__file__).resolve()),
+            "geometry_before_any_pixels_sha256": files_gate_sha,
+            "controls": checks,
+            "raw_dense_files_opened": sum(len(rows) for _, rows, _, _ in eligible),
+            "geometry_rejected_file_accesses_denied": denied,
+            "authorized_dense_files": common_files,
+            "pairs": pairs,
+        },
+    )
+
+
+if __name__ == "__main__":
+    main()
