@@ -56,6 +56,10 @@ t02 第 1512 步唯一有注册深度及印刷支持的邻列，在两个像素�
 
 [^g1-t02-lift-relation]: [六槽原姿态和持物独立读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-lift-native-original-relation-20261126/step-report.md)
 
+四槽同种子重复后，以现场交接驱动和独立 LIFT/PRE 接入原完整净空门，入口均通过，抬升反馈 183 次通过及四次首拒。三槽因未归属近面停止，一槽因工件制停包络超出已登记可观测体积停止，拒绝后无新驱动目标。整机及正式分母未增加。[^g1-t02-lift-clearance]
+
+[^g1-t02-lift-clearance]: [四槽原完整净空门原生验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-lift-native-full-clearance-20261126/step-report.md)
+
 G2 软件已同时保留原逻辑云指标和远程派发指标。派发前注入丢包计零，已派发的超时和重试逐次计入。正式结论仍需合格的固定周期基线与实际配对成功结果。[^g2-dispatch]
 
 [^g2-dispatch]: [远程派发归属验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-transport-dispatch-20261126/step-report.md) · [原始收发文件与尝试身份读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-original-wire-identity-20261126/step-report.md)
