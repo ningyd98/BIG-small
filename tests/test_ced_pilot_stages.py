@@ -309,6 +309,27 @@ def test_foundation_missing_selection_keeps_groups_without_guessing_period(pools
     assert len(rows) == 120 and all(row["period_s"] is None for row in rows)
 
 
+def test_b0_preflight_matches_only_the_reviewed_native_chain(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import scripts.run_rgbd_pilot as script
+
+    assert script._known_b0_native_pre_bounds_unavailable("selection")
+    assert script._known_b0_native_pre_bounds_unavailable("foundation")
+    assert not script._known_b0_native_pre_bounds_unavailable("power")
+    original_spec = script.find_spec
+    changed = tmp_path / "action_evidence.py"
+    changed.write_text("# Another source has no eligibility implied by this guard.\n")
+    monkeypatch.setattr(
+        script,
+        "find_spec",
+        lambda name: SimpleNamespace(origin=str(changed))
+        if name.endswith(".action_evidence")
+        else original_spec(name),
+    )
+    assert not script._known_b0_native_pre_bounds_unavailable("selection")
+
+
 def test_frozen_development_exclusions_reject_external_supplied_pool(pools, tmp_path, monkeypatch):
     import scripts.run_rgbd_pilot as script
     import yaml

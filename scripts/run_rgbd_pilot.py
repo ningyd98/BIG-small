@@ -14,6 +14,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import asdict
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -609,6 +610,27 @@ class _RoleBoundPilotExecutor:
         return row
 
 
+def _known_b0_native_pre_bounds_unavailable(stage: str) -> bool:
+    """Recognize the reviewed OpenCV worker and PRE gate with no source of bounds."""
+    if stage not in {"selection", "foundation"}:
+        return False
+    reviewed_chain = {
+        "research.pilot_worker": "81dd1d02e4b264adba731eec07d6921042f933b795af4e68726e29f03b7ee3e2",
+        "vision.execution": "69f2c1b7dabc0106697eb656bff67da331d4b5386433ae62b9f4f9ff094189f0",
+        "vision.action_evidence": (
+            "a122df9e5e4edba513a96abeed46b3b1d9f3dff13a51df5d56cfd63388591edc"
+        ),
+        "edge.evidence.validator": (
+            "cb71ee7c8e05bdb751b34ce6be17c0c7fa29d7cd20fa557b240592d426552674"
+        ),
+    }
+    for name, expected in reviewed_chain.items():
+        spec = find_spec(f"cloud_edge_robot_arm.{name}")
+        if spec is None or not spec.origin or file_hash(Path(spec.origin)) != expected:
+            return False
+    return True
+
+
 def run_ced_pilot(
     config_path: Path,
     output: Path,
@@ -681,6 +703,8 @@ def run_ced_pilot(
             reasons.append("method runtime and actual power source acceptance are not integrated")
         except (OSError, ValueError, TypeError, KeyError):
             reasons.append("power prerequisites unavailable; no full-method pilot was run")
+    elif execute and _known_b0_native_pre_bounds_unavailable(stage):
+        reasons.append("B0_NATIVE_PRE_BOUNDS_UNAVAILABLE")
     elif execute:
         try:
             if service is None or not profile_id or not allow_paid or not settings["role_probe"]:
@@ -776,7 +800,12 @@ def main(argv: list[str] | None = None) -> int:
     settings = yaml.safe_load(args.config.read_text())
     if isinstance(settings, dict) and settings.get("protocol_version") == "ced.research.v2":
         service = None
-        if args.execute and args.model_control_db.is_file() and args.profile_id:
+        if (
+            args.execute
+            and args.model_control_db.is_file()
+            and args.profile_id
+            and not _known_b0_native_pre_bounds_unavailable(args.stage)
+        ):
             from cloud_edge_robot_arm.model_control.service import ModelControlService
             from cloud_edge_robot_arm.model_control.sqlite_repository import (
                 SQLiteModelProfileRepository,
