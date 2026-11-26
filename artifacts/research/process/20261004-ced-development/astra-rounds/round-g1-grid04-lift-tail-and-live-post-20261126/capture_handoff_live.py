@@ -37,7 +37,15 @@ class ScopedStop(ValueError):
     """Retain the first rejected boundary and let the original skill protect it."""
 
 
-def preflight():
+def clearance_is_accepted(status, clocks_match):
+    return clocks_match and status == "CLEAR"
+
+
+def feedback_is_timely(sample_ms, boundary_ms):
+    return max(sample_ms, boundary_ms) <= 100
+
+
+def preflight(*, expected_head=PLAN["execution_base"]):
     tail.checked_inputs()
     for name, expected in PLAN["input_sha256"].items():
         REQUIRE(sha(tail.ROOT / name) == expected, f"changed live input: {name}")
@@ -52,7 +60,7 @@ def preflight():
         )
     REQUIRE(sha(sealed[0]) == sha(sealed[1]), "independent domain preflight disagrees")
     base = tail.earlier.module(SOURCE)
-    with patch.object(base, "PLAN", dict(base.PLAN, head=PLAN["execution_base"])):
+    with patch.object(base, "PLAN", dict(base.PLAN, head=expected_head)):
         model, aim, reset, cal, _, slots = base.prepare()
     (slot,) = [row for row in slots if row["id"] == CASE]
     refs = tail.earlier.module(tail.earlier.source("original/screen_braking.py"))
@@ -242,10 +250,10 @@ def scenario_driver(
                 labels,
             )
             robot = frames[-1][1]
-            refuse(
-                robot["camera_encoder_sim_time_s"] == robot["sim_time_s"] == b.get_sim_time(),
-                "RGB-D encoder clock mismatch",
+            clocks_match = (
+                robot["camera_encoder_sim_time_s"] == robot["sim_time_s"] == b.get_sim_time()
             )
+            refuse(clocks_match, "RGB-D encoder clock mismatch")
             marker = detector(image, clean_geometry)
             if phase == "POST":
                 verdict = cert.observe_payload_frame(image, marker, robot, stage, phase)
@@ -270,11 +278,9 @@ def scenario_driver(
             if phase == "POST":
                 return row
             refuse(
-                verdict["status"] == "CLEAR",
+                clearance_is_accepted(verdict["status"], clocks_match),
                 f"original {stage}/{phase} {verdict['status']}: {verdict.get('reason')}",
             )
-            if phase == "PRE":
-                refuse((row["gate_finish_ns"] - began) / 1e6 <= 100, f"{stage} PRE exceeded 100 ms")
             return row
 
         def sample(t):
@@ -339,7 +345,7 @@ def scenario_driver(
                 released_to_boundary=False,
             )
             refuse(
-                max(pending["before_next_boundary_ms"], pending["sample_ik_ms"]) <= 100,
+                feedback_is_timely(pending["sample_ik_ms"], pending["before_next_boundary_ms"]),
                 "native RGB-D deadline exceeded",
             )
             pending["released_to_boundary"] = True
@@ -508,7 +514,7 @@ def scenario_driver(
     return run
 
 
-def run(frozen):
+def run(frozen, *, second_registration=None):
     from scripts.graduation.g1_complete_cv_carried_surface import CarriedSurface
     from scripts.graduation.g1_complete_cv_clearance import RobotDepthReference
 
@@ -573,6 +579,7 @@ def run(frozen):
                 "native_capture_hard_cap": LIMIT["conditional_native_exposures"],
                 "reference_projection_hard_caps": {k: max_projections for k in counts},
                 "complete_owner": False,
+                "second_registration": second_registration,
             },
         )
         prior_plan = dict(
