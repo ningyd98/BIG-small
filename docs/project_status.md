@@ -24,6 +24,14 @@ G1 完整训练的整套守护准入仍缺证据，t01 新训练停在分配前�
 
 [^g1-branch]: [固定 TCP 分支几何筛查](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-fixed-tcp-branch-visibility-20261126/step-report.md)
 
+九张 B 基准原生 RGB-D 逐像素复现，+48°、+60° 两组各九张均只检出 ID8，遮挡侧没有合格边沿，未获得 RELEASE 姿态、支撑及双侧净空证书。[^g1-branch-native]
+
+[^g1-branch-native]: [固定 TCP 分支原生复采](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-fixed-tcp-branch-native-20261126/step-report.md)
+
+t02 第 1512 步保持同一归档曝光、命令及历史，两个只代入独立物理姿态的反事实均恢复 `held`，完整净空读回均为 `CLEAR`。原光学分支仍为姿态缺失。第 2112 步的未登记近面未改变。此次仅用 12 次机器人参考深度投影核对拒绝链条，整机及正式分母未增加。[^g1-t02-oracle]
+
+[^g1-t02-oracle]: [t02 首拒反事实及封存摘要](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-t02-pose-oracle-20261126/step-report.md)
+
 G2 软件已同时保留原逻辑云指标和远程派发指标。派发前注入丢包计零，已派发的超时和重试逐次计入。正式结论仍需合格的固定周期基线与实际配对成功结果。[^g2-dispatch]
 
 [^g2-dispatch]: [远程派发归属验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-transport-dispatch-20261126/step-report.md) · [原始收发文件与尝试身份读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-original-wire-identity-20261126/step-report.md)
