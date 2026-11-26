@@ -1,5 +1,15 @@
 # 项目状态
 
+## 2026-11-26　三项研究目标的证据核对
+
+| 目标 | 目前可核验的结果 |
+| --- | --- |
+| 受控桌面中正确识别且深度有效的目标，三维定位 P90 ≤ 10 mm | 正式固定摆放批次通过此数值门限。原单标 2.676 mm（376/384 帧有效），低位双标 2.765 mm（386/394 帧有效）。正式像素和物理评分均由冻结输入逐字节复现。 |
+| 标称静态单步独立抓放成功率 ≥ 90% | 原正式批两臂各 0/4，较新的完整开发批 0/2。静态抓放、抬升诊断、开爪静态复采和多步扰动分别记录。 |
+| 同等任务质量且成功率不降低，远程请求相对固定周期减少 ≥ 30% | 当前合格的固定周期基线及正式配对结果缺失。分配预检复现 120 组 × 4 周期，480 个均未执行。现行源码的角色探针等待图像外发和付费授权。 |
+
+[正式定位与抓放计分](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-paired-20261124/step-report.md) · [t01 前缀与 27 条制停分支冷读](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-t01-joint-stop-readback-20261126/step-report.md) · [B0 前置复验](../artifacts/research/process/20261004-ced-development/astra-rounds/round-b0-current-role-probe-20261126/step-report.md)
+
 ## 2026-11-24　G1 正式抓放失败的逐帧归因
 
 复看正式批的 778 帧后，六次失标均定位到夹指或手掌侵入标记白边附近的姿态。逐部件隐藏的静态复拍均能恢复识别。另两次能读出双码，但 ID8 的偏航估计误差约 5°，经安装偏距放大后触发抓取点一致性检查。四个摆放的正式完整抓放成功仍为两组各 0/4。[阶段总结](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/stage-summary.md) · [逐帧慢放](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/eight-stops.gif)
