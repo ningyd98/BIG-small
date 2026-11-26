@@ -48,6 +48,14 @@ t02 第 1512 步唯一有注册深度及印刷支持的邻列，在两个像素�
 
 [^g1-t02-natural]: [自然四列档案验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-rgb-edge-natural-archive-20261126/step-report.md)
 
+在 t02 邻域的六个新本地开发前缀中，四槽到达固定 80 帧截止，两槽由原 1 mm 走廊提前停止。350 张实际抬升反馈均由原光学入口返回姿态，全部没有自然四列资格。原 t02 与 RELEASE 拒绝继续有效。[^g1-t02-lift-prefix]
+
+[^g1-t02-lift-prefix]: [六槽原生抬升采集](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-lift-natural-native-20261126/step-report.md)
+
+六槽的 350 张原反馈均通过各自姿态误差包络、原持物观察和同曝光双侧接触核对。四个 80 帧前缀有连续实测，两个 1 mm 走廊首停仍然有效。正式抓放分母未增加。[^g1-t02-lift-relation]
+
+[^g1-t02-lift-relation]: [六槽原姿态和持物独立读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-lift-native-original-relation-20261126/step-report.md)
+
 G2 软件已同时保留原逻辑云指标和远程派发指标。派发前注入丢包计零，已派发的超时和重试逐次计入。正式结论仍需合格的固定周期基线与实际配对成功结果。[^g2-dispatch]
 
 [^g2-dispatch]: [远程派发归属验证](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-transport-dispatch-20261126/step-report.md) · [原始收发文件与尝试身份读回](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g2-original-wire-identity-20261126/step-report.md)
