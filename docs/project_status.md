@@ -15,6 +15,11 @@
 
 [^g1-volume]: [当前有载门与独立冷读](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-lift-registered-volume-20261126/step-report.md)
 
+
+G1 完整训练的整套守护准入仍缺证据，t01 新训练停在分配前。保持工具位姿扫描 70 个登记静态姿态后，B 的 ID7 最多多见 32–34 个面点，遮挡侧仍为 0 个合格深度边缘列，最清晰格仍与旋转后的 ID28 相容。t02 的两侧理想深度列均为 14，实际原图的姿态拒绝须继续按光学证据定位。[^g1-posture]
+
+[^g1-posture]: [t01 派发前审查](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-t01-native-training-20261126/step-report.md) · [静态几何对照](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-fixed-tcp-id7-geometry-20261126/step-report.md)
+
 ## 2026-11-24　G1 正式抓放失败的逐帧归因
 
 复看正式批的 778 帧后，六次失标均定位到夹指或手掌侵入标记白边附近的姿态。逐部件隐藏的静态复拍均能恢复识别。另两次能读出双码，但 ID8 的偏航估计误差约 5°，经安装偏距放大后触发抓取点一致性检查。四个摆放的正式完整抓放成功仍为两组各 0/4。[阶段总结](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/stage-summary.md) · [逐帧慢放](../artifacts/research/process/20261004-ced-development/astra-rounds/round-g1-formal-failure-observation-20261124/eight-stops.gif)
